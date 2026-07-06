@@ -1,0 +1,11 @@
+:root{
+  --bg:#0b0b16; --ink:#f2eee4; --muted:#9a94b0; --accent:#E8A23D; --danger:#e0577a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--ink);
+  font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  /* respect notches on installed PWAs */
+  padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  overscroll-behavior:none; touch-action:none;
+}
+#scene{position:fixed;inset:0;display:block}

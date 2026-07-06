@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Beagle Chomp — a maze-chase game</title>
+<style>
+  :root{
+    --bg:#0b0b16; --ink:#f2eee4; --muted:#9a94b0; --accent:#E8A23D; --danger:#e0577a;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;overflow:hidden;background:var(--bg);
+    font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--ink)}
+  #scene{position:fixed;inset:0;display:block}
+
+  /* HUD */
+  .hud{position:fixed;top:0;left:0;right:0;display:flex;justify-content:space-between;
+    align-items:flex-start;padding:18px 22px;pointer-events:none;z-index:5}
+  .stat{font-family:ui-monospace,"SF Mono",monospace;line-height:1.3}
+  .stat .k{font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted)}
+  .stat .v{font-size:26px;font-weight:700}
+  .lives{display:flex;gap:8px;font-size:24px}
+
+  /* Center banners + panels */
+  .center{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
+    z-index:10;pointer-events:none}
+  .banner{font-size:clamp(30px,7vw,64px);font-weight:800;letter-spacing:-.02em;
+    text-shadow:0 4px 30px rgba(0,0,0,.6)}
+  .panel{pointer-events:auto;text-align:center;background:rgba(16,16,30,.86);
+    border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:34px 40px;
+    max-width:440px;backdrop-filter:blur(6px)}
+  .panel .eyebrow{font-family:ui-monospace,monospace;font-size:12px;letter-spacing:.28em;
+    text-transform:uppercase;color:var(--accent)}
+  .panel h1{font-size:40px;font-weight:800;margin:6px 0 12px;letter-spacing:-.02em}
+  .panel p{color:var(--muted);font-size:15px;line-height:1.7;margin-bottom:20px}
+  .panel .keys{font-family:ui-monospace,monospace;color:var(--ink);font-size:13px;
+    margin-bottom:22px;line-height:2}
+  .panel .keys b{color:var(--accent)}
+  button{pointer-events:auto;font:inherit;font-weight:700;font-size:16px;color:#1a1206;
+    background:var(--accent);border:none;border-radius:999px;padding:13px 30px;cursor:pointer;
+    transition:transform .12s ease,filter .12s ease}
+  button:hover{transform:translateY(-2px);filter:brightness(1.06)}
+  button:focus-visible{outline:3px solid #fff;outline-offset:2px}
+  .hidden{display:none!important}
+</style>
+</head>
+<body>
+<canvas id="scene"></canvas>
+
+<div class="hud">
+  <div class="stat"><div class="k">Score</div><div class="v" id="score">0</div></div>
+  <div class="stat" style="text-align:center"><div class="k">Map</div><div class="v" id="level">1</div></div>
+  <div class="stat" style="text-align:right"><div class="k">Lives</div><div class="lives v" id="lives">🐶🐶🐶</div></div>
+</div>
+
+<div class="center" id="center">
+  <div class="panel" id="startPanel">
+    <div class="eyebrow">three.js · maze chase</div>
+    <h1>Beagle Chomp</h1>
+    <p>Guide the beagle around the maze and munch every biscuit to clear the map.
+       Chomp a <b style="color:#fff">bone</b> and the ghosts turn scared — eat them for big points before they recover.</p>
+    <div class="keys"><b>Arrow keys</b> or <b>WASD</b> to move · avoid the ghosts</div>
+    <button id="startBtn">Start</button>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+"use strict";
+
+/* ============================================================
+   1. MAZE DATA  (validated headlessly for connectivity)
+   Legend: # wall  . biscuit  o bone  ' ' void  P beagle
+           G ghost spawn  = pen  - door  T tunnel  F fruit
+   ============================================================ */
+const MAZES = [
+[
+  "###################",
+  "#........#........#",
+  "#o##.###.#.###.##o#",
+  "#.................#",
+  "#.##.#.#####.#.##.#",
+  "#....#...#...#....#",
+  "####.###.#.###.####",
+  "   #.#...=...#.#   ",
+  "####.#.##-##.#.####",
+  "T......#=G=#......T",
+  "####.#.#####.#.####",
+  "   #.#.......#.#   ",
+  "####.#.#####.#.####",
+  "#........#........#",
+  "#.##.###.#.###.##.#",
+  "#o.#....FPF....#.o#",
+  "##.#.#.#####.#.#.##",
+  "#....#...#...#....#",
+  "#.######.#.######.#",
+  "#.................#",
+  "###################",
+],
+[
+  "###################",
+  "#........#........#",
+  "#.##.###.#.###.##.#",
+  "#.................#",
+  "#o##.#.#####.#.##o#",
+  "#....#...#...#....#",
+  "####.###.#.###.####",
+  "   #.#...=...#.#   ",
+  "####.#.##-##.#.####",
+  "T......#=G=#......T",
+  "####.#.#####.#.####",
+  "   #.#.......#.#   ",
+  "####.#.#####.#.####",
+  "#........#........#",
+  "#.##.###.#.##.###.#",
+  "#o.#....FPF..#..o.#",
+  "##.#.#.#####.#.#.##",
+  "#....#...#...#....#",
+  "#.######.#.######.#",
+  "#.................#",
+  "###################",
+],
+];
+
+const COLS = 19, ROWS = 21, TILE = 1, WALL_H = 1;
+const OX = (COLS-1)/2, OZ = (ROWS-1)/2;
+function worldX(tx){ return (tx-OX)*TILE; }
+function worldZ(ty){ return (ty-OZ)*TILE; }
+
+/* ============================================================
+   2. THREE.JS BOILERPLATE
+   ============================================================ */
+const canvas = document.getElementById('scene');
+const renderer = new THREE.WebGLRenderer({canvas, antialias:true});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputEncoding = THREE.sRGBEncoding;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0b0b16);
+scene.fog = new THREE.Fog(0x0b0b16, 30, 55);
+
+const camera = new THREE.PerspectiveCamera(46, 1, 0.1, 200);
+camera.position.set(0, 27, 15.5);
+camera.lookAt(0, 0, -0.5);
+
+scene.add(new THREE.HemisphereLight(0x9fb0ff, 0x0a0a16, 0.55));
+const key = new THREE.DirectionalLight(0xfff0d8, 1.05);
+key.position.set(6, 20, 10);
+key.castShadow = true;
+key.shadow.mapSize.set(2048,2048);
+key.shadow.camera.near = 1; key.shadow.camera.far = 60;
+key.shadow.camera.left=-14; key.shadow.camera.right=14;
+key.shadow.camera.top=16; key.shadow.camera.bottom=-16;
+key.shadow.bias = -0.0005;
+scene.add(key);
+
+function resize(){
+  const w=window.innerWidth, h=window.innerHeight;
+  renderer.setSize(w,h,false);
+  camera.aspect=w/h; camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', resize); resize();
+
+/* ============================================================
+   3. WORLD STATE + BOARD BUILDING
+   ============================================================ */
+const board = new THREE.Group(); scene.add(board);
+
+// mutable grid + pellet meshes, rebuilt per level
+let grid = [];               // array of char arrays
+let tunnelRows = new Set();
+let pelletMeshes = new Map(); // "x,y" -> mesh (biscuit or bone)
+let pelletsLeft = 0;
+let fruitTiles = [];         // tiles where fruit can appear
+let fruitMesh = null, fruitTile = null;
+let beagleSpawn = {x:9,y:15}, ghostSpawn = {x:9,y:9};
+
+const matWall = new THREE.MeshStandardMaterial({color:0x2b2b6b, roughness:0.5, metalness:0.1, emissive:0x14143a, emissiveIntensity:0.6});
+const matFloor = new THREE.MeshStandardMaterial({color:0x111120, roughness:1});
+const geoBiscuit = new THREE.SphereGeometry(0.13, 12, 12);
+const matBiscuit = new THREE.MeshStandardMaterial({color:0xE3B778, roughness:0.7, emissive:0x3a2a10, emissiveIntensity:0.4});
+
+function makeBone(){
+  const g = new THREE.Group();
+  const white = new THREE.MeshStandardMaterial({color:0xf6f1e6, roughness:0.5, emissive:0x554a2a, emissiveIntensity:0.25});
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.07,0.34,10), white);
+  shaft.rotation.z = Math.PI/2; g.add(shaft);
+  [[-0.2,0.09],[-0.2,-0.09],[0.2,0.09],[0.2,-0.09]].forEach(([x,z])=>{
+    const k = new THREE.Mesh(new THREE.SphereGeometry(0.1,10,10), white);
+    k.position.set(x,0,z); g.add(k);
+  });
+  g.traverse(o=>{o.castShadow=true;});
+  return g;
+}
+
+function makeFruit(){
+  const g = new THREE.Group();
+  const apple = new THREE.Mesh(new THREE.SphereGeometry(0.22,16,16),
+    new THREE.MeshStandardMaterial({color:0xd8483f, roughness:0.4, emissive:0x3a0d0a, emissiveIntensity:0.4}));
+  g.add(apple);
+  const leaf = new THREE.Mesh(new THREE.SphereGeometry(0.06,8,8),
+    new THREE.MeshStandardMaterial({color:0x5fae4d}));
+  leaf.position.set(0.06,0.22,0); leaf.scale.set(1.4,0.5,0.8); g.add(leaf);
+  g.traverse(o=>{o.castShadow=true;});
+  return g;
+}
+
+function buildBoard(levelIndex){
+  // clear previous
+  while(board.children.length) board.remove(board.children[0]);
+  pelletMeshes.clear(); tunnelRows.clear(); fruitTiles=[];
+  pelletsLeft = 0; fruitMesh=null; fruitTile=null;
+
+  const src = MAZES[levelIndex % MAZES.length];
+  grid = src.map(r=>r.split(""));
+  grid.forEach((row,y)=>{ if(row.indexOf("T")>=0) tunnelRows.add(y); });
+
+  // floor
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(COLS+2, ROWS+2), matFloor);
+  floor.rotation.x=-Math.PI/2; floor.position.y=-0.01; floor.receiveShadow=true;
+  board.add(floor);
+
+  // count walls for instancing
+  let wallCount=0;
+  grid.forEach(row=>row.forEach(c=>{ if(c==='#') wallCount++; }));
+  const wallGeo = new THREE.BoxGeometry(TILE, WALL_H, TILE);
+  const walls = new THREE.InstancedMesh(wallGeo, matWall, wallCount);
+  walls.castShadow=true; walls.receiveShadow=true;
+  const dummy = new THREE.Object3D();
+  let wi=0;
+
+  grid.forEach((row,y)=>row.forEach((c,x)=>{
+    if(c==='#'){
+      dummy.position.set(worldX(x), WALL_H/2, worldZ(y));
+      dummy.updateMatrix(); walls.setMatrixAt(wi++, dummy.matrix);
+    } else if(c==='.'||c==='o'){
+      const mesh = (c==='o') ? makeBone() : new THREE.Mesh(geoBiscuit, matBiscuit);
+      mesh.position.set(worldX(x), 0.45, worldZ(y));
+      if(c!=='o'){ mesh.castShadow=true; }
+      board.add(mesh);
+      pelletMeshes.set(x+","+y, {mesh, kind:(c==='o'?'bone':'biscuit')});
+      pelletsLeft++;
+    } else if(c==='F'){
+      fruitTiles.push({x,y});
+    } else if(c==='P'){
+      beagleSpawn={x,y};
+    } else if(c==='G'){
+      ghostSpawn={x,y};
+    }
+  }));
+  board.add(walls);
+}
+
+/* ============================================================
+   4. GRID HELPERS  (with tunnel wrap)
+   ============================================================ */
+function charAt(tx,ty){
+  if(ty<0||ty>=ROWS) return '#';
+  if(tunnelRows.has(ty)) tx = ((tx%COLS)+COLS)%COLS;
+  else if(tx<0||tx>=COLS) return '#';
+  return grid[ty][tx];
+}
+function walkable(tx,ty,forGhost){
+  const c = charAt(tx,ty);
+  if(c==='#'||c===' ') return false;
+  if(!forGhost && (c==='G'||c==='='||c==='-')) return false; // beagle can't enter pen
+  return true;
+}
+const DIRS = { up:{x:0,y:-1}, down:{x:0,y:1}, left:{x:-1,y:0}, right:{x:1,y:0} };
+function isReverse(a,b){ return a.x===-b.x && a.y===-b.y && (a.x||a.y); }
+
+/* ============================================================
+   5. ENTITY MOVEMENT  (tile-stepping model)
+   ============================================================ */
+function makeEntity(tx,ty,speed){
+  return { tx, ty, dir:{x:0,y:0}, queued:{x:0,y:0}, progress:0, speed };
+}
+function entityWorld(e){
+  const fx=worldX(e.tx), fz=worldZ(e.ty);
+  let ntx=e.tx+e.dir.x, nty=e.ty+e.dir.y;
+  const tx = fx + (worldX(ntx)-fx)*e.progress;
+  const tz = fz + (worldZ(nty)-fz)*e.progress;
+  return {x:tx, z:tz};
+}
+// advance one entity; onArrive(e) fires at each new tile center
+function stepEntity(e, dt, forGhost, onArrive){
+  // if stopped, try to start from queued
+  if(e.dir.x===0 && e.dir.y===0){
+    if(walkable(e.tx+e.queued.x, e.ty+e.queued.y, forGhost)){
+      e.dir = {...e.queued};
+    } else return;
+  }
+  e.progress += e.speed*dt;
+  let guard=0;
+  while(e.progress >= 1 && guard++<8){
+    e.progress -= 1;
+    e.tx += e.dir.x; e.ty += e.dir.y;
+    // tunnel wrap
+    if(tunnelRows.has(e.ty)){
+      if(e.tx<0) e.tx=COLS-1; else if(e.tx>=COLS) e.tx=0;
+    }
+    onArrive(e);
+    // choose next direction at this tile center
+    if(walkable(e.tx+e.queued.x, e.ty+e.queued.y, forGhost) && (e.queued.x||e.queued.y)){
+      e.dir = {...e.queued};
+    } else if(!walkable(e.tx+e.dir.x, e.ty+e.dir.y, forGhost)){
+      e.dir = {x:0,y:0}; e.progress = 0; break;
+    }
+  }
+}
+
+/* ============================================================
+   6. CHARACTER MODELS (built from primitives)
+   ============================================================ */
+function makeBeagle(){
+  const g = new THREE.Group();
+  const tan   = new THREE.MeshStandardMaterial({color:0xC98A3C, roughness:0.6});
+  const white = new THREE.MeshStandardMaterial({color:0xf4efe6, roughness:0.6});
+  const black = new THREE.MeshStandardMaterial({color:0x2a2320, roughness:0.5});
+
+  const body = new THREE.Mesh(new THREE.SphereGeometry(0.34,20,16), tan);
+  body.scale.set(1,0.85,1.25); body.position.y=0.34; g.add(body);
+  const belly = new THREE.Mesh(new THREE.SphereGeometry(0.3,16,12), white);
+  belly.scale.set(0.9,0.6,1.1); belly.position.set(0,0.24,0.05); g.add(belly);
+
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.26,20,16), tan);
+  head.position.set(0,0.46,0.34); g.add(head);
+  const snout = new THREE.Mesh(new THREE.SphereGeometry(0.14,14,12), white);
+  snout.scale.set(1,0.8,1.2); snout.position.set(0,0.4,0.56); g.add(snout);
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.06,10,10), black);
+  nose.position.set(0,0.44,0.68); g.add(nose);
+
+  [-1,1].forEach(s=>{
+    const ear = new THREE.Mesh(new THREE.SphereGeometry(0.12,12,10), black);
+    ear.scale.set(0.5,1.1,0.35); ear.position.set(0.22*s,0.4,0.28); g.add(ear);
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.035,8,8), black);
+    eye.position.set(0.1*s,0.52,0.54); g.add(eye);
+    // legs
+    [-0.16,0.16].forEach(dz=>{
+      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,0.2,8), tan);
+      leg.position.set(0.18*s,0.1,dz); g.add(leg);
+    });
+  });
+  const tail = new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.07,0.24,8), tan);
+  tail.position.set(0,0.42,-0.34); tail.rotation.x=-0.7; g.add(tail);
+  const tip = new THREE.Mesh(new THREE.SphereGeometry(0.05,8,8), white);
+  tip.position.set(0,0.5,-0.44); g.add(tip);
+
+  g.traverse(o=>{ if(o.isMesh) o.castShadow=true; });
+  g.scale.setScalar(0.9);
+  return g;
+}
+
+function makeGhost(color){
+  const g = new THREE.Group();
+  const bodyMat = new THREE.MeshStandardMaterial({color, roughness:0.4, emissive:color, emissiveIntensity:0.15});
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(0.3,20,16,0,Math.PI*2,0,Math.PI/2), bodyMat);
+  dome.position.y=0.36; g.add(dome);
+  const skirt = new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.3,0.36,20), bodyMat);
+  skirt.position.y=0.18; g.add(skirt);
+  // wavy hem
+  for(let i=0;i<5;i++){
+    const a=(i/5)*Math.PI*2;
+    const b=new THREE.Mesh(new THREE.SphereGeometry(0.09,10,10), bodyMat);
+    b.position.set(Math.cos(a)*0.24,0.02,Math.sin(a)*0.24); g.add(b);
+  }
+  const eyeW = new THREE.MeshStandardMaterial({color:0xffffff, roughness:0.3});
+  const pupM = new THREE.MeshStandardMaterial({color:0x1436b0, roughness:0.3});
+  const eyes=[], pups=[];
+  [-1,1].forEach(s=>{
+    const e=new THREE.Mesh(new THREE.SphereGeometry(0.09,12,12), eyeW);
+    e.scale.set(0.8,1,0.6); e.position.set(0.12*s,0.4,0.2); g.add(e); eyes.push(e);
+    const p=new THREE.Mesh(new THREE.SphereGeometry(0.045,10,10), pupM);
+    p.position.set(0.12*s,0.4,0.27); g.add(p); pups.push(p);
+  });
+  g.traverse(o=>{ if(o.isMesh) o.castShadow=true; });
+  g.userData = {bodyMat, eyes, pups, pupM, baseColor:color};
+  return g;
+}
+
+/* ============================================================
+   7. GAME OBJECTS + STATE MACHINE
+   ============================================================ */
+const GHOST_DEFS = [
+  {color:0xe0577a, corner:{x:COLS-2,y:1}, kind:'chaser'},   // rose
+  {color:0x53c7c0, corner:{x:1,y:1},      kind:'ambusher'}, // teal
+  {color:0xE8A23D, corner:{x:1,y:ROWS-2}, kind:'clyde'},    // amber
+];
+let beagle=null, beagleMesh=null, ghosts=[];
+let score=0, lives=3, level=0;
+let mode='ready';            // ready | play | dying | levelclear | over
+let stateTimer=0;
+let frightTimer=0, ghostEatChain=0;
+let modeClock=0;             // global scatter/chase timer
+const SCHEDULE=[7,20,7,20,5,1e9]; let scheduleIdx=0; let globalMode='scatter';
+
+const BEAGLE_SPEED=5.2, GHOST_SPEED=4.6, FRIGHT_SPEED=3.0, EATEN_SPEED=9;
+
+function resetActors(){
+  if(!beagleMesh){ beagleMesh=makeBeagle(); scene.add(beagleMesh); }
+  beagle = makeEntity(beagleSpawn.x, beagleSpawn.y, BEAGLE_SPEED);
+  beagle.dir={x:0,y:0}; beagle.queued={x:-1,y:0}; beagle.facing={x:0,y:1};
+
+  ghosts.forEach(gh=>{ if(gh.mesh) scene.remove(gh.mesh); });
+  ghosts = GHOST_DEFS.map((def,i)=>{
+    const mesh = makeGhost(def.color); scene.add(mesh);
+    const e = makeEntity(ghostSpawn.x, ghostSpawn.y, GHOST_SPEED);
+    e.dir={x:0,y:-1}; e.queued={x:0,y:-1};
+    return {def, mesh, e, state:'scatter', releaseDelay:i*0.9};
+  });
+  frightTimer=0; ghostEatChain=0; modeClock=0; scheduleIdx=0; globalMode='scatter';
+}
+
+function startLevel(idx){
+  level=idx; document.getElementById('level').textContent=(idx%MAZES.length)+1 + (idx>=MAZES.length? " ·"+(Math.floor(idx/MAZES.length)+1):"");
+  buildBoard(idx);
+  resetActors();
+  mode='ready'; stateTimer=1.6;
+  showBanner('Ready!');
+}
+
+/* ---- Ghost AI: choose direction toward a target tile ---- */
+function ghostChooseDir(gh){
+  const e=gh.e;
+  // walkable candidates; prefer those that aren't an immediate reversal,
+  // but fall back to reversing so a ghost can never get boxed in.
+  const walkAll=[], nonRev=[];
+  for(const k in DIRS){ const d=DIRS[k];
+    if(!walkable(e.tx+d.x,e.ty+d.y,true)) continue;
+    walkAll.push(d);
+    if(!(isReverse(d,e.dir) && (e.dir.x||e.dir.y))) nonRev.push(d);
+  }
+  const cands = nonRev.length ? nonRev : walkAll;
+  if(!cands.length) return; // fully walled (shouldn't happen)
+
+  if(gh.state==='frightened'){
+    e.queued = cands[(Math.random()*cands.length)|0];
+    return;
+  }
+  // target tile
+  let target;
+  if(gh.state==='eaten'){ target={x:ghostSpawn.x,y:ghostSpawn.y}; }
+  else if(globalMode==='scatter'){ target=gh.def.corner; }
+  else { // chase — per personality
+    const b=beagle;
+    if(gh.def.kind==='chaser') target={x:b.tx,y:b.ty};
+    else if(gh.def.kind==='ambusher') target={x:b.tx+(b.facing.x*4),y:b.ty+(b.facing.y*4)};
+    else { // clyde: chase when far, retreat to corner when close
+      const dist=Math.hypot(b.tx-e.tx, b.ty-e.ty);
+      target = dist>8 ? {x:b.tx,y:b.ty} : gh.def.corner;
+    }
+  }
+  // pick the candidate minimizing distance to target
+  let best=cands[0], bestD=Infinity;
+  for(const d of cands){
+    const nd=Math.hypot((e.tx+d.x)-target.x,(e.ty+d.y)-target.y);
+    if(nd<bestD){ bestD=nd; best=d; }
+  }
+  e.queued=best;
+}
+
+/* ============================================================
+   8. GAMEPLAY UPDATE
+   ============================================================ */
+function eatAt(tx,ty){
+  const key=tx+","+ty;
+  const p=pelletMeshes.get(key);
+  if(p){
+    board.remove(p.mesh); pelletMeshes.delete(key); pelletsLeft--;
+    if(p.kind==='bone'){ score+=50; triggerFright(); }
+    else score+=10;
+    updateHUD();
+    if(pelletsLeft<=0) levelClear();
+  }
+  if(fruitTile && fruitTile.x===tx && fruitTile.y===ty){
+    board.remove(fruitMesh); fruitMesh=null; fruitTile=null;
+    score+=100; updateHUD();
+  }
+}
+function triggerFright(){
+  frightTimer=7; ghostEatChain=0;
+  ghosts.forEach(gh=>{ if(gh.state!=='eaten'){ gh.state='frightened'; e_reverse(gh.e); }});
+}
+function e_reverse(e){ e.dir={x:-e.dir.x,y:-e.dir.y}; e.queued={...e.dir}; }
+
+function maybeSpawnFruit(){
+  if(fruitMesh||!fruitTiles.length) return;
+  const totalStart = MAZES[level%MAZES.length].join("").split("").filter(c=>c==='.'||c==='o').length;
+  const eaten = totalStart - pelletsLeft;
+  if(eaten===70 || eaten===140){
+    fruitTile = fruitTiles[(Math.random()*fruitTiles.length)|0];
+    fruitMesh = makeFruit();
+    fruitMesh.position.set(worldX(fruitTile.x),0.35,worldZ(fruitTile.y));
+    board.add(fruitMesh);
+  }
+}
+
+function updatePlay(dt){
+  // global scatter/chase clock
+  if(frightTimer<=0){
+    modeClock+=dt;
+    if(scheduleIdx<SCHEDULE.length && modeClock>=SCHEDULE[scheduleIdx]){
+      modeClock=0; scheduleIdx++;
+      globalMode = (globalMode==='scatter')?'chase':'scatter';
+      ghosts.forEach(gh=>{ if(gh.state==='scatter'||gh.state==='chase'){ gh.state=globalMode; e_reverse(gh.e);} });
+    }
+  } else {
+    frightTimer-=dt;
+    if(frightTimer<=0){
+      ghosts.forEach(gh=>{ if(gh.state==='frightened') gh.state=globalMode; });
+    }
+  }
+
+  // beagle
+  stepEntity(beagle, dt, false, (e)=>{ eatAt(e.tx,e.ty); maybeSpawnFruit(); });
+  if(beagle.dir.x||beagle.dir.y) beagle.facing={x:beagle.dir.x,y:beagle.dir.y};
+
+  // ghosts
+  ghosts.forEach(gh=>{
+    if(gh.releaseDelay>0){ gh.releaseDelay-=dt; return; }
+    const spd = gh.state==='eaten'?EATEN_SPEED : gh.state==='frightened'?FRIGHT_SPEED : GHOST_SPEED;
+    gh.e.speed=spd;
+    stepEntity(gh.e, dt, true, (e)=>{
+      if(gh.state==='eaten' && e.tx===ghostSpawn.x && e.ty===ghostSpawn.y){
+        gh.state=globalMode; // respawned
+      }
+      ghostChooseDir(gh);
+    });
+  });
+
+  syncMeshes(dt);
+  checkCollisions();
+}
+
+function checkCollisions(){
+  const bw=entityWorld(beagle);
+  for(const gh of ghosts){
+    if(gh.releaseDelay>0) continue;
+    const gw=entityWorld(gh.e);
+    const d=Math.hypot(bw.x-gw.x, bw.z-gw.z);
+    if(d<0.55){
+      if(gh.state==='frightened'){
+        gh.state='eaten';
+        ghostEatChain++;
+        score += 200*Math.pow(2, Math.min(ghostEatChain-1,3)); // 200,400,800,1600
+        updateHUD();
+      } else if(gh.state!=='eaten'){
+        beagleDies();
+        return;
+      }
+    }
+  }
+}
+
+function beagleDies(){
+  mode='dying'; stateTimer=1.3; lives--; updateHUD();
+}
+
+function levelClear(){
+  mode='levelclear'; stateTimer=1.6; showBanner('Map Cleared!');
+}
+
+/* ---- keep meshes in sync with entity state ---- */
+function syncMeshes(dt){
+  const t=performance.now()*0.001;
+  // beagle
+  const bw=entityWorld(beagle);
+  beagleMesh.position.set(bw.x, 0, bw.z);
+  const moving = beagle.dir.x||beagle.dir.y;
+  const yaw = Math.atan2(beagle.facing.x, beagle.facing.y);
+  beagleMesh.rotation.y = yaw;
+  // waddle + bob
+  beagleMesh.position.y = moving ? Math.abs(Math.sin(t*12))*0.06 : 0;
+  beagleMesh.rotation.z = moving ? Math.sin(t*12)*0.06 : 0;
+
+  // pellets gentle spin
+  pelletMeshes.forEach(p=>{ if(p.kind==='bone') p.mesh.rotation.y += dt*2; });
+  if(fruitMesh) fruitMesh.rotation.y += dt*1.5;
+
+  // ghosts
+  ghosts.forEach(gh=>{
+    const gw=entityWorld(gh.e);
+    gh.mesh.position.set(gw.x, 0.05+Math.sin(t*4+gh.e.tx)*0.04, gw.z);
+    const ud=gh.mesh.userData;
+    // eye/pupil look direction
+    const dx=gh.e.dir.x*0.05, dz=gh.e.dir.y*0.05;
+    ud.pups.forEach((p,i)=>{ p.position.z=0.27+dz; p.position.x=(i?0.12:-0.12)+dx; });
+    // color by state
+    if(gh.state==='frightened'){
+      ud.bodyMat.color.setHex(0x2537c8); ud.bodyMat.emissive.setHex(0x101c66);
+      ud.pupM.color.setHex(0xffffff);
+      gh.mesh.visible=true;
+      gh.mesh.traverse(o=>{o.visible=true;});
+    } else if(gh.state==='eaten'){
+      // only eyes visible, gliding home
+      gh.mesh.traverse(o=>{o.visible=false;});
+      ud.eyes.forEach(e=>e.visible=true); ud.pups.forEach(p=>p.visible=true);
+      ud.pupM.color.setHex(0x1436b0);
+    } else {
+      gh.mesh.traverse(o=>{o.visible=true;});
+      ud.bodyMat.color.setHex(ud.baseColor); ud.bodyMat.emissive.setHex(ud.baseColor);
+      ud.pupM.color.setHex(0x1436b0);
+    }
+  });
+}
+
+/* ============================================================
+   9. HUD + BANNERS + FLOW
+   ============================================================ */
+function updateHUD(){
+  document.getElementById('score').textContent=score;
+  document.getElementById('lives').textContent='🐶'.repeat(Math.max(lives,0)) || '—';
+}
+const centerEl=document.getElementById('center');
+let bannerEl=null;
+function showBanner(text){
+  clearCenter();
+  bannerEl=document.createElement('div');
+  bannerEl.className='banner'; bannerEl.textContent=text;
+  bannerEl.style.color = text.includes('Over')?'var(--danger)':'var(--accent)';
+  centerEl.appendChild(bannerEl); centerEl.classList.remove('hidden');
+}
+function clearCenter(){ centerEl.innerHTML=''; bannerEl=null; }
+function showPanel(html){
+  clearCenter();
+  const p=document.createElement('div'); p.className='panel'; p.innerHTML=html;
+  centerEl.appendChild(p); centerEl.classList.remove('hidden');
+  return p;
+}
+function hideCenter(){ centerEl.classList.add('hidden'); clearCenter(); }
+
+function gameOver(){
+  mode='over';
+  const p=showPanel(
+    '<div class="eyebrow">final score</div>'+
+    '<h1>'+score+'</h1>'+
+    '<p>The pack got the better of the beagle this time.</p>'+
+    '<button id="againBtn">Play again</button>');
+  p.querySelector('#againBtn').onclick=()=>{ score=0;lives=3;updateHUD(); startLevel(0); };
+}
+
+/* ============================================================
+   10. INPUT
+   ============================================================ */
+const KEYMAP={
+  ArrowUp:DIRS.up, KeyW:DIRS.up, ArrowDown:DIRS.down, KeyS:DIRS.down,
+  ArrowLeft:DIRS.left, KeyA:DIRS.left, ArrowRight:DIRS.right, KeyD:DIRS.right
+};
+window.addEventListener('keydown', e=>{
+  const d=KEYMAP[e.code];
+  if(d){ e.preventDefault(); if(beagle){ beagle.queued={...d}; } }
+});
+
+/* ============================================================
+   11. MAIN LOOP
+   ============================================================ */
+const clock=new THREE.Clock();
+function tick(){
+  const dt=Math.min(clock.getDelta(),0.05);
+
+  if(mode==='play'){
+    updatePlay(dt);
+  } else if(mode==='ready'){
+    syncMeshes(dt);
+    stateTimer-=dt;
+    if(stateTimer<=0){ hideCenter(); mode='play'; }
+  } else if(mode==='dying'){
+    // spin-shrink the beagle
+    const k=Math.max(stateTimer/1.3,0);
+    beagleMesh.rotation.y+=dt*10; beagleMesh.scale.setScalar(0.9*k);
+    syncGhostsOnly(dt);
+    stateTimer-=dt;
+    if(stateTimer<=0){
+      beagleMesh.scale.setScalar(0.9);
+      if(lives<=0){ gameOver(); }
+      else { resetActors(); mode='ready'; stateTimer=1.3; showBanner('Ready!'); }
+    }
+  } else if(mode==='levelclear'){
+    syncMeshes(dt);
+    stateTimer-=dt;
+    if(stateTimer<=0){ startLevel(level+1); }
+  }
+
+  renderer.render(scene,camera);
+  requestAnimationFrame(tick);
+}
+function syncGhostsOnly(dt){
+  const t=performance.now()*0.001;
+  ghosts.forEach(gh=>{
+    const gw=entityWorld(gh.e);
+    gh.mesh.position.set(gw.x, 0.05+Math.sin(t*4+gh.e.tx)*0.04, gw.z);
+  });
+}
+
+/* ============================================================
+   12. BOOT
+   ============================================================ */
+document.getElementById('startBtn').onclick=()=>{
+  score=0; lives=3; updateHUD();
+  startLevel(0);
+};
+// build a static preview board behind the start panel
+buildBoard(0);
+updateHUD();
+tick();
+})();
+</script>
+</body>
+</html>
