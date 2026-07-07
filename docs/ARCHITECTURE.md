@@ -5,9 +5,13 @@
 src/game/*   pure logic (NO three.js)  ── unit-testable in Node
 src/render/* three.js scene + meshes   ── reads logic, never mutates it
 src/input/*  keyboard + touch          ── emits queued directions
-src/ui/*     DOM HUD + banners
+src/ui/*     DOM HUD + banners         ── owns the .hud + #center overlay (not the canvas)
 src/game/game.ts  integration/loop     ── owns GameState, wires it all together
 ```
+`createHud(root): Hud` (src/ui/hud.ts) is the only writer of the HUD/#center DOM.
+index.html ships the `.hud` stats (`#score`/`#level`/`#lives`) and an empty
+`#center` container; hud.ts injects banners/panels into `#center` at runtime.
+`game.ts` drives it purely through the `Hud` methods and never touches those nodes directly.
 
 ## Coordinate system
 Grid tile `(tx, ty)` maps to world:

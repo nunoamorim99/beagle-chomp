@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Beagle Chomp app icon master. Colours match src/game/config.ts COLORS. -->
+  <defs>
+    <radialGradient id="bgGlow" cx="50%" cy="42%" r="70%">
+      <stop offset="0%" stop-color="#171735"/>
+      <stop offset="100%" stop-color="#0b0b16"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Full-bleed background (bg: 0x0b0b16) -->
+  <rect x="0" y="0" width="1024" height="1024" fill="url(#bgGlow)"/>
+
+  <!-- Everything below sits inside the centre ~80% safe zone: 1024*0.1=102.4
+       margin on every side, i.e. within [102.4, 921.6]. The face group is
+       centred at (512, 512) with a max radius (ears included) of ~330px,
+       comfortably inside that 410px half-extent. -->
+  <g transform="translate(512,512)">
+    <!-- Ears (beagleBlack: 0x2a2320) — behind the head, floppy ellipses -->
+    <ellipse cx="-235" cy="30" rx="108" ry="200" fill="#2a2320" transform="rotate(-14 -235 30)"/>
+    <ellipse cx="235" cy="30" rx="108" ry="200" fill="#2a2320" transform="rotate(14 235 30)"/>
+
+    <!-- Head (beagleTan: 0xc98a3c) -->
+    <circle cx="0" cy="-10" r="300" fill="#c98a3c"/>
+
+    <!-- Tan cheeks blend already covered by head circle; add white muzzle blaze -->
+    <path d="M -150,-40 C -150,140 -95,270 0,290 C 95,270 150,140 150,-40 C 150,-140 95,-190 0,-190 C -95,-190 -150,-140 -150,-40 Z"
+          fill="#f4efe6"/>
+
+    <!-- Tan patch over eyes/forehead (classic beagle mask) -->
+    <path d="M -300,-40 C -300,-190 -180,-300 0,-300 C 180,-300 300,-190 300,-40 C 300,60 230,110 150,60 C 150,-40 95,-90 0,-90 C -95,-90 -150,-40 -150,60 C -230,110 -300,60 -300,-40 Z"
+          fill="#c98a3c"/>
+
+    <!-- Muzzle (beagleWhite: 0xf4efe6) -->
+    <ellipse cx="0" cy="150" rx="140" ry="120" fill="#f4efe6"/>
+
+    <!-- Nose (beagleBlack) -->
+    <ellipse cx="0" cy="80" rx="52" ry="38" fill="#2a2320"/>
+
+    <!-- Eyes (beagleBlack) with a small white catch-light for friendliness -->
+    <circle cx="-95" cy="10" r="34" fill="#2a2320"/>
+    <circle cx="95" cy="10" r="34" fill="#2a2320"/>
+    <circle cx="-84" cy="-2" r="9" fill="#f4efe6"/>
+    <circle cx="106" cy="-2" r="9" fill="#f4efe6"/>
+
+    <!-- Smile -->
+    <path d="M -55,175 Q 0,215 55,175" stroke="#2a2320" stroke-width="14" fill="none" stroke-linecap="round"/>
+  </g>
+</svg>

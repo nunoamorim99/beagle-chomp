@@ -9,3 +9,54 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--ink);
   overscroll-behavior:none; touch-action:none;
 }
 #scene{position:fixed;inset:0;display:block}
+
+/* HUD — sits above the canvas, transparent to pointer events (panels/buttons opt back in).
+   position:fixed elements ignore the body's own safe-area padding above (that
+   padding only insets the body's *box*, not viewport-fixed descendants), so
+   the inset has to be added directly here too — otherwise the stats sit
+   flush under a landscape notch/rounded corner on installed PWAs. */
+.hud{position:fixed;top:0;left:0;right:0;display:flex;justify-content:space-between;
+  align-items:flex-start;pointer-events:none;z-index:5;
+  padding:calc(18px + env(safe-area-inset-top)) calc(22px + env(safe-area-inset-right))
+    18px calc(22px + env(safe-area-inset-left));}
+.stat{font-family:ui-monospace,"SF Mono",monospace;line-height:1.3}
+.stat .k{font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted)}
+.stat .v{font-size:26px;font-weight:700}
+.lives{display:flex;gap:8px;font-size:24px}
+
+/* Mute toggle — a small icon button pinned below the Lives stat, at the
+   top-right of the HUD strip. Offset down past the Score/Lives row's own
+   height (~18px padding + ~16px label + ~31px value, see .stat rules above)
+   so it never overlaps the "Lives" text/dog emojis it sits under. The .hud
+   row itself is pointer-events:none (so it never blocks touch-steering the
+   maze underneath); this button opts back in, same as .panel/button do. */
+.mute-btn{position:fixed;top:calc(78px + env(safe-area-inset-top));
+  right:calc(22px + env(safe-area-inset-right));z-index:6;pointer-events:auto;
+  width:34px;height:34px;padding:0;display:flex;align-items:center;justify-content:center;
+  font-size:16px;line-height:1;border-radius:50%;
+  background:rgba(16,16,30,.55);border:1px solid rgba(255,255,255,.12);color:var(--ink);
+  box-shadow:0 4px 16px rgba(0,0,0,.35);backdrop-filter:blur(4px)}
+.mute-btn:hover{transform:translateY(-1px);filter:brightness(1.12)}
+.mute-btn:focus-visible{outline:2px solid #fff;outline-offset:2px}
+
+/* Center banners + panels */
+.center{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
+  z-index:10;pointer-events:none}
+.banner{font-size:clamp(30px,7vw,64px);font-weight:800;letter-spacing:-.02em;
+  text-shadow:0 4px 30px rgba(0,0,0,.6)}
+.panel{pointer-events:auto;text-align:center;background:rgba(16,16,30,.86);
+  border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:34px 40px;
+  max-width:440px;backdrop-filter:blur(6px)}
+.panel .eyebrow{font-family:ui-monospace,monospace;font-size:12px;letter-spacing:.28em;
+  text-transform:uppercase;color:var(--accent)}
+.panel h1{font-size:40px;font-weight:800;margin:6px 0 12px;letter-spacing:-.02em}
+.panel p{color:var(--muted);font-size:15px;line-height:1.7;margin-bottom:20px}
+.panel .keys{font-family:ui-monospace,monospace;color:var(--ink);font-size:13px;
+  margin-bottom:22px;line-height:2}
+.panel .keys b{color:var(--accent)}
+button{pointer-events:auto;font:inherit;font-weight:700;font-size:16px;color:#1a1206;
+  background:var(--accent);border:none;border-radius:999px;padding:13px 30px;cursor:pointer;
+  transition:transform .12s ease,filter .12s ease}
+button:hover{transform:translateY(-2px);filter:brightness(1.06)}
+button:focus-visible{outline:3px solid #fff;outline-offset:2px}
+.hidden{display:none!important}

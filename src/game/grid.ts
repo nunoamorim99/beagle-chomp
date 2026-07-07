@@ -1,6 +1,7 @@
 // Tile grid + walkability. Pure logic, no three.js.
 // Legend: # wall  . biscuit  o bone  ' ' void  P beagle  G ghost spawn
 //         = pen  - door  T tunnel  F fruit
+//         : shared pen-front floor (walkable by all)
 import data from "./mazes.json";
 
 export const COLS = data.cols;
@@ -46,6 +47,9 @@ export class Grid {
   walkable(tx: number, ty: number, forGhost: boolean): boolean {
     const c = this.charAt(tx, ty);
     if (c === "#" || c === " ") return false;
+    // NOTE: ":" (shared pen-front floor) is intentionally NOT in this blocked-for-beagle
+    // set — it's open floor crossable by both the beagle and ghosts. Only "G"/"="/"-"
+    // (spawn/pen/door) are beagle-blocked. Do not add ":" here.
     if (!forGhost && (c === "G" || c === "=" || c === "-")) return false;
     return true;
   }

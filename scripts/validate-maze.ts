@@ -40,8 +40,12 @@ MAZES.forEach((rows, idx) => {
   if (!P) { console.log("  ! no beagle spawn P"); ok = false; }
   if (!G) { console.log("  ! no ghost spawn G"); ok = false; }
   if (!P || !G) { allOk = false; return; }
+  // TS can't track assignments made inside the forEach closures above, so P/G
+  // narrow to `never` past this guard; re-bind with the declared shape.
+  const beagle: { x: number; y: number } = P;
+  const ghost: { x: number; y: number } = G;
 
-  const reach = flood(grid, P, false);
+  const reach = flood(grid, beagle, false);
   let unreachable = 0;
   rows.forEach((r, y) => r.split("").forEach((c, x) => {
     if ((c === "." || c === "o") && !reach.has(`${x},${y}`)) {
@@ -49,8 +53,8 @@ MAZES.forEach((rows, idx) => {
     }
   }));
 
-  const ghostReach = flood(grid, G, true);
-  if (!ghostReach.has(`${P.x},${P.y}`)) { console.log("  ! ghosts can't reach the board (pen sealed?)"); ok = false; }
+  const ghostReach = flood(grid, ghost, true);
+  if (!ghostReach.has(`${beagle.x},${beagle.y}`)) { console.log("  ! ghosts can't reach the board (pen sealed?)"); ok = false; }
 
   console.log(`  biscuits: ${biscuits}, bones: ${bones}, unreachable: ${unreachable}`);
   console.log(ok ? "  VALID" : "  NEEDS FIXING");

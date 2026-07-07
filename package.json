@@ -17,7 +17,9 @@
     "three": "^0.169.0"
   },
   "devDependencies": {
+    "@types/node": "^26.1.0",
     "@types/three": "^0.169.0",
+    "playwright": "^1.61.1",
     "tsx": "^4.22.5",
     "typescript": "^5.6.3",
     "vite": "^5.4.10",

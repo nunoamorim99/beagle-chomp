@@ -3,6 +3,20 @@ import { VitePWA } from "vite-plugin-pwa";
 
 export default defineConfig({
   base: "./",
+  build: {
+    rollupOptions: {
+      output: {
+        // Split three.js into its own vendor chunk. It's the bulk of the
+        // bundle and changes far less often than our game code, so isolating
+        // it lets the browser keep three.js cached across app updates (only
+        // the small app chunk re-downloads when we ship a change). Also clears
+        // the >500 kB single-chunk size warning by separating the two.
+        manualChunks: {
+          three: ["three"],
+        },
+      },
+    },
+  },
   plugins: [
     VitePWA({
       registerType: "autoUpdate",

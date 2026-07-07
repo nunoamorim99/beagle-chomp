@@ -10,6 +10,16 @@
   </head>
   <body>
     <canvas id="scene"></canvas>
+
+    <div class="hud">
+      <div class="stat"><div class="k">Score</div><div class="v" id="score">0</div></div>
+      <div class="stat" style="text-align:center"><div class="k">Map</div><div class="v" id="level">1</div></div>
+      <div class="stat" style="text-align:right"><div class="k">Lives</div><div class="lives v" id="lives">🐶🐶🐶</div></div>
+      <button type="button" class="mute-btn" id="muteBtn" aria-label="Mute sound" aria-pressed="false">🔊</button>
+    </div>
+
+    <div class="center hidden" id="center"></div>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
