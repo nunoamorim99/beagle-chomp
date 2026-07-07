@@ -20,7 +20,7 @@ export default defineConfig({
   plugins: [
     VitePWA({
       registerType: "autoUpdate",
-      includeAssets: ["favicon.svg", "icons/*.png"],
+      includeAssets: ["favicon-32.png", "favicon-180.png", "icons/*.png"],
       manifest: {
         name: "Beagle Chomp",
         short_name: "BeagleChomp",
