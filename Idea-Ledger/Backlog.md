@@ -216,6 +216,7 @@ _(nothing yet)_
 - **Dependencies:** [[IDEA-003]]
 - **History:**
   - **v1** (2026-07-07) — keyboard + swipe input, HUD, sound + mute button. _(a426ced)_
+  - **v2** (2026-07-08) — fix: HUD text (SCORE/MAP/LIVES labels + values) was low-contrast on the new sky-blue garden background. Switched to crisp white with a soft white halo, scoped to `.hud` so the dark-backed panel/banner are untouched. `style.css`. _(PENDING)_
 
 ### IDEA-006 — PWA: installable, offline, deployed ✅
 - **Area:** pwa
