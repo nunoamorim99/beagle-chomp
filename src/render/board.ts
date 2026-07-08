@@ -25,6 +25,10 @@ export interface Board {
    *  is entirely render-side — gameplay only tells us when/where to spawn or
    *  clear one, keeping fruit placement logic out of src/game. */
   fruit: THREE.Object3D | null;
+  /** IDEA-011 hedge-top decoration: a handful of InstancedMeshes (one per
+   *  bloom color + one for leaf specks). Purely cosmetic, lives for the
+   *  level like the walls do — not tracked per-tile like pellets. */
+  hedgeDecor: THREE.InstancedMesh[];
 }
 
 // IDEA-008 (daytime garden): emissive intensity dropped sharply (0.72 -> 0.2)
@@ -57,6 +61,40 @@ const matBiscuit = new THREE.MeshStandardMaterial({
   emissive: 0x6a4a18,
   emissiveIntensity: 0.55,
 });
+
+// IDEA-011 (hedge detail): a small, fixed palette of cheerful bloom colors
+// plus a leaf-speck green, each with a gentle emissive so they read as tiny
+// sunlit accents (matching the biscuit/fruit "soft glow" language) without
+// competing with the biscuits or the beagle for attention.
+const BLOOM_COLORS = [0xf4efe6, 0xf2d43a, 0xe8709a, 0xd8483f] as const; // white, yellow, pink, red
+const LEAF_SPECK_COLOR = 0x8fd15c;
+
+const geoBloom = new THREE.SphereGeometry(0.075, 6, 6);
+const geoLeafSpeck = new THREE.SphereGeometry(0.05, 6, 6);
+
+const matBlooms = BLOOM_COLORS.map(
+  (color) =>
+    new THREE.MeshStandardMaterial({
+      color,
+      roughness: 0.5,
+      emissive: color,
+      emissiveIntensity: 0.25,
+    }),
+);
+const matLeafSpeck = new THREE.MeshStandardMaterial({
+  color: LEAF_SPECK_COLOR,
+  roughness: 0.6,
+  emissive: 0x1c3a18,
+  emissiveIntensity: 0.2,
+});
+
+/** Small deterministic hash of a tile coord -> [0,1), stable across builds
+ *  (no Math.random/Date.now) so the garden layout doesn't shuffle every
+ *  level reload. */
+function hash01(x: number, y: number, seed: number): number {
+  const h = Math.sin(x * 127.1 + y * 311.7 + seed * 74.7) * 43758.5453;
+  return h - Math.floor(h);
+}
 
 /** A dog bone built from a cylinder shaft + four sphere "knuckles". */
 function makeBone(): THREE.Group {
@@ -165,7 +203,76 @@ export function buildBoard(scene: THREE.Object3D, grid: Grid): Board {
 
   scene.add(walls);
 
-  return { pelletMeshes, pelletsLeft, walls, floor, fruit: null };
+  const hedgeDecor = buildHedgeDecor(scene, grid);
+
+  return { pelletMeshes, pelletsLeft, walls, floor, fruit: null, hedgeDecor };
+}
+
+/**
+ * IDEA-011: sparse, tasteful hedge-top detail. Deterministically picks
+ * roughly 1-in-5 wall tiles to get a tiny bloom (one of a few cheerful
+ * colors), and a smaller fraction of those also get a leaf speck beside the
+ * bloom. Batched into one InstancedMesh per bloom color plus one for leaf
+ * specks — a handful of draw calls total, not one mesh per flower.
+ */
+function buildHedgeDecor(scene: THREE.Object3D, grid: Grid): THREE.InstancedMesh[] {
+  const BLOOM_CHANCE = 0.2; // ~1 in 5 hedge tiles gets a flower
+  const LEAF_CHANCE = 0.35; // of those, a bit over a third also get a leaf speck
+
+  // Bucket chosen tile positions per bloom color first, so we know exact
+  // instance counts before allocating each InstancedMesh.
+  const perColor: Array<Array<[number, number]>> = BLOOM_COLORS.map(() => []);
+  const leafSpots: Array<[number, number]> = [];
+
+  grid.cells.forEach((row, y) => row.forEach((c, x) => {
+    if (c !== "#") return;
+    const r = hash01(x, y, 1);
+    if (r >= BLOOM_CHANCE) return;
+    const colorIdx = Math.floor(hash01(x, y, 2) * BLOOM_COLORS.length) % BLOOM_COLORS.length;
+    perColor[colorIdx].push([x, y]);
+    if (hash01(x, y, 3) < LEAF_CHANCE) leafSpots.push([x, y]);
+  }));
+
+  const dummy = new THREE.Object3D();
+  const meshes: THREE.InstancedMesh[] = [];
+
+  perColor.forEach((spots, colorIdx) => {
+    if (spots.length === 0) return;
+    const mesh = new THREE.InstancedMesh(geoBloom, matBlooms[colorIdx], spots.length);
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+    spots.forEach(([x, y], i) => {
+      // Slight per-tile jitter (from the hash, not random) so blooms don't
+      // all sit dead-center on the hedge top — keeps it feeling planted
+      // rather than stamped.
+      const jx = (hash01(x, y, 4) - 0.5) * 0.4;
+      const jz = (hash01(x, y, 5) - 0.5) * 0.4;
+      dummy.position.set(worldX(x) + jx, WALL_H + 0.06, worldZ(y) + jz);
+      dummy.updateMatrix();
+      mesh.setMatrixAt(i, dummy.matrix);
+    });
+    scene.add(mesh);
+    meshes.push(mesh);
+  });
+
+  if (leafSpots.length > 0) {
+    const leafMesh = new THREE.InstancedMesh(geoLeafSpeck, matLeafSpeck, leafSpots.length);
+    leafMesh.castShadow = false;
+    leafMesh.receiveShadow = false;
+    leafSpots.forEach(([x, y], i) => {
+      const jx = (hash01(x, y, 6) - 0.5) * 0.4;
+      const jz = (hash01(x, y, 7) - 0.5) * 0.4;
+      dummy.position.set(worldX(x) + jx, WALL_H + 0.04, worldZ(y) + jz);
+      dummy.scale.set(1.3, 0.6, 1);
+      dummy.updateMatrix();
+      leafMesh.setMatrixAt(i, dummy.matrix);
+    });
+    dummy.scale.set(1, 1, 1);
+    scene.add(leafMesh);
+    meshes.push(leafMesh);
+  }
+
+  return meshes;
 }
 
 /**

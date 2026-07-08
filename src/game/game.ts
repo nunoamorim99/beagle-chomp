@@ -231,11 +231,12 @@ export class Game {
     return { grid, board, pellets, startPelletCount: pellets.size, fruitTiles, beagleSpawn, ghostSpawn };
   }
 
-  /** Removes every mesh owned by the previous level's board from the scene (walls, floor, remaining pellets, fruit) so buildLevel's replacement never leaks. */
+  /** Removes every mesh owned by the previous level's board from the scene (walls, floor, remaining pellets, fruit, hedge decor) so buildLevel's replacement never leaks. */
   private disposeLevel(level: LevelAssets): void {
     this.rig.scene.remove(level.board.walls, level.board.floor);
     level.board.pelletMeshes.forEach((p) => p.mesh.removeFromParent());
     if (level.board.fruit) this.rig.scene.remove(level.board.fruit);
+    level.board.hedgeDecor.forEach((m) => this.rig.scene.remove(m));
   }
 
   start(): void {

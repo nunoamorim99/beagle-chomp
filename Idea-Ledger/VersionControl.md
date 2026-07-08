@@ -18,6 +18,7 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
 - (2026-07-08) IDEA-008 v1 — garden theme is the new default look (hedge-green walls, soil-brown floor, sky-blue bg).
 - (2026-07-08) IDEA-006 v2 — fix: mobile canvas was 2× the viewport (only the corner showed); now fits the screen.
 - (2026-07-08) IDEA-005 v2 — fix: HUD text (score/map/lives) now readable on the sky-blue background.
+- (2026-07-08) IDEA-011 v1 — sparse flowers + leaves on the hedge tops (tasteful garden detailing).
 
 ## 📌 Planned
 > Forward-looking targets from `/plan-version`. Each is a checklist of IDEAs intended for a

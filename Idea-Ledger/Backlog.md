@@ -41,16 +41,6 @@ _(nothing yet)_
 - **Notes:** playful naming is part of the appeal. Sold through the shop ([[IDEA-012]]).
 - **Dependencies:** —
 
-### IDEA-011 — Detail & texture pass on the maps 💡
-- **Priority:** 🟢
-- **Area:** theme
-- **Description:** upgrade the appearance of the maps with more detail and texture — without
-  overdoing it. Things like leaves and flowers on the maze walls for the garden theme; a
-  future/neon-line look on the walls if a skin is future-themed. Keep it tasteful, theme-driven.
-- **Notes:** builds on the garden default ([[IDEA-008]]) and applies per map theme, so different
-  shop themes ([[IDEA-012]]) can carry their own detailing.
-- **Dependencies:** [[IDEA-008]]
-
 ### IDEA-012 — Shop system for skins & themes 💡
 - **Priority:** 🟡
 - **Area:** shop
@@ -147,6 +137,20 @@ _(nothing yet)_
 
 ## Delivered ✅
 > Already in production. Do NOT delete. Each keeps its version history.
+
+### IDEA-011 — Detail & texture pass on the maps ✅
+- **Area:** theme
+- **Description:** upgrade the appearance of the maps with more detail and texture — without
+  overdoing it. Things like leaves and flowers on the maze walls for the garden theme; a
+  future/neon-line look on the walls if a skin is future-themed. Keep it tasteful, theme-driven.
+- **Notes:** shipped sparse flower blooms (white/yellow/pink/red) + occasional leaf specks on the
+  hedge tops — ~1 in 5 wall tiles, placed by a stable positional hash so the layout is consistent
+  across level rebuilds. Batched into one InstancedMesh per color (walls stay a single InstancedMesh).
+  Builds on the garden default ([[IDEA-008]]); the per-theme detailing hook is where future shop
+  themes ([[IDEA-012]]) will carry their own look (e.g. neon lines for a future theme). Verified live.
+- **Dependencies:** [[IDEA-008]]
+- **History:**
+  - **v1** (2026-07-08) — sparse hedge-top flowers + leaf specks (positional-hash placement, per-color InstancedMesh); level-teardown cleanup in game.ts. `board.ts`, `game.ts`. _(PENDING)_
 
 ### IDEA-008 — Garden theme as the default maze look ✅
 - **Area:** theme
