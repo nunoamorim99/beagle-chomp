@@ -150,7 +150,7 @@ _(nothing yet)_
   themes ([[IDEA-012]]) will carry their own look (e.g. neon lines for a future theme). Verified live.
 - **Dependencies:** [[IDEA-008]]
 - **History:**
-  - **v1** (2026-07-08) — sparse hedge-top flowers + leaf specks (positional-hash placement, per-color InstancedMesh); level-teardown cleanup in game.ts. `board.ts`, `game.ts`. _(PENDING)_
+  - **v1** (2026-07-08) — sparse hedge-top flowers + leaf specks (positional-hash placement, per-color InstancedMesh); level-teardown cleanup in game.ts. `board.ts`, `game.ts`. _(db12a3b)_
 
 ### IDEA-008 — Garden theme as the default maze look ✅
 - **Area:** theme
