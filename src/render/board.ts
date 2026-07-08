@@ -27,24 +27,24 @@ export interface Board {
   fruit: THREE.Object3D | null;
 }
 
-// Emissive nudged up a touch (0.6 -> 0.72) so the walls keep reading as
-// glowing neon under the warmer/softer M6 lighting rig (scene.ts) instead of
-// flattening out — roughness/metalness/base color untouched.
+// IDEA-008 (daytime garden): emissive intensity dropped sharply (0.72 -> 0.2)
+// so the hedges read as matte, sunlit foliage under daylight instead of
+// glowing neon — roughness/metalness/base color untouched.
 const matWall = new THREE.MeshStandardMaterial({
   color: COLORS.wall,
   roughness: 0.5,
   metalness: 0.1,
   emissive: COLORS.wallEmissive,
-  emissiveIntensity: 0.72,
+  emissiveIntensity: 0.2,
 });
-// A faint warm emissive added (floor had none) so the tile bed picks up a
-// little ambient glow of its own instead of reading as pure flat matte
-// under the atmosphere pass — still overwhelmingly a diffuse, roughness: 1
-// surface, this is just a whisper of lift.
+// IDEA-008 (daytime garden): emissive swapped from a cold blue-black
+// (0x0a0a18) to a warm dark brown so the soil reads as sunlit earth rather
+// than picking up a cold night cast — still a faint whisper of lift, not a
+// glow, on an otherwise diffuse, roughness: 1 surface.
 const matFloor = new THREE.MeshStandardMaterial({
   color: COLORS.floor,
   roughness: 1,
-  emissive: 0x0a0a18,
+  emissive: 0x2a1a0c,
   emissiveIntensity: 0.3,
 });
 const geoBiscuit = new THREE.SphereGeometry(0.13, 12, 12);

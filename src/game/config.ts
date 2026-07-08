@@ -24,15 +24,18 @@ export const TIMING = {
 export const START_LIVES = 3;
 
 // Palette (hex) — shared by renderer and UI
+// Bright daytime garden (IDEA-008): soft sky, hedge-green walls, warm soil
+// floor. Everything else in render/* reads these values, so a future theme
+// system (IDEA-012) can swap the palette without touching this shape.
 export const COLORS = {
-  bg: 0x0b0b16,
-  wall: 0x2b2b6b,
-  wallEmissive: 0x14143a,
-  floor: 0x111120,
+  bg: 0x9ecbe8,
+  wall: 0x3f8f3a,
+  wallEmissive: 0x0e2a0e,
+  floor: 0x6b4a2f,
   beagleTan: 0xc98a3c,
   beagleWhite: 0xf4efe6,
   beagleBlack: 0x2a2320,
-  biscuit: 0xe3b778,
+  biscuit: 0xf0cf8e,
   ghostRose: 0xe0577a,
   ghostTeal: 0x53c7c0,
   ghostAmber: 0xe8a23d,

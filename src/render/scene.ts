@@ -124,13 +124,12 @@ const BACKDROP_RADIUS = 260;
 // cutoff, widened from the prototype's 200 so BACKDROP_RADIUS's far side
 // never clips even at the dolly distances above.
 const CAMERA_FAR = 420;
-// Vertical-gradient backdrop colors: the bottom is the same near-black as the
-// scene background, so from the game's steep top-down camera (which mostly
-// sees the low part of the dome behind/around the maze) the surround reads as
-// clean dark and the maze stays crisp against it. The paler violet top only
-// shows if you look up, which the fixed camera never does — so this is a
-// deliberately near-invisible "hint of depth," not a visible glow.
-const BACKDROP_TOP_COLOR = new THREE.Color(0x1c1a3a);
+// Vertical-gradient backdrop colors: the bottom matches the scene background
+// (COLORS.bg, a soft daytime sky blue), and the top is a paler, brighter blue
+// so the dome reads as an open daytime sky rather than a night dome. The top
+// only shows if you look up, which the fixed camera never does — so this is
+// still mostly a "hint of depth" above the crisp board, just tuned for day.
+const BACKDROP_TOP_COLOR = new THREE.Color(0xcfe9f7);
 const BACKDROP_BOTTOM_COLOR = new THREE.Color(COLORS.bg);
 
 function makeBackdrop(): THREE.Mesh {
@@ -178,10 +177,10 @@ export function createScene(canvas: HTMLCanvasElement): SceneRig {
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  // Slightly lower than the prototype's 1.05: the warmer/brighter light rig
-  // below reads as blown-out at the old exposure, so the two are tuned
-  // together rather than the exposure alone compensating for hotter lights.
-  renderer.toneMappingExposure = 0.98;
+  // IDEA-008 (daytime garden): nudged down a hair from 0.98 now that the
+  // hemisphere/key intensities were lifted for the brighter daylight palette
+  // — keeps the sunlit board from blowing out highlights on walls/floor.
+  renderer.toneMappingExposure = 0.92;
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(COLORS.bg);
@@ -202,14 +201,14 @@ export function createScene(canvas: HTMLCanvasElement): SceneRig {
   camera.position.copy(BASE_POS);
   camera.lookAt(BASE_LOOK);
 
-  // Hemisphere: warmed slightly (sky pushed toward a softer lavender, ground
-  // bounce lifted a touch) so ambient fill feels cozier instead of cold blue.
-  scene.add(new THREE.HemisphereLight(0xa9a8ff, 0x141024, 0.5));
-  // Key: warmed and softened a hair from the prototype's 0xfff0d8 / 1.05 —
-  // still a warm "candle/neon" tone but slightly less intense now that a fill
-  // light is picking up the shadow side, so the pair reads warm without
-  // blowing out the wall emissive.
-  const key = new THREE.DirectionalLight(0xffe8c4, 0.95);
+  // IDEA-008 (daytime garden): hemisphere pushed to a bright daylight
+  // sky/white above and a warm earthy-green ground bounce below (was a cool
+  // lavender/indigo pair tuned for a neon-night board); intensity lifted a
+  // touch since we lost the dark backdrop to soak up ambient light.
+  scene.add(new THREE.HemisphereLight(0xd8f0ff, 0x4a3a20, 0.65));
+  // Key: shifted from a candle-warm amber to a neutral, slightly-warm
+  // sunlight tone, and lifted a touch for a bright daytime read.
+  const key = new THREE.DirectionalLight(0xfff4e0, 1.1);
   key.position.set(6, 20, 10);
   key.castShadow = true;
   key.shadow.mapSize.set(2048, 2048);
@@ -222,11 +221,12 @@ export function createScene(canvas: HTMLCanvasElement): SceneRig {
   key.shadow.bias = -0.0005;
   scene.add(key);
 
-  // Cool rim/fill from the opposite side and lower angle: no shadow casting
-  // (a second shadow-casting light would double the shadow-map cost for a
-  // subtle effect), just enough to lift the walls' far faces off pure black
-  // so they read as dimensional neon rather than flat-lit cutouts.
-  const rim = new THREE.DirectionalLight(0x5f6fe0, 0.32);
+  // Rim/fill from the opposite side and lower angle, shifted from a cool
+  // indigo to a soft sky-blue so it reads as ambient daylight bounce rather
+  // than a night-time cool rim: no shadow casting (a second shadow-casting
+  // light would double the shadow-map cost for a subtle effect), just enough
+  // to lift the walls' far faces off pure black so they stay dimensional.
+  const rim = new THREE.DirectionalLight(0xaed4f0, 0.35);
   rim.position.set(-8, 10, -12);
   scene.add(rim);
 
@@ -239,7 +239,15 @@ export function createScene(canvas: HTMLCanvasElement): SceneRig {
   function resize(): void {
     const w = window.innerWidth;
     const h = window.innerHeight;
-    renderer.setSize(w, h, false);
+    // updateStyle defaults to true here (deliberately, no `false` arg): three.js
+    // must write canvas.style.width/height = `${w}px`/`${h}px` so the element's
+    // CSS/displayed size matches the logical viewport. The drawing buffer still
+    // gets scaled by the renderer's pixelRatio (set in createScene) for
+    // sharpness, but only the buffer — leaving the CSS size at its default
+    // (== buffer size) blows the on-screen canvas up to viewport*pixelRatio on
+    // any dpr>1 device (all phones), so only the top-left portion of the
+    // rendered frame is visible on screen.
+    renderer.setSize(w, h);
     const aspect = w / h;
     camera.aspect = aspect;
 
