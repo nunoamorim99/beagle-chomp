@@ -160,7 +160,7 @@ _(nothing yet)_
   ([[IDEA-012]]). Verified live in-browser (desktop + phone) before shipping.
 - **Dependencies:** —
 - **History:**
-  - **v1** (2026-07-08) — daytime garden palette: sky-blue bg, hedge-green walls, soil-brown floor; lighting retuned to daylight. `config.ts`, `board.ts`, `scene.ts`. _(COMMIT_HASH)_
+  - **v1** (2026-07-08) — daytime garden palette: sky-blue bg, hedge-green walls, soil-brown floor; lighting retuned to daylight. `config.ts`, `board.ts`, `scene.ts`. _(8226b88)_
 
 ### IDEA-001 — Headless logic foundation (maze validation + gameplay sim) ✅
 - **Area:** testing
@@ -227,7 +227,7 @@ _(nothing yet)_
 - **Dependencies:** [[IDEA-004]], [[IDEA-005]]
 - **History:**
   - **v1** (2026-07-07) — PWA config, install UX, GitHub Pages deploy workflow. _(a426ced)_
-  - **v2** (2026-07-08) — fix: canvas was sized to `viewport × devicePixelRatio` on phones (only the top-left corner was visible). `renderer.setSize(w, h)` now sets the canvas CSS size to the logical viewport while the buffer stays 2× for sharpness. Verified full-maze framing in portrait + landscape. `scene.ts`. _(COMMIT_HASH)_
+  - **v2** (2026-07-08) — fix: canvas was sized to `viewport × devicePixelRatio` on phones (only the top-left corner was visible). `renderer.setSize(w, h)` now sets the canvas CSS size to the logical viewport while the buffer stays 2× for sharpness. Verified full-maze framing in portrait + landscape. `scene.ts`. _(8226b88)_
 
 ### IDEA-007 — Beagle app icon & favicon artwork ✅
 - **Area:** brand
