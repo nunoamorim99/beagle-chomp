@@ -15,20 +15,11 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
 > Every `/ship` drops a line here so nothing shipped goes uncounted. When a release is cut, **all**
 > lines here roll up into the numbered version below and this section is cleared (hold a line back
 > only if you explicitly choose to).
-- (2026-07-08) IDEA-008 v1 — garden theme is the new default look (hedge-green walls, soil-brown floor, sky-blue bg).
-- (2026-07-08) IDEA-006 v2 — fix: mobile canvas was 2× the viewport (only the corner showed); now fits the screen.
-- (2026-07-08) IDEA-005 v2 — fix: HUD text (score/map/lives) now readable on the sky-blue background.
-- (2026-07-08) IDEA-011 v1 — sparse flowers + leaves on the hedge tops (tasteful garden detailing).
+_(nothing yet — all shipped work is captured in the versions below)_
 
 ## 📌 Planned
 > Forward-looking targets from `/plan-version`. Each is a checklist of IDEAs intended for a
 > future numbered release. Items move to Unreleased as they ship.
-
-### v1.1 — Garden look [planned]
-A quick visual identity win: re-skin the maze to a garden and add tasteful detail. Render-only,
-no new systems — the base every later map theme builds on.
-- [x] IDEA-008 — Garden theme as the default maze look (brown floor, green walls) — shipped 2026-07-08
-- [ ] IDEA-011 — Detail & texture pass on the maps (leaves/flowers; neon for future themes)
 
 ### v2.0 — The Garden [planned]
 The cosmetics economy loop: skins to earn toward, coins to earn them with, a shop to spend in, and
@@ -41,6 +32,14 @@ a real menu to reach it all. A complete self-contained loop with no backend depe
 - [ ] IDEA-021 — Main menu (modes · shop · profile · scoreboard)
 
 ## Version history
+
+### v1.1 — Garden look (2026-07-08)
+The maze becomes a bright daytime garden — the game's new visual identity — plus mobile and
+readability fixes so it looks right everywhere.
+- **IDEA-008** — garden theme as the default look: hedge-green walls, soil-brown floor, sky-blue sky, daylight lighting.
+- **IDEA-011** — tasteful hedge-top detailing: sparse flowers (white/yellow/pink/red) + leaf specks.
+- **IDEA-005 v2** — fix: HUD text (score/map/lives) is now readable on the sky-blue background.
+- **IDEA-006 v2** — fix: mobile canvas was 2× the viewport (only the corner was visible); now fits the screen.
 
 ### v1.0 — Playable Beagle Chomp (2026-07-07)
 The full maze-chase game shipped: guide a beagle around a maze, eat every biscuit to clear the map,
