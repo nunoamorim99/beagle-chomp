@@ -5,6 +5,9 @@ export interface Hud {
   setScore(n: number): void;
   setLevel(label: string): void;
   setLives(n: number): void;
+  /** IDEA-016/IDEA-017: the persistent coin wallet display (distinct from
+   *  score — coins survive across runs). */
+  setCoins(n: number): void;
   showBanner(text: string): void;
   showPanel(html: string): HTMLElement;
   hideCenter(): void;
@@ -27,6 +30,7 @@ export function createHud(root: HTMLElement): Hud {
   const scoreEl = require<HTMLElement>("score");
   const levelEl = require<HTMLElement>("level");
   const livesEl = require<HTMLElement>("lives");
+  const coinsEl = require<HTMLElement>("coins");
   const centerEl = require<HTMLElement>("center");
 
   function clearCenter(): void {
@@ -45,6 +49,10 @@ export function createHud(root: HTMLElement): Hud {
     setLives(n: number): void {
       // one dog per life; an em dash when the beagle is out of lives (prototype §9)
       livesEl.textContent = "🐶".repeat(Math.max(n, 0)) || "—";
+    },
+
+    setCoins(n: number): void {
+      coinsEl.textContent = String(Math.max(n, 0));
     },
 
     showBanner(text: string): void {

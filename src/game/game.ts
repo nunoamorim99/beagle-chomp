@@ -15,7 +15,8 @@
 // the two validated mazes (looping, with a lap indicator).
 import { Grid, COLS, ROWS, worldX, worldZ, type Vec2 } from "./grid";
 import { MAZES, MAZE_COUNT } from "./mazes";
-import { SPEEDS, SCORE, TIMING, COLORS } from "./config";
+import { SPEEDS, SCORE, TIMING, COLORS, COINS, COIN_THRESHOLDS } from "./config";
+import { coinsDueFromScore } from "./coins";
 import { type GameMode, createInitialGameState } from "./state";
 import { makeEntity, stepEntity, entityWorld, type Entity } from "./movement";
 import { chooseGhostDir, type Ghost, type GlobalMode } from "./ghostAI";
@@ -23,7 +24,16 @@ import { attachKeyboard } from "../input/keyboard";
 import { attachTouch } from "../input/touch";
 import { createScene, type SceneRig } from "../render/scene";
 import { createEffects, type Effects } from "../render/effects";
-import { buildBoard, eatPellet, spawnFruit, clearFruit, spinDecor, type Board } from "../render/board";
+import {
+  buildBoard,
+  eatPellet,
+  spawnFruit,
+  clearFruit,
+  spawnCoin,
+  clearCoin,
+  spinDecor,
+  type Board,
+} from "../render/board";
 import {
   makeBeagle,
   makeGhost,
@@ -37,7 +47,7 @@ import {
 import { createHud, type Hud } from "../ui/hud";
 import { createSound, attachMuteButton, type Sound } from "../ui/sound";
 import { attachSkinButton, attachEnemyButton } from "../ui/skin";
-import { initProfileFromStorage } from "./profileStore";
+import { initProfileFromStorage, getCoins, addCoins } from "./profileStore";
 import { getEquippedEnemySkinId } from "./cosmetics";
 
 // Scatter-corner targets per ghost personality (prototype section 7,
@@ -129,6 +139,26 @@ export class Game {
   // fruit-tile list to place new ones).
   private fruitTile: Vec2 | null = null;
 
+  // IDEA-016/IDEA-017: current maze coin tile, if any (board.coin is only the
+  // mesh — mirrors fruitTile exactly).
+  private coinTile: Vec2 | null = null;
+
+  // IDEA-017 follow-up: countdown (seconds) until the current coin
+  // auto-despawns if not grabbed (COINS.lifespanSeconds) — a "grab it quick"
+  // bonus, unlike the fruit which lingers until eaten. Only meaningful while
+  // coinTile is non-null; only ticks during actual "play" (see updatePlay),
+  // never during ready/dying/levelclear/start so a coin can't silently expire
+  // while the player isn't even moving yet.
+  private coinTimer = 0;
+
+  // IDEA-016: how many coins this run's score has already banked, so
+  // advanceSchedule-adjacent score changes only award the *newly* crossed
+  // COINS.perPoints thresholds (coinsDueFromScore(this.score, ...) minus this
+  // is the delta to bank). Reset to 0 whenever score resets to 0 (new game /
+  // play-again) — NOT on level transitions, since score (and this counter)
+  // carry across levels within one run.
+  private coinsAwardedFromScore = 0;
+
   constructor(canvas: HTMLCanvasElement) {
     this.rig = createScene(canvas);
     this.hud = createHud(document.body);
@@ -197,9 +227,14 @@ export class Game {
     const initial = createInitialGameState();
     this.score = initial.score;
     this.lives = initial.lives;
+    this.coinsAwardedFromScore = 0;
     this.hud.setScore(this.score);
     this.hud.setLives(this.lives);
     this.hud.setLevel("1");
+    // IDEA-016/IDEA-017: reflect the persisted wallet immediately on boot,
+    // before any run-scoped scoring/pickups happen (coins survive across runs
+    // even though score/lives reset above).
+    this.hud.setCoins(getCoins());
 
     // Pose the beagle + spawn the ghosts for the idle preview behind the
     // start panel (prototype boot never calls resetActors before Start, but
@@ -232,6 +267,7 @@ export class Game {
       const fresh = createInitialGameState();
       this.score = fresh.score;
       this.lives = fresh.lives;
+      this.coinsAwardedFromScore = 0;
       this.hud.setScore(this.score);
       this.hud.setLives(this.lives);
       this.startLevel(0);
@@ -265,11 +301,12 @@ export class Game {
     return { grid, board, pellets, startPelletCount: pellets.size, fruitTiles, beagleSpawn, ghostSpawn };
   }
 
-  /** Removes every mesh owned by the previous level's board from the scene (walls, floor, remaining pellets, fruit, hedge decor) so buildLevel's replacement never leaks. */
+  /** Removes every mesh owned by the previous level's board from the scene (walls, floor, remaining pellets, fruit, coin, hedge decor) so buildLevel's replacement never leaks. */
   private disposeLevel(level: LevelAssets): void {
     this.rig.scene.remove(level.board.walls, level.board.floor);
     level.board.pelletMeshes.forEach((p) => p.mesh.removeFromParent());
     if (level.board.fruit) this.rig.scene.remove(level.board.fruit);
+    if (level.board.coin) this.rig.scene.remove(level.board.coin);
     level.board.hedgeDecor.forEach((m) => this.rig.scene.remove(m));
   }
 
@@ -337,6 +374,23 @@ export class Game {
 
     if (this.level.board.fruit) clearFruit(this.level.board, this.rig.scene);
     this.fruitTile = null;
+
+    this.despawnCoin();
+  }
+
+  // ---- maze coin lifecycle helper (IDEA-017 follow-up: time-limited coin) ----
+
+  /**
+   * Clears the current maze coin (mesh + tile + countdown), if any — the one
+   * place all three fields are reset together, so every call site (pickup in
+   * eatAt, teardown in resetActors, and the lifespan expiry in updatePlay)
+   * stays consistent and a stale timer can never "carry over" onto a coin
+   * spawned later. Safe to call when there is no coin on the board.
+   */
+  private despawnCoin(): void {
+    if (this.level.board.coin) clearCoin(this.level.board, this.rig.scene);
+    this.coinTile = null;
+    this.coinTimer = 0;
   }
 
   // ---- live enemy-skin switch (IDEA-009, temporary switcher) ----
@@ -373,6 +427,7 @@ export class Game {
   private onBeagleArrive = (e: Entity): void => {
     this.eatAt(e.tx, e.ty);
     this.maybeSpawnFruit();
+    this.maybeSpawnCoin();
   };
 
   private eatAt(tx: number, ty: number): void {
@@ -393,6 +448,7 @@ export class Game {
           this.sound.biscuit();
         }
         this.hud.setScore(this.score);
+        this.maybeAwardCoinsFromScore();
         if (this.level.pellets.size <= 0) this.levelClear();
       }
     }
@@ -404,8 +460,106 @@ export class Game {
       this.effects.pelletEaten(worldX(tx), worldZ(ty), "biscuit");
       this.effects.scorePopup(worldX(tx), worldZ(ty), SCORE.fruit);
       this.hud.setScore(this.score);
+      this.maybeAwardCoinsFromScore();
       this.sound.fruit();
     }
+
+    // IDEA-017: maze coin pickup — a free coin, no points (mirrors the fruit
+    // block above, but banks straight to the persisted wallet instead of score).
+    // Grabbed in time, i.e. before the lifespan countdown (see updatePlay)
+    // reaches 0 — despawnCoin() clears the tile/timer together so there's no
+    // stale countdown left running against whatever coin spawns next.
+    if (this.coinTile && this.coinTile.x === tx && this.coinTile.y === ty) {
+      this.despawnCoin();
+      addCoins(COINS.pickupValue);
+      this.hud.setCoins(getCoins());
+      this.effects.pelletEaten(worldX(tx), worldZ(ty), "biscuit");
+      this.sound.coin();
+    }
+  }
+
+  // ---- coins (IDEA-016 points->coins, IDEA-017 maze pickup) ----
+
+  /**
+   * Banks any coins newly earned since the last check, based on cumulative
+   * run score crossing COINS.perPoints thresholds (IDEA-016). Called after
+   * every score change. Handles a single scoring event crossing multiple
+   * thresholds at once (e.g. a big ghost-eat chain) by banking the full
+   * delta in one call. Coins are persisted immediately (see profileStore's
+   * addCoins) — they survive even if the beagle dies right after.
+   */
+  private maybeAwardCoinsFromScore(): void {
+    const due = coinsDueFromScore(this.score, COINS.perPoints);
+    if (due > this.coinsAwardedFromScore) {
+      const earned = due - this.coinsAwardedFromScore;
+      this.coinsAwardedFromScore = due;
+      addCoins(earned);
+      this.hud.setCoins(getCoins());
+      this.sound.coin();
+    }
+  }
+
+  // ---- maze coin pickup spawn (IDEA-017, mirrors maybeSpawnFruit) ----
+
+  private maybeSpawnCoin(): void {
+    if (this.level.board.coin) return;
+    const eaten = this.level.startPelletCount - this.level.pellets.size;
+    if (!COIN_THRESHOLDS.includes(eaten as (typeof COIN_THRESHOLDS)[number])) return;
+
+    const tile = this.pickRandomCoinTile();
+    if (!tile) return; // pellets set somehow empty — shouldn't happen mid-play
+
+    this.coinTile = tile;
+    this.coinTimer = COINS.lifespanSeconds;
+    spawnCoin(this.level.board, this.rig.scene, tile.x, tile.y);
+  }
+
+  /**
+   * Picks a random walkable, reachable tile for a maze coin: any tile still
+   * holding a pellet (this.level.pellets — the validated reachable-floor set;
+   * every entry is real open floor the beagle can reach, and it naturally
+   * excludes walls/pen oddities). Re-picks a few times if the draw collides
+   * with the current fruit tile or the beagle's own tile (so a coin can't
+   * spawn already-eaten the instant it appears), then accepts whatever it
+   * has rather than looping forever. Returns null only if there are no
+   * pellets left at all (shouldn't happen mid-play — the level ends at 0).
+   */
+  private pickRandomCoinTile(): Vec2 | null {
+    const keys = Array.from(this.level.pellets);
+    if (keys.length === 0) return null;
+
+    const keyToTile = (key: string): Vec2 => {
+      const [xs, ys] = key.split(",");
+      return { x: Number(xs), y: Number(ys) };
+    };
+
+    let tile = keyToTile(keys[(Math.random() * keys.length) | 0]);
+    let guard = 0;
+    while (
+      guard < 8 &&
+      keys.length > 1 &&
+      ((this.fruitTile && tile.x === this.fruitTile.x && tile.y === this.fruitTile.y) ||
+        (tile.x === this.beagle.tx && tile.y === this.beagle.ty))
+    ) {
+      tile = keyToTile(keys[(Math.random() * keys.length) | 0]);
+      guard++;
+    }
+    return tile;
+  }
+
+  // ---- maze coin lifespan countdown (IDEA-017 follow-up) ----
+
+  /**
+   * Ticks the current coin's despawn countdown (only called from updatePlay,
+   * i.e. only during actual "play" — never ready/dying/levelclear/start, so a
+   * coin can't expire while the player isn't even moving yet). Auto-despawns
+   * the coin with no award once the timer runs out — a distinct, urgent
+   * "grab it quick" bonus rather than a permanent fixture like the fruit.
+   */
+  private tickCoinLifespan(dt: number): void {
+    if (!this.coinTile) return;
+    this.coinTimer -= dt;
+    if (this.coinTimer <= 0) this.despawnCoin();
   }
 
   // ---- fright window (prototype triggerFright/e_reverse, line 485) ----
@@ -480,6 +634,7 @@ export class Game {
           this.ghostEatChain++;
           this.score += SCORE.ghostBase * Math.pow(2, Math.min(this.ghostEatChain - 1, 3));
           this.hud.setScore(this.score);
+          this.maybeAwardCoinsFromScore();
           this.effects.ghostEaten(gw.x, gw.z, SCORE.ghostBase * Math.pow(2, Math.min(this.ghostEatChain - 1, 3)));
           // 0-based within the fright window: ghostEatChain was just
           // incremented above, so the first ghost eaten has chain=1 here ->
@@ -525,6 +680,7 @@ export class Game {
       const fresh = createInitialGameState();
       this.score = fresh.score;
       this.lives = fresh.lives;
+      this.coinsAwardedFromScore = 0;
       this.hud.setScore(this.score);
       this.hud.setLives(this.lives);
       this.startLevel(0);
@@ -535,6 +691,7 @@ export class Game {
 
   private updatePlay(dt: number): void {
     this.advanceSchedule(dt);
+    this.tickCoinLifespan(dt);
 
     stepEntity(this.beagle, dt, this.level.grid, false, this.onBeagleArrive);
     syncToEntity(this.beagleMesh, this.beagle, dt);

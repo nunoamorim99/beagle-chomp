@@ -73,6 +73,9 @@ export interface Sound {
   biscuit(): void;
   bone(): void;
   fruit(): void;
+  /** IDEA-016/IDEA-017: coin banked/collected — bright metallic "ching",
+   *  distinct from fruit()'s sweep and bone()'s square-wave chime. */
+  coin(): void;
   frightStart(): void;
   eatGhost(chainIndex: number): void;
   death(): void;
@@ -200,6 +203,16 @@ export function createSound(): Sound {
     });
   }
 
+  function coin(): void {
+    // Bright, short metallic "ching": a quick two-note sine chime pitched
+    // higher than fruit()'s sweep and using discrete notes (like bone()) so
+    // it's clearly its own cue rather than a variant of either.
+    playSequence([
+      { type: "sine", freq: 1180, duration: 0.07, peak: 0.16, attack: 0.003 },
+      { type: "sine", freq: 1580, duration: 0.11, peak: 0.18, attack: 0.003, delay: 0.05 },
+    ]);
+  }
+
   function frightStart(): void {
     // "Ghosts scared" cue: a downward whoop (siren-ish) — sawtooth swept from
     // high to low reads as an alarm/power-shift rather than a pickup.
@@ -312,6 +325,7 @@ export function createSound(): Sound {
     biscuit,
     bone,
     fruit,
+    coin,
     frightStart,
     eatGhost,
     death,

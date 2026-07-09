@@ -19,8 +19,9 @@ import {
   setEquippedEnemySkinId,
   cycleEnemySkinId,
 } from "../src/game/cosmetics";
-import { COLORS } from "../src/game/config";
-import { loadProfile } from "../src/game/profileStore";
+import { COLORS, COINS } from "../src/game/config";
+import { loadProfile, getCoins, addCoins } from "../src/game/profileStore";
+import { coinsDueFromScore } from "../src/game/coins";
 
 let failures = 0;
 function check(label: string, cond: boolean): void {
@@ -155,6 +156,73 @@ console.log("\n=== profileStore.ts (Node, no window/localStorage) ===");
   const merged = { ...existing, equippedEnemySkinId: "beetle" };
   check("read-modify-write preserves beagle field when only enemy field changes", merged.equippedBeagleSkinId === "cookie");
   check("read-modify-write applies the new enemy field", merged.equippedEnemySkinId === "beetle");
+}
+
+console.log("\n=== coins.ts (IDEA-016 points->coins math) ===");
+{
+  check("coinsDueFromScore(0, 1000) === 0", coinsDueFromScore(0, 1000) === 0);
+  check("coinsDueFromScore(999, 1000) === 0", coinsDueFromScore(999, 1000) === 0);
+  check("coinsDueFromScore(1000, 1000) === 1", coinsDueFromScore(1000, 1000) === 1);
+  check("coinsDueFromScore(1999, 1000) === 1", coinsDueFromScore(1999, 1000) === 1);
+  check("coinsDueFromScore(2500, 1000) === 2 (crossing multiple at once)", coinsDueFromScore(2500, 1000) === 2);
+  check("coinsDueFromScore(10000, 1000) === 10", coinsDueFromScore(10000, 1000) === 10);
+  check("coinsDueFromScore(-50, 1000) === 0 (negative score)", coinsDueFromScore(-50, 1000) === 0);
+  check("coinsDueFromScore(NaN, 1000) === 0", coinsDueFromScore(NaN, 1000) === 0);
+  check("coinsDueFromScore(500, 0) === 0 (guards a bogus perPoints)", coinsDueFromScore(500, 0) === 0);
+  check("coinsDueFromScore(500, -100) === 0 (guards a negative perPoints)", coinsDueFromScore(500, -100) === 0);
+  check(
+    "coinsDueFromScore matches config.ts's COINS.perPoints for a 3450 score -> 3 coins",
+    coinsDueFromScore(3450, COINS.perPoints) === 3,
+  );
+}
+
+console.log("\n=== profileStore.ts coins (Node, no window/localStorage) ===");
+{
+  // No `window` in this Node run, so getCoins()/loadProfile() degrade to 0 —
+  // same "storage unavailable" path exercised above for skins.
+  check("loadProfile() in Node (no window) returns coins:0 by default", loadProfile().coins === 0);
+  check("getCoins() in Node (no window) returns 0", getCoins() === 0);
+
+  // addCoins is guarded the same way every other storage write here is: with
+  // no `window`, saveCoins's try/catch swallows the failure and the call
+  // never throws, even though the write itself has nowhere to persist to.
+  let threw = false;
+  try {
+    addCoins(5);
+  } catch {
+    threw = true;
+  }
+  check("addCoins(5) in Node (no window) never throws", !threw);
+}
+
+// Pure sanitize/read-modify-write behaviour, exercised directly on plain
+// objects the same way loadProfile()'s merge logic works internally (no
+// window needed) — garbage/negative/NaN coins in a blob must degrade to 0,
+// and a read-modify-write that only changes coins must preserve the skin
+// fields untouched (and vice versa), mirroring the existing beagle/enemy
+// read-modify-write check above.
+{
+  function sanitize(value: unknown): number {
+    const n = typeof value === "number" ? value : NaN;
+    if (!Number.isFinite(n) || n < 0) return 0;
+    return Math.floor(n);
+  }
+
+  check("sanitize(-5) -> 0 (negative)", sanitize(-5) === 0);
+  check("sanitize(NaN) -> 0", sanitize(NaN) === 0);
+  check("sanitize('garbage') -> 0", sanitize("garbage") === 0);
+  check("sanitize(undefined) -> 0 (missing key on old blobs)", sanitize(undefined) === 0);
+  check("sanitize(Infinity) -> 0", sanitize(Infinity) === 0);
+  check("sanitize(42.9) -> 42 (floors a float)", sanitize(42.9) === 42);
+  check("sanitize(42) -> 42 (valid passthrough)", sanitize(42) === 42);
+
+  const existing = { equippedBeagleSkinId: "cookie", equippedEnemySkinId: DEFAULT_ENEMY_SKIN_ID, coins: 12 };
+  const mergedCoinsOnly = { ...existing, coins: 37 };
+  check("read-modify-write preserves skin fields when only coins change", mergedCoinsOnly.equippedBeagleSkinId === "cookie");
+  check("read-modify-write applies the new coins value", mergedCoinsOnly.coins === 37);
+
+  const mergedSkinOnly = { ...existing, equippedEnemySkinId: "beetle" };
+  check("read-modify-write preserves coins when only a skin field changes", mergedSkinOnly.coins === 12);
 }
 
 console.log(`\ncosmetics/profileStore checks: ${failures === 0 ? "ALL OK" : `${failures} FAILED`}`);
