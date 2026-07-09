@@ -137,7 +137,7 @@ _(nothing yet)_
   cycles enemy skins (placeholder, absorbed by the shop [[IDEA-012]] later).
 - **Dependencies:** —
 - **History:**
-  - **v1** (2026-07-09) — 4 enemy skins via a `makeEnemy(skinId, color)` factory: Ghost + new Beetle/Bee/Ladybug creatures, all satisfying the `GhostUserData` state contract (frightened/eaten/eye-tracking). Enemy-skin registry + persistence added to the shared cosmetics/profile foundation (same `beagle-chomp:profile` blob, back-compatible). Fixed `applyGhostState` eaten bug (`mesh.traverse`→`mesh.children.forEach`). Beagle got the cute eyes too. Temporary `#enemyBtn` switcher (`ui/skin.ts`). Verified live: 4-way cycle+persist, all states per skin, zero errors; build + tests green (test roster → 4 skins). `characters.ts`, `game.ts`, `cosmetics.ts`, `profileStore.ts`, `ui/skin.ts`, `index.html`, `style.css`, `scripts/test-cosmetics.ts`. _(PENDING)_
+  - **v1** (2026-07-09) — 4 enemy skins via a `makeEnemy(skinId, color)` factory: Ghost + new Beetle/Bee/Ladybug creatures, all satisfying the `GhostUserData` state contract (frightened/eaten/eye-tracking). Enemy-skin registry + persistence added to the shared cosmetics/profile foundation (same `beagle-chomp:profile` blob, back-compatible). Fixed `applyGhostState` eaten bug (`mesh.traverse`→`mesh.children.forEach`). Beagle got the cute eyes too. Temporary `#enemyBtn` switcher (`ui/skin.ts`). Verified live: 4-way cycle+persist, all states per skin, zero errors; build + tests green (test roster → 4 skins). `characters.ts`, `game.ts`, `cosmetics.ts`, `profileStore.ts`, `ui/skin.ts`, `index.html`, `style.css`, `scripts/test-cosmetics.ts`. _(688cf6e)_
 
 ### IDEA-010 — Beagle skins named after coat patterns ✅
 - **Priority:** 🟡
