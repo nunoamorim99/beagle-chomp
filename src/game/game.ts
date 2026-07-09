@@ -23,6 +23,7 @@ import { chooseGhostDir, type Ghost, type GlobalMode } from "./ghostAI";
 import { attachKeyboard } from "../input/keyboard";
 import { attachTouch } from "../input/touch";
 import { createScene, type SceneRig } from "../render/scene";
+import { createMenuScene, type MenuScene } from "../render/menuScene";
 import { createEffects, type Effects } from "../render/effects";
 import {
   buildBoard,
@@ -98,6 +99,11 @@ interface LevelAssets {
 
 export class Game {
   private readonly rig: SceneRig;
+  // IDEA-021 v2: the full-screen menu's own dedicated scene/camera (a live
+  // showcase of the equipped beagle) — created once and reused for every
+  // menu visit (boot -> play -> menu -> play -> ...), never rebuilt. The
+  // frame loop (see tick()) renders THIS instead of `rig` while mode==="start".
+  private readonly menuScene: MenuScene;
   private readonly hud: Hud;
   private readonly effects: Effects;
   private readonly sound: Sound;
@@ -114,6 +120,9 @@ export class Game {
   private readonly detachAudioUnlock: () => void;
   private readonly shop: ShopHandle;
   private readonly detachHomeButton: () => void;
+  private readonly detachMenuResize: () => void;
+  private readonly detachPlayButton: () => void;
+  private readonly detachMenuShopButton: () => void;
 
   private ghosts: GhostRig[] = [];
 
@@ -166,6 +175,7 @@ export class Game {
 
   constructor(canvas: HTMLCanvasElement) {
     this.rig = createScene(canvas);
+    this.menuScene = createMenuScene();
     this.hud = createHud(document.body);
     // Constructed eagerly (cheap — just an AudioContext + a gain node); it
     // starts (or can start) "suspended" per the browser autoplay policy until
@@ -217,6 +227,11 @@ export class Game {
     this.shop = attachShop(document.body, {
       onEquipBeagle: (skin) => {
         applyBeagleSkin(this.beagleMesh, skin);
+        // IDEA-021 v2: keep the menu's showcase beagle in sync live — the
+        // shop overlays the full-screen menu, so equipping a skin should
+        // recolor the dog the player can see right behind the shop panel,
+        // not just the (currently hidden) in-game one.
+        this.menuScene.setBeagleSkin(skin);
       },
       onEquipEnemy: () => {
         this.rebuildEnemySkins();
@@ -243,6 +258,46 @@ export class Game {
     this.detachTouch = attachTouch(canvas, (d) => { this.beagle.queued = d; });
     this.detachHomeButton = this.attachHomeButton();
 
+    // IDEA-021 v2: #playBtn/#menuShopBtn are now static markup in index.html
+    // (the full-screen #mainMenu overlay), not rebuilt every showMenu() call
+    // like the old hud.showPanel() HTML was — so they're wired ONCE here,
+    // not inside showMenu().
+    const playBtn = document.getElementById("playBtn") as HTMLButtonElement | null;
+    if (!playBtn) throw new Error("Game: missing #playBtn — check index.html");
+    const onPlayClick = (): void => {
+      // The Play click is a guaranteed user gesture, so this is the primary
+      // place audio unlocks (the first-input listeners in the constructor are
+      // just a belt-and-suspenders fallback for anyone who somehow interacts
+      // before clicking Play).
+      this.sound.resume();
+      this.hideMenu();
+      const fresh = createInitialGameState();
+      this.score = fresh.score;
+      this.lives = fresh.lives;
+      this.coinsAwardedFromScore = 0;
+      this.hud.setScore(this.score);
+      this.hud.setLives(this.lives);
+      this.startLevel(0);
+    };
+    playBtn.addEventListener("click", onPlayClick);
+    this.detachPlayButton = () => playBtn.removeEventListener("click", onPlayClick);
+
+    const menuShopBtn = document.getElementById("menuShopBtn") as HTMLButtonElement | null;
+    if (!menuShopBtn) throw new Error("Game: missing #menuShopBtn — check index.html");
+    const onMenuShopClick = (): void => this.shop.open();
+    menuShopBtn.addEventListener("click", onMenuShopClick);
+    this.detachMenuShopButton = () => menuShopBtn.removeEventListener("click", onMenuShopClick);
+
+    // IDEA-021 v2: the menu scene's camera is a plain perspective cam (no
+    // maze-fit math) — just needs its aspect kept current, independent of
+    // scene.ts's own resize() (which already has its own window listener).
+    const onMenuResize = (): void => {
+      this.menuScene.resize(window.innerWidth / window.innerHeight);
+    };
+    window.addEventListener("resize", onMenuResize);
+    onMenuResize();
+    this.detachMenuResize = () => window.removeEventListener("resize", onMenuResize);
+
     const initial = createInitialGameState();
     this.score = initial.score;
     this.lives = initial.lives;
@@ -267,46 +322,42 @@ export class Game {
   }
 
   /**
-   * The main menu (IDEA-021) — the boot panel, and the panel returned to via
-   * game-over's "Menu" button or the in-HUD 🏠 quit button. Deliberately
-   * shows ONLY Play + Shop + the coin wallet (no placeholder slots for future
-   * modes/profile/scoreboard — scope confirmed for v2.0). Re-reads
-   * getCoins() fresh on every render so the wallet line is never stale after
-   * a run (coins earned) or a shop visit (coins spent) — see the
+   * The main menu (IDEA-021 v2) — a FULL-SCREEN dedicated welcome screen with
+   * a live 3D beagle showcase (menuScene), replacing the old "popup panel
+   * over the maze + HUD" boot experience. The boot screen, and the screen
+   * returned to via game-over's "Menu" button or the in-HUD 🏠 quit button.
+   * Deliberately shows ONLY Play + Shop + the coin wallet (no placeholder
+   * slots for future modes/profile/scoreboard — scope confirmed for v2.0).
+   * Re-reads getCoins() fresh on every call so the wallet line is never stale
+   * after a run (coins earned) or a shop visit (coins spent) — see the
    * `onClose`/`onCoinsChanged` shop callbacks in the constructor, which both
    * call back into this method while mode is "start".
+   *
+   * Hides the HUD/game center panel (hud.hideCenter() + body.menu-open, which
+   * the CSS uses to hide the .hud strip and its floating buttons) and reveals
+   * #mainMenu — the frame loop (tick()) is what actually switches which
+   * scene/camera gets rendered while mode==="start" (see below).
    */
   private showMenu(): void {
-    const panel = this.hud.showPanel(
-      '<div class="eyebrow">three.js &middot; maze chase</div>' +
-      "<h1>Beagle Chomp</h1>" +
-      `<p class="coin-line">\u{1FA99} ${getCoins()} coins</p>` +
-      '<div class="keys"><b>Arrow keys</b> or <b>WASD</b> to move &middot; avoid the ghosts</div>' +
-      '<div class="menu-actions">' +
-      '<button id="playBtn">&#9654; Play</button>' +
-      '<button id="menuShopBtn" class="btn-secondary">&#128722; Shop</button>' +
-      "</div>",
-    );
-    const playBtn = panel.querySelector<HTMLButtonElement>("#playBtn");
-    playBtn?.addEventListener("click", () => {
-      // The Play click is a guaranteed user gesture, so this is the primary
-      // place audio unlocks (the first-input listeners in the constructor are
-      // just a belt-and-suspenders fallback for anyone who somehow interacts
-      // before clicking Play).
-      this.sound.resume();
-      const fresh = createInitialGameState();
-      this.score = fresh.score;
-      this.lives = fresh.lives;
-      this.coinsAwardedFromScore = 0;
-      this.hud.setScore(this.score);
-      this.hud.setLives(this.lives);
-      this.startLevel(0);
-    });
+    this.hud.hideCenter();
+    document.body.classList.add("menu-open");
 
-    const menuShopBtn = panel.querySelector<HTMLButtonElement>("#menuShopBtn");
-    menuShopBtn?.addEventListener("click", () => {
-      this.shop.open();
-    });
+    const mainMenu = document.getElementById("mainMenu");
+    if (!mainMenu) throw new Error("showMenu: missing #mainMenu — check index.html");
+    mainMenu.classList.remove("hidden");
+
+    const coinLine = document.getElementById("menuCoinLine");
+    if (coinLine) coinLine.textContent = `\u{1FA99} ${getCoins()} coins`;
+  }
+
+  /** Leaves the full-screen menu (Play click / any other exit) — hides
+   *  #mainMenu and the body-level HUD-hiding class so the HUD/game scene
+   *  render normally again. Called from the Play button's handler; mode is
+   *  advanced by startLevel() right after. */
+  private hideMenu(): void {
+    const mainMenu = document.getElementById("mainMenu");
+    mainMenu?.classList.add("hidden");
+    document.body.classList.remove("menu-open");
   }
 
   /**
@@ -363,7 +414,11 @@ export class Game {
     this.detachMuteButton();
     this.detachAudioUnlock();
     this.detachHomeButton();
+    this.detachMenuResize();
+    this.detachPlayButton();
+    this.detachMenuShopButton();
     this.shop.detach();
+    this.menuScene.dispose();
   }
 
   // ---- level flow (prototype startLevel, line 419) ----
@@ -864,10 +919,17 @@ export class Game {
     this.effects.update(dt);
     switch (this.mode) {
       case "start": {
-        // Idle preview behind the Start panel: pose only, never counts down
-        // or transitions on its own — the Start button's click handler is
-        // the only way out (it calls startLevel(0), which sets mode="ready"
-        // with a real stateTimer). Deliberately does NOT touch stateTimer.
+        // IDEA-021 v2: the game scene/HUD are hidden entirely behind the
+        // full-screen menu now, so posing the game actors here is harmless
+        // busywork rather than a visible "preview" — kept anyway (cheap,
+        // avoids a discontinuity if mode flips back to "ready" mid-frame)
+        // since the game scene simply isn't rendered while mode==="start"
+        // (see tick() below, which renders menuScene instead). Never counts
+        // down or transitions on its own — the Play button's click handler
+        // is the only way out (it calls startLevel(0), which sets
+        // mode="ready" with a real stateTimer). Deliberately does NOT touch
+        // stateTimer. The menu scene's own idle animation is advanced
+        // separately, from tick(), regardless of `mode`.
         this.syncAllPosed(dt);
         break;
       }
@@ -923,6 +985,16 @@ export class Game {
     this.clock.last = now;
 
     this.update(dt);
+
+    // IDEA-021 v2: while the full-screen menu is up, render the menu's own
+    // scene/camera (the live beagle showcase) instead of the game rig — the
+    // maze/HUD are hidden (see showMenu()) and shouldn't even be drawn.
+    if (this.mode === "start") {
+      this.menuScene.update(dt);
+      this.rig.renderer.render(this.menuScene.scene, this.menuScene.camera);
+      this.rafHandle = requestAnimationFrame(this.tick);
+      return;
+    }
 
     // Camera shake: a transient offset added right before render and removed
     // right after, so resize()'s own base camera.position is never corrupted
