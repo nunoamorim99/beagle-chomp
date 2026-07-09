@@ -30,6 +30,19 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--ink);
 .stat .v{font-size:26px;font-weight:700;color:#ffffff}
 .lives{display:flex;gap:8px;font-size:24px}
 
+/* IDEA-016/IDEA-017 coin wallet — grouped with Score in its own flex column
+   (.hud-left) so it counts as a single item in the .hud space-between row,
+   keeping Score/Map/Lives exactly as balanced as before. Sits directly under
+   the Score value, styled as a small pill so it reads as a secondary/currency
+   stat rather than a fourth peer stat. Uses the same uppercase label + bold
+   white value + halo language as .stat .k/.v for visual consistency. */
+.hud-left{display:flex;flex-direction:column;align-items:flex-start;gap:6px}
+.coin-stat{display:flex;align-items:center;gap:6px;font-family:ui-monospace,"SF Mono",monospace;
+  text-shadow:0 1px 3px rgba(0, 0, 0, 0.55),0 0 1px rgba(255, 255, 255, 0.7)}
+.coin-icon{font-size:15px;line-height:1}
+.coin-stat .k{font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:#ffffff}
+.coin-stat .v{font-size:16px;font-weight:700;color:#ffffff}
+
 /* Mute toggle — a small icon button pinned below the Lives stat, at the
    top-right of the HUD strip. Offset down past the Score/Lives row's own
    height (~18px padding + ~16px label + ~31px value, see .stat rules above)

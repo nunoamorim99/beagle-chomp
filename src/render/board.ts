@@ -25,6 +25,11 @@ export interface Board {
    *  is entirely render-side — gameplay only tells us when/where to spawn or
    *  clear one, keeping fruit placement logic out of src/game. */
   fruit: THREE.Object3D | null;
+  /** IDEA-016/IDEA-017: the current maze coin pickup, if any (see
+   *  spawnCoin/clearCoin below) — parallels `fruit` exactly. Placement
+   *  (which tile, when) is gameplay's call (src/game/game.ts); this field
+   *  just tracks the mesh so eating/spinDecor/teardown can find it. */
+  coin: THREE.Object3D | null;
   /** IDEA-011 hedge-top decoration: a handful of InstancedMeshes (one per
    *  bloom color + one for leaf specks). Purely cosmetic, lives for the
    *  level like the walls do — not tracked per-tile like pellets. */
@@ -165,6 +170,70 @@ export function makeFruit(): THREE.Group {
   return g;
 }
 
+// IDEA-017: real gold coin geometry/materials, sized to match the fruit's
+// ~0.22 visual footprint. A short cylinder is the coin body; a thin torus
+// hugs its rim for a raised-edge read; a smaller inset disc on each face
+// gives a subtle emboss. All three share one warm-gold material so the coin
+// reads as a single cohesive glowing pickup (same "soft glow" language as
+// the biscuit/bone/fruit above), plus a slightly brighter rim material so
+// the edge catches a touch more highlight.
+const geoCoinBody = new THREE.CylinderGeometry(0.2, 0.2, 0.055, 20);
+const geoCoinRim = new THREE.TorusGeometry(0.2, 0.02, 8, 20);
+const geoCoinEmboss = new THREE.CylinderGeometry(0.1, 0.1, 0.01, 16);
+
+const matCoinBody = new THREE.MeshStandardMaterial({
+  color: 0xf4c430,
+  roughness: 0.3,
+  metalness: 0.55,
+  emissive: 0x6b4e0a,
+  emissiveIntensity: 0.5,
+});
+const matCoinRim = new THREE.MeshStandardMaterial({
+  color: 0xffcc33,
+  roughness: 0.25,
+  metalness: 0.6,
+  emissive: 0x6b4e0a,
+  emissiveIntensity: 0.55,
+});
+
+/**
+ * A gold coin pickup: a disc-shaped cylinder body (flat faces on the sides,
+ * so a Y-axis spin shows the classic "coin flip" edge-on silhouette from the
+ * angled top-down camera), a thin torus rim for a raised-edge read, and a
+ * small inset disc emboss on each face for detail at a glance. Keep the
+ * exported function name/shape (`makeCoin(): THREE.Group`) — spawnCoin calls
+ * it and its local origin must stay centered so it sits right at the
+ * position spawnCoin sets.
+ */
+export function makeCoin(): THREE.Group {
+  const g = new THREE.Group();
+
+  const body = new THREE.Mesh(geoCoinBody, matCoinBody);
+  body.rotation.z = Math.PI / 2; // flat faces point along X/-X, edge faces the camera-ish view
+  body.castShadow = true;
+  g.add(body);
+
+  const rim = new THREE.Mesh(geoCoinRim, matCoinRim);
+  rim.rotation.y = Math.PI / 2; // ring wraps the coin's circumference, matching the body's orientation
+  rim.castShadow = true;
+  g.add(rim);
+
+  // Small emboss discs, one per face, sitting just proud of the body surface.
+  const embossFront = new THREE.Mesh(geoCoinEmboss, matCoinRim);
+  embossFront.rotation.z = Math.PI / 2;
+  embossFront.position.x = 0.03;
+  embossFront.castShadow = true;
+  g.add(embossFront);
+
+  const embossBack = new THREE.Mesh(geoCoinEmboss, matCoinRim);
+  embossBack.rotation.z = Math.PI / 2;
+  embossBack.position.x = -0.03;
+  embossBack.castShadow = true;
+  g.add(embossBack);
+
+  return g;
+}
+
 /** Builds the floor, instanced walls, and pellet meshes for one level. */
 export function buildBoard(scene: THREE.Object3D, grid: Grid): Board {
   const pelletMeshes = new Map<string, PelletMesh>();
@@ -205,7 +274,7 @@ export function buildBoard(scene: THREE.Object3D, grid: Grid): Board {
 
   const hedgeDecor = buildHedgeDecor(scene, grid);
 
-  return { pelletMeshes, pelletsLeft, walls, floor, fruit: null, hedgeDecor };
+  return { pelletMeshes, pelletsLeft, walls, floor, fruit: null, coin: null, hedgeDecor };
 }
 
 /**
@@ -311,13 +380,43 @@ export function clearFruit(board: Board, scene: THREE.Object3D): void {
 }
 
 /**
+ * Spawns a coin mesh at tile (tx,ty), replacing any coin already on the board
+ * (mirrors spawnFruit — only one coin at a time). Placement is gameplay's
+ * call; this just builds the mesh and tracks it on the board so
+ * clearCoin/spinDecor and eating can find it.
+ *
+ * TODO(render-artist IDEA-017): currently builds makeCoin()'s placeholder
+ * disc — swap that function's body for the real mesh, this call site and
+ * signature should not need to change.
+ */
+export function spawnCoin(board: Board, scene: THREE.Object3D, tx: number, ty: number): void {
+  if (board.coin) clearCoin(board, scene);
+  const coin = makeCoin();
+  coin.position.set(worldX(tx), 0.35, worldZ(ty));
+  scene.add(coin);
+  board.coin = coin;
+}
+
+/** Removes the current coin mesh (if any) from the scene and the board. */
+export function clearCoin(board: Board, scene: THREE.Object3D): void {
+  if (!board.coin) return;
+  scene.remove(board.coin);
+  board.coin = null;
+}
+
+/**
  * Gentle idle spin for decorative pickups (prototype syncMeshes, lines
  * 582-583): bones spin a bit faster than the fruit. Biscuits don't spin in
  * the prototype, so they're left untouched here.
+ *
+ * IDEA-016/IDEA-017: the coin spins fastest of all (a coin-flip read), so it
+ * visually reads as distinct from the fruit even with the placeholder mesh —
+ * render-artist: feel free to retune this rate once the real mesh lands.
  */
 export function spinDecor(board: Board, dt: number): void {
   board.pelletMeshes.forEach((p) => {
     if (p.kind === "bone") p.mesh.rotation.y += dt * 2;
   });
   if (board.fruit) board.fruit.rotation.y += dt * 1.5;
+  if (board.coin) board.coin.rotation.y += dt * 3;
 }

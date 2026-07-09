@@ -59,24 +59,6 @@ _(nothing yet)_
   themes ([[IDEA-011]]).
 - **Dependencies:** —
 
-### IDEA-016 — Classic mode: earn coins from points 💡
-- **Priority:** 🟡
-- **Area:** economy
-- **Description:** in classic mode, add a points system where reaching a number of points converts
-  into a coin for the shop system. Playing well earns shop currency.
-- **Notes:** the primary coin source; the coin is the shop currency ([[IDEA-012]]). Distinct from the
-  free coin pickup ([[IDEA-017]]).
-- **Dependencies:** [[IDEA-012]]
-
-### IDEA-017 — Classic mode: coin pickups in the maze 💡
-- **Priority:** 🟢
-- **Area:** economy
-- **Description:** in classic mode, at random, a coin appears in the maze like the fruit does — but
-  this one grants the player a coin directly, no points needed. A gift, essentially.
-- **Notes:** same coin currency as [[IDEA-016]], but earned by pickup rather than by scoring. Spends
-  in the shop ([[IDEA-012]]).
-- **Dependencies:** [[IDEA-012]]
-
 ### IDEA-018 — Bonus lives: pickups & milestones 💡
 - **Priority:** 🟢
 - **Area:** economy
@@ -117,6 +99,32 @@ _(nothing yet)_
 
 ## Delivered ✅
 > Already in production. Do NOT delete. Each keeps its version history.
+
+### IDEA-016 — Classic mode: earn coins from points ✅
+- **Priority:** 🟡
+- **Area:** economy
+- **Description:** in classic mode, add a points system where reaching a number of points converts
+  into a coin for the shop system. Playing well earns shop currency.
+- **Notes:** the primary coin source; the coin is the shop currency ([[IDEA-012]]). Distinct from the
+  free coin pickup ([[IDEA-017]]). Third build of v2.0 "The Garden" — built together with [[IDEA-017]]
+  (shared coin currency). The [[IDEA-012]] dep is spend-only; earning/banking works standalone now.
+  Adds a `coins` field to the same `beagle-chomp:profile` blob the skins use, a HUD coin counter, and
+  a points→coins conversion rule.
+- **Dependencies:** [[IDEA-012]] (spend-only; not blocking)
+- **History:**
+  - **v1** (2026-07-09) — every `COINS.perPoints` (1000) points banks 1 coin, immediately + persisted (survives a death or reload). Pure `coinsDueFromScore(score, perPoints)` helper (`src/game/coins.ts`) crosses multiple thresholds in one big scoring event; `coinsAwardedFromScore` bookkeeping resets per-run but the wallet accumulates across games. `coins` field added to the profile blob (`profileStore.ts`, back-compatible: `getCoins`/`addCoins`, garbage/negative/NaN → 0). HUD coin counter (`hud.setCoins`, `#coins` stat) + a coin "ching" (`sound.coin`). 24 headless assertions. Verified live: score→coins math, persistence across reload, zero errors. `coins.ts`, `config.ts`, `game.ts`, `profileStore.ts`, `hud.ts`, `sound.ts`, `index.html`, `style.css`, `scripts/test-cosmetics.ts`. _(PENDING)_
+
+### IDEA-017 — Classic mode: coin pickups in the maze ✅
+- **Priority:** 🟢
+- **Area:** economy
+- **Description:** in classic mode, at random, a coin appears in the maze like the fruit does — but
+  this one grants the player a coin directly, no points needed. A gift, essentially.
+- **Notes:** same coin currency as [[IDEA-016]], but earned by pickup rather than by scoring. Spends
+  in the shop ([[IDEA-012]]). Built together with [[IDEA-016]]; reuses the fruit spawn/collect
+  mechanism to drop a collectible coin in the maze.
+- **Dependencies:** [[IDEA-012]] (spend-only; not blocking)
+- **History:**
+  - **v1** (2026-07-09) — a gold coin (rim + emboss, glowing, spins) spawns in the maze like the fruit and grants 1 coin on pickup (no points). Unlike the fruit it **auto-despawns** after `COINS.lifespanSeconds` — a "grab it quick" bonus. Tuned to **4 coins per level** at pellet-eaten `[20, 60, 105, 150]` (first one early so it's actually encountered), placed on a **random reachable tile** (drawn from the remaining-pellet set, not just fruit spots), with an **18s** lifespan so a coin across the map is reachable before it vanishes. `makeCoin`/`spawnCoin`/`clearCoin`/`board.coin` + coin spin in `spinDecor` (`board.ts`); `despawnCoin()` single-teardown helper + `tickCoinLifespan` (play-only) + `pickRandomCoinTile` (`game.ts`). Verified live (instrumented): coin spawns on threshold at a random tile with the countdown running, banks on pickup, no errors. `board.ts`, `game.ts`, `config.ts`. _(PENDING)_
 
 ### IDEA-009 — Enemy skin system (break away from the classic ghost) ✅
 - **Priority:** 🟡
