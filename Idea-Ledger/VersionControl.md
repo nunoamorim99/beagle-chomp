@@ -33,6 +33,13 @@ a real menu to reach it all. A complete self-contained loop with no backend depe
 
 ## Version history
 
+### v1.2 — Closer on phones (2026-07-09)
+A small mobile framing fix: on phones the maze sat too far back, so the beagle and ghosts looked
+tiny. The camera now pulls in on portrait screens so characters read much larger — while the whole
+board stays on screen. Desktop/landscape framing is unchanged.
+- **IDEA-022** — pull the camera in closer on phones: portrait viewports fit the maze by width so it
+  fills the frame (camera ~18% closer on a typical phone); full board still visible, no maze tile clipped.
+
 ### v1.1 — Garden look (2026-07-08)
 The maze becomes a bright daytime garden — the game's new visual identity — plus mobile and
 readability fixes so it looks right everywhere.

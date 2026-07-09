@@ -50,14 +50,58 @@ const BOARD_CORNERS = boardCorners();
 const NDC_TARGET = 0.97;
 const FIT_PASSES = 4;
 
+// IDEA-022 (portrait close-in): reference aspect and max NDC targets used by
+// resize() to relax the fit on tall/narrow viewports.
+//
+// Follow-up finding: the board is roughly square (COLS ~ ROWS), so on a
+// portrait viewport the HORIZONTAL fit — not the vertical one — is what
+// pins the dolly distance. Relaxing only the vertical target (the original
+// v1 of this fix) was a no-op for this board shape: the width constraint
+// still forced the same distance back. So both axes relax in portrait:
+//
+// - PORTRAIT_NDC_X_MAX allows the maze's own left/right edges to reach
+//   almost to the screen edge (values a little over 1.0 mean the AABB
+//   corners — placed with +1 world-unit of margin beyond the outermost
+//   wall/tunnel tile, see HALF_W/HALF_H above — are allowed to sit just
+//   past the frame edge, while the actual tunnel tiles stay a hair inside
+//   it). 1.05 was chosen conservatively: the AABB margin (1 world unit
+//   against a ~21-unit half-width) is roughly 5%, so 1.05 lets that margin
+//   crop while the true playable width still lands at/just inside the
+//   frame — never past it. This is the "fills the frame width" lever the
+//   coordinator asked for.
+// - PORTRAIT_NDC_Y_MAX must stay >= PORTRAIT_NDC_X_MAX: the steep top-down
+//   angle pushes the near (bottom) floor corner toward the bottom edge
+//   faster than the horizontal corners approach the side edges, so if Y
+//   were allowed to relax less than X, the near-bottom corner would clip
+//   before the width-driven dolly ever eases off. Setting it visibly higher
+//   (1.30, top of the requested 1.15-1.30 band) keeps that corner safely
+//   on screen with margin to spare while X does the real work of pulling
+//   the camera in.
+//
+// A typical phone in portrait sits around 9:19.5 ~ 0.46; both ramps hit
+// their max there and hold flat beyond it so very extreme aspects don't
+// keep cropping indefinitely.
+const PORTRAIT_ASPECT_REF = 0.46;
+const PORTRAIT_NDC_X_MAX = 1.05;
+const PORTRAIT_NDC_Y_MAX = 1.3;
+
 /**
  * Distance (along `dir`, from `look`) the camera must sit at so every corner
- * of the board's AABB projects within ±NDC_TARGET on both axes, for the given
- * fov/aspect. Refines by scaling `dist` by the worst NDC overshoot each pass
- * (moving the camera back shrinks every projected extent by ~that same
- * ratio for a perspective camera, so this converges in a few passes). Never
- * returns less than `minDist`, so the base (landscape) framing never grows
- * tighter than it is today.
+ * of the board's AABB projects within ±ndcTargetX on the horizontal axis and
+ * ±ndcTargetY on the vertical axis, for the given fov/aspect. Refines by
+ * scaling `dist` by the worst NDC overshoot each pass (moving the camera back
+ * shrinks every projected extent by ~that same ratio for a perspective
+ * camera, so this converges in a few passes). Never returns less than
+ * `minDist`, so the base (landscape) framing never grows tighter than it is
+ * today.
+ *
+ * `ndcTargetX`/`ndcTargetY` default to NDC_TARGET for both axes, reproducing
+ * the original single-target behavior byte-for-byte when omitted — this is
+ * the landscape/desktop path and callers relying on the old signature are
+ * unaffected. IDEA-022 (portrait close-in) passes a larger `ndcTargetY` (see
+ * resize() below) so the vertical extent is allowed to crop toward/past the
+ * frame edge while the horizontal fit stays strict, letting the camera dolly
+ * in closer on tall/narrow viewports without ever losing maze width.
  */
 export function computeFitDistance(
   dir: THREE.Vector3,
@@ -66,6 +110,8 @@ export function computeFitDistance(
   aspect: number,
   minDist: number,
   corners: THREE.Vector3[] = BOARD_CORNERS,
+  ndcTargetX: number = NDC_TARGET,
+  ndcTargetY: number = NDC_TARGET,
 ): number {
   const camera = new THREE.PerspectiveCamera(fovDeg, aspect, 0.1, 200);
   let dist = minDist;
@@ -76,14 +122,63 @@ export function computeFitDistance(
     camera.updateMatrixWorld(true);
     camera.updateProjectionMatrix();
 
-    let worst = 1; // ratio of |ndc| to NDC_TARGET; >1 means it overshoots
+    let worst = 1; // ratio of |ndc| to its target; >1 means it overshoots
     for (const corner of corners) {
       const ndc = corner.clone().project(camera);
-      const rx = Math.abs(ndc.x) / NDC_TARGET;
-      const rz = Math.abs(ndc.y) / NDC_TARGET;
+      const rx = Math.abs(ndc.x) / ndcTargetX;
+      const rz = Math.abs(ndc.y) / ndcTargetY;
       worst = Math.max(worst, rx, rz);
     }
     if (worst <= 1) break;
+    dist = Math.max(minDist, dist * worst);
+  }
+  return dist;
+}
+
+// IDEA-022 (portrait close-in): computeFitDistance's single-scale-per-pass
+// refinement is a good approximation when the first-pass overshoot is close
+// to 1 (true for every real landscape aspect — see below), but a large first
+// overshoot (which only happens now that portrait's relaxed NDC targets
+// briefly put the un-dollied base rig ~2x past target on pass 0) makes the
+// "scale by worst ratio" step conservative: the *worst* ratio it uses is
+// floored at 1 (`let worst = 1`), so once a pass lands under target it stops
+// immediately rather than pulling distance back down toward the true
+// boundary, leaving the camera farther out than it needs to be. Tightening
+// this matters for portrait (where we specifically want the camera as close
+// as the NDC targets allow) but must never touch landscape's byte-for-byte
+// framing — so this bidirectional refinement only ever runs from the
+// portrait branch in resize() below, as a small extra pass layered on top of
+// computeFitDistance's result, never by changing computeFitDistance itself
+// (real landscape aspects already satisfy the target on pass 0 today, so
+// there is nothing for this to tighten there anyway — see check-fit trace in
+// the IDEA-022 follow-up notes — but gating it explicitly keeps the
+// guarantee airtight rather than relying on that being true forever).
+const TIGHTEN_PASSES = 6;
+
+function tightenFitDistance(
+  dir: THREE.Vector3,
+  look: THREE.Vector3,
+  fovDeg: number,
+  aspect: number,
+  minDist: number,
+  startDist: number,
+  corners: THREE.Vector3[],
+  ndcTargetX: number,
+  ndcTargetY: number,
+): number {
+  const camera = new THREE.PerspectiveCamera(fovDeg, aspect, 0.1, 200);
+  let dist = startDist;
+  for (let pass = 0; pass < TIGHTEN_PASSES; pass++) {
+    camera.position.copy(look).addScaledVector(dir, dist);
+    camera.lookAt(look);
+    camera.updateMatrixWorld(true);
+    camera.updateProjectionMatrix();
+
+    let worst = 0; // unfloored: <1 means we overshot and can pull dist back in
+    for (const corner of corners) {
+      const ndc = corner.clone().project(camera);
+      worst = Math.max(worst, Math.abs(ndc.x) / ndcTargetX, Math.abs(ndc.y) / ndcTargetY);
+    }
     dist = Math.max(minDist, dist * worst);
   }
   return dist;
@@ -251,7 +346,61 @@ export function createScene(canvas: HTMLCanvasElement): SceneRig {
     const aspect = w / h;
     camera.aspect = aspect;
 
-    const dist = computeFitDistance(dir, BASE_LOOK, BASE_FOV, aspect, baseDist);
+    // IDEA-022 (portrait close-in): on a tall/narrow viewport (aspect < 1)
+    // the board is close to square, so it's the maze's WIDTH — not its
+    // height — that pins the dolly-back distance (computeFitDistance scales
+    // dist to keep every corner within the NDC target on whichever axis
+    // overshoots worst). Relaxing only the vertical target is therefore a
+    // no-op: width never stopped being the binding constraint. So both axes
+    // ramp open on portrait, linearly from NDC_TARGET (0.97) at aspect 1.0
+    // (reproducing today's exact landscape framing) up to their own max at
+    // PORTRAIT_ASPECT_REF (~a typical phone, 9:19.5 ≈ 0.46), holding flat at
+    // that max beyond it so very extreme aspects don't keep cropping
+    // indefinitely:
+    //   - ndcTargetX ramps to PORTRAIT_NDC_X_MAX — this is the real lever:
+    //     it lets the camera dolly in until the maze's own width fills
+    //     nearly the whole frame, only cropping the small AABB margin
+    //     (HALF_W/HALF_H's "+1 world unit" breathing room) rather than any
+    //     actual tunnel column.
+    //   - ndcTargetY ramps to PORTRAIT_NDC_Y_MAX, kept >= the X max so the
+    //     near-bottom floor corner (which the steep top-down angle pushes
+    //     toward the bottom edge fastest) never clips before the
+    //     width-driven dolly eases off.
+    const portraitT = aspect >= 1 ? 0 : Math.min(1, (1 - aspect) / (1 - PORTRAIT_ASPECT_REF));
+    const ndcTargetX = NDC_TARGET + (PORTRAIT_NDC_X_MAX - NDC_TARGET) * portraitT;
+    const ndcTargetY = NDC_TARGET + (PORTRAIT_NDC_Y_MAX - NDC_TARGET) * portraitT;
+
+    let dist = computeFitDistance(
+      dir,
+      BASE_LOOK,
+      BASE_FOV,
+      aspect,
+      baseDist,
+      BOARD_CORNERS,
+      ndcTargetX,
+      ndcTargetY,
+    );
+
+    // IDEA-022 (portrait close-in), continued: computeFitDistance's own
+    // early-break loop leaves real slack on portrait (a large first-pass
+    // overshoot means its floored "worst" never signals that dist can come
+    // back down). Tighten it here, portrait only, so the camera actually
+    // lands at the NDC-target boundary instead of noticeably short of it —
+    // this is where the visible "zoom in" comes from. Landscape (aspect >=
+    // 1) skips this entirely, so its framing is untouched byte-for-byte.
+    if (aspect < 1) {
+      dist = tightenFitDistance(
+        dir,
+        BASE_LOOK,
+        BASE_FOV,
+        aspect,
+        baseDist,
+        dist,
+        BOARD_CORNERS,
+        ndcTargetX,
+        ndcTargetY,
+      );
+    }
 
     camera.position.copy(BASE_LOOK).addScaledVector(dir, dist);
     camera.lookAt(BASE_LOOK);

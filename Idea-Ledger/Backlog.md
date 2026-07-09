@@ -19,7 +19,7 @@ Living backlog of ideas. Two purposes:
 _(nothing yet)_
 
 ## Backlog (open ideas)
-> New registered ideas go here. Next free ID: IDEA-022
+> New registered ideas go here. Next free ID: IDEA-023
 
 ### IDEA-009 — Enemy skin system (break away from the classic ghost) 💡
 - **Priority:** 🟡
@@ -137,6 +137,22 @@ _(nothing yet)_
 
 ## Delivered ✅
 > Already in production. Do NOT delete. Each keeps its version history.
+
+### IDEA-022 — Pull the camera in closer on phones ✅
+- **Area:** ux
+- **Description:** on mobile phones the map felt too far away — the beagle and enemies came out
+  small and hard to make out. Bring the view closer to the screen on phones so the player can see
+  the characters better. A tighter, more zoomed-in framing tuned for small screens.
+- **Notes:** distinct from [[IDEA-006]] v2, which fixed the canvas *sizing* bug (only the top-left
+  corner showed). This was about camera *distance* on phones. The board is roughly square, so on a
+  tall/narrow portrait viewport the binding constraint is maze **width** — relaxing only the vertical
+  fit was a no-op. Fix: on portrait (aspect < 1) relax BOTH NDC fit targets so the maze fills nearly
+  the full frame width, plus a bidirectional tightening pass to remove leftover dolly slack.
+  Landscape/desktop (aspect >= 1) is byte-for-byte unchanged. All in `scene.ts`. Verified live at
+  390×844 (whole board still on screen, no tile clipped) and desktop (framing identical to before).
+- **Dependencies:** —
+- **History:**
+  - **v1** (2026-07-09) — portrait width-fit: `ndcTargetX` ramps 0.97→1.05 and `ndcTargetY` 0.97→1.30 as aspect narrows toward 0.46, plus `tightenFitDistance` bidirectional refine (portrait only). Camera ~18% closer on a typical phone; full board still framed. `scene.ts`. _(PENDING)_
 
 ### IDEA-011 — Detail & texture pass on the maps ✅
 - **Area:** theme
