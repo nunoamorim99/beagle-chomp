@@ -33,6 +33,24 @@
 
     <div class="center hidden" id="center"></div>
 
+    <!-- IDEA-021 v2: the full-screen main menu overlay. Transparent to the 3D
+         menu scene rendered behind it (src/render/menuScene.ts) except its own
+         text/buttons — the menu screen IS the 3D scene, with this UI floating
+         over it. Shown/hidden by src/game/game.ts's showMenu(). -->
+    <div class="hidden" id="mainMenu">
+      <div class="menu-top">
+        <div class="eyebrow">three.js &middot; maze chase</div>
+        <h1>Beagle Chomp</h1>
+        <p class="coin-line" id="menuCoinLine">&#x1FA99; 0 coins</p>
+      </div>
+      <div class="menu-bottom">
+        <div class="menu-actions">
+          <button type="button" id="playBtn">&#9654; Play</button>
+          <button type="button" id="menuShopBtn" class="btn-secondary">&#128722; Shop</button>
+        </div>
+      </div>
+    </div>
+
     <!-- IDEA-012 shop overlay — deliberately a SEPARATE container from
          #center, so opening the shop mid-play or over the Start/GameOver
          panel never clobbers either. Toggled by src/ui/shop.ts. -->
