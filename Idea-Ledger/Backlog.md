@@ -152,7 +152,7 @@ _(nothing yet)_
   390×844 (whole board still on screen, no tile clipped) and desktop (framing identical to before).
 - **Dependencies:** —
 - **History:**
-  - **v1** (2026-07-09) — portrait width-fit: `ndcTargetX` ramps 0.97→1.05 and `ndcTargetY` 0.97→1.30 as aspect narrows toward 0.46, plus `tightenFitDistance` bidirectional refine (portrait only). Camera ~18% closer on a typical phone; full board still framed. `scene.ts`. _(PENDING)_
+  - **v1** (2026-07-09) — portrait width-fit: `ndcTargetX` ramps 0.97→1.05 and `ndcTargetY` 0.97→1.30 as aspect narrows toward 0.46, plus `tightenFitDistance` bidirectional refine (portrait only). Camera ~18% closer on a typical phone; full board still framed. `scene.ts`. _(e3d5017)_
 
 ### IDEA-011 — Detail & texture pass on the maps ✅
 - **Area:** theme
