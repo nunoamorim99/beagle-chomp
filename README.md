@@ -9,6 +9,8 @@ turn the ghosts scared and edible.
 > work (rendering, loop, UI, PWA, touch) is scaffolded as typed stubs, ready to build with
 > the included Claude Code agents.
 
+https://nunoamorim99.github.io/beagle-chomp/
+
 ## Quick start
 ```bash
 npm install
