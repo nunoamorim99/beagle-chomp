@@ -15,29 +15,32 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
 > Every `/ship` drops a line here so nothing shipped goes uncounted. When a release is cut, **all**
 > lines here roll up into the numbered version below and this section is cleared (hold a line back
 > only if you explicitly choose to).
-- (2026-07-09) IDEA-010 v1 — beagle skins: 4 named coat patterns (Bagel/Cookie/Muffin/Pepper) + the cosmetics/profile foundation (skin registry, equipped state, localStorage persistence) and a temporary switcher. First feature of v2.0 "The Garden".
-- (2026-07-09) IDEA-009 v1 — enemy skins: 4 swappable enemies (Ghost/Beetle/Bee/Ladybug) via a makeEnemy factory, all keeping the frightened/eaten state contract; enemy-skin persistence added to the shared profile. Also fixed a latent eaten-state bug and gave the beagle cute eyes. Second feature of v2.0 "The Garden".
-- (2026-07-09) IDEA-016 + IDEA-017 v1 — coins: earn 1 coin per 1000 points, plus grab time-limited gold coins that spawn on random maze tiles (4/level, 18s each). HUD coin counter + a coin field on the persisted profile. The currency for the shop. Third feature of v2.0 "The Garden".
-- (2026-07-09) IDEA-012 v1 — the shop: 🛒 storefront overlay to buy skins with coins (5 🪙 each; Bagel/Ghost free) and equip owned ones; ownership persisted in the profile; replaces the temporary skin-cycle buttons. Closes the earn→spend→equip economy loop. Fourth feature of v2.0 "The Garden".
-- (2026-07-09) IDEA-017 v2 — maze coins now spawn on empty already-cleared tiles (not among biscuits), so they stand out and pull the player back to cleared areas — a real detour decision.
-- (2026-07-09) IDEA-021 v1 — main menu: boot lands on a hub (Play · Shop · coin balance), a 🏠 button quits a run back to the menu, and game over offers Play again + Menu. Scoped to what exists — no dead placeholders. Fifth and final feature of v2.0 "The Garden".
-- (2026-07-09) IDEA-021 v2 — full-screen main menu: a dedicated welcome screen (no HUD/popup) with a live 3D showcase of the player's equipped beagle on a garden patch; equipping in the shop updates the showcased dog live; portrait camera framing.
+_(nothing yet — all shipped work is captured in the versions below)_
 
 ## 📌 Planned
 > Forward-looking targets from `/plan-version`. Each is a checklist of IDEAs intended for a
 > future numbered release. Items move to Unreleased as they ship.
-
-### v2.0 — The Garden [planned]
-The cosmetics economy loop: skins to earn toward, coins to earn them with, a shop to spend in, and
-a real menu to reach it all. A complete self-contained loop with no backend dependency.
-- [ ] IDEA-010 — Beagle skins named after coat patterns (Bagel, Cookie, Muffin…)
-- [ ] IDEA-009 — Enemy skin system (ghost becomes one option among several)
-- [ ] IDEA-016 — Classic mode: earn coins from points
-- [ ] IDEA-017 — Classic mode: coin pickups in the maze
-- [ ] IDEA-012 — Shop system for skins & themes
-- [ ] IDEA-021 — Main menu (modes · shop · profile · scoreboard)
+_(nothing planned yet — v2.0 "The Garden" was fulfilled and cut on 2026-07-09)_
 
 ## Version history
+
+### v2.0 — The Garden (2026-07-09)
+The cosmetics economy loop, complete and self-contained with no backend: skins to earn toward,
+coins to earn them with, a shop to spend them in, and a real menu that welcomes you to it all.
+Fulfilled the planned v2.0 in full.
+- **IDEA-010** — beagle skins: 4 named coat patterns (Bagel · Cookie · Muffin · Pepper) + the
+  cosmetics/profile foundation (skin registry, equipped state, localStorage persistence).
+- **IDEA-009** — enemy skins: 4 swappable enemies (Ghost · Beetle · Bee · Ladybug), all keeping the
+  frightened/eaten contract so the bone mechanic is untouched. Also fixed a latent eaten-state bug
+  and gave the beagle its cute eyes.
+- **IDEA-016** — earn coins from points: every 1000 points banks 1 coin, persisted immediately.
+- **IDEA-017** — maze coin pickups: time-limited gold coins (4/level, 18s) — v2 places them on
+  empty already-cleared tiles, pulling the player back across the maze for a real detour decision.
+- **IDEA-012** — the shop: buy skins with coins (5 🪙; Bagel/Ghost free), equip what you own,
+  ownership persisted. Closes the earn→spend→equip loop.
+- **IDEA-021** — main menu: a full-screen welcome (v2) with a live 3D showcase of your equipped
+  beagle on a garden patch — Play · Shop · your wallet; 🏠 quits a run back to the menu; game over
+  offers Play again + Menu.
 
 ### v1.2 — Closer on phones (2026-07-09)
 A small mobile framing fix: on phones the maze sat too far back, so the beagle and ghosts looked
