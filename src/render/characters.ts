@@ -1,13 +1,15 @@
 // OWNER: render-artist
 // Beagle + ghost meshes built from primitives (grouped). Later can be swapped
 // for glTF models (see PROJECT_PLAN M6). Reference: prototype makeBeagle/makeGhost.
-// Contract: makeBeagle(): THREE.Group ; makeGhost(colorHex): THREE.Group with
+// Contract: makeBeagle(skin?): THREE.Group, userData.coatMats for live
+// re-skinning via applyBeagleSkin ; makeGhost(colorHex): THREE.Group with
 // userData { bodyMat, eyes, pups, pupM, baseColor } for state-driven recolouring.
 import * as THREE from "three";
 import { type Entity, entityWorld } from "../game/movement";
 import { type Vec2 } from "../game/grid";
 import { type GhostState } from "../game/ghostAI";
 import { COLORS } from "../game/config";
+import { type BeagleSkin, getEquippedBeagleSkin } from "../game/cosmetics";
 
 /**
  * Animatable sub-parts of the beagle model, stashed on the group's userData
@@ -25,6 +27,19 @@ export interface BeagleParts {
 }
 
 /**
+ * The 4 coat materials a beagle skin swaps, stashed on the group's userData
+ * (`g.userData.coatMats`) so a later skin change (see `applyBeagleSkin`) can
+ * recolour the existing mesh in place — no geometry rebuild, no remove/re-add,
+ * the model keeps animating uninterrupted.
+ */
+export interface BeagleCoatMats {
+  tan: THREE.MeshStandardMaterial;
+  white: THREE.MeshStandardMaterial;
+  black: THREE.MeshStandardMaterial;
+  ear: THREE.MeshStandardMaterial;
+}
+
+/**
  * Builds the beagle from primitives (ported from prototype section 6,
  * makeBeagle). Nose points toward +Z at rotation.y = 0, matching
  * ARCHITECTURE's "yaw = atan2(dir.x, dir.y)" facing convention.
@@ -34,23 +49,25 @@ export interface BeagleParts {
  * `g.userData.parts` (typed `BeagleParts`) so `syncToEntity` can animate a
  * trot/wag/flop/chomp on top of the existing position+yaw+bob without
  * touching the model's static geometry.
+ *
+ * The 4 coat colors (tan/white/black/ear) come from `skin` (default: whatever
+ * is currently equipped, via cosmetics.ts's getEquippedBeagleSkin — so
+ * existing callers that pass nothing still boot wearing the persisted skin).
+ * Bagel's coat is byte-for-byte the original fixed palette (COLORS.beagle* +
+ * the old local EAR_BROWN const), so defaulting to it is a visual no-op.
+ * Ear color is intentionally its own coat channel rather than reusing
+ * `black`: a warm chocolate/liver brown reads as a classic beagle ear (real
+ * tri-colour beagles have brown, not black, ear patches) and stays visible
+ * against both the near-black nose/eyes and the dark scene background, where
+ * pure black ears would silhouette invisibly.
  */
-// Ear colour: a warm chocolate/liver brown, distinctly darker than the tan
-// body but clearly lighter than both COLORS.beagleBlack (near-black, used for
-// nose/eyes) and the near-black scene background (COLORS.bg 0x0b0b16). Pure
-// black ears silhouette invisibly against the dark maze; this reads as a
-// classic beagle ear (a real tri-colour beagle's ear patch is brown, not
-// black) while staying readable from every angle. Local to this module
-// rather than COLORS since it's a model-shading detail, not a shared palette
-// entry other systems key off.
-const EAR_BROWN = 0x6b3f22;
-
-export function makeBeagle(): THREE.Group {
+export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Group {
   const g = new THREE.Group();
-  const tan = new THREE.MeshStandardMaterial({ color: COLORS.beagleTan, roughness: 0.6 });
-  const white = new THREE.MeshStandardMaterial({ color: COLORS.beagleWhite, roughness: 0.6 });
-  const black = new THREE.MeshStandardMaterial({ color: COLORS.beagleBlack, roughness: 0.5 });
-  const earMat = new THREE.MeshStandardMaterial({ color: EAR_BROWN, roughness: 0.65 });
+  const { coat } = skin;
+  const tan = new THREE.MeshStandardMaterial({ color: coat.tan, roughness: 0.6 });
+  const white = new THREE.MeshStandardMaterial({ color: coat.white, roughness: 0.6 });
+  const black = new THREE.MeshStandardMaterial({ color: coat.black, roughness: 0.5 });
+  const earMat = new THREE.MeshStandardMaterial({ color: coat.ear, roughness: 0.65 });
 
   const body = new THREE.Mesh(new THREE.SphereGeometry(0.34, 20, 16), tan);
   body.scale.set(1, 0.85, 1.25);
@@ -190,7 +207,29 @@ export function makeBeagle(): THREE.Group {
   delete g.userData.__earL;
   delete g.userData.__earR;
   g.userData.parts = parts;
+
+  const coatMats: BeagleCoatMats = { tan, white, black, ear: earMat };
+  g.userData.coatMats = coatMats;
+
   return g;
+}
+
+/**
+ * Recolors an already-built beagle group in place to `skin`'s coat — sets
+ * `.color` on the 4 materials stashed in `g.userData.coatMats` by `makeBeagle`.
+ * No geometry rebuild, no remove/re-add: the mesh keeps animating (walk bob,
+ * tail wag, etc.) uninterrupted through the switch. This is what the live
+ * skin-switch UI calls; `makeBeagle`'s `skin` param is only for the initial
+ * build (e.g. booting with the persisted skin already equipped).
+ */
+export function applyBeagleSkin(group: THREE.Group, skin: BeagleSkin): void {
+  const mats = group.userData.coatMats as BeagleCoatMats | undefined;
+  if (!mats) return;
+  const { coat } = skin;
+  mats.tan.color.setHex(coat.tan);
+  mats.white.color.setHex(coat.white);
+  mats.black.color.setHex(coat.black);
+  mats.ear.color.setHex(coat.ear);
 }
 
 export interface GhostUserData {

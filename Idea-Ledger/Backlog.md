@@ -32,15 +32,6 @@ _(nothing yet)_
   Skins are sold through the shop ([[IDEA-012]]).
 - **Dependencies:** —
 
-### IDEA-010 — Beagle skins named after coat patterns 💡
-- **Priority:** 🟡
-- **Area:** skins
-- **Description:** skins for the beagle. Beagles come in many coat-color patterns, so have one skin
-  per pattern, and give each skin a pet name — e.g. the standard one could be "Bagel", another
-  "Cookie", another "Muffin". Each skin has its own name.
-- **Notes:** playful naming is part of the appeal. Sold through the shop ([[IDEA-012]]).
-- **Dependencies:** —
-
 ### IDEA-012 — Shop system for skins & themes 💡
 - **Priority:** 🟡
 - **Area:** shop
@@ -137,6 +128,20 @@ _(nothing yet)_
 
 ## Delivered ✅
 > Already in production. Do NOT delete. Each keeps its version history.
+
+### IDEA-010 — Beagle skins named after coat patterns ✅
+- **Priority:** 🟡
+- **Area:** skins
+- **Description:** skins for the beagle. Beagles come in many coat-color patterns, so have one skin
+  per pattern, and give each skin a pet name — e.g. the standard one could be "Bagel", another
+  "Cookie", another "Muffin". Each skin has its own name.
+- **Notes:** playful naming is part of the appeal. Sold through the shop ([[IDEA-012]]). First build
+  of v2.0 "The Garden" — includes the shared cosmetics/profile foundation (skin registry + equipped
+  state + localStorage persistence) that later skins ([[IDEA-009]]) and the shop ([[IDEA-012]]) reuse.
+  Until the shop lands, a temporary 🐶 HUD button cycles the skins (placeholder, absorbed by [[IDEA-012]]).
+- **Dependencies:** —
+- **History:**
+  - **v1** (2026-07-09) — 4 beagle coat skins: **Bagel** (classic tricolor, default & unchanged), **Cookie** (chocolate/liver), **Muffin** (lemon & white), **Pepper** (blue-tick grey). New pure `cosmetics.ts` (skin registry + equipped state, three-free) + `profileStore.ts` (localStorage persistence, guarded, following the mute-preference precedent); `makeBeagle(skin)` + `applyBeagleSkin()` restyle the mesh in place; temporary `#skinBtn` switcher (`ui/skin.ts`, three-free via callback). Cycle+wrap+persist verified; 29 headless assertions incl. a Bagel==old-colors regression guard. `cosmetics.ts`, `profileStore.ts`, `ui/skin.ts`, `characters.ts`, `game.ts`, `index.html`, `style.css`, `scripts/test-cosmetics.ts`. _(PENDING)_
 
 ### IDEA-022 — Pull the camera in closer on phones ✅
 - **Area:** ux
