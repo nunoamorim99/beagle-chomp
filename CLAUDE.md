@@ -22,19 +22,23 @@ the safety net for the trickiest logic and run without a browser.
 - No `localStorage`/`sessionStorage` assumptions for core state — keep state in memory.
 - Balance numbers live in `src/game/config.ts`. Don't scatter magic numbers.
 
-## What is already DONE and validated (do not rewrite lightly)
-- `src/game/mazes.json` + `mazes.ts` — two mazes, **validated** (connected, all
-  pellets reachable, ghosts can leave the pen).
-- `src/game/grid.ts` — tiles, tunnel wrap, walkability.
-- `src/game/movement.ts` — the tile-stepping movement model.
-- `src/game/ghostAI.ts` — targeting AI with a dead-end-safe fallback.
-- `scripts/validate-maze.ts`, `scripts/sim-logic.ts` — the tests, importing the real modules.
-- `prototype/beagle-chomp.html` — a **fully working single-file version**. It is the
-  reference implementation for everything still to build (render, loop, HUD).
+## What is BUILT (do not rewrite lightly)
+The full game is built, shipped, and deployed (playable since v1.0; now on v1.2).
+- **Pure logic** (`src/game/*`): `mazes.json`+`mazes.ts` (two **validated** mazes —
+  connected, all pellets reachable, ghosts can leave the pen), `grid.ts` (tiles, tunnel
+  wrap, walkability), `movement.ts` (tile-stepping model), `ghostAI.ts` (targeting with a
+  dead-end-safe fallback), `state.ts` + `game.ts` (loop + state machine, the integration point).
+- **Render layer** (`src/render/*`): `scene.ts`, `board.ts`, `characters.ts`, `effects.ts`.
+- **Input / UI / PWA**: `src/input/{touch,keyboard}.ts`, `src/ui/{hud,sound,install}.ts`,
+  `public/icons/*` (192, 512, 512-maskable).
+- **Tests**: `scripts/validate-maze.ts`, `scripts/sim-logic.ts` — import the real modules.
+- `prototype/beagle-chomp.html` — a fully working single-file version. Now a **historical
+  reference artifact** (render/loop/HUD are shipped), not a to-build spec.
 
-## What is TODO (stubs that throw today)
-`src/render/*`, `src/input/touch.ts`, `src/ui/hud.ts`, `src/game/{state,game}.ts`,
-`public/icons/*`. Each stub names its owning agent and points at the reference.
+## What is next
+No stubs remain. Current and future work is tracked in the **Idea-Ledger**
+(`Idea-Ledger/Backlog.md` + `VersionControl.md`) — the source of truth for what we build
+and ship next.
 
 ## Architecture (see docs/ARCHITECTURE.md for detail)
 - **Coordinate system:** grid tile `(tx,ty)` → world `((tx-OX)*TILE, y, (ty-OZ)*TILE)`.
