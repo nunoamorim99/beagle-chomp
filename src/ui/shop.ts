@@ -66,6 +66,24 @@ export interface ShopCallbacks {
    *  event. Not fired on a failed buy (insufficient funds/unknown id) since
    *  the wallet is unchanged in that case. */
   onCoinsChanged?: () => void;
+  /** Fired when the shop overlay closes (X button), so a caller that renders
+   *  its own coin display *underneath* the shop (IDEA-021's main menu) can
+   *  refresh it — the player can only SPEND in the shop, never earn, but a
+   *  purchase there does change the wallet the menu displayed before the shop
+   *  opened. Not fired by anything else (e.g. never on open). */
+  onClose?: () => void;
+}
+
+/** Return shape of {@link attachShop}: `open()` lets any other UI (the main
+ *  menu's Shop button, IDEA-021) open the same overlay the HUD `#shopBtn`
+ *  opens, without synthesizing a click on that button; `detach()` is the
+ *  usual teardown, same as every other attach* helper's return value. */
+export interface ShopHandle {
+  /** Opens the shop overlay (re-renders it fresh first, so balance/ownership
+   *  are always current) — the same action `#shopBtn` triggers. */
+  open: () => void;
+  /** Unwires the HUD button listener and clears the overlay's contents. */
+  detach: () => void;
 }
 
 /**
@@ -77,9 +95,12 @@ export interface ShopCallbacks {
  * cards with a contextual Buy/Equip/Equipped/can't-afford action.
  *
  * Call once (alongside attachMuteButton) from Game's constructor. Returns a
- * detach function for symmetry with the other attach* helpers.
+ * {@link ShopHandle} (`{ open, detach }`) rather than a bare detach function
+ * (IDEA-021) so callers outside the HUD button — e.g. the main menu's Shop
+ * button — can open the exact same overlay/state instead of hacking a
+ * synthetic click on `#shopBtn`.
  */
-export function attachShop(root: ParentNode, callbacks: ShopCallbacks = {}): () => void {
+export function attachShop(root: ParentNode, callbacks: ShopCallbacks = {}): ShopHandle {
   const scope: ParentNode = root ?? document;
 
   function require<T extends HTMLElement>(id: string): T {
@@ -100,6 +121,7 @@ export function attachShop(root: ParentNode, callbacks: ShopCallbacks = {}): () 
 
   function close(): void {
     shopRoot.classList.add("hidden");
+    callbacks.onClose?.();
   }
 
   function onShopBtnClick(): void {
@@ -255,8 +277,11 @@ export function attachShop(root: ParentNode, callbacks: ShopCallbacks = {}): () 
 
   shopBtn.addEventListener("click", onShopBtnClick);
 
-  return () => {
-    shopBtn.removeEventListener("click", onShopBtnClick);
-    shopRoot.innerHTML = "";
+  return {
+    open,
+    detach: () => {
+      shopBtn.removeEventListener("click", onShopBtnClick);
+      shopRoot.innerHTML = "";
+    },
   };
 }
