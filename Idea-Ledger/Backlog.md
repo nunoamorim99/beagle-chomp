@@ -141,7 +141,7 @@ _(nothing yet)_
   Until the shop lands, a temporary 🐶 HUD button cycles the skins (placeholder, absorbed by [[IDEA-012]]).
 - **Dependencies:** —
 - **History:**
-  - **v1** (2026-07-09) — 4 beagle coat skins: **Bagel** (classic tricolor, default & unchanged), **Cookie** (chocolate/liver), **Muffin** (lemon & white), **Pepper** (blue-tick grey). New pure `cosmetics.ts` (skin registry + equipped state, three-free) + `profileStore.ts` (localStorage persistence, guarded, following the mute-preference precedent); `makeBeagle(skin)` + `applyBeagleSkin()` restyle the mesh in place; temporary `#skinBtn` switcher (`ui/skin.ts`, three-free via callback). Cycle+wrap+persist verified; 29 headless assertions incl. a Bagel==old-colors regression guard. `cosmetics.ts`, `profileStore.ts`, `ui/skin.ts`, `characters.ts`, `game.ts`, `index.html`, `style.css`, `scripts/test-cosmetics.ts`. _(PENDING)_
+  - **v1** (2026-07-09) — 4 beagle coat skins: **Bagel** (classic tricolor, default & unchanged), **Cookie** (chocolate/liver), **Muffin** (lemon & white), **Pepper** (blue-tick grey). New pure `cosmetics.ts` (skin registry + equipped state, three-free) + `profileStore.ts` (localStorage persistence, guarded, following the mute-preference precedent); `makeBeagle(skin)` + `applyBeagleSkin()` restyle the mesh in place; temporary `#skinBtn` switcher (`ui/skin.ts`, three-free via callback). Cycle+wrap+persist verified; 29 headless assertions incl. a Bagel==old-colors regression guard. `cosmetics.ts`, `profileStore.ts`, `ui/skin.ts`, `characters.ts`, `game.ts`, `index.html`, `style.css`, `scripts/test-cosmetics.ts`. _(a5a0b9f)_
 
 ### IDEA-022 — Pull the camera in closer on phones ✅
 - **Area:** ux
