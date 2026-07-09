@@ -25,16 +25,16 @@
       <div class="stat" style="text-align:center"><div class="k">Map</div><div class="v" id="level">1</div></div>
       <div class="stat" style="text-align:right"><div class="k">Lives</div><div class="lives v" id="lives">🐶🐶🐶</div></div>
       <button type="button" class="mute-btn" id="muteBtn" aria-label="Mute sound" aria-pressed="false">🔊</button>
-      <!-- Temporary placeholder until the shop (IDEA-012) lands: cycles the
-           equipped beagle skin. Remove once a real skin-picker UI exists. -->
-      <button type="button" class="skin-btn" id="skinBtn" aria-label="Change beagle skin">🐶</button>
-      <!-- Temporary placeholder (IDEA-009) until the shop (IDEA-012) lands:
-           cycles the equipped enemy skin (Ghost <-> Beetle). Remove once a
-           real skin-picker UI exists. -->
-      <button type="button" class="enemy-btn" id="enemyBtn" aria-label="Change enemy skin">👾</button>
+      <!-- IDEA-012 shop: opens the skin-picker/storefront overlay (#shop below). -->
+      <button type="button" class="shop-btn" id="shopBtn" aria-label="Open shop">🛒</button>
     </div>
 
     <div class="center hidden" id="center"></div>
+
+    <!-- IDEA-012 shop overlay — deliberately a SEPARATE container from
+         #center, so opening the shop mid-play or over the Start/GameOver
+         panel never clobbers either. Toggled by src/ui/shop.ts. -->
+    <div class="hidden" id="shop"></div>
 
     <script type="module" src="/src/main.ts"></script>
   </body>
