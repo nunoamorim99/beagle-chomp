@@ -15,7 +15,7 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
 > Every `/ship` drops a line here so nothing shipped goes uncounted. When a release is cut, **all**
 > lines here roll up into the numbered version below and this section is cleared (hold a line back
 > only if you explicitly choose to).
-_(nothing yet — all shipped work is captured in the versions below)_
+- (2026-07-09) IDEA-010 v1 — beagle skins: 4 named coat patterns (Bagel/Cookie/Muffin/Pepper) + the cosmetics/profile foundation (skin registry, equipped state, localStorage persistence) and a temporary switcher. First feature of v2.0 "The Garden".
 
 ## 📌 Planned
 > Forward-looking targets from `/plan-version`. Each is a checklist of IDEAs intended for a

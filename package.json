@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "validate": "tsx scripts/validate-maze.ts",
     "sim": "tsx scripts/sim-logic.ts",
-    "test": "npm run validate && npm run sim"
+    "test:cosmetics": "tsx scripts/test-cosmetics.ts",
+    "test": "npm run validate && npm run sim && npm run test:cosmetics"
   },
   "dependencies": {
     "three": "^0.169.0"

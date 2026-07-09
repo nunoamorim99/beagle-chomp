@@ -31,9 +31,12 @@ import {
   applyGhostState,
   setBeagleDeath,
   resetBeagleScale,
+  applyBeagleSkin,
 } from "../render/characters";
 import { createHud, type Hud } from "../ui/hud";
 import { createSound, attachMuteButton, type Sound } from "../ui/sound";
+import { attachSkinButton } from "../ui/skin";
+import { initProfileFromStorage } from "./profileStore";
 
 // Scatter-corner targets per ghost personality (prototype section 7,
 // GHOST_DEFS): rose/chaser -> top-right, teal/ambusher -> top-left,
@@ -92,6 +95,7 @@ export class Game {
   private readonly detachTouch: () => void;
   private readonly detachMuteButton: () => void;
   private readonly detachAudioUnlock: () => void;
+  private readonly detachSkinButton: () => void;
 
   private ghosts: GhostRig[] = [];
 
@@ -153,9 +157,26 @@ export class Game {
     // section 12: buildBoard(0); updateHUD(); before the Start click).
     this.level = this.buildLevel(0);
     this.effects = createEffects(this.rig.scene, this.rig.camera, canvas);
+
+    // Load the persisted equipped-skin id (IDEA-010) BEFORE makeBeagle() so
+    // the beagle boots already wearing whatever the player last picked —
+    // makeBeagle()'s default param reads getEquippedBeagleSkin(), which this
+    // populates from localStorage (falling back to the default "bagel" skin,
+    // a byte-for-byte match of the original fixed palette, if nothing was
+    // ever saved).
+    initProfileFromStorage();
     this.beagleMesh = makeBeagle();
     this.rig.scene.add(this.beagleMesh);
     this.beagle = makeEntity(this.level.beagleSpawn.x, this.level.beagleSpawn.y, SPEEDS.beagle);
+
+    // Temporary skin-cycle button (placeholder until the shop UI, IDEA-012,
+    // lands) — see src/ui/skin.ts's doc comment for the layering rationale.
+    // Lives alongside attachMuteButton with the same lifecycle (detached in
+    // stop() below); resetActors() rebuilds ghosts but reuses this.beagleMesh,
+    // so the equipped skin persists naturally across level resets/deaths.
+    this.detachSkinButton = attachSkinButton(document.body, (skin) => {
+      applyBeagleSkin(this.beagleMesh, skin);
+    });
 
     this.detachKeyboard = attachKeyboard((d) => { this.beagle.queued = d; });
     this.detachTouch = attachTouch(canvas, (d) => { this.beagle.queued = d; });
@@ -250,6 +271,7 @@ export class Game {
     this.detachTouch();
     this.detachMuteButton();
     this.detachAudioUnlock();
+    this.detachSkinButton();
   }
 
   // ---- level flow (prototype startLevel, line 419) ----
