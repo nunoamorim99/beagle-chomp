@@ -130,3 +130,80 @@ export function cycleBeagleSkinId(currentId: string): string {
 // in-memory state with zero browser globals and zero dependency on
 // profileStore.ts, so profileStore.ts can depend on cosmetics.ts (for
 // BEAGLE_SKINS validation) without creating an import cycle.
+
+// ---------------------------------------------------------------------------
+// IDEA-009 enemy skins. Mirrors the BeagleSkin section above exactly (same
+// registry/default/getter/setter/cycle shape), but with one key difference:
+// an EnemySkin does NOT carry any color. The three team colors
+// (rose/teal/amber — see COLORS.ghost* in config.ts) plus the frightened/eaten
+// palette are applied per-enemy by the renderer at build time, independent of
+// which skin is equipped. An enemy skin only swaps the creature's FORM (e.g.
+// classic ghost blob vs. a garden beetle), whereas a beagle skin swaps COLOR
+// only (same coat shape, different hex values). So EnemySkin is just id+name
+// — no coat/color payload to look up here.
+
+export interface EnemySkin {
+  id: string;
+  name: string;
+}
+
+export const ENEMY_SKINS: readonly EnemySkin[] = [
+  { id: "ghost", name: "Ghost" },
+  { id: "beetle", name: "Beetle" },
+  { id: "bee", name: "Bee" },
+  { id: "ladybug", name: "Ladybug" },
+] as const;
+
+export const DEFAULT_ENEMY_SKIN_ID = "ghost";
+
+/** Looks up an enemy skin by id. Never throws — an unknown/stale id degrades
+ *  to the default skin instead of breaking rendering. */
+export function getEnemySkin(id: string): EnemySkin {
+  return ENEMY_SKINS.find((s) => s.id === id) ?? getDefaultEnemySkin();
+}
+
+function getDefaultEnemySkin(): EnemySkin {
+  // ENEMY_SKINS is a non-empty readonly const above, and its first entry is
+  // DEFAULT_ENEMY_SKIN_ID by construction, but look it up by id rather than
+  // index so the two can never silently drift apart.
+  const found = ENEMY_SKINS.find((s) => s.id === DEFAULT_ENEMY_SKIN_ID);
+  if (!found) {
+    // Unreachable given the const above; satisfies strict TS without `any`
+    // and gives a loud signal if ENEMY_SKINS/DEFAULT_ENEMY_SKIN_ID are ever
+    // edited out of sync.
+    throw new Error("cosmetics: DEFAULT_ENEMY_SKIN_ID has no matching entry in ENEMY_SKINS");
+  }
+  return found;
+}
+
+// In-memory equipped state. Module-level, not persisted here — see
+// src/game/profileStore.ts for the localStorage bridge.
+
+let equippedEnemySkinId: string = DEFAULT_ENEMY_SKIN_ID;
+
+export function getEquippedEnemySkinId(): string {
+  return equippedEnemySkinId;
+}
+
+/** Sets the equipped enemy skin id, in memory only (no persistence — see
+ *  `equipEnemySkin` in profileStore.ts for the persisting wrapper UI code
+ *  should call). Ignores unknown ids (clamps to the default) so callers can
+ *  never leave the module in a state where getEquippedEnemySkin() would need
+ *  to guess. */
+export function setEquippedEnemySkinId(id: string): void {
+  equippedEnemySkinId = ENEMY_SKINS.some((s) => s.id === id) ? id : DEFAULT_ENEMY_SKIN_ID;
+}
+
+export function getEquippedEnemySkin(): EnemySkin {
+  return getEnemySkin(getEquippedEnemySkinId());
+}
+
+/** Returns the next skin id after `currentId` in ENEMY_SKINS order, wrapping
+ *  around — mirrors cycleBeagleSkinId. An unknown current id returns the
+ *  first skin's id (i.e. treats "not found" as "before the start of the
+ *  list"). */
+export function cycleEnemySkinId(currentId: string): string {
+  const idx = ENEMY_SKINS.findIndex((s) => s.id === currentId);
+  const nextIdx = idx === -1 ? 0 : (idx + 1) % ENEMY_SKINS.length;
+  return ENEMY_SKINS[nextIdx].id;
+}

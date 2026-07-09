@@ -18,23 +18,35 @@ import {
   DEFAULT_BEAGLE_SKIN_ID,
   getEquippedBeagleSkinId,
   setEquippedBeagleSkinId,
+  ENEMY_SKINS,
+  DEFAULT_ENEMY_SKIN_ID,
+  getEquippedEnemySkinId,
+  setEquippedEnemySkinId,
 } from "./cosmetics";
 
 const PROFILE_STORAGE_KEY = "beagle-chomp:profile";
 
 /** The persisted profile shape. Deliberately small today; add fields (coins,
  *  ownedSkinIds, ...) as optional/defaulted so old saved blobs stay valid —
- *  see loadProfile's read-defensively-and-spread-over-defaults approach. */
+ *  see loadProfile's read-defensively-and-spread-over-defaults approach.
+ *  `equippedEnemySkinId` (IDEA-009) was added after `equippedBeagleSkinId`
+ *  shipped; old blobs on disk simply won't have the key, and loadProfile
+ *  defaults it the same way a garbage/unknown value would. */
 export interface StoredProfile {
   equippedBeagleSkinId: string;
+  equippedEnemySkinId: string;
 }
 
 function defaultProfile(): StoredProfile {
-  return { equippedBeagleSkinId: DEFAULT_BEAGLE_SKIN_ID };
+  return { equippedBeagleSkinId: DEFAULT_BEAGLE_SKIN_ID, equippedEnemySkinId: DEFAULT_ENEMY_SKIN_ID };
 }
 
 function isKnownSkinId(id: unknown): id is string {
   return typeof id === "string" && BEAGLE_SKINS.some((s) => s.id === id);
+}
+
+function isKnownEnemySkinId(id: unknown): id is string {
+  return typeof id === "string" && ENEMY_SKINS.some((s) => s.id === id);
 }
 
 /**
@@ -53,10 +65,13 @@ export function loadProfile(): StoredProfile {
     const parsed: unknown = JSON.parse(raw);
     if (typeof parsed !== "object" || parsed === null) return defaultProfile();
 
-    const candidate = (parsed as Record<string, unknown>).equippedBeagleSkinId;
+    const record = parsed as Record<string, unknown>;
+    const candidate = record.equippedBeagleSkinId;
+    const enemyCandidate = record.equippedEnemySkinId;
     return {
       ...defaultProfile(),
       equippedBeagleSkinId: isKnownSkinId(candidate) ? candidate : DEFAULT_BEAGLE_SKIN_ID,
+      equippedEnemySkinId: isKnownEnemySkinId(enemyCandidate) ? enemyCandidate : DEFAULT_ENEMY_SKIN_ID,
     };
   } catch {
     // Covers `window`/`localStorage` being unavailable, JSON.parse throwing
@@ -84,6 +99,23 @@ export function saveEquippedBeagleSkinId(id: string): void {
   }
 }
 
+/**
+ * Persists just the equipped-enemy-skin field, via read-modify-write so the
+ * beagle field (and any other future fields) already in the stored blob
+ * survive untouched. Mirrors saveEquippedBeagleSkinId exactly.
+ */
+export function saveEquippedEnemySkinId(id: string): void {
+  try {
+    const current = loadProfile();
+    const next: StoredProfile = { ...current, equippedEnemySkinId: id };
+    window.localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(next));
+  } catch {
+    /* storage unavailable/throwing — keep the pick in memory for this
+       session only (cosmetics.ts's equipped-id state already reflects it);
+       nothing else to do, and this must never throw upward */
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Bridge between this module's persistence and cosmetics.ts's in-memory
 // equipped state. Lives here (not in cosmetics.ts) so the dependency arrow
@@ -99,6 +131,7 @@ export function saveEquippedBeagleSkinId(id: string): void {
 export function initProfileFromStorage(): void {
   const profile = loadProfile();
   setEquippedBeagleSkinId(profile.equippedBeagleSkinId);
+  setEquippedEnemySkinId(profile.equippedEnemySkinId);
 }
 
 /** Equips a skin AND persists the choice, ignoring unknown ids the same way
@@ -111,4 +144,13 @@ export function initProfileFromStorage(): void {
 export function equipBeagleSkin(id: string): void {
   setEquippedBeagleSkinId(id);
   saveEquippedBeagleSkinId(getEquippedBeagleSkinId());
+}
+
+/** Equips an enemy skin AND persists the choice, mirroring equipBeagleSkin
+ *  exactly (setEquippedEnemySkinId clamps unknown ids to the default itself,
+ *  so reading the id back afterwards is always a known-good value to
+ *  persist). */
+export function equipEnemySkin(id: string): void {
+  setEquippedEnemySkinId(id);
+  saveEquippedEnemySkinId(getEquippedEnemySkinId());
 }

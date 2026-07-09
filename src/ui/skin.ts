@@ -14,8 +14,17 @@
 // already imports both game/cosmetics.ts and render/characters.ts) — keeping
 // the DOM-wiring / three-mutation split clean, same spirit as CLAUDE.md's
 // "keep pure game logic free of any three import" rule for src/game/*.
-import { cycleBeagleSkinId, getBeagleSkin, getEquippedBeagleSkinId, type BeagleSkin } from "../game/cosmetics";
-import { equipBeagleSkin } from "../game/profileStore";
+import {
+  cycleBeagleSkinId,
+  getBeagleSkin,
+  getEquippedBeagleSkinId,
+  type BeagleSkin,
+  cycleEnemySkinId,
+  getEnemySkin,
+  getEquippedEnemySkinId,
+  type EnemySkin,
+} from "../game/cosmetics";
+import { equipBeagleSkin, equipEnemySkin } from "../game/profileStore";
 
 /**
  * Wires the HUD's temporary skin-cycle button (`#skinBtn`) to the cosmetics
@@ -50,6 +59,44 @@ export function attachSkinButton(root: ParentNode, onChange?: (skin: BeagleSkin)
   }
 
   render(getBeagleSkin(getEquippedBeagleSkinId())); // reflect the persisted state immediately on load
+  btn.addEventListener("click", onClick);
+
+  return () => btn.removeEventListener("click", onClick);
+}
+
+/**
+ * Wires the HUD's temporary enemy-skin-cycle button (`#enemyBtn`) to the
+ * cosmetics profile — mirrors attachSkinButton exactly, but for the enemy
+ * (ghost/beetle) skin registry instead of the beagle's. On click, cycles to
+ * the next ENEMY_SKINS entry, persists it via `equipEnemySkin` (survives
+ * reload), and calls `onChange(nextId)` so the caller can rebuild the actual
+ * enemy meshes (via `makeEnemy` in render/characters.ts — the enemy skin
+ * swaps the creature's FORM, not just a color, so unlike the beagle this
+ * can't be an in-place material recolor; game.ts's `rebuildEnemySkins`
+ * handles that). Call once from Game's constructor, alongside
+ * attachSkinButton. Returns a detach function for symmetry with the other
+ * attach* helpers.
+ */
+export function attachEnemyButton(root: ParentNode, onChange?: (skin: EnemySkin) => void): () => void {
+  const btn = (root.querySelector("#enemyBtn") ?? document.getElementById("enemyBtn")) as HTMLButtonElement | null;
+  if (!btn) {
+    throw new Error("attachEnemyButton: missing #enemyBtn — check index.html");
+  }
+
+  function render(skin: EnemySkin): void {
+    btn!.title = `Enemy skin: ${skin.name} (tap to change)`;
+    btn!.setAttribute("aria-label", `Change enemy skin (currently ${skin.name})`);
+  }
+
+  function onClick(): void {
+    const nextId = cycleEnemySkinId(getEquippedEnemySkinId());
+    equipEnemySkin(nextId);
+    const nextSkin = getEnemySkin(nextId);
+    render(nextSkin);
+    onChange?.(nextSkin);
+  }
+
+  render(getEnemySkin(getEquippedEnemySkinId())); // reflect the persisted state immediately on load
   btn.addEventListener("click", onClick);
 
   return () => btn.removeEventListener("click", onClick);

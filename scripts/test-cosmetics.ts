@@ -11,6 +11,13 @@ import {
   getEquippedBeagleSkin,
   setEquippedBeagleSkinId,
   cycleBeagleSkinId,
+  ENEMY_SKINS,
+  DEFAULT_ENEMY_SKIN_ID,
+  getEnemySkin,
+  getEquippedEnemySkinId,
+  getEquippedEnemySkin,
+  setEquippedEnemySkinId,
+  cycleEnemySkinId,
 } from "../src/game/cosmetics";
 import { COLORS } from "../src/game/config";
 import { loadProfile } from "../src/game/profileStore";
@@ -83,6 +90,49 @@ BEAGLE_SKINS.forEach((s) => {
   setEquippedBeagleSkinId(DEFAULT_BEAGLE_SKIN_ID);
 }
 
+console.log("\n=== cosmetics.ts (IDEA-009 enemy skins) ===");
+
+check("exactly 4 enemy skins", ENEMY_SKINS.length === 4);
+check(
+  "enemy skin ids are ghost, beetle, bee, ladybug in order",
+  ENEMY_SKINS.map((s) => s.id).join(",") === "ghost,beetle,bee,ladybug",
+);
+check("ghost is ENEMY_SKINS[0]", ENEMY_SKINS[0].id === "ghost");
+check("DEFAULT_ENEMY_SKIN_ID is ghost", DEFAULT_ENEMY_SKIN_ID === "ghost");
+
+// getEnemySkin(unknown) -> default, never throws.
+const unknownEnemy = getEnemySkin("does-not-exist");
+check("getEnemySkin(unknown) falls back to default (ghost)", unknownEnemy.id === DEFAULT_ENEMY_SKIN_ID);
+
+// cycleEnemySkinId wraps around through both skins and back to ghost.
+{
+  let id = DEFAULT_ENEMY_SKIN_ID;
+  const seen: string[] = [id];
+  for (let i = 0; i < ENEMY_SKINS.length; i++) {
+    id = cycleEnemySkinId(id);
+    seen.push(id);
+  }
+  check(
+    `enemy cycle visits all 4 skins then wraps to ${DEFAULT_ENEMY_SKIN_ID}`,
+    seen.join(",") === "ghost,beetle,bee,ladybug,ghost",
+  );
+  check("cycleEnemySkinId(unknown) returns the first skin's id", cycleEnemySkinId("nope") === ENEMY_SKINS[0].id);
+}
+
+// setEquippedEnemySkinId ignores unknown ids (clamps to default) and a known
+// id round-trips through getEquippedEnemySkinId/getEquippedEnemySkin.
+{
+  setEquippedEnemySkinId("beetle");
+  check("equip known enemy id -> getEquippedEnemySkinId reflects it", getEquippedEnemySkinId() === "beetle");
+  check("equip known enemy id -> getEquippedEnemySkin reflects it", getEquippedEnemySkin().id === "beetle");
+
+  setEquippedEnemySkinId("totally-bogus");
+  check("equip unknown enemy id clamps to default", getEquippedEnemySkinId() === DEFAULT_ENEMY_SKIN_ID);
+
+  // restore default state for any later test that might run in this process
+  setEquippedEnemySkinId(DEFAULT_ENEMY_SKIN_ID);
+}
+
 console.log("\n=== profileStore.ts (Node, no window/localStorage) ===");
 // In this plain tsx/Node run there is no `window`, so loadProfile()'s
 // try/catch must catch the ReferenceError and degrade to the default —
@@ -90,7 +140,21 @@ console.log("\n=== profileStore.ts (Node, no window/localStorage) ===");
 // private-mode/disabled-storage, without needing a DOM shim.
 {
   const profile = loadProfile();
-  check("loadProfile() in Node (no window) returns the default profile", profile.equippedBeagleSkinId === DEFAULT_BEAGLE_SKIN_ID);
+  check("loadProfile() in Node (no window) returns the default beagle skin", profile.equippedBeagleSkinId === DEFAULT_BEAGLE_SKIN_ID);
+  check("loadProfile() in Node (no window) returns the default enemy skin", profile.equippedEnemySkinId === DEFAULT_ENEMY_SKIN_ID);
+}
+
+// Round-trip check on the pure merge logic loadProfile() uses: a blob that
+// already has a non-default beagle field, when "read-modify-write"'d with
+// only the enemy field changing, must preserve the beagle field untouched.
+// This exercises the same spread-over-defaults shape saveEquippedEnemySkinId
+// relies on, without needing real localStorage (unavailable in this Node
+// run, per the precedent above).
+{
+  const existing = { equippedBeagleSkinId: "cookie", equippedEnemySkinId: DEFAULT_ENEMY_SKIN_ID };
+  const merged = { ...existing, equippedEnemySkinId: "beetle" };
+  check("read-modify-write preserves beagle field when only enemy field changes", merged.equippedBeagleSkinId === "cookie");
+  check("read-modify-write applies the new enemy field", merged.equippedEnemySkinId === "beetle");
 }
 
 console.log(`\ncosmetics/profileStore checks: ${failures === 0 ? "ALL OK" : `${failures} FAILED`}`);

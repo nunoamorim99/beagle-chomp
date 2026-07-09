@@ -21,17 +21,6 @@ _(nothing yet)_
 ## Backlog (open ideas)
 > New registered ideas go here. Next free ID: IDEA-023
 
-### IDEA-009 — Enemy skin system (break away from the classic ghost) 💡
-- **Priority:** 🟡
-- **Area:** skins
-- **Description:** be able to change the appearance of the enemies. The goal is to escape the
-  traditional Pac-Man look — instead of the classic ghost, offer something different that fits the
-  game's theme. The current ghost stays available as one skin, but it shouldn't have to be the main
-  one; design another cool appearance and make enemy skins swappable.
-- **Notes:** merged from two captures describing the same feature. Ghost = one option among several.
-  Skins are sold through the shop ([[IDEA-012]]).
-- **Dependencies:** —
-
 ### IDEA-012 — Shop system for skins & themes 💡
 - **Priority:** 🟡
 - **Area:** shop
@@ -128,6 +117,27 @@ _(nothing yet)_
 
 ## Delivered ✅
 > Already in production. Do NOT delete. Each keeps its version history.
+
+### IDEA-009 — Enemy skin system (break away from the classic ghost) ✅
+- **Priority:** 🟡
+- **Area:** skins
+- **Description:** be able to change the appearance of the enemies. The goal is to escape the
+  traditional Pac-Man look — instead of the classic ghost, offer something different that fits the
+  game's theme. The current ghost stays available as one skin, but it shouldn't have to be the main
+  one; design another cool appearance and make enemy skins swappable.
+- **Notes:** merged from two captures describing the same feature. Ghost = one option among several.
+  Skins are sold through the shop ([[IDEA-012]]). Second build of v2.0 "The Garden" — reuses the
+  cosmetics/profile foundation from [[IDEA-010]]. Shipped a set of **4 enemy skins**: Ghost (classic,
+  default), Garden Beetle, Bee (flat surface-hugging stripe bands), Ladybug (7 black spots on the
+  shell). Every skin keeps the ghost's contract — 3 team colors (chaser/ambusher/clyde), a frightened
+  recolor, an eaten eyes-only state, direction-tracking eyes — so the bone mechanic is unchanged.
+  Along the way: fixed a latent **eaten-state bug in `applyGhostState`** (it hid the top-level group,
+  which short-circuited the eyes — affected the ghost too) and gave the **beagle the same cute eyes**
+  (white eyeball + calm dark-brown pupil; beagle-specific, enemies keep blue). Temporary 👾 HUD button
+  cycles enemy skins (placeholder, absorbed by the shop [[IDEA-012]] later).
+- **Dependencies:** —
+- **History:**
+  - **v1** (2026-07-09) — 4 enemy skins via a `makeEnemy(skinId, color)` factory: Ghost + new Beetle/Bee/Ladybug creatures, all satisfying the `GhostUserData` state contract (frightened/eaten/eye-tracking). Enemy-skin registry + persistence added to the shared cosmetics/profile foundation (same `beagle-chomp:profile` blob, back-compatible). Fixed `applyGhostState` eaten bug (`mesh.traverse`→`mesh.children.forEach`). Beagle got the cute eyes too. Temporary `#enemyBtn` switcher (`ui/skin.ts`). Verified live: 4-way cycle+persist, all states per skin, zero errors; build + tests green (test roster → 4 skins). `characters.ts`, `game.ts`, `cosmetics.ts`, `profileStore.ts`, `ui/skin.ts`, `index.html`, `style.css`, `scripts/test-cosmetics.ts`. _(688cf6e)_
 
 ### IDEA-010 — Beagle skins named after coat patterns ✅
 - **Priority:** 🟡
