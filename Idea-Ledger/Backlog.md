@@ -76,20 +76,26 @@ _(nothing yet)_
 - **Notes:** needs identity to attribute scores ([[IDEA-019]]) and a home in the menu ([[IDEA-021]]).
 - **Dependencies:** [[IDEA-019]]
 
-### IDEA-021 — Main menu (modes · shop · profile · scoreboard) 💡
-- **Priority:** 🟡
-- **Area:** menu
-- **Description:** a good game menu that lets the player navigate between game modes, the shop, their
-  profile, and the scoreboard. The hub that ties the whole app together.
-- **Notes:** the navigation surface for [[IDEA-012]], [[IDEA-013]]/[[IDEA-014]], [[IDEA-019]], and
-  [[IDEA-020]]. Worth designing once the sections it links to are scoped.
-- **Dependencies:** —
-
 ## In progress 🔨
 _(nothing yet)_
 
 ## Delivered ✅
 > Already in production. Do NOT delete. Each keeps its version history.
+
+### IDEA-021 — Main menu (modes · shop · profile · scoreboard) ✅
+- **Priority:** 🟡
+- **Area:** menu
+- **Description:** a good game menu that lets the player navigate between game modes, the shop, their
+  profile, and the scoreboard. The hub that ties the whole app together.
+- **Notes:** the navigation surface for [[IDEA-012]], [[IDEA-013]]/[[IDEA-014]], [[IDEA-019]], and
+  [[IDEA-020]]. Fifth/final build of v2.0 "The Garden". First cut deliberately scopes to what EXISTS —
+  Play + Shop ([[IDEA-012]]) + coin balance — with NO dead placeholders; modes/profile/scoreboard
+  slots arrive when their features ship ([[IDEA-013]], [[IDEA-019]], [[IDEA-020]]). Absorbed the old
+  Start panel rather than duplicating it. Also added a 🏠 quit-to-menu HUD button and a "Menu" button
+  on the game-over panel.
+- **Dependencies:** —
+- **History:**
+  - **v1** (2026-07-09) — the hub: boot lands on a menu (title, 🪙 wallet line read fresh from `getCoins()`, ▶ Play primary + 🛒 Shop secondary buttons, controls hint). Menu opens the shop via a new `ShopHandle.open()` (attachShop now returns `{open, detach}` + an `onClose` callback that re-renders the menu so the wallet stays fresh after in-shop spending). 🏠 HUD button quits a run back to the menu (`quitToMenu()`: hideCenter → resetBeagleScale → fresh game state → resetActors → mode="start" → menu; banked coins persist, run score discarded; safe no-op on the menu). Game over now offers "Play again" + "Menu" (keeps the current level as the idle backdrop). Verified live: boot→menu, menu→shop→close, menu→play, play→🏠→menu→play-again, double-🏠 safe, coins persist, desktop + phone, zero errors. `game.ts`, `ui/shop.ts`, `index.html`, `style.css`. _(0363bf4)_
 
 ### IDEA-012 — Shop system for skins & themes ✅
 - **Priority:** 🟡

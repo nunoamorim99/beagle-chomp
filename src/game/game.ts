@@ -46,7 +46,7 @@ import {
 } from "../render/characters";
 import { createHud, type Hud } from "../ui/hud";
 import { createSound, attachMuteButton, type Sound } from "../ui/sound";
-import { attachShop } from "../ui/shop";
+import { attachShop, type ShopHandle } from "../ui/shop";
 import { initProfileFromStorage, getCoins, addCoins } from "./profileStore";
 import { getEquippedEnemySkinId } from "./cosmetics";
 
@@ -112,7 +112,8 @@ export class Game {
   private readonly detachTouch: () => void;
   private readonly detachMuteButton: () => void;
   private readonly detachAudioUnlock: () => void;
-  private readonly detachShop: () => void;
+  private readonly shop: ShopHandle;
+  private readonly detachHomeButton: () => void;
 
   private ghosts: GhostRig[] = [];
 
@@ -213,7 +214,7 @@ export class Game {
     // resets/deaths. The shop stays three-free/pure-DOM (src/ui/shop.ts);
     // the actual mesh work happens here via these callbacks, mirroring how
     // attachSkinButton/attachEnemyButton used to hand it back to game.ts.
-    this.detachShop = attachShop(document.body, {
+    this.shop = attachShop(document.body, {
       onEquipBeagle: (skin) => {
         applyBeagleSkin(this.beagleMesh, skin);
       },
@@ -227,10 +228,20 @@ export class Game {
       onCoinsChanged: () => {
         this.hud.setCoins(getCoins());
       },
+      // IDEA-021: the main menu renders its own "N coins" line underneath the
+      // shop overlay (opened via #menuShopBtn -> this.shop.open()). The
+      // player can only spend in the shop, never earn, but a purchase there
+      // still changes the wallet the menu displayed before it opened — so
+      // re-render the menu on close to pick up any change. No-op (cheap) if
+      // the menu isn't the panel currently showing.
+      onClose: () => {
+        if (this.mode === "start") this.showMenu();
+      },
     });
 
     this.detachKeyboard = attachKeyboard((d) => { this.beagle.queued = d; });
     this.detachTouch = attachTouch(canvas, (d) => { this.beagle.queued = d; });
+    this.detachHomeButton = this.attachHomeButton();
 
     const initial = createInitialGameState();
     this.score = initial.score;
@@ -252,25 +263,36 @@ export class Game {
     // case in update()), so this is purely a static pose until Start is clicked.
     this.resetActors();
 
-    this.showStartPanel();
+    this.showMenu();
   }
 
-  private showStartPanel(): void {
+  /**
+   * The main menu (IDEA-021) — the boot panel, and the panel returned to via
+   * game-over's "Menu" button or the in-HUD 🏠 quit button. Deliberately
+   * shows ONLY Play + Shop + the coin wallet (no placeholder slots for future
+   * modes/profile/scoreboard — scope confirmed for v2.0). Re-reads
+   * getCoins() fresh on every render so the wallet line is never stale after
+   * a run (coins earned) or a shop visit (coins spent) — see the
+   * `onClose`/`onCoinsChanged` shop callbacks in the constructor, which both
+   * call back into this method while mode is "start".
+   */
+  private showMenu(): void {
     const panel = this.hud.showPanel(
       '<div class="eyebrow">three.js &middot; maze chase</div>' +
       "<h1>Beagle Chomp</h1>" +
-      "<p>Guide the beagle around the maze and munch every biscuit to clear the map. " +
-      'Chomp a <b style="color:#fff">bone</b> and the ghosts turn scared &mdash; eat them ' +
-      "for big points before they recover.</p>" +
+      `<p class="coin-line">\u{1FA99} ${getCoins()} coins</p>` +
       '<div class="keys"><b>Arrow keys</b> or <b>WASD</b> to move &middot; avoid the ghosts</div>' +
-      '<button id="startBtn">Start</button>',
+      '<div class="menu-actions">' +
+      '<button id="playBtn">&#9654; Play</button>' +
+      '<button id="menuShopBtn" class="btn-secondary">&#128722; Shop</button>' +
+      "</div>",
     );
-    const startBtn = panel.querySelector<HTMLButtonElement>("#startBtn");
-    startBtn?.addEventListener("click", () => {
-      // The Start click is a guaranteed user gesture, so this is the primary
+    const playBtn = panel.querySelector<HTMLButtonElement>("#playBtn");
+    playBtn?.addEventListener("click", () => {
+      // The Play click is a guaranteed user gesture, so this is the primary
       // place audio unlocks (the first-input listeners in the constructor are
       // just a belt-and-suspenders fallback for anyone who somehow interacts
-      // before clicking Start).
+      // before clicking Play).
       this.sound.resume();
       const fresh = createInitialGameState();
       this.score = fresh.score;
@@ -279,6 +301,11 @@ export class Game {
       this.hud.setScore(this.score);
       this.hud.setLives(this.lives);
       this.startLevel(0);
+    });
+
+    const menuShopBtn = panel.querySelector<HTMLButtonElement>("#menuShopBtn");
+    menuShopBtn?.addEventListener("click", () => {
+      this.shop.open();
     });
   }
 
@@ -335,7 +362,8 @@ export class Game {
     this.detachTouch();
     this.detachMuteButton();
     this.detachAudioUnlock();
-    this.detachShop();
+    this.detachHomeButton();
+    this.shop.detach();
   }
 
   // ---- level flow (prototype startLevel, line 419) ----
@@ -685,7 +713,10 @@ export class Game {
       '<div class="eyebrow">final score</div>' +
       `<h1>${this.score}</h1>` +
       "<p>The pack got the better of the beagle this time.</p>" +
-      '<button id="againBtn">Play again</button>',
+      '<div class="menu-actions">' +
+      '<button id="againBtn">Play again</button>' +
+      '<button id="gameOverMenuBtn" class="btn-secondary">Menu</button>' +
+      "</div>",
     );
     const againBtn = panel.querySelector<HTMLButtonElement>("#againBtn");
     againBtn?.addEventListener("click", () => {
@@ -698,6 +729,87 @@ export class Game {
       this.hud.setLives(this.lives);
       this.startLevel(0);
     });
+
+    const gameOverMenuBtn = panel.querySelector<HTMLButtonElement>("#gameOverMenuBtn");
+    // IDEA-021: from game over, "Menu" returns to the idle menu instead of
+    // starting a fresh run. The run just ended (mode is already "over", no
+    // stateTimer pending, no fright/collision state to worry about), so this
+    // is simpler than the mid-run quit path (quitToMenu) below: just reset
+    // actors/score/lives to fresh-looking idle values and show the menu.
+    // Keeps the CURRENT level as the idle backdrop (matches boot's own
+    // preview behavior — buildLevel is not re-run) rather than rebuilding
+    // level 0, since a game over can happen on any level and re-showing that
+    // same level's board underneath the menu is visually seamless.
+    gameOverMenuBtn?.addEventListener("click", () => {
+      const fresh = createInitialGameState();
+      this.score = fresh.score;
+      this.lives = fresh.lives;
+      this.coinsAwardedFromScore = 0;
+      this.hud.setScore(this.score);
+      this.hud.setLives(this.lives);
+      this.resetActors();
+      this.mode = "start";
+      this.showMenu();
+    });
+  }
+
+  // ---- quit-to-menu (IDEA-021: the 🏠 HUD button) ----
+
+  /** Wires the HUD's 🏠 "back to menu" button. Owned here (not shop.ts/hud.ts)
+   *  since it needs direct access to the run-abandoning state reset below. */
+  private attachHomeButton(): () => void {
+    const btn = document.getElementById("homeBtn") as HTMLButtonElement | null;
+    if (!btn) throw new Error("attachHomeButton: missing #homeBtn — check index.html");
+    const onClick = (): void => this.quitToMenu();
+    btn.addEventListener("click", onClick);
+    return () => btn.removeEventListener("click", onClick);
+  }
+
+  /**
+   * Abandons the run in progress (any mode except "start", where it's a
+   * no-op — the menu is already showing) and returns to the idle menu, the
+   * same place game over's "Menu" button lands. The abandoned run's score is
+   * discarded; coins already banked persist (profileStore, untouched here) —
+   * that's the intended design (coins are a separate wallet from score).
+   *
+   * Switching `mode` away from "dying"/"levelclear"/"ready" is sufficient to
+   * neutralize their pending `stateTimer` countdowns: update()'s switch only
+   * reads/advances stateTimer for the mode that's CURRENTLY active, so once
+   * mode is "start" nothing will ever check that stale timer again (see
+   * update()'s per-mode cases — none of them run once mode !== their case).
+   *
+   * resetActors() (same helper startLevel/death-respawn use) rebuilds the
+   * ghosts fresh at "scatter" and clears frightTimer/ghostEatChain/
+   * modeClock/scheduleIdx/fruit/coin, so quitting mid-fright (or mid-chase,
+   * mid-anything) can never leak stale state into the idle preview — there's
+   * nothing fright-specific left to reset beyond what resetActors already
+   * does.
+   *
+   * One thing resetActors() does NOT touch: the beagle MESH's own transient
+   * scale/rotation from a mid-flight "dying" spin-shrink (setBeagleDeath —
+   * resetActors only rebuilds the logic Entity, not the mesh). The normal
+   * "dying" completion path calls resetBeagleScale() before resetActors() for
+   * exactly this reason (see the "dying" case in update()); quitting mid-death
+   * must do the same so the idle preview never shows a shrunk/mid-spin beagle.
+   * Harmless no-op if death wasn't in progress (scale/rotation are already at
+   * rest, so setScalar to the same value is a no-op).
+   */
+  private quitToMenu(): void {
+    if (this.mode === "start") return;
+
+    this.hud.hideCenter();
+    resetBeagleScale(this.beagleMesh);
+
+    const fresh = createInitialGameState();
+    this.score = fresh.score;
+    this.lives = fresh.lives;
+    this.coinsAwardedFromScore = 0;
+    this.hud.setScore(this.score);
+    this.hud.setLives(this.lives);
+
+    this.resetActors();
+    this.mode = "start";
+    this.showMenu();
   }
 
   // ---- per-mode update (prototype main loop, lines 662-691) ----

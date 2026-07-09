@@ -70,6 +70,17 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--ink);
 .shop-btn:hover{transform:translateY(-1px);filter:brightness(1.12)}
 .shop-btn:focus-visible{outline:2px solid #fff;outline-offset:2px}
 
+/* Home/quit-to-menu button (IDEA-021) — same matching-stack language as
+   .mute-btn/.shop-btn, taking the next free slot directly below Shop. */
+.home-btn{position:fixed;top:calc(162px + env(safe-area-inset-top));
+  right:calc(22px + env(safe-area-inset-right));z-index:6;pointer-events:auto;
+  width:34px;height:34px;padding:0;display:flex;align-items:center;justify-content:center;
+  font-size:16px;line-height:1;border-radius:50%;
+  background:rgba(16,16,30,.55);border:1px solid rgba(255,255,255,.12);color:var(--ink);
+  box-shadow:0 4px 16px rgba(0,0,0,.35);backdrop-filter:blur(4px)}
+.home-btn:hover{transform:translateY(-1px);filter:brightness(1.12)}
+.home-btn:focus-visible{outline:2px solid #fff;outline-offset:2px}
+
 /* Center banners + panels */
 .center{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
   z-index:10;pointer-events:none}
@@ -85,11 +96,23 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--ink);
 .panel .keys{font-family:ui-monospace,monospace;color:var(--ink);font-size:13px;
   margin-bottom:22px;line-height:2}
 .panel .keys b{color:var(--accent)}
+/* IDEA-021 main menu — coin wallet line (menu-only; distinct from the HUD's
+   own persistent #coins pill, which stays hidden behind the panel). */
+.panel .coin-line{font-family:ui-monospace,"SF Mono",monospace;color:var(--accent);
+  font-weight:700;font-size:16px;margin-bottom:16px}
+/* Button row shared by the main menu (Play/Shop) and game over (Play
+   again/Menu) — stacks the primary + secondary action side by side. */
+.menu-actions{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
 button{pointer-events:auto;font:inherit;font-weight:700;font-size:16px;color:#1a1206;
   background:var(--accent);border:none;border-radius:999px;padding:13px 30px;cursor:pointer;
   transition:transform .12s ease,filter .12s ease}
 button:hover{transform:translateY(-2px);filter:brightness(1.06)}
 button:focus-visible{outline:3px solid #fff;outline-offset:2px}
+/* Secondary action variant (Shop/Menu buttons) — outlined/darker so it never
+   competes with the primary accent-filled Play/Play-again button. */
+button.btn-secondary{color:var(--ink);background:rgba(255,255,255,.06);
+  border:1px solid rgba(255,255,255,.22)}
+button.btn-secondary:hover{filter:brightness(1.2);background:rgba(255,255,255,.1)}
 .hidden{display:none!important}
 
 /* ---------------------------------------------------------------------- */
