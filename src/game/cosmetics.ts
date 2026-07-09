@@ -26,6 +26,9 @@ export interface BeagleSkin {
   id: string;
   name: string;
   coat: BeagleCoat;
+  /** Shop price in coins (IDEA-012). 0 means "owned from the start, never
+   *  purchasable" — currently true only for the default skin. */
+  price: number;
 }
 
 export const BEAGLE_SKINS: readonly BeagleSkin[] = [
@@ -37,6 +40,9 @@ export const BEAGLE_SKINS: readonly BeagleSkin[] = [
     // EAR_BROWN exactly, so equipping the default skin is a visual no-op
     // and nothing regresses for players who never touch the skin picker.
     coat: { tan: 0xc98a3c, white: 0xf4efe6, black: 0x2a2320, ear: 0x6b3f22 },
+    // Default skin: free and always owned (see profileStore.ts's
+    // defaultProfile()).
+    price: 0,
   },
   {
     id: "cookie",
@@ -47,6 +53,7 @@ export const BEAGLE_SKINS: readonly BeagleSkin[] = [
     // it doesn't flatten into a silhouette), and an ear a shade darker
     // than the body for a tonal, all-brown liver look.
     coat: { tan: 0x8a5a2b, white: 0xe8dcc8, black: 0x3a2416, ear: 0x5c3a1e },
+    price: 5,
   },
   {
     id: "muffin",
@@ -56,6 +63,7 @@ export const BEAGLE_SKINS: readonly BeagleSkin[] = [
     // saddle/markings so it reads as a lemon beagle rather than a
     // tricolor; ear a gentle tan-brown that stays close to the body tone.
     coat: { tan: 0xe4c58a, white: 0xfaf6ee, black: 0x9c7248, ear: 0xb6864f },
+    price: 5,
   },
   {
     id: "pepper",
@@ -65,10 +73,17 @@ export const BEAGLE_SKINS: readonly BeagleSkin[] = [
     // dark cool grey ear — deliberately cool-toned to contrast the three
     // warm coats above.
     coat: { tan: 0x7d8794, white: 0xf2f3f5, black: 0x1c1f24, ear: 0x4a4f57 },
+    price: 5,
   },
 ] as const;
 
 export const DEFAULT_BEAGLE_SKIN_ID = "bagel";
+
+/** Returns a beagle skin's shop price, 0 for the default/unknown id. Never
+ *  throws — mirrors getBeagleSkin's fallback-to-default behaviour. */
+export function getBeagleSkinPrice(id: string): number {
+  return getBeagleSkin(id).price;
+}
 
 /** Looks up a skin by id. Never throws — an unknown/stale id (e.g. read back
  *  from storage after a skin was renamed/removed) degrades to the default
@@ -145,16 +160,27 @@ export function cycleBeagleSkinId(currentId: string): string {
 export interface EnemySkin {
   id: string;
   name: string;
+  /** Shop price in coins (IDEA-012). 0 means "owned from the start, never
+   *  purchasable" — currently true only for the default skin. */
+  price: number;
 }
 
 export const ENEMY_SKINS: readonly EnemySkin[] = [
-  { id: "ghost", name: "Ghost" },
-  { id: "beetle", name: "Beetle" },
-  { id: "bee", name: "Bee" },
-  { id: "ladybug", name: "Ladybug" },
+  // Default skin: free and always owned (see profileStore.ts's
+  // defaultProfile()).
+  { id: "ghost", name: "Ghost", price: 0 },
+  { id: "beetle", name: "Beetle", price: 5 },
+  { id: "bee", name: "Bee", price: 5 },
+  { id: "ladybug", name: "Ladybug", price: 5 },
 ] as const;
 
 export const DEFAULT_ENEMY_SKIN_ID = "ghost";
+
+/** Returns an enemy skin's shop price, 0 for the default/unknown id. Never
+ *  throws — mirrors getEnemySkin's fallback-to-default behaviour. */
+export function getEnemySkinPrice(id: string): number {
+  return getEnemySkin(id).price;
+}
 
 /** Looks up an enemy skin by id. Never throws — an unknown/stale id degrades
  *  to the default skin instead of breaking rendering. */

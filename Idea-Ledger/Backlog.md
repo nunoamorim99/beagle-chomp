@@ -21,15 +21,6 @@ _(nothing yet)_
 ## Backlog (open ideas)
 > New registered ideas go here. Next free ID: IDEA-023
 
-### IDEA-012 — Shop system for skins & themes 💡
-- **Priority:** 🟡
-- **Area:** shop
-- **Description:** a shop that lets the player buy beagle skins, enemy skins, and map skins/themes.
-  The single storefront for all cosmetic unlocks.
-- **Notes:** spends the coin currency earned in classic mode ([[IDEA-016]], [[IDEA-017]]). Sells the
-  cosmetics from [[IDEA-009]], [[IDEA-010]], and map themes built on [[IDEA-008]]/[[IDEA-011]].
-- **Dependencies:** [[IDEA-009]], [[IDEA-010]]
-
 ### IDEA-013 — Challenge mode: per-level twists 💡
 - **Priority:** 🟡
 - **Area:** modes
@@ -100,6 +91,22 @@ _(nothing yet)_
 ## Delivered ✅
 > Already in production. Do NOT delete. Each keeps its version history.
 
+### IDEA-012 — Shop system for skins & themes ✅
+- **Priority:** 🟡
+- **Area:** shop
+- **Description:** a shop that lets the player buy beagle skins, enemy skins, and map skins/themes.
+  The single storefront for all cosmetic unlocks.
+- **Notes:** spends the coin currency earned in classic mode ([[IDEA-016]], [[IDEA-017]]). Sells the
+  cosmetics from [[IDEA-009]], [[IDEA-010]]. Fourth build of v2.0 "The Garden" — closes the economy
+  loop: earn coins playing → spend in the shop → equip. Introduced the **owned-skins** concept
+  (Bagel + Ghost free/owned by default; the other 6 skins cost 5 🪙) with equip gated on ownership.
+  Replaced the temporary 🐶/👾 cycle switchers (`ui/skin.ts` deleted) with the real storefront (🛒
+  HUD button). Map THEMES stay future scope — they need a theme-swap system first (builds on
+  [[IDEA-008]]/[[IDEA-011]]); the shop UI takes a themes section when that exists.
+- **Dependencies:** [[IDEA-009]], [[IDEA-010]]
+- **History:**
+  - **v1** (2026-07-09) — the storefront: 🛒 HUD button opens a dedicated overlay (own `#shop` container, never fights the Start/GameOver panel) with live coin balance + Beagle/Enemy sections; per-skin cards (coat-color swatches for beagles, icons for enemies) with contextual actions — Equipped / Equip / Buy · 5 🪙 / "Need N more 🪙". Data layer: `price` on both skin registries; `ownedBeagleSkinIds`/`ownedEnemySkinIds` in the profile blob (defaults always owned, defensive load); `buyBeagleSkin`/`buyEnemySkin` (atomic coin-deduct + unlock in one write; refuses already-owned/insufficient/unknown); `equipBeagleSkin`/`equipEnemySkin` now gated on ownership (return boolean); boot fallback if equipped-but-unowned. HUD coin counter syncs live on purchase (`onCoinsChanged`). Responsive desktop + phone (cards stack, ≥44px targets). Verified live end-to-end with real clicks: buy 12→7 🪙, unlock, equip (beagle recolors live), reload persists all. `ui/shop.ts` (new), `ui/skin.ts` (deleted), `cosmetics.ts`, `profileStore.ts`, `game.ts`, `index.html`, `style.css`, `scripts/test-cosmetics.ts`. _(9126a00)_
+
 ### IDEA-016 — Classic mode: earn coins from points ✅
 - **Priority:** 🟡
 - **Area:** economy
@@ -125,6 +132,7 @@ _(nothing yet)_
 - **Dependencies:** [[IDEA-012]] (spend-only; not blocking)
 - **History:**
   - **v1** (2026-07-09) — a gold coin (rim + emboss, glowing, spins) spawns in the maze like the fruit and grants 1 coin on pickup (no points). Unlike the fruit it **auto-despawns** after `COINS.lifespanSeconds` — a "grab it quick" bonus. Tuned to **4 coins per level** at pellet-eaten `[20, 60, 105, 150]` (first one early so it's actually encountered), placed on a **random reachable tile** (drawn from the remaining-pellet set, not just fruit spots), with an **18s** lifespan so a coin across the map is reachable before it vanishes. `makeCoin`/`spawnCoin`/`clearCoin`/`board.coin` + coin spin in `spinDecor` (`board.ts`); `despawnCoin()` single-teardown helper + `tickCoinLifespan` (play-only) + `pickRandomCoinTile` (`game.ts`). Verified live (instrumented): coin spawns on threshold at a random tile with the countdown running, banks on pickup, no errors. `board.ts`, `game.ts`, `config.ts`. _(f561491)_
+  - **v2** (2026-07-09) — placement rework: coins now spawn on **EMPTY walkable tiles** (already-cleared corridors) instead of tiles that still hold a biscuit — so the coin stands out against bare floor AND creates a real decision (detour back to a cleared area, or press on). New `walkableTiles` precomputed per level (`grid.walkable(x,y,false)` scan in `buildLevel`); `pickRandomCoinTile` prefers the empty set (walkable minus pellets minus beagle/fruit tiles) and falls back to any walkable tile so a spawn never skips. Verified (instrumented): 200/200 picks on empty tiles, 0 on biscuits. `game.ts`. _(9126a00)_
 
 ### IDEA-009 — Enemy skin system (break away from the classic ghost) ✅
 - **Priority:** 🟡

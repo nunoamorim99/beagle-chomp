@@ -46,7 +46,7 @@ import {
 } from "../render/characters";
 import { createHud, type Hud } from "../ui/hud";
 import { createSound, attachMuteButton, type Sound } from "../ui/sound";
-import { attachSkinButton, attachEnemyButton } from "../ui/skin";
+import { attachShop } from "../ui/shop";
 import { initProfileFromStorage, getCoins, addCoins } from "./profileStore";
 import { getEquippedEnemySkinId } from "./cosmetics";
 
@@ -87,6 +87,11 @@ interface LevelAssets {
   pellets: Set<string>;
   startPelletCount: number;
   fruitTiles: Vec2[];
+  /** IDEA-017 follow-up: every beagle-walkable floor tile in the level
+   *  (grid.walkable(x, y, false) — excludes walls and the ghost-only
+   *  pen/door), precomputed once per level so maze-coin placement doesn't
+   *  need to rescan the grid on every spawn. See pickRandomCoinTile. */
+  walkableTiles: Vec2[];
   beagleSpawn: Vec2;
   ghostSpawn: Vec2;
 }
@@ -107,8 +112,7 @@ export class Game {
   private readonly detachTouch: () => void;
   private readonly detachMuteButton: () => void;
   private readonly detachAudioUnlock: () => void;
-  private readonly detachSkinButton: () => void;
-  private readonly detachEnemyButton: () => void;
+  private readonly detachShop: () => void;
 
   private ghosts: GhostRig[] = [];
 
@@ -202,23 +206,27 @@ export class Game {
     this.rig.scene.add(this.beagleMesh);
     this.beagle = makeEntity(this.level.beagleSpawn.x, this.level.beagleSpawn.y, SPEEDS.beagle);
 
-    // Temporary skin-cycle button (placeholder until the shop UI, IDEA-012,
-    // lands) — see src/ui/skin.ts's doc comment for the layering rationale.
-    // Lives alongside attachMuteButton with the same lifecycle (detached in
-    // stop() below); resetActors() rebuilds ghosts but reuses this.beagleMesh,
-    // so the equipped skin persists naturally across level resets/deaths.
-    this.detachSkinButton = attachSkinButton(document.body, (skin) => {
-      applyBeagleSkin(this.beagleMesh, skin);
-    });
-
-    // Temporary enemy-skin-cycle button (placeholder until the shop UI,
-    // IDEA-012, lands), mirroring attachSkinButton above — see
-    // src/ui/skin.ts's attachEnemyButton doc comment. Unlike the beagle
-    // (recolored in place), enemy skins swap the creature's FORM, so the
-    // onChange handler rebuilds the 3 enemy meshes in place rather than
-    // recoloring existing materials (see rebuildEnemySkins below).
-    this.detachEnemyButton = attachEnemyButton(document.body, () => {
-      this.rebuildEnemySkins();
+    // The real shop UI (IDEA-012) — replaces the old skin/enemy cycle
+    // buttons. Lives alongside attachMuteButton with the same lifecycle
+    // (detached in stop() below); resetActors() rebuilds ghosts but reuses
+    // this.beagleMesh, so the equipped skin persists naturally across level
+    // resets/deaths. The shop stays three-free/pure-DOM (src/ui/shop.ts);
+    // the actual mesh work happens here via these callbacks, mirroring how
+    // attachSkinButton/attachEnemyButton used to hand it back to game.ts.
+    this.detachShop = attachShop(document.body, {
+      onEquipBeagle: (skin) => {
+        applyBeagleSkin(this.beagleMesh, skin);
+      },
+      onEquipEnemy: () => {
+        this.rebuildEnemySkins();
+      },
+      // The shop panel's own header balance already re-renders itself from
+      // live state after every buy — but the HUD's coin stat lives outside
+      // the shop overlay and would otherwise stay stale until the next
+      // in-game coin event. Re-sync it here on every successful purchase.
+      onCoinsChanged: () => {
+        this.hud.setCoins(getCoins());
+      },
     });
 
     this.detachKeyboard = attachKeyboard((d) => { this.beagle.queued = d; });
@@ -288,6 +296,7 @@ export class Game {
 
     const pellets = new Set<string>();
     const fruitTiles: Vec2[] = [];
+    const walkableTiles: Vec2[] = [];
     let beagleSpawn: Vec2 = { x: 0, y: 0 };
     let ghostSpawn: Vec2 = { x: 0, y: 0 };
 
@@ -296,9 +305,14 @@ export class Game {
       else if (c === "F") fruitTiles.push({ x, y });
       else if (c === "P") beagleSpawn = { x, y };
       else if (c === "G") ghostSpawn = { x, y };
+      // IDEA-017 follow-up: the beagle-walkable set for maze-coin placement —
+      // grid.walkable(x, y, false) is the robust source of truth (excludes
+      // walls "#"/void " " and the ghost-only pen/door "="/"-"/"G"), rather
+      // than hardcoding the floor-tile character list here.
+      if (grid.walkable(x, y, false)) walkableTiles.push({ x, y });
     }));
 
-    return { grid, board, pellets, startPelletCount: pellets.size, fruitTiles, beagleSpawn, ghostSpawn };
+    return { grid, board, pellets, startPelletCount: pellets.size, fruitTiles, walkableTiles, beagleSpawn, ghostSpawn };
   }
 
   /** Removes every mesh owned by the previous level's board from the scene (walls, floor, remaining pellets, fruit, coin, hedge decor) so buildLevel's replacement never leaks. */
@@ -321,8 +335,7 @@ export class Game {
     this.detachTouch();
     this.detachMuteButton();
     this.detachAudioUnlock();
-    this.detachSkinButton();
-    this.detachEnemyButton();
+    this.detachShop();
   }
 
   // ---- level flow (prototype startLevel, line 419) ----
@@ -507,7 +520,7 @@ export class Game {
     if (!COIN_THRESHOLDS.includes(eaten as (typeof COIN_THRESHOLDS)[number])) return;
 
     const tile = this.pickRandomCoinTile();
-    if (!tile) return; // pellets set somehow empty — shouldn't happen mid-play
+    if (!tile) return; // level has no walkable tiles at all — shouldn't happen for a validated maze
 
     this.coinTile = tile;
     this.coinTimer = COINS.lifespanSeconds;
@@ -515,36 +528,36 @@ export class Game {
   }
 
   /**
-   * Picks a random walkable, reachable tile for a maze coin: any tile still
-   * holding a pellet (this.level.pellets — the validated reachable-floor set;
-   * every entry is real open floor the beagle can reach, and it naturally
-   * excludes walls/pen oddities). Re-picks a few times if the draw collides
-   * with the current fruit tile or the beagle's own tile (so a coin can't
-   * spawn already-eaten the instant it appears), then accepts whatever it
-   * has rather than looping forever. Returns null only if there are no
-   * pellets left at all (shouldn't happen mid-play — the level ends at 0).
+   * Picks a random tile for a maze coin, PREFERRING bare/cleared floor: a
+   * beagle-walkable tile (this.level.walkableTiles, precomputed once per
+   * level in buildLevel) that does NOT currently hold a pellet. Landing on
+   * already-eaten corridors makes the coin stand out against empty floor
+   * instead of hiding among the biscuits, and turns grabbing it into a real
+   * detour decision rather than "walk the path you were on anyway."
+   *
+   * Falls back to any walkable tile (excluding the beagle/fruit tile where
+   * possible) if the level has no empty tiles yet (very early on, before
+   * anything's been cleared) — a coin should still appear rather than being
+   * skipped. Excludes the beagle's current tile and the active fruit tile
+   * from both candidate pools where at least one other option exists, so a
+   * coin can't spawn already-grabbed the instant it appears or double up
+   * with the fruit. Returns null only if the level has no walkable tiles at
+   * all, which should never happen for a validated maze.
    */
   private pickRandomCoinTile(): Vec2 | null {
-    const keys = Array.from(this.level.pellets);
-    if (keys.length === 0) return null;
+    const isBlocked = (t: Vec2): boolean =>
+      (t.x === this.beagle.tx && t.y === this.beagle.ty) ||
+      (this.fruitTile !== null && t.x === this.fruitTile.x && t.y === this.fruitTile.y);
 
-    const keyToTile = (key: string): Vec2 => {
-      const [xs, ys] = key.split(",");
-      return { x: Number(xs), y: Number(ys) };
+    const pickFrom = (tiles: Vec2[]): Vec2 | null => {
+      if (tiles.length === 0) return null;
+      const clear = tiles.filter((t) => !isBlocked(t));
+      const pool = clear.length > 0 ? clear : tiles;
+      return pool[(Math.random() * pool.length) | 0];
     };
 
-    let tile = keyToTile(keys[(Math.random() * keys.length) | 0]);
-    let guard = 0;
-    while (
-      guard < 8 &&
-      keys.length > 1 &&
-      ((this.fruitTile && tile.x === this.fruitTile.x && tile.y === this.fruitTile.y) ||
-        (tile.x === this.beagle.tx && tile.y === this.beagle.ty))
-    ) {
-      tile = keyToTile(keys[(Math.random() * keys.length) | 0]);
-      guard++;
-    }
-    return tile;
+    const emptyTiles = this.level.walkableTiles.filter((t) => !this.level.pellets.has(`${t.x},${t.y}`));
+    return pickFrom(emptyTiles) ?? pickFrom(this.level.walkableTiles);
   }
 
   // ---- maze coin lifespan countdown (IDEA-017 follow-up) ----

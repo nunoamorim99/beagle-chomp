@@ -18,6 +18,8 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
 - (2026-07-09) IDEA-010 v1 — beagle skins: 4 named coat patterns (Bagel/Cookie/Muffin/Pepper) + the cosmetics/profile foundation (skin registry, equipped state, localStorage persistence) and a temporary switcher. First feature of v2.0 "The Garden".
 - (2026-07-09) IDEA-009 v1 — enemy skins: 4 swappable enemies (Ghost/Beetle/Bee/Ladybug) via a makeEnemy factory, all keeping the frightened/eaten state contract; enemy-skin persistence added to the shared profile. Also fixed a latent eaten-state bug and gave the beagle cute eyes. Second feature of v2.0 "The Garden".
 - (2026-07-09) IDEA-016 + IDEA-017 v1 — coins: earn 1 coin per 1000 points, plus grab time-limited gold coins that spawn on random maze tiles (4/level, 18s each). HUD coin counter + a coin field on the persisted profile. The currency for the shop. Third feature of v2.0 "The Garden".
+- (2026-07-09) IDEA-012 v1 — the shop: 🛒 storefront overlay to buy skins with coins (5 🪙 each; Bagel/Ghost free) and equip owned ones; ownership persisted in the profile; replaces the temporary skin-cycle buttons. Closes the earn→spend→equip economy loop. Fourth feature of v2.0 "The Garden".
+- (2026-07-09) IDEA-017 v2 — maze coins now spawn on empty already-cleared tiles (not among biscuits), so they stand out and pull the player back to cleared areas — a real detour decision.
 
 ## 📌 Planned
 > Forward-looking targets from `/plan-version`. Each is a checklist of IDEAs intended for a

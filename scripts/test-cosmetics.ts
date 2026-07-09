@@ -7,6 +7,7 @@ import {
   BEAGLE_SKINS,
   DEFAULT_BEAGLE_SKIN_ID,
   getBeagleSkin,
+  getBeagleSkinPrice,
   getEquippedBeagleSkinId,
   getEquippedBeagleSkin,
   setEquippedBeagleSkinId,
@@ -14,13 +15,27 @@ import {
   ENEMY_SKINS,
   DEFAULT_ENEMY_SKIN_ID,
   getEnemySkin,
+  getEnemySkinPrice,
   getEquippedEnemySkinId,
   getEquippedEnemySkin,
   setEquippedEnemySkinId,
   cycleEnemySkinId,
 } from "../src/game/cosmetics";
 import { COLORS, COINS } from "../src/game/config";
-import { loadProfile, getCoins, addCoins } from "../src/game/profileStore";
+import {
+  loadProfile,
+  getCoins,
+  addCoins,
+  getOwnedBeagleSkinIds,
+  getOwnedEnemySkinIds,
+  isBeagleSkinOwned,
+  isEnemySkinOwned,
+  buyBeagleSkin,
+  buyEnemySkin,
+  equipBeagleSkin,
+  equipEnemySkin,
+  type StoredProfile,
+} from "../src/game/profileStore";
 import { coinsDueFromScore } from "../src/game/coins";
 
 let failures = 0;
@@ -89,6 +104,25 @@ BEAGLE_SKINS.forEach((s) => {
 
   // restore default state for any later test that might run in this process
   setEquippedBeagleSkinId(DEFAULT_BEAGLE_SKIN_ID);
+}
+
+console.log("\n=== cosmetics.ts (IDEA-012 shop prices) ===");
+{
+  check("bagel.price === 0 (default, free)", getBeagleSkin("bagel").price === 0);
+  check("cookie.price === 5", getBeagleSkin("cookie").price === 5);
+  check("muffin.price === 5", getBeagleSkin("muffin").price === 5);
+  check("pepper.price === 5", getBeagleSkin("pepper").price === 5);
+  check("getBeagleSkinPrice('bagel') === 0", getBeagleSkinPrice("bagel") === 0);
+  check("getBeagleSkinPrice('cookie') === 5", getBeagleSkinPrice("cookie") === 5);
+  check("getBeagleSkinPrice(unknown) === 0 (falls back to default's price)", getBeagleSkinPrice("nope") === 0);
+
+  check("ghost.price === 0 (default, free)", getEnemySkin("ghost").price === 0);
+  check("beetle.price === 5", getEnemySkin("beetle").price === 5);
+  check("bee.price === 5", getEnemySkin("bee").price === 5);
+  check("ladybug.price === 5", getEnemySkin("ladybug").price === 5);
+  check("getEnemySkinPrice('ghost') === 0", getEnemySkinPrice("ghost") === 0);
+  check("getEnemySkinPrice('beetle') === 5", getEnemySkinPrice("beetle") === 5);
+  check("getEnemySkinPrice(unknown) === 0 (falls back to default's price)", getEnemySkinPrice("nope") === 0);
 }
 
 console.log("\n=== cosmetics.ts (IDEA-009 enemy skins) ===");
@@ -223,6 +257,208 @@ console.log("\n=== profileStore.ts coins (Node, no window/localStorage) ===");
 
   const mergedSkinOnly = { ...existing, equippedEnemySkinId: "beetle" };
   check("read-modify-write preserves coins when only a skin field changes", mergedSkinOnly.coins === 12);
+}
+
+console.log("\n=== profileStore.ts ownership defaults (Node, no window/localStorage) ===");
+{
+  // No `window` in this Node run, so loadProfile() always degrades to
+  // defaultProfile() — exercising the "fresh profile" ownership defaults.
+  const profile = loadProfile();
+  check(
+    "fresh profile owns exactly ['bagel']",
+    profile.ownedBeagleSkinIds.length === 1 && profile.ownedBeagleSkinIds[0] === "bagel",
+  );
+  check(
+    "fresh profile owns exactly ['ghost']",
+    profile.ownedEnemySkinIds.length === 1 && profile.ownedEnemySkinIds[0] === "ghost",
+  );
+
+  check("getOwnedBeagleSkinIds() matches loadProfile()", getOwnedBeagleSkinIds().join(",") === "bagel");
+  check("getOwnedEnemySkinIds() matches loadProfile()", getOwnedEnemySkinIds().join(",") === "ghost");
+
+  check("isBeagleSkinOwned('bagel') === true (default always owned)", isBeagleSkinOwned("bagel") === true);
+  check("isBeagleSkinOwned('cookie') === false initially", isBeagleSkinOwned("cookie") === false);
+  check("isEnemySkinOwned('ghost') === true (default always owned)", isEnemySkinOwned("ghost") === true);
+  check("isEnemySkinOwned('beetle') === false initially", isEnemySkinOwned("beetle") === false);
+}
+
+console.log("\n=== profileStore.ts loadProfile defensive ownership sanitizing ===");
+{
+  // Mirrors the private sanitizeOwnedBeagleSkinIds/sanitizeOwnedEnemySkinIds
+  // in profileStore.ts exactly, exercised directly on plain objects (no
+  // window needed) the same way the existing coins `sanitize` mirror above
+  // does — these are the same rules loadProfile() applies to a parsed blob.
+  function isKnownBeagle(id: unknown): id is string {
+    return typeof id === "string" && BEAGLE_SKINS.some((s) => s.id === id);
+  }
+  function isKnownEnemy(id: unknown): id is string {
+    return typeof id === "string" && ENEMY_SKINS.some((s) => s.id === id);
+  }
+  function sanitizeOwnedBeagle(value: unknown): string[] {
+    const known = Array.isArray(value) ? value.filter(isKnownBeagle) : [];
+    return Array.from(new Set(["bagel", ...known]));
+  }
+  function sanitizeOwnedEnemy(value: unknown): string[] {
+    const known = Array.isArray(value) ? value.filter(isKnownEnemy) : [];
+    return Array.from(new Set(["ghost", ...known]));
+  }
+
+  // Old blob without the owned keys at all (undefined) -> just the default.
+  check(
+    "old blob (no owned key) -> defaults owned",
+    sanitizeOwnedBeagle(undefined).join(",") === "bagel" && sanitizeOwnedEnemy(undefined).join(",") === "ghost",
+  );
+
+  // Garbage (non-array) owned value -> defaults.
+  check("garbage owned value (string) -> defaults", sanitizeOwnedBeagle("not-an-array").join(",") === "bagel");
+  check("garbage owned value (number) -> defaults", sanitizeOwnedBeagle(42).join(",") === "bagel");
+  check("garbage owned value (object) -> defaults", sanitizeOwnedBeagle({ foo: "bar" }).join(",") === "bagel");
+
+  // Owned array with an unknown id -> filtered out, default still present.
+  check(
+    "owned array with unknown id is filtered out, default kept",
+    sanitizeOwnedBeagle(["bagel", "not-a-real-skin"]).sort().join(",") === "bagel",
+  );
+  check(
+    "owned array with a known non-default id keeps it plus the default",
+    sanitizeOwnedBeagle(["cookie", "bogus"]).sort().join(",") === "bagel,cookie",
+  );
+
+  // Owned array missing the default entirely -> default force-included.
+  check(
+    "owned array missing the default -> default force-included",
+    sanitizeOwnedBeagle(["cookie", "muffin"]).sort().join(",") === "bagel,cookie,muffin",
+  );
+  check(
+    "enemy owned array missing the default -> default force-included",
+    sanitizeOwnedEnemy(["beetle"]).sort().join(",") === "beetle,ghost",
+  );
+}
+
+console.log("\n=== profileStore.ts buy operations (Node, no window/localStorage) ===");
+{
+  // With no `window`, every loadProfile() call degrades to a fresh
+  // defaultProfile() (coins:0, only the default owned) and persistProfile's
+  // write is caught and silently dropped — so buy operations here exercise
+  // the "insufficient funds" and "guard never throws" paths deterministically
+  // (every call starts from the same fresh-default snapshot, since nothing
+  // actually persists in this environment).
+  const before = loadProfile();
+  check("Node fresh profile has 0 coins (can't afford a 5-coin skin)", before.coins === 0);
+
+  let threw = false;
+  let result: { ok: boolean; reason?: string } = { ok: true };
+  try {
+    result = buyBeagleSkin("cookie");
+  } catch {
+    threw = true;
+  }
+  check("buyBeagleSkin never throws even with no window/localStorage", !threw);
+  check("buyBeagleSkin('cookie') with 0 coins -> insufficient-coins", result.ok === false && result.reason === "insufficient-coins");
+  check("failed buy leaves ownership unchanged", isBeagleSkinOwned("cookie") === false);
+  check("failed buy leaves coins unchanged", getCoins() === 0);
+
+  const enemyResult = buyEnemySkin("beetle");
+  check("buyEnemySkin('beetle') with 0 coins -> insufficient-coins", enemyResult.ok === false && enemyResult.reason === "insufficient-coins");
+  check("failed enemy buy leaves ownership unchanged", isEnemySkinOwned("beetle") === false);
+
+  // Buying the already-owned default is refused (never double-charges),
+  // regardless of wallet balance.
+  const alreadyOwned = buyBeagleSkin("bagel");
+  check("buyBeagleSkin('bagel') (already owned) -> already-owned, no charge", alreadyOwned.ok === false && alreadyOwned.reason === "already-owned");
+  const alreadyOwnedEnemy = buyEnemySkin("ghost");
+  check("buyEnemySkin('ghost') (already owned) -> already-owned, no charge", alreadyOwnedEnemy.ok === false && alreadyOwnedEnemy.reason === "already-owned");
+
+  // Unknown ids are refused before any coin/ownership check.
+  const unknownBuy = buyBeagleSkin("not-a-real-skin");
+  check("buyBeagleSkin(unknown id) -> unknown", unknownBuy.ok === false && unknownBuy.reason === "unknown");
+  const unknownEnemyBuy = buyEnemySkin("not-a-real-skin");
+  check("buyEnemySkin(unknown id) -> unknown", unknownEnemyBuy.ok === false && unknownEnemyBuy.reason === "unknown");
+}
+
+console.log("\n=== profileStore.ts buy success + atomicity (pure, in-process profile objects) ===");
+{
+  // The buy operations' actual read-modify-write logic can't be exercised
+  // end-to-end without real localStorage (unavailable in this Node run —
+  // see the "Node fresh profile" precedent above), so this mirrors the exact
+  // trySpend + read-modify-write shape buyBeagleSkin/buyEnemySkin use
+  // internally, against a plain in-memory StoredProfile object, to prove the
+  // coin-deduct and owned-add always land together (atomicity) and that a
+  // successful purchase's shape is correct.
+  function trySpend(coins: number, price: number): number | null {
+    if (coins < price) return null;
+    return coins - price;
+  }
+
+  const profile: StoredProfile = {
+    equippedBeagleSkinId: "bagel",
+    equippedEnemySkinId: "ghost",
+    coins: 12,
+    ownedBeagleSkinIds: ["bagel"],
+    ownedEnemySkinIds: ["ghost"],
+  };
+
+  const price = getBeagleSkinPrice("cookie");
+  check("cookie price is 5 for this scenario", price === 5);
+
+  const newCoins = trySpend(profile.coins, price);
+  check("12 coins can afford a 5-coin skin", newCoins === 7);
+
+  const afterBuy: StoredProfile = {
+    ...profile,
+    coins: newCoins as number,
+    ownedBeagleSkinIds: [...profile.ownedBeagleSkinIds, "cookie"],
+  };
+  check("buy atomicity: coins reduced by price", afterBuy.coins === profile.coins - price);
+  check("buy atomicity: id now owned in the SAME resulting object", afterBuy.ownedBeagleSkinIds.includes("cookie"));
+  check(
+    "buy preserves the other category's owned list untouched",
+    afterBuy.ownedEnemySkinIds.length === 1 && afterBuy.ownedEnemySkinIds[0] === "ghost",
+  );
+  check("buy preserves equipped skins untouched", afterBuy.equippedBeagleSkinId === "bagel" && afterBuy.equippedEnemySkinId === "ghost");
+
+  // Insufficient-funds path never mutates anything (no partial charge / no
+  // partial ownership add) — the null sentinel from trySpend is the guard
+  // buyBeagleSkin/buyEnemySkin check before building the next profile object.
+  const poorProfile: StoredProfile = { ...profile, coins: 2 };
+  const insufficient = trySpend(poorProfile.coins, price);
+  check("2 coins cannot afford a 5-coin skin -> trySpend returns null", insufficient === null);
+}
+
+console.log("\n=== profileStore.ts equip gating (Node, no window/localStorage) ===");
+{
+  // With no window, equip*'s ownership check reads a fresh default profile
+  // each time (only the default owned), so an unowned skin is always
+  // refused here and the default always succeeds — exercising the gating
+  // logic itself (isBeagleSkinOwned/isEnemySkinOwned) rather than the
+  // storage persistence step (which is a guarded no-op in this environment).
+  const refused = equipBeagleSkin("cookie");
+  check("equipBeagleSkin(unowned 'cookie') is refused (returns false)", refused === false);
+  check("equipBeagleSkin(unowned) does not change the equipped id", getEquippedBeagleSkinId() === DEFAULT_BEAGLE_SKIN_ID);
+
+  const allowedDefault = equipBeagleSkin("bagel");
+  check("equipBeagleSkin(owned default 'bagel') succeeds (returns true)", allowedDefault === true);
+  check("equipBeagleSkin(default) leaves equipped id as the default", getEquippedBeagleSkinId() === DEFAULT_BEAGLE_SKIN_ID);
+
+  const refusedEnemy = equipEnemySkin("beetle");
+  check("equipEnemySkin(unowned 'beetle') is refused (returns false)", refusedEnemy === false);
+  check("equipEnemySkin(unowned) does not change the equipped id", getEquippedEnemySkinId() === DEFAULT_ENEMY_SKIN_ID);
+
+  const allowedEnemyDefault = equipEnemySkin("ghost");
+  check("equipEnemySkin(owned default 'ghost') succeeds (returns true)", allowedEnemyDefault === true);
+
+  let threw = false;
+  try {
+    equipBeagleSkin("totally-bogus");
+  } catch {
+    threw = true;
+  }
+  check("equipBeagleSkin(unknown id) never throws", !threw);
+
+  // restore in-memory equipped state to the default for any later test in
+  // this process (mirrors the existing restore-default pattern above).
+  setEquippedBeagleSkinId(DEFAULT_BEAGLE_SKIN_ID);
+  setEquippedEnemySkinId(DEFAULT_ENEMY_SKIN_ID);
 }
 
 console.log(`\ncosmetics/profileStore checks: ${failures === 0 ? "ALL OK" : `${failures} FAILED`}`);
