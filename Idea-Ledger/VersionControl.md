@@ -20,7 +20,15 @@ _(nothing yet — all shipped work is captured in the versions below)_
 ## 📌 Planned
 > Forward-looking targets from `/plan-version`. Each is a checklist of IDEAs intended for a
 > future numbered release. Items move to Unreleased as they ship.
-_(nothing planned yet — v2.0 "The Garden" was fulfilled and cut on 2026-07-09)_
+
+### v2.1 — Groomed [planned]
+A polish pass on what v2.0 shipped: the beagle gets a proper glow-up, and the shop becomes a
+dedicated page worthy of showing it off. Minor bump — both are increments to existing features.
+- [ ] IDEA-024 — Beagle model glow-up (cuter: ears, eyes, richer coat pigmentation)
+- [ ] IDEA-023 — Shop v2: dedicated page with tabs + 3D skin gallery
+> Build order note: IDEA-024 first — the shop's 3D gallery (023) then showcases the improved
+> model rather than the old one. No hard dependency, but this order avoids re-verifying the
+> gallery twice. 023's coat-slot changes must keep all 4 skins recoloring cleanly ([[IDEA-010]]).
 
 ## Version history
 

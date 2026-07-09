@@ -19,7 +19,33 @@ Living backlog of ideas. Two purposes:
 _(nothing yet)_
 
 ## Backlog (open ideas)
-> New registered ideas go here. Next free ID: IDEA-023
+> New registered ideas go here. Next free ID: IDEA-025
+
+### IDEA-023 — Shop v2: dedicated page with tabs + 3D skin gallery 💡
+- **Priority:** 🟡
+- **Area:** shop
+- **Description:** improve the shop experience — a page dedicated to the shop, with tabs so the
+  player selects the kind of skin they want to buy. For the skin showcase, cards with images or a
+  gallery with the 3D of the skin — for the beagles AND the enemies: see them in a kind of gallery
+  with the 3D model and the name. Themes can come later.
+- **Notes:** UX redesign of the delivered shop ([[IDEA-012]]) — the current overlay works but shows
+  color-dot swatches (beagles) and emoji (enemies). The 3D gallery idea pairs naturally with the
+  menu's live showcase tech ([[IDEA-021]] v2's `menuScene` — small per-card 3D previews or one
+  rotating preview per tab). Themes tab stays future scope until a theme-swap system exists.
+- **Dependencies:** [[IDEA-012]]
+
+### IDEA-024 — Beagle model glow-up (cuter: ears, eyes, coat pigmentation) 💡
+- **Priority:** 🟡
+- **Area:** render
+- **Description:** improve the beagle visual — turn their appearance cuter than it is. Improve the
+  ears and the eyes. The body should have richer pigmentation instead of one big oval circle on the
+  body — we can improve that.
+- **Notes:** model polish on the beagle built in [[IDEA-004]] (ears/eyes refined during [[IDEA-009]],
+  but there's room). "More pigmentation" means breaking the single saddle ellipsoid into a more
+  natural patch layout — this touches the coat-slot system the skins use ([[IDEA-010]]), so the four
+  coat colors (tan/white/black/ear) must keep recoloring cleanly across all skins. Menu showcase
+  ([[IDEA-021]] v2) makes any model upgrade highly visible — good payoff.
+- **Dependencies:** —
 
 ### IDEA-013 — Challenge mode: per-level twists 💡
 - **Priority:** 🟡
