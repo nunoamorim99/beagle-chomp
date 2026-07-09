@@ -27,6 +27,7 @@ import { buildBoard, eatPellet, spawnFruit, clearFruit, spinDecor, type Board } 
 import {
   makeBeagle,
   makeGhost,
+  makeEnemy,
   syncToEntity,
   applyGhostState,
   setBeagleDeath,
@@ -35,8 +36,9 @@ import {
 } from "../render/characters";
 import { createHud, type Hud } from "../ui/hud";
 import { createSound, attachMuteButton, type Sound } from "../ui/sound";
-import { attachSkinButton } from "../ui/skin";
+import { attachSkinButton, attachEnemyButton } from "../ui/skin";
 import { initProfileFromStorage } from "./profileStore";
+import { getEquippedEnemySkinId } from "./cosmetics";
 
 // Scatter-corner targets per ghost personality (prototype section 7,
 // GHOST_DEFS): rose/chaser -> top-right, teal/ambusher -> top-left,
@@ -96,6 +98,7 @@ export class Game {
   private readonly detachMuteButton: () => void;
   private readonly detachAudioUnlock: () => void;
   private readonly detachSkinButton: () => void;
+  private readonly detachEnemyButton: () => void;
 
   private ghosts: GhostRig[] = [];
 
@@ -176,6 +179,16 @@ export class Game {
     // so the equipped skin persists naturally across level resets/deaths.
     this.detachSkinButton = attachSkinButton(document.body, (skin) => {
       applyBeagleSkin(this.beagleMesh, skin);
+    });
+
+    // Temporary enemy-skin-cycle button (placeholder until the shop UI,
+    // IDEA-012, lands), mirroring attachSkinButton above — see
+    // src/ui/skin.ts's attachEnemyButton doc comment. Unlike the beagle
+    // (recolored in place), enemy skins swap the creature's FORM, so the
+    // onChange handler rebuilds the 3 enemy meshes in place rather than
+    // recoloring existing materials (see rebuildEnemySkins below).
+    this.detachEnemyButton = attachEnemyButton(document.body, () => {
+      this.rebuildEnemySkins();
     });
 
     this.detachKeyboard = attachKeyboard((d) => { this.beagle.queued = d; });
@@ -272,6 +285,7 @@ export class Game {
     this.detachMuteButton();
     this.detachAudioUnlock();
     this.detachSkinButton();
+    this.detachEnemyButton();
   }
 
   // ---- level flow (prototype startLevel, line 419) ----
@@ -304,8 +318,9 @@ export class Game {
     // or per death-reset.
     this.ghosts.forEach((rig) => this.rig.scene.remove(rig.mesh));
     const spawn = this.level.ghostSpawn;
+    const enemySkinId = getEquippedEnemySkinId();
     this.ghosts = GHOST_DEFS.map((def, i) => {
-      const mesh = makeGhost(def.color);
+      const mesh = makeEnemy(enemySkinId, def.color);
       this.rig.scene.add(mesh);
       const e = makeEntity(spawn.x, spawn.y, SPEEDS.ghost);
       e.dir = { x: 0, y: -1 };
@@ -322,6 +337,35 @@ export class Game {
 
     if (this.level.board.fruit) clearFruit(this.level.board, this.rig.scene);
     this.fruitTile = null;
+  }
+
+  // ---- live enemy-skin switch (IDEA-009, temporary switcher) ----
+
+  /**
+   * Rebuilds the 3 enemy meshes in place for a just-changed equipped enemy
+   * skin (e.g. ghost <-> beetle), preserving every ghost's logic object
+   * (`gh` — its Entity, state, kind, corner) and `releaseDelay` untouched;
+   * only the THREE.Group is swapped. This is a live, mid-run rebuild (not
+   * deferred to the next resetActors) so the switcher button reflects
+   * immediately, matching the beagle skin button's instant feedback.
+   *
+   * Safe to call at any time, including mid-fright/mid-eaten: the new mesh
+   * is freshly built at `applyGhostState`'s "normal" baseline (own
+   * baseColor, everything visible), but the very next syncToEntity/
+   * applyGhostState call in the frame loop (updatePlay or syncAllPosed, both
+   * of which run every mode except "start"/"over" — and this button is only
+   * reachable while the HUD/canvas exist, i.e. never during those two) will
+   * immediately reapply the ghost's actual current `state`/position, so any
+   * single-frame "looks normal" flash is not observable in practice.
+   */
+  private rebuildEnemySkins(): void {
+    const skinId = getEquippedEnemySkinId();
+    this.ghosts = this.ghosts.map((rig, i) => {
+      this.rig.scene.remove(rig.mesh);
+      const mesh = makeEnemy(skinId, GHOST_DEFS[i].color);
+      this.rig.scene.add(mesh);
+      return { ...rig, mesh };
+    });
   }
 
   // ---- eating (prototype eatAt, line 470) ----

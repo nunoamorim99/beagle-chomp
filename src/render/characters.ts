@@ -1,9 +1,12 @@
 // OWNER: render-artist
-// Beagle + ghost meshes built from primitives (grouped). Later can be swapped
+// Beagle + enemy meshes built from primitives (grouped). Later can be swapped
 // for glTF models (see PROJECT_PLAN M6). Reference: prototype makeBeagle/makeGhost.
 // Contract: makeBeagle(skin?): THREE.Group, userData.coatMats for live
-// re-skinning via applyBeagleSkin ; makeGhost(colorHex): THREE.Group with
-// userData { bodyMat, eyes, pups, pupM, baseColor } for state-driven recolouring.
+// re-skinning via applyBeagleSkin ; makeGhost(colorHex) / makeBeetle(colorHex)
+// (IDEA-009 enemy skins): THREE.Group with userData { bodyMat, eyes, pups,
+// pupM, baseColor, hem, skirt, pupOffset } for state-driven recolouring via
+// applyGhostState — makeEnemy(skinId, colorHex) dispatches between the two so
+// callers don't need to know which skin is equipped.
 import * as THREE from "three";
 import { type Entity, entityWorld } from "../game/movement";
 import { type Vec2 } from "../game/grid";
@@ -120,6 +123,25 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
   jaw.add(jawMesh);
   g.add(jaw);
 
+  // Cute eyes (white eyeball + dark iris/pupil), loosely matching the enemy
+  // meshes' eyeW/pupM treatment — shared between both sides like the
+  // enemies share eyeW/pupM. Fixed colors, not part of the coat skin system
+  // (the coat only swaps tan/white/black/ear body materials): every beagle
+  // skin gets the same eyes, same as every enemy skin shares the same eye
+  // look regardless of team color. An earlier pass scaled these down
+  // (0.06 eyeball/0.028 pupil) to fit the beagle's smaller head, but that
+  // read as too subtle at the game's small top-down scale; the eyeball was
+  // sized back up to match the enemies' own eyeball radius (0.09). The
+  // pupil, however, deliberately does NOT reuse the enemies' bright blue
+  // `pupM` (that stays the enemies' own look, untouched) — a big bold blue
+  // dot read as a permanently startled/wide-eyed stare on the beagle. Its
+  // own `pupilM` is a dark, near-black warm brown instead (a calm, natural
+  // dog-eye iris color), and sized smaller relative to the (unchanged)
+  // eyeball so more white shows around it — see the per-eye comments below
+  // for exact sizing/placement.
+  const eyeW = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 });
+  const pupilM = new THREE.MeshStandardMaterial({ color: 0x2a1a10, roughness: 0.35 });
+
   const legs: THREE.Group[] = [];
   ([-1, 1] as const).forEach((s) => {
     // Ears: pivot moved to the SIDE of the head (x pushed out to +-0.24, a
@@ -156,9 +178,32 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
     g.add(earPivot);
     if (s < 0) g.userData.__earL = earPivot; else g.userData.__earR = earPivot;
 
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 8), black);
-    eye.position.set(0.1 * s, 0.52, 0.54);
+    // Eyeball: sits on the front-upper hemisphere of the head, above/beside
+    // the snout (head is centred y0.46 z0.34 radius 0.26; snout sphere is
+    // centred z0.56 radius 0.14). Enlarged from an earlier too-subtle pass
+    // (0.06 radius) to 0.09 — matching the enemies' own eyeball size — so
+    // they read clearly even at the small top-down in-game scale. Spread
+    // further apart (x 0.11 -> 0.15) so the bigger spheres don't touch/
+    // overlap each other across the muzzle, and raised a touch (y 0.52 ->
+    // 0.55) so they sit more on TOP of the head-front rather than tucked
+    // under a brow — legible from the game's overhead-ish camera, not just
+    // head-on. z stays 0.56 (level with the snout's own centre, clear of its
+    // z-radius 0.14*1.2 front bulge) so the eyeballs sit proud on the face
+    // surface without sinking into the head sphere or clipping the snout.
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.09, 14, 14), eyeW);
+    eye.scale.set(0.85, 1, 0.65);
+    eye.position.set(0.15 * s, 0.55, 0.56);
     g.add(eye);
+    // Pupil/iris: shrunk from an earlier too-bold 0.042 to 0.032 — small
+    // enough that visible white eyeball rings it on every side, reading as a
+    // relaxed, natural eye rather than a big iris filling the socket (the
+    // "startled" look). z pulled in slightly (0.625 -> 0.615) so the smaller
+    // sphere still sits flush on the eyeball's front curve instead of
+    // floating proud of a surface it's no longer as deep into. Centred on
+    // the eyeball's forward (+Z) face, symmetric, same as before.
+    const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.032, 10, 10), pupilM);
+    pupil.position.set(0.15 * s, 0.55, 0.615);
+    g.add(pupil);
     // legs: pivot at the hip/shoulder (top of leg) so rotation.x swings the
     // cylinder like a real trot instead of just spinning around its middle.
     ([-0.16, 0.16] as const).forEach((dz) => {
@@ -301,6 +346,516 @@ export function makeGhost(color: number): THREE.Group {
   };
   g.userData = userData;
   return g;
+}
+
+// Fixed-dark accent color for the beetle's antennae + tiny head accent — a
+// small enough slice of the silhouette that it doesn't fight the "whole bug
+// turns blue" frightened read (see makeBeetle's doc comment), but reads as a
+// natural dark detail against any of the three team shell colors.
+const BEETLE_ACCENT = 0x1c1712;
+
+/**
+ * Builds a garden-beetle/ladybug-ish enemy from primitives (IDEA-009 skin
+ * alternative to makeGhost). Satisfies the exact same `GhostUserData`
+ * contract as the ghost — a single shared `bodyMat` covering the vast
+ * majority of the silhouette (shell dome + skirt-equivalent underbelly rim +
+ * the "hem" accent spheres), so `applyGhostState`'s frightened recolor
+ * ("whole creature turns blue") and eaten hide/reveal both read correctly
+ * unmodified.
+ *
+ * Shape: a rounded, squashed-sphere SHELL as the clear main body (reads as a
+ * beetle's back from the top-down game camera) with the 2 eyes sitting
+ * directly on its front face — no oversized head nub swallowing them (an
+ * earlier pass had a large dark head blob here; it dominated the silhouette
+ * and buried the eyes, so it's gone). Only a tiny dark accent nub peeks out
+ * low between/below the eyes (mostly hidden by the shell's own curve), plus
+ * two short, thin antennae firmly rooted at the shell's front-top edge and
+ * swept up-and-back — small, attached, no floating pieces. A faint shell
+ * seam + a few subtle "hem" spot-bumps add ladybug character, all on
+ * `bodyMat` so they recolor with it.
+ *
+ * Eyes/pupils are positioned identically to the ghost's (eyes y0.4 z0.2
+ * x+-0.12; pupils z0.27 x+-0.12) so applyGhostState's hardcoded pupil-offset
+ * math lands on them unchanged, and they sit cleanly on the shell's front,
+ * reading as the bug's own eyes.
+ */
+export function makeBeetle(color: number): THREE.Group {
+  const g = new THREE.Group();
+  const bodyMat = new THREE.MeshStandardMaterial({
+    color,
+    roughness: 0.35,
+    emissive: color,
+    emissiveIntensity: 0.15,
+  });
+  const accentMat = new THREE.MeshStandardMaterial({ color: BEETLE_ACCENT, roughness: 0.5 });
+
+  // Shell: a squashed dome (wider than tall, slightly elongated front-back)
+  // sitting like a beetle's back — the bulk of the silhouette, all on bodyMat.
+  const shell = new THREE.Mesh(new THREE.SphereGeometry(0.32, 20, 16, 0, Math.PI * 2, 0, Math.PI * 0.62), bodyMat);
+  shell.scale.set(1, 0.72, 1.12);
+  shell.position.y = 0.28;
+  g.add(shell);
+
+  // Underbelly rim: a short, wide cylinder under the shell's equator standing
+  // in for the ghost's "skirt" — keeps the beetle grounded-looking and gives
+  // `hem`/`skirt` real geometry to wobble/breathe.
+  const skirt = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.26, 0.14, 20), bodyMat);
+  skirt.position.y = 0.14;
+  g.add(skirt);
+
+  // Shell seam: a thin dark line down the midline (a classic ladybug/beetle
+  // read), and a few small "hem" spheres standing in for wing-case rivets/
+  // spots, dotted along the shell's rear edge — same role as the ghost's
+  // wavy hem (wobbled by animateGhostHem) but doubling as subtle shell detail.
+  const seam = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.02, 0.58), bodyMat);
+  seam.position.set(0, 0.42, 0.02);
+  g.add(seam);
+
+  const hem: THREE.Mesh[] = [];
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2;
+    const b = new THREE.Mesh(new THREE.SphereGeometry(0.055, 10, 10), bodyMat);
+    b.position.set(Math.cos(a) * 0.22, 0.32, Math.sin(a) * 0.26 - 0.02);
+    g.add(b);
+    hem.push(b);
+  }
+
+  // Tiny head accent: a small dark nub low on the shell's front face, mostly
+  // tucked under/between where the eyes sit — just enough to break up the
+  // shell-to-eyes transition without becoming its own dominant shape (was a
+  // 0.14-radius sphere swallowing the eyes; now a much smaller 0.06 one
+  // sitting low and set slightly back into the shell).
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.06, 12, 10), accentMat);
+  head.scale.set(1, 0.8, 0.8);
+  head.position.set(0, 0.3, 0.26);
+  g.add(head);
+
+  // Antennae: short, thin stalks rooted right at the shell's front-top edge
+  // (not off a head blob) and swept up-and-back — a light, attached beetle
+  // read with no detached/floating tip. Root position sits flush against the
+  // shell surface (shell top ~0.28 + 0.72*0.32 ~= 0.51 at its crown, front
+  // face reaches z~0.32*1.12=0.36 at the equator) so the stalk visibly grows
+  // out of the shell instead of hovering near it.
+  ([-1, 1] as const).forEach((s) => {
+    const stalk = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.014, 0.1, 6), accentMat);
+    // Cylinder geometry is centred on its own origin, so offsetting the pivot
+    // half its length along its local +Y (post-rotation) keeps the BASE
+    // (not the middle) anchored at the root point.
+    stalk.position.set(0.07 * s, 0.42, 0.3);
+    stalk.rotation.x = -0.6;
+    stalk.rotation.z = 0.18 * s;
+    g.add(stalk);
+    const tip = new THREE.Mesh(new THREE.SphereGeometry(0.014, 8, 8), accentMat);
+    tip.position.set(0.09 * s, 0.48, 0.36);
+    g.add(tip);
+  });
+
+  // Eyes + pupils: identical placement to the ghost's so applyGhostState's
+  // pupil-offset math (targetX/targetZ around these bases) lands correctly.
+  // Sitting cleanly on the shell's front face (no head blob behind them).
+  const eyeW = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 });
+  const pupM = new THREE.MeshStandardMaterial({ color: 0x1436b0, roughness: 0.3 });
+  const eyes: THREE.Mesh[] = [];
+  const pups: THREE.Mesh[] = [];
+  ([-1, 1] as const).forEach((s) => {
+    const e = new THREE.Mesh(new THREE.SphereGeometry(0.09, 12, 12), eyeW);
+    e.scale.set(0.8, 1, 0.6);
+    e.position.set(0.12 * s, 0.4, 0.2);
+    g.add(e);
+    eyes.push(e);
+    const p = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 10), pupM);
+    p.position.set(0.12 * s, 0.4, 0.27);
+    g.add(p);
+    pups.push(p);
+  });
+
+  g.traverse((o) => {
+    if (o instanceof THREE.Mesh) o.castShadow = true;
+  });
+  const userData: GhostUserData = {
+    bodyMat, eyes, pups, pupM, baseColor: color, hem, skirt, pupOffset: { x: 0, z: 0 },
+  };
+  g.userData = userData;
+  return g;
+}
+
+// Fixed-dark accent color for the bee's stripe bands, antennae, and stinger —
+// mirrors BEETLE_ACCENT's role: a small enough slice of the silhouette that
+// it doesn't fight the "whole bug turns blue" frightened read.
+const BEE_ACCENT = 0x1c1712;
+// Pale, slightly translucent wing material — stays this color even when
+// frightened (same treatment as the beetle's dark head accent staying dark),
+// which is fine: a real bug's wings/head don't turn blue when scared either,
+// only the body-color chitin does, and that's what bodyMat models.
+const BEE_WING_COLOR = 0xf3f6ff;
+
+/**
+ * Builds a garden-bee enemy from primitives (IDEA-009 third enemy skin,
+ * alongside the ghost and the beetle). Satisfies the identical
+ * `GhostUserData` contract — a single shared `bodyMat` covering the main
+ * abdomen+thorax body (plus its skirt-equivalent underbelly rim and the
+ * "hem" segment-ring accents), so `applyGhostState`'s frightened recolor
+ * ("whole creature turns blue") and eaten hide/reveal both read correctly
+ * unmodified. The bee is deliberately NOT literally yellow — its body takes
+ * the TEAM color like the beetle's shell does; it reads as a bee via SHAPE
+ * (elongated, segmented oval body) and a few bold dark accent stripes across
+ * its back, not via a fixed yellow-and-black palette.
+ *
+ * Shape: a plump oval body (more front-back elongated than the beetle's
+ * round shell) on `bodyMat`, 3 bold dark stripe bands PAINTED ON the TOP of
+ * the rear-half abdomen — each band built from a row of small flattened
+ * dark blobs individually surface-solved onto the body's own dome curve
+ * (same technique the ladybug's spots use), not a rigid tube/ring (an
+ * earlier pass tried that; a fixed-radius ring can only touch a curved dome
+ * at isolated points, so it stood visibly off the surface as a hoop from
+ * every angle) — small-minority-coverage fixed-dark accent, so bodyMat
+ * still clearly dominates the silhouette — 2 small pale
+ * semi-transparent wings on the upper back, 2
+ * short thin antennae at the front, and a tiny dark stinger nub at the rear.
+ * Eyes/pupils use the exact same geometry/placement/material pattern as the
+ * ghost and beetle (2 white eyes + 2 pupils on `pupM`, added directly to the
+ * top-level group `g` as siblings — never nested under a sub-group, which is
+ * what makes `applyGhostState`'s eaten-state eyes-float-home re-show work),
+ * at the ghost's local coords (eyes y0.4 z0.2 x+-0.12; pupils z0.27 x+-0.12)
+ * so applyGhostState's hardcoded pupil-offset math lands unchanged.
+ */
+export function makeBee(color: number): THREE.Group {
+  const g = new THREE.Group();
+  const bodyMat = new THREE.MeshStandardMaterial({
+    color,
+    roughness: 0.35,
+    emissive: color,
+    emissiveIntensity: 0.15,
+  });
+  const accentMat = new THREE.MeshStandardMaterial({ color: BEE_ACCENT, roughness: 0.5 });
+  const wingMat = new THREE.MeshStandardMaterial({
+    color: BEE_WING_COLOR,
+    roughness: 0.25,
+    transparent: true,
+    opacity: 0.55,
+  });
+
+  // Body: a plump oval, elongated front-to-back (a bee's abdomen+thorax read
+  // vs. the beetle's flatter, rounder shell) — the bulk of the silhouette,
+  // all on bodyMat.
+  const body = new THREE.Mesh(new THREE.SphereGeometry(0.26, 20, 16), bodyMat);
+  body.scale.set(0.92, 0.88, 1.3);
+  body.position.y = 0.3;
+  g.add(body);
+
+  // Underbelly rim: standing in for the ghost's "skirt", same role as the
+  // beetle's — keeps the bee grounded-looking and gives `hem`/`skirt` real
+  // geometry to wobble/breathe.
+  const skirt = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.19, 0.12, 20), bodyMat);
+  skirt.position.y = 0.14;
+  g.add(skirt);
+
+  // Stripe bands: 3 BOLD dark bands PAINTED ON the TOP/upper-back of the
+  // rear half of the abdomen — the surface the game's overhead camera
+  // actually sees. Two earlier passes both tried a torus-tube ring (full
+  // 360deg, then a 200deg arc): a tube built at the body's girth radius
+  // necessarily stands OFF the actual body surface (the body is a smoothly
+  // curved dome, not a cylinder, so a fixed-radius ring only touches it
+  // along a thin great-circle and floats clear of it everywhere else) —
+  // straight overhead that read as a closed hoop, and three-quarter it read
+  // as a raised croquet-hoop standing proud of the shell. Replaced entirely
+  // with the same technique the ladybug's spots use: each stripe is a ROW
+  // of small flattened dark spheres, EACH ONE'S OWN Y solved individually
+  // against the body's actual ellipsoid surface equation (bodySurfaceY
+  // below) at its own (x, z) — so every blob sits flush on the curve at its
+  // position (unlike a rigid ring, which can only be flush at isolated
+  // points), and the row overlaps enough to read as one continuous painted
+  // band rather than a dotted line.
+  const hem: THREE.Mesh[] = [];
+  // Body is SphereGeometry(0.26) scaled (0.92, 0.88, 1.3) at y0.3, so for
+  // local (x, z), the top-surface height is
+  // y = 0.3 + 0.26*0.88*sqrt(1 - (x/(0.26*0.92))^2 - (z/(0.26*1.3))^2).
+  const BODY_R = 0.26;
+  const BODY_SCALE = { x: 0.92, y: 0.88, z: 1.3 };
+  const BODY_BASE_Y = 0.3;
+  const bodySurfaceY = (x: number, z: number): number => {
+    const u = x / BODY_SCALE.x;
+    const v = z / BODY_SCALE.z;
+    const underRoot = Math.max(0, BODY_R * BODY_R - u * u - v * v);
+    return BODY_BASE_Y + BODY_SCALE.y * Math.sqrt(underRoot);
+  };
+  const BLOB_R = 0.055; // bold enough per-blob to match the old tube's visual weight once overlapped in a row
+  const BLOBS_PER_STRIPE = 6;
+  [
+    // Same 3 z-positions/spacing as the earlier torus passes — spanning
+    // from the MID-back (z 0.04, just behind the wings) to the tail
+    // (z -0.28), evenly spaced ~0.16 apart, so they read as 2-3 distinct
+    // parallel bands rather than a single clump. `xSpan` is how far each
+    // row reaches left/right, kept a bit inside the body's true silhouette
+    // edge at that z (see bee_stripes surface-solve) so blobs don't clip
+    // off the visible top into the body's steep side-curve.
+    { z: 0.04, xSpan: 0.17 },
+    { z: -0.12, xSpan: 0.16 },
+    { z: -0.28, xSpan: 0.09 },
+  ].forEach(({ z, xSpan }) => {
+    for (let i = 0; i < BLOBS_PER_STRIPE; i++) {
+      const x = -xSpan + (2 * xSpan * i) / (BLOBS_PER_STRIPE - 1);
+      const blob = new THREE.Mesh(new THREE.SphereGeometry(BLOB_R, 10, 8), accentMat);
+      blob.scale.set(1, 0.3, 1); // flattened so it reads as painted ON the surface, not a bump standing up
+      blob.position.set(x, bodySurfaceY(x, z), z);
+      g.add(blob);
+      hem.push(blob);
+    }
+  });
+
+  // Wings: two small, pale, semi-transparent ellipses on the upper back —
+  // a signature bee read. Flat squashed spheres angled slightly outward.
+  ([-1, 1] as const).forEach((s) => {
+    const wing = new THREE.Mesh(new THREE.SphereGeometry(0.16, 12, 10), wingMat);
+    wing.scale.set(0.55, 0.1, 0.9);
+    wing.position.set(0.12 * s, 0.46, -0.02);
+    wing.rotation.z = 0.5 * s;
+    wing.rotation.y = -0.35 * s;
+    g.add(wing);
+  });
+
+  // Antennae: short, thin stalks rooted at the body's front-top edge, swept
+  // up-and-back. Built inside their own pivot Group anchored at the root
+  // point (base flush against the body) rather than positioning the
+  // cylinder's own centre and eyeballing a separate tip position — the
+  // previous pass placed the tip sphere independently, and its coordinates
+  // didn't actually line up with the rotated stalk's true end, leaving it
+  // floating off to the side. Here the stalk mesh is offset by half its own
+  // length along local +Y *inside* the pivot, so rotating the pivot sweeps
+  // both the stalk AND a tip sphere placed at that same local end point
+  // together as one rigid piece — guaranteeing the tip sits exactly at the
+  // stalk's end no matter the angle.
+  const ANTENNA_LEN = 0.09;
+  ([-1, 1] as const).forEach((s) => {
+    const pivot = new THREE.Group();
+    pivot.position.set(0.05 * s, 0.4, 0.32); // root point, flush against the body's front-top
+    pivot.rotation.x = -0.6; // sweep up
+    pivot.rotation.z = 0.18 * s; // sweep outward
+    g.add(pivot);
+
+    const stalk = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.011, ANTENNA_LEN, 6), accentMat);
+    stalk.position.y = ANTENNA_LEN / 2; // base at the pivot origin, growing along local +Y
+    pivot.add(stalk);
+
+    const tip = new THREE.Mesh(new THREE.SphereGeometry(0.011, 8, 8), accentMat);
+    tip.position.y = ANTENNA_LEN; // exactly at the stalk's far end, same local space
+    pivot.add(tip);
+  });
+
+  // Tiny stinger nub at the rear — small dark accent, subtle.
+  const stinger = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.09, 8), accentMat);
+  stinger.rotation.x = Math.PI / 2 + 0.15;
+  stinger.position.set(0, 0.28, -0.36);
+  g.add(stinger);
+
+  // Eyes + pupils: identical placement to the ghost/beetle so
+  // applyGhostState's pupil-offset math lands correctly, added directly to
+  // `g` (siblings of body/wings/etc.) so the eaten-state re-show works.
+  const eyeW = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 });
+  const pupM = new THREE.MeshStandardMaterial({ color: 0x1436b0, roughness: 0.3 });
+  const eyes: THREE.Mesh[] = [];
+  const pups: THREE.Mesh[] = [];
+  ([-1, 1] as const).forEach((s) => {
+    const e = new THREE.Mesh(new THREE.SphereGeometry(0.09, 12, 12), eyeW);
+    e.scale.set(0.8, 1, 0.6);
+    e.position.set(0.12 * s, 0.4, 0.2);
+    g.add(e);
+    eyes.push(e);
+    const p = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 10), pupM);
+    p.position.set(0.12 * s, 0.4, 0.27);
+    g.add(p);
+    pups.push(p);
+  });
+
+  g.traverse((o) => {
+    if (o instanceof THREE.Mesh) o.castShadow = true;
+  });
+  const userData: GhostUserData = {
+    bodyMat, eyes, pups, pupM, baseColor: color, hem, skirt, pupOffset: { x: 0, z: 0 },
+  };
+  g.userData = userData;
+  return g;
+}
+
+// Fixed-dark accent color for the ladybug's spots/head/seam/antennae — same
+// role as BEETLE_ACCENT/BEE_ACCENT.
+const LADYBUG_ACCENT = 0x1c1712;
+
+/**
+ * Builds a garden-ladybug enemy from primitives (IDEA-009 fourth enemy skin,
+ * alongside the ghost, beetle, and bee). Satisfies the identical
+ * `GhostUserData` contract — a single shared `bodyMat` covering the shell
+ * (plus its skirt-equivalent underbelly rim), so `applyGhostState`'s
+ * frightened recolor ("whole creature turns blue") and eaten hide/reveal
+ * both read correctly unmodified. Like the beetle and bee, the shell takes
+ * the TEAM color (rose/teal/amber) rather than a fixed red — the signature
+ * ladybug read comes from SHAPE + the black spot pattern on top, not from a
+ * fixed red-and-black palette, so each ghost keeps its team identity.
+ *
+ * Shape: a rounded, more-hemispherical dome shell than the beetle's flatter
+ * one (a classic ladybug's back is rounder/taller) on `bodyMat`, 7 black
+ * spot dots (1 centred + 3 symmetric pairs) scattered across the shell top
+ * and weighted toward the REAR half — the star of the design, clearly
+ * visible from the overhead game camera, each one flush on the dome's own
+ * curved surface — while still a clear minority of the shell area so
+ * bodyMat dominates the silhouette. A thin dark centre-seam line down the
+ * back (the wing-case split), a small fixed-dark head at the front, and 2
+ * short thin antennae. Eyes/pupils use the exact
+ * same geometry/placement/material pattern as the other three enemies (2
+ * white eyes + 2 blue pupils on `pupM`, added directly to the top-level
+ * group `g` as siblings — never nested under a sub-group, which is what
+ * makes `applyGhostState`'s eaten-state eyes-float-home re-show work), at
+ * the standard local coords (eyes y0.4 z0.2 x+-0.12; pupils z0.27 x+-0.12)
+ * so applyGhostState's hardcoded pupil-offset math lands unchanged.
+ */
+export function makeLadybug(color: number): THREE.Group {
+  const g = new THREE.Group();
+  const bodyMat = new THREE.MeshStandardMaterial({
+    color,
+    roughness: 0.3,
+    emissive: color,
+    emissiveIntensity: 0.15,
+  });
+  const accentMat = new THREE.MeshStandardMaterial({ color: LADYBUG_ACCENT, roughness: 0.5 });
+
+  // Shell: rounder/taller than the beetle's flatter dome — a true
+  // hemispherical cap, only lightly squashed — the bulk of the silhouette,
+  // all on bodyMat.
+  const shell = new THREE.Mesh(new THREE.SphereGeometry(0.3, 22, 16, 0, Math.PI * 2, 0, Math.PI * 0.58), bodyMat);
+  shell.scale.set(1.02, 0.9, 1.08);
+  shell.position.y = 0.26;
+  g.add(shell);
+
+  // Underbelly rim: standing in for the ghost's "skirt", same role as the
+  // beetle's/bee's — keeps the ladybug grounded-looking and gives
+  // `hem`/`skirt` real geometry to wobble/breathe.
+  const skirt = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.24, 0.13, 20), bodyMat);
+  skirt.position.y = 0.13;
+  g.add(skirt);
+
+  // Centre seam: thin dark line down the midline (the wing-case split) — a
+  // classic ladybug detail, on top of the shell's crown.
+  const seam = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.018, 0.5), accentMat);
+  seam.position.set(0, 0.46, 0.02);
+  g.add(seam);
+
+  // Spots: 7 black dots (1 centred + 3 symmetric pairs) scattered across the
+  // shell top, HEAVILY weighted toward the REAR half — the largest area the
+  // overhead game camera actually sees — leaving the front (near the
+  // eyes/head, z > ~0.1) relatively clear. An earlier pass clustered all 6
+  // spots up near the front (z 0.14 down to -0.24) around the eyes/head,
+  // leaving the whole rear dome bare — from directly above it read as "a
+  // plain dome with a couple specks near the face". Now spanning z from the
+  // TAIL (-0.26) up to just past mid-back (0.06), well clear of the eyes at
+  // z0.2/head at z0.27, so the back reads as a proper spotted ladybug dome.
+  // Each spot's y is computed from the shell's own ellipsoid-dome surface
+  // equation — shell is SphereGeometry(0.3) scaled (1.02, 0.9, 1.08) at
+  // y0.26, so for local (x,z), y = 0.26 + 0.9*sqrt(0.3^2 - (x/1.02)^2 -
+  // (z/1.08)^2) — so each flattened spot sits flush ON the dome's curve
+  // (following the surface height at its own position) rather than a fixed
+  // y that floats above or sinks into the shell away from the crown.
+  // Enlarged from the earlier too-small 0.052 to 0.065 so each spot reads
+  // clearly from a top-down camera, while 7 spots of this size still stay a
+  // clear minority of the total shell area — bodyMat (team color) keeps
+  // dominating and frightened still reads as "mostly blue with spots".
+  const hem: THREE.Mesh[] = [];
+  const SPOT_R = 0.065;
+  const SHELL_R = 0.3;
+  const SHELL_SCALE = { x: 1.02, y: 0.9, z: 1.08 };
+  const SHELL_BASE_Y = 0.26;
+  const spotSurfaceY = (x: number, z: number): number => {
+    const u = x / SHELL_SCALE.x;
+    const v = z / SHELL_SCALE.z;
+    const underRoot = Math.max(0, SHELL_R * SHELL_R - u * u - v * v);
+    return SHELL_BASE_Y + SHELL_SCALE.y * Math.sqrt(underRoot);
+  };
+  ([
+    { x: 0, z: -0.26 }, // single spot on the centre seam, near the tail
+    { x: 0.12, z: -0.22 },
+    { x: -0.12, z: -0.22 },
+    { x: 0.17, z: -0.06 },
+    { x: -0.17, z: -0.06 },
+    { x: 0.1, z: 0.06 },
+    { x: -0.1, z: 0.06 },
+  ] as const).forEach(({ x, z }) => {
+    const spot = new THREE.Mesh(new THREE.SphereGeometry(SPOT_R, 12, 8), accentMat);
+    spot.scale.set(1, 0.4, 1);
+    spot.position.set(x, spotSurfaceY(x, z), z);
+    g.add(spot);
+    hem.push(spot);
+  });
+
+  // Small fixed-dark head at the front — ladybugs have a distinct black
+  // head, kept small (same treatment as the beetle's) so it doesn't
+  // dominate or swallow the eyes.
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.065, 12, 10), accentMat);
+  head.scale.set(1, 0.8, 0.8);
+  head.position.set(0, 0.3, 0.27);
+  g.add(head);
+
+  // Antennae: short, thin stalks in their own root-anchored pivot (mirrors
+  // the bee's fix — base flush against the head, tip guaranteed to sit at
+  // the stalk's true end since both are children of the same rotated
+  // pivot, never independently positioned).
+  const ANTENNA_LEN = 0.09;
+  ([-1, 1] as const).forEach((s) => {
+    const pivot = new THREE.Group();
+    pivot.position.set(0.06 * s, 0.36, 0.32);
+    pivot.rotation.x = -0.6;
+    pivot.rotation.z = 0.18 * s;
+    g.add(pivot);
+
+    const stalk = new THREE.Mesh(new THREE.CylinderGeometry(0.007, 0.012, ANTENNA_LEN, 6), accentMat);
+    stalk.position.y = ANTENNA_LEN / 2;
+    pivot.add(stalk);
+
+    const tip = new THREE.Mesh(new THREE.SphereGeometry(0.012, 8, 8), accentMat);
+    tip.position.y = ANTENNA_LEN;
+    pivot.add(tip);
+  });
+
+  // Eyes + pupils: identical placement to the other enemies so
+  // applyGhostState's pupil-offset math lands correctly, added directly to
+  // `g` (siblings of shell/spots/etc.) so the eaten-state re-show works.
+  const eyeW = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 });
+  const pupM = new THREE.MeshStandardMaterial({ color: 0x1436b0, roughness: 0.3 });
+  const eyes: THREE.Mesh[] = [];
+  const pups: THREE.Mesh[] = [];
+  ([-1, 1] as const).forEach((s) => {
+    const e = new THREE.Mesh(new THREE.SphereGeometry(0.09, 12, 12), eyeW);
+    e.scale.set(0.8, 1, 0.6);
+    e.position.set(0.12 * s, 0.4, 0.2);
+    g.add(e);
+    eyes.push(e);
+    const p = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 10), pupM);
+    p.position.set(0.12 * s, 0.4, 0.27);
+    g.add(p);
+    pups.push(p);
+  });
+
+  g.traverse((o) => {
+    if (o instanceof THREE.Mesh) o.castShadow = true;
+  });
+  const userData: GhostUserData = {
+    bodyMat, eyes, pups, pupM, baseColor: color, hem, skirt, pupOffset: { x: 0, z: 0 },
+  };
+  g.userData = userData;
+  return g;
+}
+
+/**
+ * Builds an enemy mesh for `skinId`, dispatching between the classic ghost
+ * and the garden beetle/bee/ladybug (IDEA-009) — all four satisfy the
+ * identical `GhostUserData` contract, so callers (game.ts) can treat the
+ * result uniformly regardless of which skin is equipped. Falls back to the
+ * ghost for any unrecognised id, mirroring cosmetics.ts's getEnemySkin
+ * fallback behaviour (degrade to the default rather than throw).
+ */
+export function makeEnemy(skinId: string, color: number): THREE.Group {
+  if (skinId === "beetle") return makeBeetle(color);
+  if (skinId === "bee") return makeBee(color);
+  if (skinId === "ladybug") return makeLadybug(color);
+  return makeGhost(color);
 }
 
 // Angular speed (rad/s) for turning the model toward its facing direction.
@@ -609,7 +1164,17 @@ export function applyGhostState(mesh: THREE.Object3D, state: GhostState, dir: Ve
     mesh.position.z += Math.cos(t * SHIVER_FREQ * 1.3) * SHIVER_POS_AMPLITUDE;
     mesh.rotation.x = Math.sin(t * SHIVER_FREQ * 1.7) * SHIVER_ROT_AMPLITUDE;
   } else if (state === "eaten") {
-    mesh.traverse((o) => { o.visible = false; });
+    // Hide every CHILD (body/shell/hem/etc.), but deliberately leave the top-
+    // level `mesh` group itself visible: Object3D.traverse invokes its
+    // callback on `this` first, so `mesh.traverse(o => o.visible=false)`
+    // used to also flip the group's own `.visible` to false — and three.js's
+    // renderer (projectObject) returns immediately on an invisible object
+    // without even looking at its children, so re-showing eyes/pups below
+    // had no effect: the whole mesh (eyes included) vanished. Iterating
+    // `mesh.children` instead of `mesh.traverse` skips `mesh` itself, so the
+    // group stays visible and only its descendants go dark, letting the
+    // eyes/pups re-show correctly afterward.
+    mesh.children.forEach((o) => { o.visible = false; });
     ud.eyes.forEach((e) => { e.visible = true; });
     ud.pups.forEach((p) => { p.visible = true; });
     ud.pupM.color.setHex(0x1436b0);
