@@ -43,198 +43,353 @@ export interface BeagleCoatMats {
 }
 
 /**
- * Builds the beagle from primitives (ported from prototype section 6,
- * makeBeagle). Nose points toward +Z at rotation.y = 0, matching
- * ARCHITECTURE's "yaw = atan2(dir.x, dir.y)" facing convention.
+ * Builds the beagle from primitives — "sculpted flush forms" redesign
+ * (IDEA-024 second attempt, technique P2). Nose points toward +Z at
+ * rotation.y = 0, matching ARCHITECTURE's "yaw = atan2(dir.x, dir.y)"
+ * facing convention.
  *
- * Ears, tail, jaw and legs are built as pivot groups (joint at the origin,
- * mesh offset inside) rather than bare meshes, and exposed via
- * `g.userData.parts` (typed `BeagleParts`) so `syncToEntity` can animate a
- * trot/wag/flop/chomp on top of the existing position+yaw+bob without
- * touching the model's static geometry.
+ * THE TECHNIQUE — every coat marking is a "decal shell": a partial sphere
+ * (SphereGeometry with restricted phi/theta ranges) sharing its base form's
+ * exact centre and mesh scale, at a radius only a hair (~1-4% of the base
+ * radius, 0.003-0.010 world units of rise) larger, so it hugs the base
+ * surface like a silkscreened paint pass. No marking bulges: the shell IS
+ * the base surface, offset along the normal by less than a whisker, and its
+ * open rim sits that same hair above the base so the edge reads as a crisp
+ * painted seam terminating inside the form's curvature. Cap orientations
+ * are baked into the GEOMETRY (rotating a sphere's cap about its own centre
+ * keeps it on the same sphere) so each shell mesh can carry its base
+ * ellipsoid's non-uniform scale untouched and stay glued to the curved
+ * surface everywhere — rotating the mesh instead would rotate the whole
+ * ellipsoid and peel the shell off the base. Overlapping shells get
+ * slightly different radius factors (layer order = radius order), so they
+ * stack like print passes with zero z-fighting.
  *
- * The 4 coat colors (tan/white/black/ear) come from `skin` (default: whatever
- * is currently equipped, via cosmetics.ts's getEquippedBeagleSkin — so
- * existing callers that pass nothing still boot wearing the persisted skin).
- * Bagel's coat is byte-for-byte the original fixed palette (COLORS.beagle* +
- * the old local EAR_BROWN const), so defaulting to it is a visual no-op.
- * Ear color is intentionally its own coat channel rather than reusing
- * `black`: a warm chocolate/liver brown reads as a classic beagle ear (real
- * tri-colour beagles have brown, not black, ear patches) and stays visible
- * against both the near-black nose/eyes and the dark scene background, where
- * pure black ears would silhouette invisibly.
+ * Markings (all flush, all soft organic ovals born from the cap/ellipsoid
+ * interaction):
+ *  - BLACK saddle: ONE smooth cap over the body ellipsoid, pole tilted
+ *    up-and-back, flowing from the neck (its front edge hides inside the
+ *    head) over the back and rump to the tail root, draping about half-way
+ *    down the flanks. A single continuous region — no discrete blobs.
+ *  - WHITE bib+belly: one cap, pole tilted forward-and-down, wrapping the
+ *    chest front and underside in a single white sweep. A soft white chest
+ *    FORM (part of the silhouette, its edges buried deep inside the body)
+ *    adds fullness under the chin and unions invisibly with the cap since
+ *    both share the same white material and the poke-through region lies
+ *    entirely inside the cap's zone.
+ *  - EAR-BROWN head sides: one cap per side of the skull, centred where the
+ *    ears root, sweeping around the eyes and cheeks — the classic beagle
+ *    brown head split by the white blaze (eyes and blaze render on top via
+ *    larger radius factors). Left/right factors differ by 0.004 so their
+ *    small overlap at the back of the crown can't z-fight.
+ *  - WHITE blaze: a narrow phi-restricted LUNE (a meridian strip of the
+ *    head sphere itself, not a tilted lump) running from the crown down the
+ *    forehead and melting into the white muzzle at its lower end. Flush by
+ *    construction — checklist item "blaze painted into the head" is the
+ *    literal geometry here.
+ *  - WHITE socks: paw blobs inside each leg pivot (forms at the end of the
+ *    legs, not surface bumps) so they trot with the leg; WHITE tail tip.
+ *
+ * Eyes are painted-lens style: three concentric decal caps per eye sitting
+ * directly on the head sphere — white sclera disc (rise ~0.005), the calm
+ * dark-brown 0x2a1a10 pupil (~0.008), and a tiny white glint cap offset
+ * up-and-outward (~0.010) — so the eyes read as glossy lenses embedded in
+ * the skull, never bulging spheres. They stay OUTSIDE the skin system
+ * (fixed materials) exactly like before. The pupil caps are aimed a touch
+ * medially relative to the sclera centres so the gaze converges gently
+ * forward — calm, no walleye.
+ *
+ * Silhouette: 3 blended body forms (main ellipsoid + white chest + tan
+ * haunches, the latter two poking through only low on the front/flanks and
+ * rear so they never break the saddle's smooth edge) under a chibi head
+ * (r 0.27, DOWN from the rejected pass's 0.30) placed high and forward: the
+ * body runs a full ~0.5 units behind the head's rear edge and is WIDER than
+ * the head (0.60 vs 0.54 across), so from every angle — especially the
+ * game's top-down camera — it reads as a dog with a body, not a head with
+ * feet. Stubby approved legs kept (0.17 long, paws at y=0). Top-down
+ * direction read: brown/white head + blaze at the front vs black saddle
+ * behind.
+ *
+ * ONE ear per side: a single continuous LatheGeometry teardrop (narrow
+ * root, full middle, rounded tip), flattened into a soft paddle, rooted at
+ * the top-side of the skull with its upper quarter buried inside the head
+ * sphere, draping beside the cheek with a slight outward + backward tilt.
+ * One mesh, one clean silhouette — no overlapping lobes, nothing that can
+ * read as a second ear.
+ *
+ * Tail: pivot at the rump top (embedded in the haunch, under the saddle's
+ * black rear so the base emerges from black fur like a real tricolor), with
+ * the shaft in an INNER tilt group leaning ~20 degrees back — pointing UP
+ * like a happy flag (tip crests at y~0.82 pre-scale, white flag tip).
+ * syncToEntity wags `tail.rotation.y` on the OUTER pivot; because the
+ * back-lean lives in the inner group, that yaw sweeps the leaned shaft
+ * around the vertical axis — the flag waves side to side — instead of
+ * uselessly spinning a vertical shaft about its own axis.
+ *
+ * flatShading was auditioned for the low-poly-portfolio look and dropped:
+ * the decal shells depend on shell and base shading identically at the same
+ * surface point (that is what sells "painted on"), and faceted normals
+ * break that pairing (the shell's facet seams land at different angles than
+ * the base sphere's, so the markings would shimmer against their ground).
+ * Soft smooth shading also matches the toy-like reference sites better.
+ *
+ * Ears, tail, jaw and legs are pivot groups (joint at the origin, meshes
+ * offset inside) exposed via `g.userData.parts` (BeagleParts) so
+ * syncToEntity can drive the trot/wag/flop/chomp, and the 4 shared coat
+ * materials land in `g.userData.coatMats` so applyBeagleSkin restyles every
+ * coat-colored surface of the dog in place for all 4 skins.
  */
 export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Group {
   const g = new THREE.Group();
   const { coat } = skin;
   const tan = new THREE.MeshStandardMaterial({ color: coat.tan, roughness: 0.6 });
   const white = new THREE.MeshStandardMaterial({ color: coat.white, roughness: 0.6 });
-  const black = new THREE.MeshStandardMaterial({ color: coat.black, roughness: 0.5 });
+  const black = new THREE.MeshStandardMaterial({ color: coat.black, roughness: 0.55 });
   const earMat = new THREE.MeshStandardMaterial({ color: coat.ear, roughness: 0.65 });
 
-  const body = new THREE.Mesh(new THREE.SphereGeometry(0.34, 20, 16), tan);
-  body.scale.set(1, 0.85, 1.25);
-  body.position.y = 0.34;
-  g.add(body);
-  const belly = new THREE.Mesh(new THREE.SphereGeometry(0.3, 16, 12), white);
-  belly.scale.set(0.9, 0.6, 1.1);
-  belly.position.set(0, 0.24, 0.05);
-  g.add(belly);
+  // Decal-shell builder (see the doc comment): a cap of a sphere `factor`
+  // larger than `baseR`, pole aimed by rotating the GEOMETRY (rx about X,
+  // then ry about Y) so the owning mesh can reuse the base form's scale and
+  // position verbatim and stay flush on it. phi/theta ranges allow lune
+  // strips (the blaze) as well as round caps.
+  const shell = (
+    baseR: number,
+    factor: number,
+    rx: number,
+    ry: number,
+    thetaLen: number,
+    thetaStart = 0,
+    phiStart = 0,
+    phiLen = Math.PI * 2,
+  ): THREE.SphereGeometry => {
+    const geo = new THREE.SphereGeometry(baseR * factor, 48, 28, phiStart, phiLen, thetaStart, thetaLen);
+    if (rx !== 0) geo.rotateX(rx);
+    if (ry !== 0) geo.rotateY(ry);
+    return geo;
+  };
 
-  // Tricolor "saddle": the black back-blanket marking that distinguishes a
-  // tricolor beagle from a plain tan/white bi-color one. A single ellipsoid
-  // draped over the TOP of the body sphere, centred over the back — it
-  // deliberately intersects the body sphere's lower half (submerged there,
-  // so invisible; both are opaque) and only its upper cap needs to be the
-  // outermost surface. Its own radius (0.36) is bigger than the body's
-  // (0.34) and its centre sits well above the body's (y 0.5 vs 0.34), so the
-  // two surfaces cross at a steep angle all the way round the seam — a
-  // shallow/grazing crossing (the first pass here used a same-size sphere
-  // barely poking through) makes a jagged, sawtoothed edge; a steep one
-  // reads as a clean rounded silhouette. Narrower than the body in X (tan
-  // flanks stay visible below it), and its Z span (front edge ~0.25, rear
-  // edge ~-0.25 around a centre of z=0) keeps it clear of both the head
-  // sphere (centred z=0.34, radius 0.26 — the saddle's front edge sits
-  // behind its equator) and the tail pivot (0,0.5,-0.34 — a healthy ~0.09
-  // margin), so the upright/wagging tail never clips it.
-  const saddle = new THREE.Mesh(new THREE.SphereGeometry(0.36, 24, 18), black);
-  saddle.scale.set(0.8, 0.62, 0.68);
-  saddle.position.set(0, 0.5, 0);
+  // --- unified silhouette: 3 blended body forms ---
+  // Main body: a long low ellipsoid (x 0.30 / y 0.255 / z 0.42 half-extents)
+  // spanning z -0.44..0.40 — deliberately elongated so a clear body runs
+  // behind and below the head (checklist: never "a head with feet").
+  const BODY_R = 0.3;
+  const body = new THREE.Mesh(new THREE.SphereGeometry(BODY_R, 32, 24), tan);
+  body.scale.set(1, 0.85, 1.4);
+  body.position.set(0, 0.34, -0.02);
+  g.add(body);
+
+  // Haunches: a rounder form blended into the rear. Sized so it pokes
+  // through the main ellipsoid only LOW on the flanks (max ~0.02 proud at
+  // y~0.30, below the saddle's flank edge at y~0.42) and at the very rear
+  // under the tail — a soft hip bulge that never breaks the saddle seam.
+  const haunch = new THREE.Mesh(new THREE.SphereGeometry(0.24, 24, 18), tan);
+  haunch.scale.set(1.06, 0.9, 0.95);
+  haunch.position.set(0, 0.3, -0.28);
+  g.add(haunch);
+
+  // Chest: a white form giving fullness under the chin. Buried inside the
+  // body everywhere except a forward poke (z 0.40..0.47) that lands wholly
+  // inside the white belly cap's zone, so form and decal union seamlessly
+  // into one white chest/belly region (same material, no visible seam).
+  const chest = new THREE.Mesh(new THREE.SphereGeometry(0.22, 24, 18), white);
+  chest.scale.set(0.9, 0.95, 1.05);
+  chest.position.set(0, 0.3, 0.24);
+  g.add(chest);
+
+  // BLACK saddle: ONE smooth flush cap on the body — pole tilted 0.35 rad
+  // back, angular radius 1.25 rad. Front edge ((0,~0.51,~0.30) pre-scale)
+  // hides inside the head/neck; rear edge wraps past the rump to z~-0.44 so
+  // the tail base emerges from black fur; flank edge drapes to y~0.42,
+  // about half-way down the visible side. Radial rise: 0.006 (x) / 0.005
+  // (y) / 0.0086 (z) — painted into the surface, zero bumps.
+  const saddle = new THREE.Mesh(shell(BODY_R, 1.02, -0.35, 0, 1.25), black);
+  saddle.scale.copy(body.scale);
+  saddle.position.copy(body.position);
   g.add(saddle);
 
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.26, 20, 16), tan);
-  head.position.set(0, 0.46, 0.34);
+  // WHITE bib + belly: one flush cap, pole tilted forward-and-down (3/4 pi
+  // about X points it at (0,-0.71,+0.71)), angular radius 1.05 — its upper
+  // front edge crests at y~0.41 under the chin (the bib) and its rear edge
+  // sweeps under the belly. Factor 1.012 keeps it under the saddle's 1.02
+  // (they never meet anyway — a tan flank band separates them).
+  const belly = new THREE.Mesh(shell(BODY_R, 1.012, Math.PI * 0.75, 0, 1.05), white);
+  belly.scale.copy(body.scale);
+  belly.position.copy(body.position);
+  g.add(belly);
+
+  // --- head: chibi but honest (r 0.27, crown at 0.83 pre-scale) ---
+  const HEAD_R = 0.27;
+  const HEAD_POS = new THREE.Vector3(0, 0.56, 0.3);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(HEAD_R, 32, 24), tan);
+  head.position.copy(HEAD_POS);
   g.add(head);
-  const snout = new THREE.Mesh(new THREE.SphereGeometry(0.14, 14, 12), white);
-  snout.scale.set(1, 0.8, 1.2);
-  snout.position.set(0, 0.4, 0.56);
+
+  // Muzzle: a white form (silhouette, not a marking) whose top meets the
+  // blaze's lower end at (0,~0.60,~0.57) so blaze and muzzle read as one
+  // continuous white face marking.
+  const snout = new THREE.Mesh(new THREE.SphereGeometry(0.13, 18, 14), white);
+  snout.scale.set(1.05, 0.85, 1.15);
+  snout.position.set(0, 0.5, 0.5);
   g.add(snout);
-  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.06, 10, 10), black);
-  nose.position.set(0, 0.44, 0.68);
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.052, 12, 10), black);
+  nose.scale.set(1.1, 0.85, 0.8);
+  nose.position.set(0, 0.555, 0.635);
   g.add(nose);
 
-  // Jaw: a small lower-lip pivot hinged at the back of the snout so it can
-  // swing open/closed for a subtle chomp. Sits just under the snout/nose.
+  // WHITE blaze: a phi-restricted LUNE of the head sphere itself — a strip
+  // 0.32 rad wide in azimuth centred on the front meridian (phi = pi/2 in
+  // SphereGeometry's parametrisation), running from theta 0.25 (just off
+  // the crown) down to theta 1.40 where it melts into the muzzle top.
+  // x half-width ~0.043 — well clear of the eyes at x ±0.115. Rise 0.006:
+  // painted flush into the head, NOT a raised strip.
+  const blaze = new THREE.Mesh(
+    shell(HEAD_R, 1.022, 0, 0, 1.15, 0.25, Math.PI / 2 - 0.16, 0.32),
+    white,
+  );
+  blaze.position.copy(HEAD_POS);
+  g.add(blaze);
+
+  // Jaw: small white lower-lip pivot hinged at the back of the muzzle so
+  // syncToEntity's chomp swings it open/closed under the snout.
   const jaw = new THREE.Group();
-  jaw.position.set(0, 0.36, 0.5);
-  const jawMesh = new THREE.Mesh(new THREE.SphereGeometry(0.1, 12, 10), white);
-  jawMesh.scale.set(0.85, 0.55, 0.9);
-  jawMesh.position.set(0, -0.03, 0.14);
+  jaw.position.set(0, 0.46, 0.44);
+  const jawMesh = new THREE.Mesh(new THREE.SphereGeometry(0.09, 14, 10), white);
+  jawMesh.scale.set(0.85, 0.5, 1);
+  jawMesh.position.set(0, -0.035, 0.1);
   jaw.add(jawMesh);
   g.add(jaw);
 
-  // Cute eyes (white eyeball + dark iris/pupil), loosely matching the enemy
-  // meshes' eyeW/pupM treatment — shared between both sides like the
-  // enemies share eyeW/pupM. Fixed colors, not part of the coat skin system
-  // (the coat only swaps tan/white/black/ear body materials): every beagle
-  // skin gets the same eyes, same as every enemy skin shares the same eye
-  // look regardless of team color. An earlier pass scaled these down
-  // (0.06 eyeball/0.028 pupil) to fit the beagle's smaller head, but that
-  // read as too subtle at the game's small top-down scale; the eyeball was
-  // sized back up to match the enemies' own eyeball radius (0.09). The
-  // pupil, however, deliberately does NOT reuse the enemies' bright blue
-  // `pupM` (that stays the enemies' own look, untouched) — a big bold blue
-  // dot read as a permanently startled/wide-eyed stare on the beagle. Its
-  // own `pupilM` is a dark, near-black warm brown instead (a calm, natural
-  // dog-eye iris color), and sized smaller relative to the (unchanged)
-  // eyeball so more white shows around it — see the per-eye comments below
-  // for exact sizing/placement.
-  const eyeW = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 });
+  // Eye materials — fixed, never skinned (same policy as before): white
+  // sclera, calm dark-brown pupil, tiny emissive glint that still reads as
+  // a light-catch in shadow.
+  const eyeW = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.25 });
   const pupilM = new THREE.MeshStandardMaterial({ color: 0x2a1a10, roughness: 0.35 });
+  const glintM = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    roughness: 0.15,
+    emissive: 0xffffff,
+    emissiveIntensity: 0.35,
+  });
+
+  // Eye-cap aim, derived from the unit gaze direction (±0.42, 0.20, 0.885)
+  // — ~33 degrees off the head's forward axis, slightly above the muzzle:
+  // rotateX(acos(0.20)) lowers the cap pole from +Y to the right elevation,
+  // then rotateY(±0.443) yaws it to each side. The pupil uses a slightly
+  // smaller yaw (0.41) so both pupils sit a touch medial on their scleras —
+  // a gentle forward convergence, never walleyed. The glint aims a little
+  // higher and further out (up-and-outer highlight).
+  const EYE_RX = Math.acos(0.2);
+  const EYE_RY = 0.443;
+  const PUPIL_RY = 0.41;
+  const GLINT_RX = EYE_RX - 0.09;
+  const GLINT_RY = 0.5;
+
+  // ONE-piece teardrop ear profile for LatheGeometry: narrow root, fullest
+  // just below the middle, rounded tapered tip 0.36 long. Lathed about its
+  // own axis then flattened into a paddle (scale x0.55/z0.85), it is a
+  // single continuous mesh — one clean silhouette per side.
+  const earProfile = [
+    new THREE.Vector2(0.002, 0),
+    new THREE.Vector2(0.045, -0.05),
+    new THREE.Vector2(0.07, -0.13),
+    new THREE.Vector2(0.082, -0.21),
+    new THREE.Vector2(0.068, -0.28),
+    new THREE.Vector2(0.038, -0.33),
+    new THREE.Vector2(0.002, -0.36),
+  ];
 
   const legs: THREE.Group[] = [];
   ([-1, 1] as const).forEach((s) => {
-    // Ears: pivot moved to the SIDE of the head (x pushed out to +-0.24, a
-    // touch lower at y 0.52) rather than the top, so the ear hinges where a
-    // real beagle ear does — beside the face — and its long axis drapes DOWN
-    // AND FORWARD alongside the cheek instead of tucking behind the skull.
-    // The old ear was one small sphere squashed thin (0.12 radius * 0.5x/
-    // 0.35z) sitting almost flush with the head, which reads as shadow, not
-    // an ear. This one is built from two overlapping stretched spheres — a
-    // wider "root" lobe near the hinge blending into a longer, narrower
-    // "paddle" that reaches down toward the jaw — giving a floppy, tapered
-    // silhouette (long ear, not a stubby blob) that's big enough to read at
-    // normal game-camera distance and extends well clear of the head outline
-    // in every view (front/side/three-quarter), including from behind where
-    // the head sphere used to fully occlude it.
+    // EAR-BROWN head-side cap: pole aimed at the ear root (unit direction
+    // ~(±0.78, 0.59, 0.22)), angular radius 0.95 — sweeps around the eye
+    // and cheek so the eyes sit ON brown patches (they render above it via
+    // larger radius factors) and the blaze splits the brown crown, the
+    // classic beagle head map. Factors 1.010/1.014 per side so the small
+    // overlap at the back of the crown layers cleanly instead of z-fighting.
+    const sideCap = new THREE.Mesh(shell(HEAD_R, 1.012 + 0.002 * s, 0.936, 1.31 * s, 0.95), earMat);
+    sideCap.position.copy(HEAD_POS);
+    g.add(sideCap);
+
+    // Ear: ONE continuous teardrop (see earProfile), rooted at the top-side
+    // of the skull. The pivot sits 0.02 INSIDE the head surface and the
+    // mesh is nudged 0.02 further up, so the ear's narrow root is buried a
+    // solid ~0.04-0.08 inside the head sphere at every angle — it visibly
+    // grows out of the skull (within the brown side cap, so root color
+    // matches). A slight outward roll (rotation.z, tip curls off the cheek)
+    // and backward drape (rotation.x) keep it soft; the tip hangs beside
+    // the cheek at y~0.36 pre-scale, far above ground even mid-flop.
+    // syncToEntity flops earPivot.rotation.x, same joint semantics as ever.
     const earPivot = new THREE.Group();
-    earPivot.position.set(0.24 * s, 0.52, 0.3);
-
-    const earRoot = new THREE.Mesh(new THREE.SphereGeometry(0.1, 12, 10), earMat);
-    earRoot.scale.set(0.62, 0.85, 0.5);
-    earRoot.position.set(0.02 * s, -0.06, 0.02);
-    earPivot.add(earRoot);
-
-    const earPaddle = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 10), earMat);
-    earPaddle.scale.set(0.46, 1.55, 0.4);
-    // Angled slightly outward+forward off the vertical so the paddle clears
-    // the cheek/jaw rather than pressing flat against the head, and swept a
-    // touch further out on X so the silhouette separates from the head even
-    // head-on (front view) instead of overlapping it edge-to-edge.
-    earPaddle.rotation.z = 0.16 * s;
-    earPaddle.position.set(0.1 * s, -0.32, 0.06);
-    earPivot.add(earPaddle);
-
+    earPivot.position.set(0.195 * s, 0.716, 0.313);
+    const ear = new THREE.Mesh(new THREE.LatheGeometry(earProfile, 20), earMat);
+    ear.scale.set(0.55, 1, 0.85);
+    ear.rotation.z = 0.2 * s;
+    ear.rotation.x = 0.12;
+    ear.position.set(0.01 * s, 0.02, 0);
+    earPivot.add(ear);
     g.add(earPivot);
-    if (s < 0) g.userData.__earL = earPivot; else g.userData.__earR = earPivot;
+    if (s < 0) g.userData.__earL = earPivot;
+    else g.userData.__earR = earPivot;
 
-    // Eyeball: sits on the front-upper hemisphere of the head, above/beside
-    // the snout (head is centred y0.46 z0.34 radius 0.26; snout sphere is
-    // centred z0.56 radius 0.14). Enlarged from an earlier too-subtle pass
-    // (0.06 radius) to 0.09 — matching the enemies' own eyeball size — so
-    // they read clearly even at the small top-down in-game scale. Spread
-    // further apart (x 0.11 -> 0.15) so the bigger spheres don't touch/
-    // overlap each other across the muzzle, and raised a touch (y 0.52 ->
-    // 0.55) so they sit more on TOP of the head-front rather than tucked
-    // under a brow — legible from the game's overhead-ish camera, not just
-    // head-on. z stays 0.56 (level with the snout's own centre, clear of its
-    // z-radius 0.14*1.2 front bulge) so the eyeballs sit proud on the face
-    // surface without sinking into the head sphere or clipping the snout.
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.09, 14, 14), eyeW);
-    eye.scale.set(0.85, 1, 0.65);
-    eye.position.set(0.15 * s, 0.55, 0.56);
-    g.add(eye);
-    // Pupil/iris: shrunk from an earlier too-bold 0.042 to 0.032 — small
-    // enough that visible white eyeball rings it on every side, reading as a
-    // relaxed, natural eye rather than a big iris filling the socket (the
-    // "startled" look). z pulled in slightly (0.625 -> 0.615) so the smaller
-    // sphere still sits flush on the eyeball's front curve instead of
-    // floating proud of a surface it's no longer as deep into. Centred on
-    // the eyeball's forward (+Z) face, symmetric, same as before.
-    const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.032, 10, 10), pupilM);
-    pupil.position.set(0.15 * s, 0.55, 0.615);
+    // Painted-lens eye: three concentric flush caps directly on the head —
+    // sclera (angular radius 0.28, rise 0.005), pupil (0.165, rise 0.008,
+    // aimed a touch medial for convergence), glint (0.055, rise 0.010,
+    // up-and-outer). Embedded, near-flush, cute — nothing bulges.
+    const sclera = new THREE.Mesh(shell(HEAD_R, 1.02, EYE_RX, EYE_RY * s, 0.28), eyeW);
+    sclera.position.copy(HEAD_POS);
+    g.add(sclera);
+    const pupil = new THREE.Mesh(shell(HEAD_R, 1.03, EYE_RX, PUPIL_RY * s, 0.165), pupilM);
+    pupil.position.copy(HEAD_POS);
     g.add(pupil);
-    // legs: pivot at the hip/shoulder (top of leg) so rotation.x swings the
-    // cylinder like a real trot instead of just spinning around its middle.
-    ([-0.16, 0.16] as const).forEach((dz) => {
+    const glint = new THREE.Mesh(shell(HEAD_R, 1.038, GLINT_RX, GLINT_RY * s, 0.055), glintM);
+    glint.position.copy(HEAD_POS);
+    g.add(glint);
+
+    // Legs: approved stubby proportions — pivot at the hip (inside the
+    // body), short chunky cylinder, white paw/sock blob INSIDE the pivot so
+    // it trots with the leg. Paw bottom lands at y~0.00 (ground contact).
+    ([-0.17, 0.17] as const).forEach((dz) => {
       const legPivot = new THREE.Group();
-      legPivot.position.set(0.18 * s, 0.2, dz);
-      const legMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.2, 8), tan);
-      legMesh.position.set(0, -0.1, 0);
+      legPivot.position.set(0.16 * s, 0.2, dz);
+      const legMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.055, 0.17, 10), tan);
+      legMesh.position.y = -0.085;
       legPivot.add(legMesh);
+      const paw = new THREE.Mesh(new THREE.SphereGeometry(0.06, 12, 8), white);
+      paw.scale.set(1.05, 0.75, 1.25);
+      paw.position.set(0, -0.155, 0.025);
+      legPivot.add(paw);
       g.add(legPivot);
       legs.push(legPivot);
     });
   });
 
-  // Tail: pivot raised to the TOP of the rump (y 0.42 -> 0.5) and tilted
-  // rotation.x POSITIVE (was -0.7, which angled the mesh forward-and-down —
-  // straight into/behind the body sphere, fully hidden from behind and the
-  // side). +0.85 rad angles it up and back instead, like a beagle's
-  // characteristically upright "flagged" tail, so it rises clear above the
-  // body silhouette. Lengthened and thickened (0.24 long / 0.04-0.07 radius
-  // -> 0.32 long / 0.055-0.085 radius) so it reads as a tail rather than a
-  // twig, and the white tip enlarged slightly to stay a visible "flag" at
-  // the new scale.
+  // Tail: the happy flag. OUTER pivot at the rump top (0,0.46,-0.38) —
+  // inside the haunch form and under the saddle's black rear, so the base
+  // emerges from black fur. INNER tilt group leans the shaft 0.35 rad BACK
+  // (near-vertical with a slight back-lean); shaft + white tip live in the
+  // tilt group. syncToEntity wags tail.rotation.y on the OUTER pivot, which
+  // sweeps the leaned shaft around the vertical axis — the tip traces a
+  // visible side-to-side flag wave (horizontal lever arm ~0.11) instead of
+  // a vertical shaft spinning invisibly on its own axis. Tip crests at
+  // y~0.82 pre-scale, under the 1.0 ceiling.
+  // Shaft is a chunky tapered cone (0.06 base -> 0.038 top) — thick enough to
+  // read as a tail, not an antenna. The white tip is a matching taper that
+  // overlaps the shaft's top third (steep shared seam at the shaft radius, no
+  // radius jump to a distinct sphere) so it blends in as the tail's white
+  // upper segment rather than a lollipop ball stuck on the end.
   const tail = new THREE.Group();
-  tail.position.set(0, 0.5, -0.34);
-  tail.rotation.x = 0.85;
-  const tailMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.085, 0.32, 8), tan);
-  tailMesh.position.set(0, 0.16, 0);
-  tail.add(tailMesh);
-  const tip = new THREE.Mesh(new THREE.SphereGeometry(0.065, 8, 8), white);
-  tip.position.set(0, 0.32, 0);
-  tail.add(tip);
+  tail.position.set(0, 0.46, -0.38);
+  const tailTilt = new THREE.Group();
+  tailTilt.rotation.x = -0.35;
+  tail.add(tailTilt);
+  const tailShaft = new THREE.Mesh(new THREE.CylinderGeometry(0.038, 0.06, 0.3, 10), tan);
+  tailShaft.position.y = 0.15;
+  tailTilt.add(tailShaft);
+  const tailTip = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.044, 0.16, 10), white);
+  tailTip.position.y = 0.34;
+  tailTilt.add(tailTip);
+  const tailTipCap = new THREE.Mesh(new THREE.SphereGeometry(0.028, 10, 8), white);
+  tailTipCap.position.y = 0.42;
+  tailTilt.add(tailTipCap);
   g.add(tail);
 
   g.traverse((o) => {

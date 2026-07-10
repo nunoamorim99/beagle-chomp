@@ -15,7 +15,7 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
 > Every `/ship` drops a line here so nothing shipped goes uncounted. When a release is cut, **all**
 > lines here roll up into the numbered version below and this section is cleared (hold a line back
 > only if you explicitly choose to).
-_(nothing yet — all shipped work is captured in the versions below)_
+- (2026-07-10) IDEA-024 v1 — beagle model glow-up: full rebuild with decal-shell surface painting (flush coat markings, painted-lens eyes, single teardrop ears, upright flag tail, chibi puppy proportions). First feature of v2.1 "Groomed".
 
 ## 📌 Planned
 > Forward-looking targets from `/plan-version`. Each is a checklist of IDEAs intended for a
@@ -24,7 +24,7 @@ _(nothing yet — all shipped work is captured in the versions below)_
 ### v2.1 — Groomed [planned]
 A polish pass on what v2.0 shipped: the beagle gets a proper glow-up, and the shop becomes a
 dedicated page worthy of showing it off. Minor bump — both are increments to existing features.
-- [ ] IDEA-024 — Beagle model glow-up (cuter: ears, eyes, richer coat pigmentation)
+- [x] IDEA-024 — Beagle model glow-up (cuter: ears, eyes, richer coat pigmentation) — shipped 2026-07-10
 - [ ] IDEA-023 — Shop v2: dedicated page with tabs + 3D skin gallery
 > Build order note: IDEA-024 first — the shop's 3D gallery (023) then showcases the improved
 > model rather than the old one. No hard dependency, but this order avoids re-verifying the

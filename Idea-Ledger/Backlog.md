@@ -34,19 +34,6 @@ _(nothing yet)_
   rotating preview per tab). Themes tab stays future scope until a theme-swap system exists.
 - **Dependencies:** [[IDEA-012]]
 
-### IDEA-024 — Beagle model glow-up (cuter: ears, eyes, coat pigmentation) 💡
-- **Priority:** 🟡
-- **Area:** render
-- **Description:** improve the beagle visual — turn their appearance cuter than it is. Improve the
-  ears and the eyes. The body should have richer pigmentation instead of one big oval circle on the
-  body — we can improve that.
-- **Notes:** model polish on the beagle built in [[IDEA-004]] (ears/eyes refined during [[IDEA-009]],
-  but there's room). "More pigmentation" means breaking the single saddle ellipsoid into a more
-  natural patch layout — this touches the coat-slot system the skins use ([[IDEA-010]]), so the four
-  coat colors (tan/white/black/ear) must keep recoloring cleanly across all skins. Menu showcase
-  ([[IDEA-021]] v2) makes any model upgrade highly visible — good payoff.
-- **Dependencies:** —
-
 ### IDEA-013 — Challenge mode: per-level twists 💡
 - **Priority:** 🟡
 - **Area:** modes
@@ -107,6 +94,25 @@ _(nothing yet)_
 
 ## Delivered ✅
 > Already in production. Do NOT delete. Each keeps its version history.
+
+### IDEA-024 — Beagle model glow-up (cuter: ears, eyes, coat pigmentation) ✅
+- **Priority:** 🟡
+- **Area:** render
+- **Description:** improve the beagle visual — turn their appearance cuter than it is. Improve the
+  ears and the eyes. The body should have richer pigmentation instead of one big oval circle on the
+  body — we can improve that.
+- **Notes:** model polish on the beagle built in [[IDEA-004]]. Nuno's quality bar: portfolio-grade
+  three.js characters (bruno-simon.com / summer-afternoon refs). A first "blob-assembly" pass was
+  REJECTED (markings as proud lumps, double-blob ears, bulging eyes, tail into the body) — the
+  shipped model was rebuilt with **decal-shell surface painting**: every marking is a paper-thin
+  partial-sphere cap hugging the base geometry (≤~1% rise), so the coat reads painted-on. All
+  markings still ride the 4 coat slots, so the skins ([[IDEA-010]]) recolor cleanly — verified live
+  through the shop. First build of v2.1 "Groomed" (before [[IDEA-023]] so the gallery shows this
+  model). Nuno: "a really good improvement — just a few touches to be perfect; later I will come
+  back to character editing" → future refinement round expected, capture specifics via /idea then.
+- **Dependencies:** —
+- **History:**
+  - **v1** (2026-07-10) — full model rebuild via a 3-variant judge panel (round 1) then a 2-technique fidelity rebuild (round 2, after Nuno's critique): chibi puppy proportions with a clearly visible body; ONE teardrop lathe ear per side rooted in the skull; flush painted-lens eyes (sclera/pupil/glint caps, no bulge); flush white blaze lune up the face; one smooth black saddle cap over the back; white bib/belly + socks; upright tapered flag tail with blended white tip (wag preserved). Decal-shell technique throughout — zero proud lumps. Verified: 4 skins × angles contact sheets, top-down direction strips (blaze front/saddle rear), menu showcase, live shop equip recolor, tsc/build/tests green; all `BeagleParts`/`coatMats` contracts intact, only `makeBeagle` changed. `characters.ts`. _(PENDING)_
 
 ### IDEA-021 — Main menu (modes · shop · profile · scoreboard) ✅
 - **Priority:** 🟡
