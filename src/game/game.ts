@@ -24,6 +24,7 @@ import { attachKeyboard } from "../input/keyboard";
 import { attachTouch } from "../input/touch";
 import { createScene, type SceneRig } from "../render/scene";
 import { createMenuScene, type MenuScene } from "../render/menuScene";
+import { createShopScene, type ShopScene } from "../render/shopScene";
 import { createEffects, type Effects } from "../render/effects";
 import {
   buildBoard,
@@ -49,7 +50,7 @@ import { createHud, type Hud } from "../ui/hud";
 import { createSound, attachMuteButton, type Sound } from "../ui/sound";
 import { attachShop, type ShopHandle } from "../ui/shop";
 import { initProfileFromStorage, getCoins, addCoins } from "./profileStore";
-import { getEquippedEnemySkinId } from "./cosmetics";
+import { getEquippedEnemySkinId, getBeagleSkin } from "./cosmetics";
 
 // Scatter-corner targets per ghost personality (prototype section 7,
 // GHOST_DEFS): rose/chaser -> top-right, teal/ambusher -> top-left,
@@ -104,6 +105,12 @@ export class Game {
   // menu visit (boot -> play -> menu -> play -> ...), never rebuilt. The
   // frame loop (see tick()) renders THIS instead of `rig` while mode==="start".
   private readonly menuScene: MenuScene;
+  // IDEA-023 (shop v2): the shop page's own dedicated scene/camera (a live
+  // turntable hero preview of whichever skin the player is browsing) —
+  // created once alongside menuScene and reused for every shop visit, never
+  // rebuilt. The frame loop renders THIS instead of `rig`/`menuScene` while
+  // `shopOpen` is true (see tick()).
+  private readonly shopScene: ShopScene;
   private readonly hud: Hud;
   private readonly effects: Effects;
   private readonly sound: Sound;
@@ -135,6 +142,13 @@ export class Game {
   // click handler calling startLevel(0).
   private mode: GameMode = "start";
   private stateTimer = 0;
+
+  // IDEA-023 (shop v2): whether the full-screen shop page is currently
+  // showing, tracked via the shop's own onOpen/onClose callbacks (see the
+  // constructor). While true, tick() freezes gameplay entirely (skips
+  // update(dt), only advances shopScene's own turntable) and renders
+  // shopScene instead of `rig`/`menuScene` — see tick() below.
+  private shopOpen = false;
 
   // Fright window + escalating eat-chain score (prototype triggerFright/checkCollisions).
   private frightTimer = 0;
@@ -176,6 +190,7 @@ export class Game {
   constructor(canvas: HTMLCanvasElement) {
     this.rig = createScene(canvas);
     this.menuScene = createMenuScene();
+    this.shopScene = createShopScene();
     this.hud = createHud(document.body);
     // Constructed eagerly (cheap — just an AudioContext + a gain node); it
     // starts (or can start) "suspended" per the browser autoplay policy until
@@ -249,8 +264,31 @@ export class Game {
       // still changes the wallet the menu displayed before it opened — so
       // re-render the menu on close to pick up any change. No-op (cheap) if
       // the menu isn't the panel currently showing.
+      //
+      // IDEA-023 (shop v2): also the single place `shopOpen` flips back off
+      // and `body.shop-open` is removed — tick() reads `shopOpen` every
+      // frame to decide whether to freeze gameplay and which scene to
+      // render (see tick()), and the CSS rule keyed on body.shop-open hides
+      // the HUD/menu chrome the full-screen shop page would otherwise sit
+      // awkwardly on top of.
       onClose: () => {
+        this.shopOpen = false;
+        document.body.classList.remove("shop-open");
         if (this.mode === "start") this.showMenu();
+      },
+      // IDEA-023: the shop page just opened — freeze gameplay (tick() reads
+      // this flag) and hide the HUD/menu chrome behind the full-screen page.
+      onOpen: () => {
+        this.shopOpen = true;
+        document.body.classList.add("shop-open");
+      },
+      // IDEA-023: drives the shop page's own live 3D hero preview — fired on
+      // open, on every tab switch, and on every card tap (never after
+      // equipping the already-selected card, since the same model is already
+      // shown — see shop.ts's onPreview doc comment).
+      onPreview: (kind, id) => {
+        if (kind === "beagle") this.shopScene.showBeagle(getBeagleSkin(id));
+        else this.shopScene.showEnemy(id);
       },
     });
 
@@ -288,11 +326,14 @@ export class Game {
     menuShopBtn.addEventListener("click", onMenuShopClick);
     this.detachMenuShopButton = () => menuShopBtn.removeEventListener("click", onMenuShopClick);
 
-    // IDEA-021 v2: the menu scene's camera is a plain perspective cam (no
-    // maze-fit math) — just needs its aspect kept current, independent of
-    // scene.ts's own resize() (which already has its own window listener).
+    // IDEA-021 v2 / IDEA-023: the menu scene's and shop scene's cameras are
+    // both plain perspective cams (no maze-fit math) — just need their
+    // aspect kept current, independent of scene.ts's own resize() (which
+    // already has its own window listener).
     const onMenuResize = (): void => {
-      this.menuScene.resize(window.innerWidth / window.innerHeight);
+      const aspect = window.innerWidth / window.innerHeight;
+      this.menuScene.resize(aspect);
+      this.shopScene.resize(aspect);
     };
     window.addEventListener("resize", onMenuResize);
     onMenuResize();
@@ -419,6 +460,7 @@ export class Game {
     this.detachMenuShopButton();
     this.shop.detach();
     this.menuScene.dispose();
+    this.shopScene.dispose();
   }
 
   // ---- level flow (prototype startLevel, line 419) ----
@@ -983,6 +1025,24 @@ export class Game {
   private tick = (now: number): void => {
     const dt = Math.min((now - this.clock.last) / 1000, 0.05);
     this.clock.last = now;
+
+    // IDEA-023 (shop v2): while the full-screen shop page is up, FREEZE
+    // gameplay entirely — skip this.update(dt) so play/ready/dying/
+    // levelclear timers and the beagle/ghosts don't advance underneath the
+    // shop, and render the shop's own live hero-preview scene instead of
+    // `rig`/`menuScene`. Ordered BEFORE the mode==="start" branch below so
+    // opening the shop from the main menu (where mode is already "start")
+    // renders the shop, not the menu, and so a mid-run shop visit correctly
+    // freezes play instead of falling through to the normal game render.
+    // Resumes exactly where the player left off on close: nothing here
+    // mutates any game-state timer, it just doesn't advance it for as long
+    // as shopOpen stays true.
+    if (this.shopOpen) {
+      this.shopScene.update(dt);
+      this.rig.renderer.render(this.shopScene.scene, this.shopScene.camera);
+      this.rafHandle = requestAnimationFrame(this.tick);
+      return;
+    }
 
     this.update(dt);
 
