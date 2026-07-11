@@ -21,7 +21,16 @@ _(nothing yet — all shipped work is captured in the versions below)_
 > Forward-looking targets from `/plan-version`. Each is a checklist of IDEAs intended for a
 > future numbered release. Items move to Unreleased as they ship.
 
-_(nothing planned yet — v2.1 "Groomed" was fulfilled and cut on 2026-07-11)_
+### v3.0 — New Tricks [planned]
+The gameplay pillar: more game to play. Classic mode stops repeating itself, lives become
+earnable, and a whole new challenge mode with per-level twists arrives with its own level map.
+- [ ] IDEA-015 — Classic mode: change the maze each level (needs a maze pool — level-designer work)
+- [ ] IDEA-018 — Bonus lives: pickups & milestones
+- [ ] IDEA-013 — Challenge mode: per-level twists
+- [ ] IDEA-014 — Level map / level select for challenge mode
+> Build order: 015 first (the maze pool it creates also feeds 013's variety), 018 as the quick
+> economy win, then the big one — 013 — and finally 014, which depends on 013 and gives the mode
+> its front door from the main menu ([[IDEA-021]]).
 
 ## Version history
 
