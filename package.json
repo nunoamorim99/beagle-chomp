@@ -6,6 +6,7 @@
   "description": "A responsive, installable (PWA) maze-chase game built with three.js.",
   "scripts": {
     "dev": "vite",
+    "editor": "vite --open /editor/",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
@@ -20,6 +21,7 @@
   "devDependencies": {
     "@types/node": "^26.1.0",
     "@types/three": "^0.169.0",
+    "lil-gui": "^0.21.0",
     "playwright": "^1.61.1",
     "tsx": "^4.22.5",
     "typescript": "^5.6.3",

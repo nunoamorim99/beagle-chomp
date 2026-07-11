@@ -1,6 +1,11 @@
 import { defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 
+// NOTE: the character editor (editor/index.html + src/editor/*) is DEV-ONLY by
+// construction: `vite` dev serves any root-level .html (so /editor/ works with no
+// config), while `vite build` bundles only the rollup inputs — which default to
+// index.html alone. Do NOT add editor/index.html to rollupOptions.input, or it
+// (and lil-gui) would ship to players and land in the PWA precache.
 export default defineConfig({
   base: "./",
   build: {

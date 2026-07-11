@@ -7,11 +7,24 @@ src/render/* three.js scene + meshes   ── reads logic, never mutates it
 src/input/*  keyboard + touch          ── emits queued directions
 src/ui/*     DOM HUD + banners         ── owns the .hud + #center overlay (not the canvas)
 src/game/game.ts  integration/loop     ── owns GameState, wires it all together
+src/editor/* dev-only character editor ── reads render + game, NOTHING imports from it
 ```
 `createHud(root): Hud` (src/ui/hud.ts) is the only writer of the HUD/#center DOM.
 index.html ships the `.hud` stats (`#score`/`#level`/`#lives`) and an empty
 `#center` container; hud.ts injects banners/panels into `#center` at runtime.
 `game.ts` drives it purely through the `Hud` methods and never touches those nodes directly.
+
+## Character editor (dev-only, IDEA-025)
+`editor/index.html` + `src/editor/*` is a workbench page served by `npm run dev`
+at `/editor/` (`npm run editor` opens it directly): pick a character, tweak its
+real meshes live (lil-gui), add primitive parts, and copy the generated three.js
+code into `src/render/characters.ts` — side by side with the builder's real
+source (Vite `?raw`). It is dev-only **by construction**: the page is not a
+rollup input, so `vite build` never bundles it — no editor code or lil-gui ever
+reaches `dist/` or the PWA precache (see the note in vite.config.ts; never add
+it to `rollupOptions.input`). `src/editor/*` may import three (like
+`src/render/*`), imports read-only from render/game, and registers no service
+worker; no game module may import from `src/editor/*`.
 
 ## Coordinate system
 Grid tile `(tx, ty)` maps to world:
