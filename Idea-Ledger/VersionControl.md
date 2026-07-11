@@ -15,7 +15,7 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
 > Every `/ship` drops a line here so nothing shipped goes uncounted. When a release is cut, **all**
 > lines here roll up into the numbered version below and this section is cleared (hold a line back
 > only if you explicitly choose to).
-_(nothing yet — all shipped work is captured in the versions below)_
+- (2026-07-11) IDEA-015 v1 — classic mode maze rotation gets real variety: pool grown 2 → 5 with The Courtyard (open plaza), The Warren (tight lattice) and The Crossroads (long arteries), all validator+sim green. First feature of v3.0 "New Tricks".
 
 ## 📌 Planned
 > Forward-looking targets from `/plan-version`. Each is a checklist of IDEAs intended for a
@@ -24,7 +24,7 @@ _(nothing yet — all shipped work is captured in the versions below)_
 ### v3.0 — New Tricks [planned]
 The gameplay pillar: more game to play. Classic mode stops repeating itself, lives become
 earnable, and a whole new challenge mode with per-level twists arrives with its own level map.
-- [ ] IDEA-015 — Classic mode: change the maze each level (needs a maze pool — level-designer work)
+- [x] IDEA-015 — Classic mode: change the maze each level — shipped 2026-07-11
 - [ ] IDEA-018 — Bonus lives: pickups & milestones
 - [ ] IDEA-013 — Challenge mode: per-level twists
 - [ ] IDEA-014 — Level map / level select for challenge mode
