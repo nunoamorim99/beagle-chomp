@@ -21,19 +21,6 @@ _(nothing yet)_
 ## Backlog (open ideas)
 > New registered ideas go here. Next free ID: IDEA-026
 
-### IDEA-023 — Shop v2: dedicated page with tabs + 3D skin gallery 💡
-- **Priority:** 🟡
-- **Area:** shop
-- **Description:** improve the shop experience — a page dedicated to the shop, with tabs so the
-  player selects the kind of skin they want to buy. For the skin showcase, cards with images or a
-  gallery with the 3D of the skin — for the beagles AND the enemies: see them in a kind of gallery
-  with the 3D model and the name. Themes can come later.
-- **Notes:** UX redesign of the delivered shop ([[IDEA-012]]) — the current overlay works but shows
-  color-dot swatches (beagles) and emoji (enemies). The 3D gallery idea pairs naturally with the
-  menu's live showcase tech ([[IDEA-021]] v2's `menuScene` — small per-card 3D previews or one
-  rotating preview per tab). Themes tab stays future scope until a theme-swap system exists.
-- **Dependencies:** [[IDEA-012]]
-
 ### IDEA-013 — Challenge mode: per-level twists 💡
 - **Priority:** 🟡
 - **Area:** modes
@@ -94,6 +81,25 @@ _(nothing yet)_
 
 ## Delivered ✅
 > Already in production. Do NOT delete. Each keeps its version history.
+
+### IDEA-023 — Shop v2: dedicated page with tabs + 3D skin gallery ✅
+- **Priority:** 🟡
+- **Area:** shop
+- **Description:** improve the shop experience — a page dedicated to the shop, with tabs so the
+  player selects the kind of skin they want to buy. For the skin showcase, cards with images or a
+  gallery with the 3D of the skin — for the beagles AND the enemies: see them in a kind of gallery
+  with the 3D model and the name. Themes can come later.
+- **Notes:** UX redesign of the delivered shop ([[IDEA-012]]) — the current overlay works but shows
+  color-dot swatches (beagles) and emoji (enemies). The 3D gallery idea pairs naturally with the
+  menu's live showcase tech ([[IDEA-021]] v2's `menuScene` — small per-card 3D previews or one
+  rotating preview per tab). Themes tab stays future scope until a theme-swap system exists.
+  Second/final planned item of v2.1 "Groomed" — built after [[IDEA-024]] so the gallery showcases
+  the rebuilt model. Presentation-only redesign: the buy/equip/ownership data layer from
+  [[IDEA-012]] is reused unchanged.
+- **Dependencies:** [[IDEA-012]]
+- **History:**
+  - **v1** (2026-07-11) — the shop became a full-screen character-select page: header (back · title · live 🪙 balance), 🐶/👾 tabs, a LIVE 3D hero turntable (new `render/shopScene.ts`, same garden-vignette language as the menu showcase; hero swaps rebuild + dispose cleanly; enemies previewed in team rose) and a card rail/list. Desktop puts all chrome in a RIGHT SIDE PANEL (tabs → vertical card list → info+action pinned at bottom) so the 3D stage stays clean — owner-requested layout; phone keeps the stacked layout (one DOM, `display:contents` + `order` responsive switch). Opening the shop now PAUSES a mid-run game (full-screen page; the old overlay let ghosts hunt you invisibly). Buy/equip data layer from [[IDEA-012]] reused unchanged. Verified live: tabs, hero swaps, real buy+equip (coins deduct, persists), can't-afford state, pause/resume, desktop+phone, zero errors; build+tests green. `shopScene.ts` (new), `shop.ts`, `game.ts`, `index.html`, `style.css`. _(83d1c12)_
+
 
 ### IDEA-025 — In-project 3D character editor (dev-only /editor/ page) ✅
 - **Priority:** 🟡

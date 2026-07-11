@@ -17,6 +17,7 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
 > only if you explicitly choose to).
 - (2026-07-10) IDEA-024 v1 — beagle model glow-up: full rebuild with decal-shell surface painting (flush coat markings, painted-lens eyes, single teardrop ears, upright flag tail, chibi puppy proportions). First feature of v2.1 "Groomed".
 - (2026-07-11) IDEA-025 v1 — in-project 3D character editor: dev-only /editor/ workbench (part tree · orbit viewport · lil-gui inspector · undo/redo + keyboard nudging · generated code + real source side by side · Copy edits / Copy full file). Dev tooling — ships in the repo, not in the player build.
+- (2026-07-11) IDEA-023 v1 — shop v2: full-screen character-select page with 🐶/👾 tabs and a live 3D hero turntable of each skin; desktop chrome in a right side panel so the 3D stage stays clean; mid-run shopping now pauses the game. Second planned feature of v2.1 "Groomed".
 
 ## 📌 Planned
 > Forward-looking targets from `/plan-version`. Each is a checklist of IDEAs intended for a
@@ -26,7 +27,7 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
 A polish pass on what v2.0 shipped: the beagle gets a proper glow-up, and the shop becomes a
 dedicated page worthy of showing it off. Minor bump — both are increments to existing features.
 - [x] IDEA-024 — Beagle model glow-up (cuter: ears, eyes, richer coat pigmentation) — shipped 2026-07-10
-- [ ] IDEA-023 — Shop v2: dedicated page with tabs + 3D skin gallery
+- [x] IDEA-023 — Shop v2: dedicated page with tabs + 3D skin gallery — shipped 2026-07-11
 > Build order note: IDEA-024 first — the shop's 3D gallery (023) then showcases the improved
 > model rather than the old one. No hard dependency, but this order avoids re-verifying the
 > gallery twice. 023's coat-slot changes must keep all 4 skins recoloring cleanly ([[IDEA-010]]).

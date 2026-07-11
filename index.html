@@ -51,9 +51,14 @@
       </div>
     </div>
 
-    <!-- IDEA-012 shop overlay — deliberately a SEPARATE container from
-         #center, so opening the shop mid-play or over the Start/GameOver
-         panel never clobbers either. Toggled by src/ui/shop.ts. -->
+    <!-- IDEA-023 shop v2: a full-screen dedicated PAGE (not an overlay panel)
+         — deliberately a SEPARATE container from #center/#mainMenu, so
+         opening the shop mid-play or over the Start/main-menu screen never
+         clobbers either (game.ts's tick() freezes gameplay underneath while
+         this is open). Entirely (re)rendered by src/ui/shop.ts; the live 3D
+         hero preview shows through from the canvas behind (src/render/
+         shopScene.ts), same "transparent overlay over the 3D scene" pattern
+         as #mainMenu. -->
     <div class="hidden" id="shop"></div>
 
     <script type="module" src="/src/main.ts"></script>
