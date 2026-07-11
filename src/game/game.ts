@@ -15,8 +15,9 @@
 // the two validated mazes (looping, with a lap indicator).
 import { Grid, COLS, ROWS, worldX, worldZ, type Vec2 } from "./grid";
 import { MAZES, MAZE_COUNT } from "./mazes";
-import { SPEEDS, SCORE, TIMING, COLORS, COINS, COIN_THRESHOLDS } from "./config";
+import { SPEEDS, SCORE, TIMING, COLORS, COINS, COIN_THRESHOLDS, LIVES, LIFE_THRESHOLDS } from "./config";
 import { coinsDueFromScore } from "./coins";
+import { shouldFireThreshold } from "./pickups";
 import { type GameMode, createInitialGameState } from "./state";
 import { makeEntity, stepEntity, entityWorld, type Entity } from "./movement";
 import { chooseGhostDir, type Ghost, type GlobalMode } from "./ghostAI";
@@ -33,6 +34,8 @@ import {
   clearFruit,
   spawnCoin,
   clearCoin,
+  spawnLife,
+  clearLife,
   spinDecor,
   type Board,
 } from "../render/board";
@@ -91,11 +94,29 @@ interface LevelAssets {
   fruitTiles: Vec2[];
   /** IDEA-017 follow-up: every beagle-walkable floor tile in the level
    *  (grid.walkable(x, y, false) — excludes walls and the ghost-only
-   *  pen/door), precomputed once per level so maze-coin placement doesn't
-   *  need to rescan the grid on every spawn. See pickRandomCoinTile. */
+   *  pen/door), precomputed once per level so maze-coin/bonus-life placement
+   *  doesn't need to rescan the grid on every spawn. See pickRandomFreeTile
+   *  (IDEA-018: generalized from the coin-only pickRandomCoinTile). */
   walkableTiles: Vec2[];
   beagleSpawn: Vec2;
   ghostSpawn: Vec2;
+  // ---- pickup-threshold pointers (bugfix: each threshold fires ONCE per
+  // level — see shouldFireThreshold in src/game/pickups.ts for the full
+  // farming-exploit writeup). Deliberately live HERE, on LevelAssets, rather
+  // than as their own Game fields like coinTile/lifeTile/fruitTile: they must
+  // reset exactly once per FRESH level (a new maze, a new `pellets`/`eaten`
+  // count — i.e. only in buildLevel), and must NOT reset on a same-level
+  // death-respawn (resetActors(), called from the "dying" case in update())
+  // since `eaten` itself doesn't reset on death — the beagle keeps its
+  // pellet progress on the current map. Living on LevelAssets (rebuilt fresh
+  // only by buildLevel, exactly like `pellets`/`startPelletCount`) gives them
+  // precisely that lifetime for free, with no extra reset call sites needed.
+  /** Index into COIN_THRESHOLDS of the next not-yet-fired threshold this level. */
+  nextCoinThresholdIdx: number;
+  /** Index into LIFE_THRESHOLDS of the next not-yet-fired threshold this level. */
+  nextLifeThresholdIdx: number;
+  /** Index into FRUIT_THRESHOLDS of the next not-yet-fired threshold this level. */
+  nextFruitThresholdIdx: number;
 }
 
 export class Game {
@@ -186,6 +207,23 @@ export class Game {
   // play-again) — NOT on level transitions, since score (and this counter)
   // carry across levels within one run.
   private coinsAwardedFromScore = 0;
+
+  // IDEA-018: current maze bonus-life tile, if any (board.life is only the
+  // mesh — mirrors coinTile/fruitTile exactly).
+  private lifeTile: Vec2 | null = null;
+
+  // IDEA-018: countdown (seconds) until the current life pickup auto-despawns
+  // if not grabbed (LIVES.pickupLifespanSeconds) — mirrors coinTimer exactly,
+  // including only ticking during actual "play" (see tickLifeLifespan).
+  private lifeTimer = 0;
+
+  // IDEA-018: how many bonus lives this run's score has already granted via
+  // the points-milestone trigger (LIVES.milestonePoints), mirroring
+  // coinsAwardedFromScore exactly — including the "advance even if the cap
+  // blocked the actual grant" rule (see maybeAwardLivesFromScore) so a
+  // milestone can never re-fire once already counted. Reset at the same 3
+  // new-game sites as coinsAwardedFromScore.
+  private livesAwardedFromScore = 0;
 
   constructor(canvas: HTMLCanvasElement) {
     this.rig = createScene(canvas);
@@ -313,6 +351,7 @@ export class Game {
       this.score = fresh.score;
       this.lives = fresh.lives;
       this.coinsAwardedFromScore = 0;
+      this.livesAwardedFromScore = 0;
       this.hud.setScore(this.score);
       this.hud.setLives(this.lives);
       this.startLevel(0);
@@ -343,6 +382,7 @@ export class Game {
     this.score = initial.score;
     this.lives = initial.lives;
     this.coinsAwardedFromScore = 0;
+    this.livesAwardedFromScore = 0;
     this.hud.setScore(this.score);
     this.hud.setLives(this.lives);
     this.hud.setLevel("1");
@@ -431,15 +471,28 @@ export class Game {
       if (grid.walkable(x, y, false)) walkableTiles.push({ x, y });
     }));
 
-    return { grid, board, pellets, startPelletCount: pellets.size, fruitTiles, walkableTiles, beagleSpawn, ghostSpawn };
+    return {
+      grid,
+      board,
+      pellets,
+      startPelletCount: pellets.size,
+      fruitTiles,
+      walkableTiles,
+      beagleSpawn,
+      ghostSpawn,
+      nextCoinThresholdIdx: 0,
+      nextLifeThresholdIdx: 0,
+      nextFruitThresholdIdx: 0,
+    };
   }
 
-  /** Removes every mesh owned by the previous level's board from the scene (walls, floor, remaining pellets, fruit, coin, hedge decor) so buildLevel's replacement never leaks. */
+  /** Removes every mesh owned by the previous level's board from the scene (walls, floor, remaining pellets, fruit, coin, bonus life, hedge decor) so buildLevel's replacement never leaks. */
   private disposeLevel(level: LevelAssets): void {
     this.rig.scene.remove(level.board.walls, level.board.floor);
     level.board.pelletMeshes.forEach((p) => p.mesh.removeFromParent());
     if (level.board.fruit) this.rig.scene.remove(level.board.fruit);
     if (level.board.coin) this.rig.scene.remove(level.board.coin);
+    if (level.board.life) this.rig.scene.remove(level.board.life);
     level.board.hedgeDecor.forEach((m) => this.rig.scene.remove(m));
   }
 
@@ -514,6 +567,7 @@ export class Game {
     this.fruitTile = null;
 
     this.despawnCoin();
+    this.despawnLife();
   }
 
   // ---- maze coin lifecycle helper (IDEA-017 follow-up: time-limited coin) ----
@@ -529,6 +583,22 @@ export class Game {
     if (this.level.board.coin) clearCoin(this.level.board, this.rig.scene);
     this.coinTile = null;
     this.coinTimer = 0;
+  }
+
+  // ---- maze bonus-life lifecycle helper (IDEA-018, mirrors despawnCoin) ----
+
+  /**
+   * Clears the current maze bonus-life pickup (mesh + tile + countdown), if
+   * any — the one place all three fields are reset together, mirroring
+   * despawnCoin exactly, so every call site (pickup in eatAt, teardown in
+   * resetActors, and the lifespan expiry in tickLifeLifespan) stays
+   * consistent and a stale timer can never "carry over" onto a life pickup
+   * spawned later. Safe to call when there is no life pickup on the board.
+   */
+  private despawnLife(): void {
+    if (this.level.board.life) clearLife(this.level.board, this.rig.scene);
+    this.lifeTile = null;
+    this.lifeTimer = 0;
   }
 
   // ---- live enemy-skin switch (IDEA-009, temporary switcher) ----
@@ -566,6 +636,7 @@ export class Game {
     this.eatAt(e.tx, e.ty);
     this.maybeSpawnFruit();
     this.maybeSpawnCoin();
+    this.maybeSpawnLife();
   };
 
   private eatAt(tx: number, ty: number): void {
@@ -587,6 +658,7 @@ export class Game {
         }
         this.hud.setScore(this.score);
         this.maybeAwardCoinsFromScore();
+        this.maybeAwardLivesFromScore();
         if (this.level.pellets.size <= 0) this.levelClear();
       }
     }
@@ -599,6 +671,7 @@ export class Game {
       this.effects.scorePopup(worldX(tx), worldZ(ty), SCORE.fruit);
       this.hud.setScore(this.score);
       this.maybeAwardCoinsFromScore();
+      this.maybeAwardLivesFromScore();
       this.sound.fruit();
     }
 
@@ -613,6 +686,20 @@ export class Game {
       this.hud.setCoins(getCoins());
       this.effects.pelletEaten(worldX(tx), worldZ(ty), "biscuit");
       this.sound.coin();
+    }
+
+    // IDEA-018: maze bonus-life pickup (a golden bone) — grants a life
+    // directly, no points (mirrors the coin block above). Grabbed in time,
+    // i.e. before the lifespan countdown (see tickLifeLifespan) reaches 0 —
+    // despawnLife() clears the tile/timer together so there's no stale
+    // countdown left running against whatever life pickup spawns next.
+    // Consumed even if the beagle is already at LIVES.max: grantLife() is a
+    // no-op in that case (no sound, no extra life), but the pickup itself
+    // still disappears rather than lingering on the board.
+    if (this.lifeTile && this.lifeTile.x === tx && this.lifeTile.y === ty) {
+      this.despawnLife();
+      this.grantLife();
+      this.effects.pelletEaten(worldX(tx), worldZ(ty), "bone");
     }
   }
 
@@ -639,40 +726,67 @@ export class Game {
 
   // ---- maze coin pickup spawn (IDEA-017, mirrors maybeSpawnFruit) ----
 
+  /**
+   * BUGFIX (live-verified farming exploit): the gate used to be
+   * `COIN_THRESHOLDS.includes(eaten)`, which re-fires on the SAME eaten-pellet
+   * tick that the previous coin at that same threshold was just collected —
+   * eating a coin doesn't change `eaten`, so the very next maybeSpawnCoin()
+   * call (same beagle arrival, right after eatAt's pickup branch) would see
+   * `board.coin` null again and the threshold still matching, and respawn a
+   * coin the player could farm by oscillating over the tile. Now gated by
+   * `shouldFireThreshold` against a monotonic per-level index pointer
+   * (`this.level.nextCoinThresholdIdx`, reset once per fresh level in
+   * buildLevel — see LevelAssets), so each of COIN_THRESHOLDS' 4 entries
+   * fires exactly once per level no matter how many times a coin is
+   * spawned/eaten in between.
+   */
   private maybeSpawnCoin(): void {
     if (this.level.board.coin) return;
     const eaten = this.level.startPelletCount - this.level.pellets.size;
-    if (!COIN_THRESHOLDS.includes(eaten as (typeof COIN_THRESHOLDS)[number])) return;
+    if (!shouldFireThreshold(eaten, COIN_THRESHOLDS, this.level.nextCoinThresholdIdx)) return;
 
-    const tile = this.pickRandomCoinTile();
+    // Excludes the beagle's current tile and the active fruit tile — same
+    // pool a coin has always avoided (see pickRandomFreeTile's doc comment;
+    // this call's exclude set is unchanged from before the IDEA-018 refactor).
+    const exclude: Vec2[] = [{ x: this.beagle.tx, y: this.beagle.ty }];
+    if (this.fruitTile) exclude.push(this.fruitTile);
+    const tile = this.pickRandomFreeTile(exclude);
     if (!tile) return; // level has no walkable tiles at all — shouldn't happen for a validated maze
 
+    this.level.nextCoinThresholdIdx++;
     this.coinTile = tile;
     this.coinTimer = COINS.lifespanSeconds;
     spawnCoin(this.level.board, this.rig.scene, tile.x, tile.y);
   }
 
   /**
-   * Picks a random tile for a maze coin, PREFERRING bare/cleared floor: a
-   * beagle-walkable tile (this.level.walkableTiles, precomputed once per
-   * level in buildLevel) that does NOT currently hold a pellet. Landing on
-   * already-eaten corridors makes the coin stand out against empty floor
-   * instead of hiding among the biscuits, and turns grabbing it into a real
-   * detour decision rather than "walk the path you were on anyway."
+   * Picks a random tile for a maze pickup (coin or bonus life), PREFERRING
+   * bare/cleared floor: a beagle-walkable tile (this.level.walkableTiles,
+   * precomputed once per level in buildLevel) that does NOT currently hold a
+   * pellet. Landing on already-eaten corridors makes the pickup stand out
+   * against empty floor instead of hiding among the biscuits, and turns
+   * grabbing it into a real detour decision rather than "walk the path you
+   * were on anyway."
    *
-   * Falls back to any walkable tile (excluding the beagle/fruit tile where
-   * possible) if the level has no empty tiles yet (very early on, before
-   * anything's been cleared) — a coin should still appear rather than being
-   * skipped. Excludes the beagle's current tile and the active fruit tile
-   * from both candidate pools where at least one other option exists, so a
-   * coin can't spawn already-grabbed the instant it appears or double up
-   * with the fruit. Returns null only if the level has no walkable tiles at
-   * all, which should never happen for a validated maze.
+   * Falls back to any walkable tile (excluding `exclude` where possible) if
+   * the level has no empty tiles yet (very early on, before anything's been
+   * cleared) — a pickup should still appear rather than being skipped.
+   * `exclude` lets each caller name whichever other tiles it must avoid
+   * doubling up with (e.g. the coin spawn excludes the beagle + fruit tiles;
+   * the life spawn additionally excludes the coin tile) from both candidate
+   * pools where at least one other option exists, so a pickup can't spawn
+   * already-grabbed the instant it appears or double up with another pickup.
+   * Returns null only if the level has no walkable tiles at all, which should
+   * never happen for a validated maze.
+   *
+   * IDEA-018: generalized from the original pickRandomCoinTile (IDEA-017) so
+   * both the coin and bonus-life spawns share one implementation — the coin's
+   * own behavior (candidate pool, exclusion set, fallback order) is
+   * byte-for-byte unchanged, just parameterized via `exclude` instead of a
+   * hardcoded beagle+fruit check.
    */
-  private pickRandomCoinTile(): Vec2 | null {
-    const isBlocked = (t: Vec2): boolean =>
-      (t.x === this.beagle.tx && t.y === this.beagle.ty) ||
-      (this.fruitTile !== null && t.x === this.fruitTile.x && t.y === this.fruitTile.y);
+  private pickRandomFreeTile(exclude: Vec2[]): Vec2 | null {
+    const isBlocked = (t: Vec2): boolean => exclude.some((b) => b.x === t.x && b.y === t.y);
 
     const pickFrom = (tiles: Vec2[]): Vec2 | null => {
       if (tiles.length === 0) return null;
@@ -700,6 +814,101 @@ export class Game {
     if (this.coinTimer <= 0) this.despawnCoin();
   }
 
+  // ---- bonus lives (IDEA-018: maze pickup, points milestone, perfect fright) ----
+
+  /**
+   * Central grant point for ALL THREE bonus-life triggers (maze pickup,
+   * points milestone, perfect fright) — every trigger calls this rather than
+   * incrementing `this.lives` directly, so the cap/HUD/sound side effects can
+   * never drift out of sync between triggers. No-ops (no HUD update, no
+   * sound) once lives are already at LIVES.max — a bonus life is simply
+   * wasted at the cap, matching how coins have no upper bound but lives
+   * deliberately do. Returns whether a life was actually granted, in case a
+   * caller ever needs to know (none currently do, but mirrors the "boolean
+   * outcome" shape profileStore's buy* operations use).
+   */
+  private grantLife(): boolean {
+    if (this.lives >= LIVES.max) return false;
+    this.lives++;
+    this.hud.setLives(this.lives);
+    this.sound.extraLife();
+    return true;
+  }
+
+  /**
+   * Banks any bonus lives newly earned since the last check, based on
+   * cumulative run score crossing LIVES.milestonePoints thresholds — mirrors
+   * maybeAwardCoinsFromScore exactly (same coinsDueFromScore helper, just a
+   * different divisor and counter), including handling a single scoring
+   * event crossing multiple thresholds at once. Called after every score
+   * change (the same 3 eatAt call sites as maybeAwardCoinsFromScore).
+   *
+   * Crucially, `livesAwardedFromScore` always advances to `due`, even when
+   * grantLife() is capped out and returns false — otherwise a milestone
+   * reached while already at LIVES.max would silently re-fire (and instantly
+   * grant a life) the moment the player's life count later drops back below
+   * the cap, which would be a confusing "free life out of nowhere" rather
+   * than a fresh milestone.
+   */
+  private maybeAwardLivesFromScore(): void {
+    const due = coinsDueFromScore(this.score, LIVES.milestonePoints);
+    if (due > this.livesAwardedFromScore) {
+      const newlyDue = due - this.livesAwardedFromScore;
+      this.livesAwardedFromScore = due;
+      for (let i = 0; i < newlyDue; i++) this.grantLife();
+    }
+  }
+
+  // ---- maze bonus-life pickup spawn (IDEA-018, mirrors maybeSpawnCoin) ----
+
+  /**
+   * BUGFIX (live-verified farming exploit — see maybeSpawnCoin's identical
+   * writeup): the gate used to be `LIFE_THRESHOLDS.includes(eaten)`, which
+   * re-fired on the SAME eaten-pellet tick a life pickup was just collected —
+   * verified live oscillating the beagle over a golden bone drove lives
+   * 3→5 (cap) within ~220ms, `eaten` never changing. Now gated by
+   * `shouldFireThreshold` against a monotonic per-level index pointer
+   * (`this.level.nextLifeThresholdIdx`, reset once per fresh level in
+   * buildLevel — see LevelAssets), so LIFE_THRESHOLDS' single entry fires
+   * exactly once per level no matter how many times the pickup is
+   * spawned/eaten in between.
+   */
+  private maybeSpawnLife(): void {
+    if (this.level.board.life) return;
+    const eaten = this.level.startPelletCount - this.level.pellets.size;
+    if (!shouldFireThreshold(eaten, LIFE_THRESHOLDS, this.level.nextLifeThresholdIdx)) return;
+
+    // Excludes the beagle's current tile, the active fruit tile, AND the
+    // active coin tile (unlike the coin spawn, which only avoids beagle +
+    // fruit) — a golden bone should never double up with a maze coin sitting
+    // on the same tile.
+    const exclude: Vec2[] = [{ x: this.beagle.tx, y: this.beagle.ty }];
+    if (this.fruitTile) exclude.push(this.fruitTile);
+    if (this.coinTile) exclude.push(this.coinTile);
+    const tile = this.pickRandomFreeTile(exclude);
+    if (!tile) return; // level has no walkable tiles at all — shouldn't happen for a validated maze
+
+    this.level.nextLifeThresholdIdx++;
+    this.lifeTile = tile;
+    this.lifeTimer = LIVES.pickupLifespanSeconds;
+    spawnLife(this.level.board, this.rig.scene, tile.x, tile.y);
+  }
+
+  // ---- maze bonus-life lifespan countdown (IDEA-018, mirrors tickCoinLifespan) ----
+
+  /**
+   * Ticks the current life pickup's despawn countdown (only called from
+   * updatePlay, i.e. only during actual "play" — never
+   * ready/dying/levelclear/start, so it can't expire while the player isn't
+   * even moving yet). Auto-despawns with no award once the timer runs out —
+   * mirrors tickCoinLifespan exactly.
+   */
+  private tickLifeLifespan(dt: number): void {
+    if (!this.lifeTile) return;
+    this.lifeTimer -= dt;
+    if (this.lifeTimer <= 0) this.despawnLife();
+  }
+
   // ---- fright window (prototype triggerFright/e_reverse, line 485) ----
 
   private triggerFright(): void {
@@ -722,11 +931,27 @@ export class Game {
 
   // ---- fruit (prototype maybeSpawnFruit, line 491) ----
 
+  /**
+   * BUGFIX (live-verified farming exploit — this one's existed since v1.0,
+   * unmasked by IDEA-018's live testing): the gate used to be
+   * `FRUIT_THRESHOLDS.includes(eaten)`, which re-fires on the SAME
+   * eaten-pellet tick a fruit at that threshold was just eaten (+100 points)
+   * — eating fruit doesn't change `eaten`, so the very next maybeSpawnFruit()
+   * call (same beagle arrival, right after eatAt's fruit-pickup branch) would
+   * see `board.fruit` null again and the threshold still matching, and
+   * respawn fruit the player could farm for repeated +100s by oscillating
+   * over the tile. Now gated by `shouldFireThreshold` against a monotonic
+   * per-level index pointer (`this.level.nextFruitThresholdIdx`, reset once
+   * per fresh level in buildLevel — see LevelAssets), so each of
+   * FRUIT_THRESHOLDS' 2 entries fires exactly once per level no matter how
+   * many times fruit is spawned/eaten in between.
+   */
   private maybeSpawnFruit(): void {
     if (this.level.board.fruit || !this.level.fruitTiles.length) return;
     const eaten = this.level.startPelletCount - this.level.pellets.size;
-    if (FRUIT_THRESHOLDS.includes(eaten as (typeof FRUIT_THRESHOLDS)[number])) {
+    if (shouldFireThreshold(eaten, FRUIT_THRESHOLDS, this.level.nextFruitThresholdIdx)) {
       const tile = this.level.fruitTiles[(Math.random() * this.level.fruitTiles.length) | 0];
+      this.level.nextFruitThresholdIdx++;
       this.fruitTile = tile;
       spawnFruit(this.level.board, this.rig.scene, tile.x, tile.y);
     }
@@ -773,11 +998,19 @@ export class Game {
           this.score += SCORE.ghostBase * Math.pow(2, Math.min(this.ghostEatChain - 1, 3));
           this.hud.setScore(this.score);
           this.maybeAwardCoinsFromScore();
+          this.maybeAwardLivesFromScore();
           this.effects.ghostEaten(gw.x, gw.z, SCORE.ghostBase * Math.pow(2, Math.min(this.ghostEatChain - 1, 3)));
           // 0-based within the fright window: ghostEatChain was just
           // incremented above, so the first ghost eaten has chain=1 here ->
           // pass chain-1=0, matching the exponent math on the two lines above.
           this.sound.eatGhost(this.ghostEatChain - 1);
+          // IDEA-018: "perfect fright" bonus life — there are always exactly
+          // 3 ghosts (GHOST_DEFS), so a chain reaching 3 within one fright
+          // window means all three were eaten before it ran out. Checked with
+          // `=== 3` (not `>=`) so this can only ever fire once per fright
+          // window — triggerFright() resets ghostEatChain to 0, so the chain
+          // can't somehow reach 3 twice without a fresh bone in between.
+          if (this.ghostEatChain === 3) this.grantLife();
         } else if (gh.state !== "eaten") {
           this.beagleDies();
           return;
@@ -822,6 +1055,7 @@ export class Game {
       this.score = fresh.score;
       this.lives = fresh.lives;
       this.coinsAwardedFromScore = 0;
+      this.livesAwardedFromScore = 0;
       this.hud.setScore(this.score);
       this.hud.setLives(this.lives);
       this.startLevel(0);
@@ -842,6 +1076,7 @@ export class Game {
       this.score = fresh.score;
       this.lives = fresh.lives;
       this.coinsAwardedFromScore = 0;
+      this.livesAwardedFromScore = 0;
       this.hud.setScore(this.score);
       this.hud.setLives(this.lives);
       this.resetActors();
@@ -877,10 +1112,10 @@ export class Game {
    *
    * resetActors() (same helper startLevel/death-respawn use) rebuilds the
    * ghosts fresh at "scatter" and clears frightTimer/ghostEatChain/
-   * modeClock/scheduleIdx/fruit/coin, so quitting mid-fright (or mid-chase,
-   * mid-anything) can never leak stale state into the idle preview — there's
-   * nothing fright-specific left to reset beyond what resetActors already
-   * does.
+   * modeClock/scheduleIdx/fruit/coin/life (IDEA-018), so quitting mid-fright
+   * (or mid-chase, mid-anything) can never leak stale state into the idle
+   * preview — there's nothing fright-specific left to reset beyond what
+   * resetActors already does.
    *
    * One thing resetActors() does NOT touch: the beagle MESH's own transient
    * scale/rotation from a mid-flight "dying" spin-shrink (setBeagleDeath —
@@ -901,6 +1136,7 @@ export class Game {
     this.score = fresh.score;
     this.lives = fresh.lives;
     this.coinsAwardedFromScore = 0;
+    this.livesAwardedFromScore = 0;
     this.hud.setScore(this.score);
     this.hud.setLives(this.lives);
 
@@ -914,6 +1150,7 @@ export class Game {
   private updatePlay(dt: number): void {
     this.advanceSchedule(dt);
     this.tickCoinLifespan(dt);
+    this.tickLifeLifespan(dt);
 
     stepEntity(this.beagle, dt, this.level.grid, false, this.onBeagleArrive);
     syncToEntity(this.beagleMesh, this.beagle, dt);

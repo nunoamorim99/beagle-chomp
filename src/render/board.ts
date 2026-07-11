@@ -30,6 +30,11 @@ export interface Board {
    *  (which tile, when) is gameplay's call (src/game/game.ts); this field
    *  just tracks the mesh so eating/spinDecor/teardown can find it. */
   coin: THREE.Object3D | null;
+  /** IDEA-018: the current maze bonus-life pickup (a golden bone), if any
+   *  (see spawnLife/clearLife below) — parallels `coin`/`fruit` exactly.
+   *  Placement (which tile, when) is gameplay's call (src/game/game.ts); this
+   *  field just tracks the mesh so eating/spinDecor/teardown can find it. */
+  life: THREE.Object3D | null;
   /** IDEA-011 hedge-top decoration: a handful of InstancedMeshes (one per
    *  bloom color + one for leaf specks). Purely cosmetic, lives for the
    *  level like the walls do — not tracked per-tile like pellets. */
@@ -126,6 +131,52 @@ function makeBone(): THREE.Group {
     k.position.set(x, 0, z);
     g.add(k);
   });
+  g.traverse((o) => {
+    o.castShadow = true;
+  });
+  return g;
+}
+
+// IDEA-018: gold material for the bonus-life pickup — a distinctly warmer,
+// metallic gold (vs. the pellet bone's flat off-white 0xf6f1e6) so a golden
+// bone reads immediately as a special pickup rather than an oversized regular
+// bone. Tuned close to the maze coin's palette (0xf4c430 body / 0x6b4e0a
+// emissive) since both are "wallet/reward" gold, but with a touch more
+// metalness/roughness contrast so the bone's knuckle geometry still catches
+// visible highlights rather than reading as a flat gold blob.
+const matGoldBone = new THREE.MeshStandardMaterial({
+  color: 0xf4c430,
+  roughness: 0.35,
+  metalness: 0.5,
+  emissive: 0x6b4e0a,
+  emissiveIntensity: 0.55,
+});
+
+/**
+ * IDEA-018: the bonus-life pickup — a bigger, glowing GOLDEN version of the
+ * regular power-bone (makeBone above): identical shaft + four-knuckle shape,
+ * scaled up ~1.6x and finished in matGoldBone instead of the pellet bone's
+ * flat white, so it's unmistakably a special pickup at a glance and never
+ * confusable with a white maze-floor bone. Local origin stays centered (like
+ * makeBone/makeCoin) so it sits right at whatever position spawnLife sets.
+ */
+function makeLifeBone(): THREE.Group {
+  const g = new THREE.Group();
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.34, 10), matGoldBone);
+  shaft.rotation.z = Math.PI / 2;
+  g.add(shaft);
+  const knuckles: Array<[number, number]> = [
+    [-0.2, 0.09],
+    [-0.2, -0.09],
+    [0.2, 0.09],
+    [0.2, -0.09],
+  ];
+  knuckles.forEach(([x, z]) => {
+    const k = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 10), matGoldBone);
+    k.position.set(x, 0, z);
+    g.add(k);
+  });
+  g.scale.setScalar(1.6);
   g.traverse((o) => {
     o.castShadow = true;
   });
@@ -274,7 +325,7 @@ export function buildBoard(scene: THREE.Object3D, grid: Grid): Board {
 
   const hedgeDecor = buildHedgeDecor(scene, grid);
 
-  return { pelletMeshes, pelletsLeft, walls, floor, fruit: null, coin: null, hedgeDecor };
+  return { pelletMeshes, pelletsLeft, walls, floor, fruit: null, coin: null, life: null, hedgeDecor };
 }
 
 /**
@@ -405,6 +456,28 @@ export function clearCoin(board: Board, scene: THREE.Object3D): void {
 }
 
 /**
+ * IDEA-018: spawns the bonus-life golden-bone mesh at tile (tx,ty), replacing
+ * any life pickup already on the board (mirrors spawnCoin/spawnFruit — only
+ * one at a time). Placement (which tile, when) is gameplay's call; this just
+ * builds the mesh and tracks it on the board so clearLife/spinDecor and
+ * eating can find it.
+ */
+export function spawnLife(board: Board, scene: THREE.Object3D, tx: number, ty: number): void {
+  if (board.life) clearLife(board, scene);
+  const life = makeLifeBone();
+  life.position.set(worldX(tx), 0.35, worldZ(ty));
+  scene.add(life);
+  board.life = life;
+}
+
+/** IDEA-018: removes the current bonus-life mesh (if any) from the scene and the board. */
+export function clearLife(board: Board, scene: THREE.Object3D): void {
+  if (!board.life) return;
+  scene.remove(board.life);
+  board.life = null;
+}
+
+/**
  * Gentle idle spin for decorative pickups (prototype syncMeshes, lines
  * 582-583): bones spin a bit faster than the fruit. Biscuits don't spin in
  * the prototype, so they're left untouched here.
@@ -412,6 +485,10 @@ export function clearCoin(board: Board, scene: THREE.Object3D): void {
  * IDEA-016/IDEA-017: the coin spins fastest of all (a coin-flip read), so it
  * visually reads as distinct from the fruit even with the placeholder mesh —
  * render-artist: feel free to retune this rate once the real mesh lands.
+ *
+ * IDEA-018: the golden life-bone spins at the coin's faster rate (dt*3)
+ * rather than the regular pellet bone's dt*2, so its rarity/specialness
+ * reads at a glance, distinct from the far more common pellet bones.
  */
 export function spinDecor(board: Board, dt: number): void {
   board.pelletMeshes.forEach((p) => {
@@ -419,4 +496,5 @@ export function spinDecor(board: Board, dt: number): void {
   });
   if (board.fruit) board.fruit.rotation.y += dt * 1.5;
   if (board.coin) board.coin.rotation.y += dt * 3;
+  if (board.life) board.life.rotation.y += dt * 3;
 }

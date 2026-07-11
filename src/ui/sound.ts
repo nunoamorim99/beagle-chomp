@@ -76,6 +76,10 @@ export interface Sound {
   /** IDEA-016/IDEA-017: coin banked/collected — bright metallic "ching",
    *  distinct from fruit()'s sweep and bone()'s square-wave chime. */
   coin(): void;
+  /** IDEA-018: bonus life granted (maze pickup, points milestone, or perfect
+   *  fright) — a distinct, happy ascending 3-note jingle, brighter/longer
+   *  than coin()'s ching so it unmistakably reads as a "1-UP" moment. */
+  extraLife(): void;
   frightStart(): void;
   eatGhost(chainIndex: number): void;
   death(): void;
@@ -213,6 +217,18 @@ export function createSound(): Sound {
     ]);
   }
 
+  function extraLife(): void {
+    // Unmistakably "1-UP": a happy 3-note ascending arpeggio, brighter and a
+    // touch longer than coin()'s two-note ching (and lower-pitched than its
+    // second note, so it doesn't just read as "coin but bigger") — a
+    // milestone worth pausing for, not just another pickup blip.
+    playSequence([
+      { type: "sine", freq: 660, duration: 0.11, peak: 0.2, attack: 0.004 },
+      { type: "sine", freq: 880, duration: 0.11, peak: 0.22, attack: 0.004, delay: 0.09 },
+      { type: "sine", freq: 1320, duration: 0.22, peak: 0.24, attack: 0.004, delay: 0.18 },
+    ]);
+  }
+
   function frightStart(): void {
     // "Ghosts scared" cue: a downward whoop (siren-ish) — sawtooth swept from
     // high to low reads as an alarm/power-shift rather than a pickup.
@@ -326,6 +342,7 @@ export function createSound(): Sound {
     bone,
     fruit,
     coin,
+    extraLife,
     frightStart,
     eatGhost,
     death,
