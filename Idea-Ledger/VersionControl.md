@@ -16,6 +16,7 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
 > lines here roll up into the numbered version below and this section is cleared (hold a line back
 > only if you explicitly choose to).
 - (2026-07-10) IDEA-024 v1 — beagle model glow-up: full rebuild with decal-shell surface painting (flush coat markings, painted-lens eyes, single teardrop ears, upright flag tail, chibi puppy proportions). First feature of v2.1 "Groomed".
+- (2026-07-11) IDEA-025 v1 — in-project 3D character editor: dev-only /editor/ workbench (part tree · orbit viewport · lil-gui inspector · undo/redo + keyboard nudging · generated code + real source side by side · Copy edits / Copy full file). Dev tooling — ships in the repo, not in the player build.
 
 ## 📌 Planned
 > Forward-looking targets from `/plan-version`. Each is a checklist of IDEAs intended for a

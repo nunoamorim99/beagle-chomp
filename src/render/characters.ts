@@ -173,6 +173,7 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
   // behind and below the head (checklist: never "a head with feet").
   const BODY_R = 0.3;
   const body = new THREE.Mesh(new THREE.SphereGeometry(BODY_R, 32, 24), tan);
+  body.name = "body";
   body.scale.set(1, 0.85, 1.4);
   body.position.set(0, 0.34, -0.02);
   g.add(body);
@@ -182,6 +183,7 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
   // y~0.30, below the saddle's flank edge at y~0.42) and at the very rear
   // under the tail — a soft hip bulge that never breaks the saddle seam.
   const haunch = new THREE.Mesh(new THREE.SphereGeometry(0.24, 24, 18), tan);
+  haunch.name = "haunch";
   haunch.scale.set(1.06, 0.9, 0.95);
   haunch.position.set(0, 0.3, -0.28);
   g.add(haunch);
@@ -191,6 +193,7 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
   // inside the white belly cap's zone, so form and decal union seamlessly
   // into one white chest/belly region (same material, no visible seam).
   const chest = new THREE.Mesh(new THREE.SphereGeometry(0.22, 24, 18), white);
+  chest.name = "chest";
   chest.scale.set(0.9, 0.95, 1.05);
   chest.position.set(0, 0.3, 0.24);
   g.add(chest);
@@ -202,6 +205,7 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
   // about half-way down the visible side. Radial rise: 0.006 (x) / 0.005
   // (y) / 0.0086 (z) — painted into the surface, zero bumps.
   const saddle = new THREE.Mesh(shell(BODY_R, 1.02, -0.35, 0, 1.25), black);
+  saddle.name = "saddle";
   saddle.scale.copy(body.scale);
   saddle.position.copy(body.position);
   g.add(saddle);
@@ -212,6 +216,7 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
   // sweeps under the belly. Factor 1.012 keeps it under the saddle's 1.02
   // (they never meet anyway — a tan flank band separates them).
   const belly = new THREE.Mesh(shell(BODY_R, 1.012, Math.PI * 0.75, 0, 1.05), white);
+  belly.name = "belly";
   belly.scale.copy(body.scale);
   belly.position.copy(body.position);
   g.add(belly);
@@ -220,6 +225,7 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
   const HEAD_R = 0.27;
   const HEAD_POS = new THREE.Vector3(0, 0.56, 0.3);
   const head = new THREE.Mesh(new THREE.SphereGeometry(HEAD_R, 32, 24), tan);
+  head.name = "head";
   head.position.copy(HEAD_POS);
   g.add(head);
 
@@ -227,10 +233,12 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
   // blaze's lower end at (0,~0.60,~0.57) so blaze and muzzle read as one
   // continuous white face marking.
   const snout = new THREE.Mesh(new THREE.SphereGeometry(0.13, 18, 14), white);
+  snout.name = "snout";
   snout.scale.set(1.05, 0.85, 1.15);
   snout.position.set(0, 0.5, 0.5);
   g.add(snout);
   const nose = new THREE.Mesh(new THREE.SphereGeometry(0.052, 12, 10), black);
+  nose.name = "nose";
   nose.scale.set(1.1, 0.85, 0.8);
   nose.position.set(0, 0.555, 0.635);
   g.add(nose);
@@ -245,14 +253,17 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
     shell(HEAD_R, 1.022, 0, 0, 1.15, 0.25, Math.PI / 2 - 0.16, 0.32),
     white,
   );
+  blaze.name = "blaze";
   blaze.position.copy(HEAD_POS);
   g.add(blaze);
 
   // Jaw: small white lower-lip pivot hinged at the back of the muzzle so
   // syncToEntity's chomp swings it open/closed under the snout.
   const jaw = new THREE.Group();
+  jaw.name = "jaw";
   jaw.position.set(0, 0.46, 0.44);
   const jawMesh = new THREE.Mesh(new THREE.SphereGeometry(0.09, 14, 10), white);
+  jawMesh.name = "jawMesh";
   jawMesh.scale.set(0.85, 0.5, 1);
   jawMesh.position.set(0, -0.035, 0.1);
   jaw.add(jawMesh);
@@ -306,6 +317,7 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
     // classic beagle head map. Factors 1.010/1.014 per side so the small
     // overlap at the back of the crown layers cleanly instead of z-fighting.
     const sideCap = new THREE.Mesh(shell(HEAD_R, 1.012 + 0.002 * s, 0.936, 1.31 * s, 0.95), earMat);
+    sideCap.name = s < 0 ? "sideCapL" : "sideCapR";
     sideCap.position.copy(HEAD_POS);
     g.add(sideCap);
 
@@ -319,8 +331,10 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
     // the cheek at y~0.36 pre-scale, far above ground even mid-flop.
     // syncToEntity flops earPivot.rotation.x, same joint semantics as ever.
     const earPivot = new THREE.Group();
+    earPivot.name = s < 0 ? "earL" : "earR";
     earPivot.position.set(0.195 * s, 0.716, 0.313);
     const ear = new THREE.Mesh(new THREE.LatheGeometry(earProfile, 20), earMat);
+    ear.name = s < 0 ? "earMeshL" : "earMeshR";
     ear.scale.set(0.55, 1, 0.85);
     ear.rotation.z = 0.2 * s;
     ear.rotation.x = 0.12;
@@ -335,12 +349,15 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
     // aimed a touch medial for convergence), glint (0.055, rise 0.010,
     // up-and-outer). Embedded, near-flush, cute — nothing bulges.
     const sclera = new THREE.Mesh(shell(HEAD_R, 1.02, EYE_RX, EYE_RY * s, 0.28), eyeW);
+    sclera.name = s < 0 ? "scleraL" : "scleraR";
     sclera.position.copy(HEAD_POS);
     g.add(sclera);
     const pupil = new THREE.Mesh(shell(HEAD_R, 1.03, EYE_RX, PUPIL_RY * s, 0.165), pupilM);
+    pupil.name = s < 0 ? "pupilL" : "pupilR";
     pupil.position.copy(HEAD_POS);
     g.add(pupil);
     const glint = new THREE.Mesh(shell(HEAD_R, 1.038, GLINT_RX, GLINT_RY * s, 0.055), glintM);
+    glint.name = s < 0 ? "glintL" : "glintR";
     glint.position.copy(HEAD_POS);
     g.add(glint);
 
@@ -348,12 +365,16 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
     // body), short chunky cylinder, white paw/sock blob INSIDE the pivot so
     // it trots with the leg. Paw bottom lands at y~0.00 (ground contact).
     ([-0.17, 0.17] as const).forEach((dz) => {
+      const legName = `leg${dz < 0 ? "F" : "B"}${s < 0 ? "L" : "R"}`;
       const legPivot = new THREE.Group();
+      legPivot.name = legName;
       legPivot.position.set(0.16 * s, 0.2, dz);
       const legMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.055, 0.17, 10), tan);
+      legMesh.name = `${legName}Mesh`;
       legMesh.position.y = -0.085;
       legPivot.add(legMesh);
       const paw = new THREE.Mesh(new THREE.SphereGeometry(0.06, 12, 8), white);
+      paw.name = `${legName}Paw`;
       paw.scale.set(1.05, 0.75, 1.25);
       paw.position.set(0, -0.155, 0.025);
       legPivot.add(paw);
@@ -377,17 +398,22 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
   // radius jump to a distinct sphere) so it blends in as the tail's white
   // upper segment rather than a lollipop ball stuck on the end.
   const tail = new THREE.Group();
+  tail.name = "tail";
   tail.position.set(0, 0.46, -0.38);
   const tailTilt = new THREE.Group();
+  tailTilt.name = "tailTilt";
   tailTilt.rotation.x = -0.35;
   tail.add(tailTilt);
   const tailShaft = new THREE.Mesh(new THREE.CylinderGeometry(0.038, 0.06, 0.3, 10), tan);
+  tailShaft.name = "tailShaft";
   tailShaft.position.y = 0.15;
   tailTilt.add(tailShaft);
   const tailTip = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.044, 0.16, 10), white);
+  tailTip.name = "tailTip";
   tailTip.position.y = 0.34;
   tailTilt.add(tailTip);
   const tailTipCap = new THREE.Mesh(new THREE.SphereGeometry(0.028, 10, 8), white);
+  tailTipCap.name = "tailTipCap";
   tailTipCap.position.y = 0.42;
   tailTilt.add(tailTipCap);
   g.add(tail);
@@ -464,9 +490,11 @@ export function makeGhost(color: number): THREE.Group {
     new THREE.SphereGeometry(0.3, 20, 16, 0, Math.PI * 2, 0, Math.PI / 2),
     bodyMat,
   );
+  dome.name = "dome";
   dome.position.y = 0.36;
   g.add(dome);
   const skirt = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.36, 20), bodyMat);
+  skirt.name = "skirt";
   skirt.position.y = 0.18;
   g.add(skirt);
   // wavy hem
@@ -474,6 +502,7 @@ export function makeGhost(color: number): THREE.Group {
   for (let i = 0; i < 5; i++) {
     const a = (i / 5) * Math.PI * 2;
     const b = new THREE.Mesh(new THREE.SphereGeometry(0.09, 10, 10), bodyMat);
+    b.name = `hem${i}`;
     b.position.set(Math.cos(a) * 0.24, 0.02, Math.sin(a) * 0.24);
     g.add(b);
     hem.push(b);
@@ -484,11 +513,13 @@ export function makeGhost(color: number): THREE.Group {
   const pups: THREE.Mesh[] = [];
   ([-1, 1] as const).forEach((s) => {
     const e = new THREE.Mesh(new THREE.SphereGeometry(0.09, 12, 12), eyeW);
+    e.name = s < 0 ? "eyeL" : "eyeR";
     e.scale.set(0.8, 1, 0.6);
     e.position.set(0.12 * s, 0.4, 0.2);
     g.add(e);
     eyes.push(e);
     const p = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 10), pupM);
+    p.name = s < 0 ? "pupilL" : "pupilR";
     p.position.set(0.12 * s, 0.4, 0.27);
     g.add(p);
     pups.push(p);
@@ -547,6 +578,7 @@ export function makeBeetle(color: number): THREE.Group {
   // Shell: a squashed dome (wider than tall, slightly elongated front-back)
   // sitting like a beetle's back — the bulk of the silhouette, all on bodyMat.
   const shell = new THREE.Mesh(new THREE.SphereGeometry(0.32, 20, 16, 0, Math.PI * 2, 0, Math.PI * 0.62), bodyMat);
+  shell.name = "shell";
   shell.scale.set(1, 0.72, 1.12);
   shell.position.y = 0.28;
   g.add(shell);
@@ -555,6 +587,7 @@ export function makeBeetle(color: number): THREE.Group {
   // in for the ghost's "skirt" — keeps the beetle grounded-looking and gives
   // `hem`/`skirt` real geometry to wobble/breathe.
   const skirt = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.26, 0.14, 20), bodyMat);
+  skirt.name = "skirt";
   skirt.position.y = 0.14;
   g.add(skirt);
 
@@ -563,6 +596,7 @@ export function makeBeetle(color: number): THREE.Group {
   // spots, dotted along the shell's rear edge — same role as the ghost's
   // wavy hem (wobbled by animateGhostHem) but doubling as subtle shell detail.
   const seam = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.02, 0.58), bodyMat);
+  seam.name = "seam";
   seam.position.set(0, 0.42, 0.02);
   g.add(seam);
 
@@ -570,6 +604,7 @@ export function makeBeetle(color: number): THREE.Group {
   for (let i = 0; i < 5; i++) {
     const a = (i / 5) * Math.PI * 2;
     const b = new THREE.Mesh(new THREE.SphereGeometry(0.055, 10, 10), bodyMat);
+    b.name = `hem${i}`;
     b.position.set(Math.cos(a) * 0.22, 0.32, Math.sin(a) * 0.26 - 0.02);
     g.add(b);
     hem.push(b);
@@ -581,6 +616,7 @@ export function makeBeetle(color: number): THREE.Group {
   // 0.14-radius sphere swallowing the eyes; now a much smaller 0.06 one
   // sitting low and set slightly back into the shell).
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.06, 12, 10), accentMat);
+  head.name = "head";
   head.scale.set(1, 0.8, 0.8);
   head.position.set(0, 0.3, 0.26);
   g.add(head);
@@ -593,6 +629,7 @@ export function makeBeetle(color: number): THREE.Group {
   // out of the shell instead of hovering near it.
   ([-1, 1] as const).forEach((s) => {
     const stalk = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.014, 0.1, 6), accentMat);
+    stalk.name = s < 0 ? "antennaStalkL" : "antennaStalkR";
     // Cylinder geometry is centred on its own origin, so offsetting the pivot
     // half its length along its local +Y (post-rotation) keeps the BASE
     // (not the middle) anchored at the root point.
@@ -601,6 +638,7 @@ export function makeBeetle(color: number): THREE.Group {
     stalk.rotation.z = 0.18 * s;
     g.add(stalk);
     const tip = new THREE.Mesh(new THREE.SphereGeometry(0.014, 8, 8), accentMat);
+    tip.name = s < 0 ? "antennaTipL" : "antennaTipR";
     tip.position.set(0.09 * s, 0.48, 0.36);
     g.add(tip);
   });
@@ -614,11 +652,13 @@ export function makeBeetle(color: number): THREE.Group {
   const pups: THREE.Mesh[] = [];
   ([-1, 1] as const).forEach((s) => {
     const e = new THREE.Mesh(new THREE.SphereGeometry(0.09, 12, 12), eyeW);
+    e.name = s < 0 ? "eyeL" : "eyeR";
     e.scale.set(0.8, 1, 0.6);
     e.position.set(0.12 * s, 0.4, 0.2);
     g.add(e);
     eyes.push(e);
     const p = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 10), pupM);
+    p.name = s < 0 ? "pupilL" : "pupilR";
     p.position.set(0.12 * s, 0.4, 0.27);
     g.add(p);
     pups.push(p);
@@ -694,6 +734,7 @@ export function makeBee(color: number): THREE.Group {
   // vs. the beetle's flatter, rounder shell) — the bulk of the silhouette,
   // all on bodyMat.
   const body = new THREE.Mesh(new THREE.SphereGeometry(0.26, 20, 16), bodyMat);
+  body.name = "body";
   body.scale.set(0.92, 0.88, 1.3);
   body.position.y = 0.3;
   g.add(body);
@@ -702,6 +743,7 @@ export function makeBee(color: number): THREE.Group {
   // beetle's — keeps the bee grounded-looking and gives `hem`/`skirt` real
   // geometry to wobble/breathe.
   const skirt = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.19, 0.12, 20), bodyMat);
+  skirt.name = "skirt";
   skirt.position.y = 0.14;
   g.add(skirt);
 
@@ -751,6 +793,7 @@ export function makeBee(color: number): THREE.Group {
     for (let i = 0; i < BLOBS_PER_STRIPE; i++) {
       const x = -xSpan + (2 * xSpan * i) / (BLOBS_PER_STRIPE - 1);
       const blob = new THREE.Mesh(new THREE.SphereGeometry(BLOB_R, 10, 8), accentMat);
+      blob.name = `hem${hem.length}`;
       blob.scale.set(1, 0.3, 1); // flattened so it reads as painted ON the surface, not a bump standing up
       blob.position.set(x, bodySurfaceY(x, z), z);
       g.add(blob);
@@ -762,6 +805,7 @@ export function makeBee(color: number): THREE.Group {
   // a signature bee read. Flat squashed spheres angled slightly outward.
   ([-1, 1] as const).forEach((s) => {
     const wing = new THREE.Mesh(new THREE.SphereGeometry(0.16, 12, 10), wingMat);
+    wing.name = s < 0 ? "wingL" : "wingR";
     wing.scale.set(0.55, 0.1, 0.9);
     wing.position.set(0.12 * s, 0.46, -0.02);
     wing.rotation.z = 0.5 * s;
@@ -783,22 +827,26 @@ export function makeBee(color: number): THREE.Group {
   const ANTENNA_LEN = 0.09;
   ([-1, 1] as const).forEach((s) => {
     const pivot = new THREE.Group();
+    pivot.name = s < 0 ? "antennaL" : "antennaR";
     pivot.position.set(0.05 * s, 0.4, 0.32); // root point, flush against the body's front-top
     pivot.rotation.x = -0.6; // sweep up
     pivot.rotation.z = 0.18 * s; // sweep outward
     g.add(pivot);
 
     const stalk = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.011, ANTENNA_LEN, 6), accentMat);
+    stalk.name = s < 0 ? "antennaStalkL" : "antennaStalkR";
     stalk.position.y = ANTENNA_LEN / 2; // base at the pivot origin, growing along local +Y
     pivot.add(stalk);
 
     const tip = new THREE.Mesh(new THREE.SphereGeometry(0.011, 8, 8), accentMat);
+    tip.name = s < 0 ? "antennaTipL" : "antennaTipR";
     tip.position.y = ANTENNA_LEN; // exactly at the stalk's far end, same local space
     pivot.add(tip);
   });
 
   // Tiny stinger nub at the rear — small dark accent, subtle.
   const stinger = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.09, 8), accentMat);
+  stinger.name = "stinger";
   stinger.rotation.x = Math.PI / 2 + 0.15;
   stinger.position.set(0, 0.28, -0.36);
   g.add(stinger);
@@ -812,11 +860,13 @@ export function makeBee(color: number): THREE.Group {
   const pups: THREE.Mesh[] = [];
   ([-1, 1] as const).forEach((s) => {
     const e = new THREE.Mesh(new THREE.SphereGeometry(0.09, 12, 12), eyeW);
+    e.name = s < 0 ? "eyeL" : "eyeR";
     e.scale.set(0.8, 1, 0.6);
     e.position.set(0.12 * s, 0.4, 0.2);
     g.add(e);
     eyes.push(e);
     const p = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 10), pupM);
+    p.name = s < 0 ? "pupilL" : "pupilR";
     p.position.set(0.12 * s, 0.4, 0.27);
     g.add(p);
     pups.push(p);
@@ -877,6 +927,7 @@ export function makeLadybug(color: number): THREE.Group {
   // hemispherical cap, only lightly squashed — the bulk of the silhouette,
   // all on bodyMat.
   const shell = new THREE.Mesh(new THREE.SphereGeometry(0.3, 22, 16, 0, Math.PI * 2, 0, Math.PI * 0.58), bodyMat);
+  shell.name = "shell";
   shell.scale.set(1.02, 0.9, 1.08);
   shell.position.y = 0.26;
   g.add(shell);
@@ -885,12 +936,14 @@ export function makeLadybug(color: number): THREE.Group {
   // beetle's/bee's — keeps the ladybug grounded-looking and gives
   // `hem`/`skirt` real geometry to wobble/breathe.
   const skirt = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.24, 0.13, 20), bodyMat);
+  skirt.name = "skirt";
   skirt.position.y = 0.13;
   g.add(skirt);
 
   // Centre seam: thin dark line down the midline (the wing-case split) — a
   // classic ladybug detail, on top of the shell's crown.
   const seam = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.018, 0.5), accentMat);
+  seam.name = "seam";
   seam.position.set(0, 0.46, 0.02);
   g.add(seam);
 
@@ -934,6 +987,7 @@ export function makeLadybug(color: number): THREE.Group {
     { x: -0.1, z: 0.06 },
   ] as const).forEach(({ x, z }) => {
     const spot = new THREE.Mesh(new THREE.SphereGeometry(SPOT_R, 12, 8), accentMat);
+    spot.name = `hem${hem.length}`;
     spot.scale.set(1, 0.4, 1);
     spot.position.set(x, spotSurfaceY(x, z), z);
     g.add(spot);
@@ -944,6 +998,7 @@ export function makeLadybug(color: number): THREE.Group {
   // head, kept small (same treatment as the beetle's) so it doesn't
   // dominate or swallow the eyes.
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.065, 12, 10), accentMat);
+  head.name = "head";
   head.scale.set(1, 0.8, 0.8);
   head.position.set(0, 0.3, 0.27);
   g.add(head);
@@ -955,16 +1010,19 @@ export function makeLadybug(color: number): THREE.Group {
   const ANTENNA_LEN = 0.09;
   ([-1, 1] as const).forEach((s) => {
     const pivot = new THREE.Group();
+    pivot.name = s < 0 ? "antennaL" : "antennaR";
     pivot.position.set(0.06 * s, 0.36, 0.32);
     pivot.rotation.x = -0.6;
     pivot.rotation.z = 0.18 * s;
     g.add(pivot);
 
     const stalk = new THREE.Mesh(new THREE.CylinderGeometry(0.007, 0.012, ANTENNA_LEN, 6), accentMat);
+    stalk.name = s < 0 ? "antennaStalkL" : "antennaStalkR";
     stalk.position.y = ANTENNA_LEN / 2;
     pivot.add(stalk);
 
     const tip = new THREE.Mesh(new THREE.SphereGeometry(0.012, 8, 8), accentMat);
+    tip.name = s < 0 ? "antennaTipL" : "antennaTipR";
     tip.position.y = ANTENNA_LEN;
     pivot.add(tip);
   });
@@ -978,11 +1036,13 @@ export function makeLadybug(color: number): THREE.Group {
   const pups: THREE.Mesh[] = [];
   ([-1, 1] as const).forEach((s) => {
     const e = new THREE.Mesh(new THREE.SphereGeometry(0.09, 12, 12), eyeW);
+    e.name = s < 0 ? "eyeL" : "eyeR";
     e.scale.set(0.8, 1, 0.6);
     e.position.set(0.12 * s, 0.4, 0.2);
     g.add(e);
     eyes.push(e);
     const p = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 10), pupM);
+    p.name = s < 0 ? "pupilL" : "pupilR";
     p.position.set(0.12 * s, 0.4, 0.27);
     g.add(p);
     pups.push(p);

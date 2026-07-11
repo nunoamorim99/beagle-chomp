@@ -19,7 +19,7 @@ Living backlog of ideas. Two purposes:
 _(nothing yet)_
 
 ## Backlog (open ideas)
-> New registered ideas go here. Next free ID: IDEA-025
+> New registered ideas go here. Next free ID: IDEA-026
 
 ### IDEA-023 — Shop v2: dedicated page with tabs + 3D skin gallery 💡
 - **Priority:** 🟡
@@ -94,6 +94,39 @@ _(nothing yet)_
 
 ## Delivered ✅
 > Already in production. Do NOT delete. Each keeps its version history.
+
+### IDEA-025 — In-project 3D character editor (dev-only /editor/ page) ✅
+- **Priority:** 🟡
+- **Area:** tooling
+- **Registered:** 2026-07-10
+- **Description:** like in other projects, personalizing the characters is hard — but here it should
+  be easier because the characters are pure code. An editor page inside the project: select a
+  character, see its 3D model, edit all the components and add new ones, with the changes applied
+  live on the character — and see the code too. The goal is for someone who doesn't know three.js
+  to explore what it can do, watch the changes happen on the character AND on the code, and learn
+  what each function does — more control over character editing. The editors found online are too
+  confusing to learn from. Started on this project, but could later grow into a three.js editor
+  usable in any project — for now, one editor in this project to reach the goal easily.
+- **Notes:** dev-only — served by `npm run dev` at `/editor/`, never in the production build/PWA
+  (`editor/index.html` is not a rollup input). New `src/editor/*` layer allowed to import three
+  (CLAUDE.md layer rule amended). Part-inspector approach: tweak the real meshes (transform/material)
+  via lil-gui (the same controls library as three.js's own examples, so the learning transfers),
+  add primitive parts, and copy the generated three.js code into `characters.ts` — side by side with
+  the real source of the builder (Vite `?raw`). After Nuno's first hands-on ("exactly what I want"),
+  a comfort round was added: Ctrl+Z/Ctrl+Y undo-redo (arrow-nudge runs coalesce into one undo),
+  arrow-key nudging of the selected part (Shift = coarse, Alt = fine, Ctrl = depth axis; hold S =
+  uniform scale nudge; hold R = rotate — ←/→ yaw, ↑/↓ pitch, Ctrl roll), Esc deselect, and **"Copy full file"** — the whole `characters.ts` with the
+  session's edits already injected before the builder's `return g;`, so applying the work is
+  paste-the-file, no hunting for the right line. Export stays copy-paste (no auto-write to source).
+  Round 3 (also Nuno's feedback): free camera **orbit** (drag to rotate around the character,
+  scroll to zoom — OrbitControls; auto-turntable now defaults off) and a **"selection highlight"
+  toggle** to hide the pink wireframe when judging the result. Follows Nuno's "later I will
+  come back to character editing" note on [[IDEA-024]]; pairs with the shop 3D gallery
+  ([[IDEA-023]]). Future: enemy idle animations, auto-write-to-source, ghost frightened/eaten
+  preview, the generic any-project editor.
+- **Dependencies:** —
+- **History:**
+  - **v1** (2026-07-11) — the learning workbench: `/editor/` dev-only page (`npm run editor`) with a 3-pane layout — part tree (real source names via a 59-name `.name` pass in `characters.ts`, the only game-code change, non-visual) | live 3D viewport (menuScene's daylight rig, orbit camera, idle animation with auto-pause on select, click-to-pick raycast, wireframe/BoxHelper highlight with a show/hide toggle) | lil-gui inspector (transform/material/visibility per part, character + skin + team-color pickers, add/delete primitive parts). Bottom panel: Generated code (tree-ordered, real variable names, edits wiggled back to baseline drop out) ⇄ Real source (`?raw`, brace-count extraction, selecting a part marks the line that creates it), with **Copy edits** + **Copy full file** (edit block injected before the builder's `return g;` — round-trip verified: exported file builds, tests pass, edits appear in the real game). Full undo/redo (gesture-level; nudge runs coalesce into one Ctrl+Z) + keyboard nudging (arrows = move, S = scale, R = rotate; Shift/Alt/Ctrl step modifiers). Dev-only by construction: not a rollup input → dist/ has zero editor code (verified, incl. lil-gui + OrbitControls). 65 automated Playwright checks across 4 suites; build/tests green. Gotchas for next time: lil-gui step grids anchor at the range MIN (never step an irrational min like -π); lil-gui swallows keydown on focused widgets (global shortcuts need a capture-phase listener). `editor/index.html`, `src/editor/*` (12 modules), `characters.ts` (names only), `CLAUDE.md`, `docs/ARCHITECTURE.md`, `vite.config.ts` (comment only), `package.json`. _(7970749)_
 
 ### IDEA-024 — Beagle model glow-up (cuter: ears, eyes, coat pigmentation) ✅
 - **Priority:** 🟡

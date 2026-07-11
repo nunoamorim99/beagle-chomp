@@ -1,0 +1,45 @@
+<!doctype html>
+<!--
+  Beagle Chomp — character editor (IDEA-025). DEV-ONLY page: `vite` serves it
+  at /editor/ during development, but it is NOT a rollup input, so it never
+  reaches dist/ or the PWA precache. See the note in vite.config.ts.
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex" />
+    <title>Beagle Chomp — Character Editor</title>
+  </head>
+  <body>
+    <div id="editorApp">
+      <aside id="treePane">
+        <h2 class="pane-title">Parts</h2>
+        <div id="partTree"></div>
+      </aside>
+      <main id="viewportPane">
+        <canvas id="viewport"></canvas>
+        <div id="viewportHint">
+          drag to orbit · scroll to zoom · click a part to select ·
+          arrows nudge position (hold S = scale · hold R = rotate · Shift = big · Alt = fine ·
+          Ctrl = depth/roll) · Ctrl+Z undo · Esc deselect
+        </div>
+      </main>
+      <aside id="guiPane"></aside>
+      <section id="codePane">
+        <div id="codeTabs">
+          <button class="code-tab active" data-tab="generated">Generated code</button>
+          <button class="code-tab" data-tab="source">Real source</button>
+          <span id="codeTitle"></span>
+          <button id="copyBtn" class="copy-btn" title="Copy just the edit lines (paste them inside the builder yourself)">Copy edits</button>
+          <button id="copyFileBtn" class="copy-btn" title="Copy the COMPLETE characters.ts with your edits already applied — paste it over src/render/characters.ts">Copy full file</button>
+        </div>
+        <div id="codeBody">
+          <pre id="generatedView" class="code-view active"><code></code></pre>
+          <pre id="sourceView" class="code-view"><code></code></pre>
+        </div>
+      </section>
+    </div>
+    <script type="module" src="../src/editor/main.ts"></script>
+  </body>
+</html>
