@@ -18,6 +18,7 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
 - (2026-07-11) IDEA-015 v1 — classic mode maze rotation gets real variety: pool grown 2 → 5 with The Courtyard (open plaza), The Warren (tight lattice) and The Crossroads (long arteries), all validator+sim green. First feature of v3.0 "New Tricks".
 - (2026-07-11) IDEA-018 v1 — bonus lives (cap 5): golden-bone maze pickup, 5,000-point milestone, and perfect-fright reward, with a 1-UP jingle. Second feature of v3.0 "New Tricks".
 - (2026-07-11) IDEA-017 v3 + IDEA-003 v2 — fix: pickup spawn thresholds could refire after collection, letting players farm coins (and fruit points, latent since v1.0). Once-per-level threshold pointers close the exploit for coins, fruit and the new life pickup.
+- (2026-07-11) IDEA-013 v1 — challenge mode: 8 levels of per-level twists (speed tiers, packs of 4-5 ghosts, short fright) over the classic engine, from Warm-Up Walkies to Top Dog; 🏆 menu entry, completion panels, persisted progress. Third feature of v3.0 "New Tricks".
 
 ## 📌 Planned
 > Forward-looking targets from `/plan-version`. Each is a checklist of IDEAs intended for a
@@ -28,7 +29,7 @@ The gameplay pillar: more game to play. Classic mode stops repeating itself, liv
 earnable, and a whole new challenge mode with per-level twists arrives with its own level map.
 - [x] IDEA-015 — Classic mode: change the maze each level — shipped 2026-07-11
 - [x] IDEA-018 — Bonus lives: pickups & milestones — shipped 2026-07-11
-- [ ] IDEA-013 — Challenge mode: per-level twists
+- [x] IDEA-013 — Challenge mode: per-level twists — shipped 2026-07-11
 - [ ] IDEA-014 — Level map / level select for challenge mode
 > Build order: 015 first (the maze pool it creates also feeds 013's variety), 018 as the quick
 > economy win, then the big one — 013 — and finally 014, which depends on 013 and gives the mode

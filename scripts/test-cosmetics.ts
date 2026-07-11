@@ -21,7 +21,7 @@ import {
   setEquippedEnemySkinId,
   cycleEnemySkinId,
 } from "../src/game/cosmetics";
-import { COLORS, COINS, LIVES, LIFE_THRESHOLDS, COIN_THRESHOLDS } from "../src/game/config";
+import { COLORS, COINS, LIVES, LIFE_THRESHOLDS, COIN_THRESHOLDS, SPEEDS, TIMING } from "../src/game/config";
 import {
   loadProfile,
   getCoins,
@@ -34,10 +34,19 @@ import {
   buyEnemySkin,
   equipBeagleSkin,
   equipEnemySkin,
+  getChallengeProgress,
+  advanceChallengeProgress,
   type StoredProfile,
 } from "../src/game/profileStore";
 import { coinsDueFromScore } from "../src/game/coins";
 import { shouldFireThreshold } from "../src/game/pickups";
+import {
+  CLASSIC_MODIFIERS,
+  CHALLENGE_LEVELS,
+  CHALLENGE_LEVEL_COUNT,
+  getChallengeLevel,
+} from "../src/game/challenges";
+import { MAZE_COUNT } from "../src/game/mazes";
 
 let failures = 0;
 function check(label: string, cond: boolean): void {
@@ -487,6 +496,7 @@ console.log("\n=== profileStore.ts buy success + atomicity (pure, in-process pro
     coins: 12,
     ownedBeagleSkinIds: ["bagel"],
     ownedEnemySkinIds: ["ghost"],
+    challengeProgress: 0,
   };
 
   const price = getBeagleSkinPrice("cookie");
@@ -550,6 +560,240 @@ console.log("\n=== profileStore.ts equip gating (Node, no window/localStorage) =
   // this process (mirrors the existing restore-default pattern above).
   setEquippedBeagleSkinId(DEFAULT_BEAGLE_SKIN_ID);
   setEquippedEnemySkinId(DEFAULT_ENEMY_SKIN_ID);
+}
+
+console.log("\n=== challenges.ts (IDEA-013 Challenge Mode) ===");
+{
+  check("exactly 8 challenge levels", CHALLENGE_LEVELS.length === 8);
+  check("CHALLENGE_LEVEL_COUNT === 8", CHALLENGE_LEVEL_COUNT === 8);
+
+  // Every level's mazeIdx must be a valid index into the real MAZES pool
+  // (mazes.ts's MAZE_COUNT, 5 today) — challenge levels reuse the validated
+  // maze pool, never invent their own.
+  CHALLENGE_LEVELS.forEach((lvl, i) => {
+    check(
+      `L${i + 1} (${lvl.name}) mazeIdx ${lvl.mazeIdx} is within [0, MAZE_COUNT-1]`,
+      Number.isInteger(lvl.mazeIdx) && lvl.mazeIdx >= 0 && lvl.mazeIdx < MAZE_COUNT,
+    );
+  });
+
+  // Modifiers stay within sane, documented bounds for every level.
+  CHALLENGE_LEVELS.forEach((lvl, i) => {
+    const m = lvl.modifiers;
+    check(`L${i + 1} speedMult in [1, 2]`, m.speedMult >= 1 && m.speedMult <= 2);
+    check(`L${i + 1} ghostSpeedMult in [1, 2]`, m.ghostSpeedMult >= 1 && m.ghostSpeedMult <= 2);
+    check(`L${i + 1} ghostCount is 3, 4, or 5`, m.ghostCount === 3 || m.ghostCount === 4 || m.ghostCount === 5);
+    check(`L${i + 1} frightSeconds > 0`, m.frightSeconds > 0);
+    // Documented invariant: ghostSpeedMult tracks speedMult 1:1 on every
+    // level (see ChallengeModifiers' own doc comment) so the beagle/ghost
+    // speed RATIO never drifts from classic's.
+    check(`L${i + 1} ghostSpeedMult === speedMult (ratio stays fair)`, m.ghostSpeedMult === m.speedMult);
+  });
+
+  // L1 must be a byte-for-byte match of CLASSIC_MODIFIERS — the very first
+  // challenge level is a warm-up that plays identically to classic.
+  const l1 = CHALLENGE_LEVELS[0];
+  check("L1 name is Warm-Up Walkies", l1.name === "Warm-Up Walkies");
+  check("L1.modifiers.speedMult === CLASSIC_MODIFIERS.speedMult", l1.modifiers.speedMult === CLASSIC_MODIFIERS.speedMult);
+  check(
+    "L1.modifiers.ghostSpeedMult === CLASSIC_MODIFIERS.ghostSpeedMult",
+    l1.modifiers.ghostSpeedMult === CLASSIC_MODIFIERS.ghostSpeedMult,
+  );
+  check("L1.modifiers.ghostCount === CLASSIC_MODIFIERS.ghostCount", l1.modifiers.ghostCount === CLASSIC_MODIFIERS.ghostCount);
+  check(
+    "L1.modifiers.frightSeconds === CLASSIC_MODIFIERS.frightSeconds",
+    l1.modifiers.frightSeconds === CLASSIC_MODIFIERS.frightSeconds,
+  );
+
+  // CLASSIC_MODIFIERS itself is the documented "no change" baseline, and its
+  // frightSeconds is READ from config.ts's TIMING.frightSeconds (not a
+  // duplicated literal) so the two can never silently drift apart.
+  check("CLASSIC_MODIFIERS.speedMult === 1", CLASSIC_MODIFIERS.speedMult === 1);
+  check("CLASSIC_MODIFIERS.ghostSpeedMult === 1", CLASSIC_MODIFIERS.ghostSpeedMult === 1);
+  check("CLASSIC_MODIFIERS.ghostCount === 3", CLASSIC_MODIFIERS.ghostCount === 3);
+  check("CLASSIC_MODIFIERS.frightSeconds === TIMING.frightSeconds", CLASSIC_MODIFIERS.frightSeconds === TIMING.frightSeconds);
+
+  // L8 (the finale) stacks every twist at max: 2x speed, 5 ghosts, short fright.
+  const l8 = CHALLENGE_LEVELS[7];
+  check("L8 name is Top Dog", l8.name === "Top Dog");
+  check("L8 speedMult === 2.0", l8.modifiers.speedMult === 2.0);
+  check("L8 ghostCount === 5", l8.modifiers.ghostCount === 5);
+  check("L8 frightSeconds < TIMING.frightSeconds (short fuse)", l8.modifiers.frightSeconds < TIMING.frightSeconds);
+
+  // Every level has a non-empty name and blurb (player-facing content, not
+  // placeholder/empty strings).
+  CHALLENGE_LEVELS.forEach((lvl, i) => {
+    check(`L${i + 1} has a non-empty name`, lvl.name.trim().length > 0);
+    check(`L${i + 1} has a non-empty blurb`, lvl.blurb.trim().length > 0);
+  });
+
+  // At least one level of each twist category exists, so the "8 levels,
+  // difficulty arc" scope is actually represented (not, say, every level
+  // being ghostCount 3 with only speed varying).
+  check("at least one level has ghostCount 4", CHALLENGE_LEVELS.some((l) => l.modifiers.ghostCount === 4));
+  check("at least one level has ghostCount 5", CHALLENGE_LEVELS.some((l) => l.modifiers.ghostCount === 5));
+  check(
+    "at least one level has a shortened frightSeconds (< TIMING.frightSeconds)",
+    CHALLENGE_LEVELS.some((l) => l.modifiers.frightSeconds < TIMING.frightSeconds),
+  );
+  check("at least one level has speedMult > 1", CHALLENGE_LEVELS.some((l) => l.modifiers.speedMult > 1));
+
+  // Sanity: SPEEDS.beagle/ghost imported and finite, so a future SPEEDS edit
+  // that broke the base numbers this module scales would show up here too
+  // (basic regression guard, not exercising game.ts's actual multiplication).
+  check("SPEEDS.beagle and SPEEDS.ghost are positive finite numbers", SPEEDS.beagle > 0 && SPEEDS.ghost > 0);
+}
+
+console.log("\n=== challenges.ts getChallengeLevel clamping ===");
+{
+  check("getChallengeLevel(0) is L1", getChallengeLevel(0).name === CHALLENGE_LEVELS[0].name);
+  check("getChallengeLevel(7) is L8 (last)", getChallengeLevel(7).name === CHALLENGE_LEVELS[7].name);
+  check("getChallengeLevel(3) is L4", getChallengeLevel(3).name === CHALLENGE_LEVELS[3].name);
+
+  // Out-of-range / garbage indices clamp rather than throwing or returning undefined.
+  check("getChallengeLevel(8) clamps to the last level (one past the end)", getChallengeLevel(8).name === CHALLENGE_LEVELS[7].name);
+  check("getChallengeLevel(999) clamps to the last level", getChallengeLevel(999).name === CHALLENGE_LEVELS[7].name);
+  check("getChallengeLevel(-1) clamps to the first level", getChallengeLevel(-1).name === CHALLENGE_LEVELS[0].name);
+  check("getChallengeLevel(-50) clamps to the first level", getChallengeLevel(-50).name === CHALLENGE_LEVELS[0].name);
+  check("getChallengeLevel(NaN) clamps to the first level", getChallengeLevel(NaN).name === CHALLENGE_LEVELS[0].name);
+  // Infinity is !Number.isFinite -> treated as "not a real number" (same
+  // family as NaN) rather than "a huge in-range number to clamp down" — see
+  // getChallengeLevel's own `Number.isFinite(idx) ? ... : 0` guard, which
+  // degrades non-finite input to 0 (the first level) BEFORE the min/max
+  // clamp ever runs.
+  check("getChallengeLevel(Infinity) degrades to the first level (non-finite, not a huge in-range value)", getChallengeLevel(Infinity).name === CHALLENGE_LEVELS[0].name);
+  check("getChallengeLevel(-Infinity) degrades to the first level (non-finite)", getChallengeLevel(-Infinity).name === CHALLENGE_LEVELS[0].name);
+  check("getChallengeLevel(2.9) floors to L3 (index 2)", getChallengeLevel(2.9).name === CHALLENGE_LEVELS[2].name);
+  check("getChallengeLevel never throws for any of the above", true); // implicit — none of the calls above threw
+}
+
+console.log("\n=== profileStore.ts challengeProgress (Node, no window/localStorage) ===");
+{
+  // No `window` in this Node run, so loadProfile()/getChallengeProgress()
+  // degrade to the default (0, "only level 1 unlocked") — same
+  // "storage unavailable" path exercised above for coins/skins.
+  check("loadProfile() in Node (no window) returns challengeProgress: 0 by default", loadProfile().challengeProgress === 0);
+  check("getChallengeProgress() in Node (no window) returns 0", getChallengeProgress() === 0);
+
+  // advanceChallengeProgress never throws, even with nowhere to persist to
+  // (mirrors the addCoins(5) "never throws" check above).
+  let threw = false;
+  try {
+    advanceChallengeProgress(2);
+  } catch {
+    threw = true;
+  }
+  check("advanceChallengeProgress(2) in Node (no window) never throws", !threw);
+
+  // With no window, every loadProfile() call degrades to a fresh
+  // defaultProfile() and persistProfile/saveChallengeProgress's write is
+  // caught and silently dropped (mirrors the coins section's own doc
+  // comment) — so getChallengeProgress() still reads 0 right after the call
+  // above, since nothing actually persisted in this environment. This
+  // exercises "never throws" deterministically; the actual read-modify-write
+  // max-write semantics are exercised against plain objects below (the same
+  // pattern the existing buy-operation atomicity tests use).
+  check("getChallengeProgress() still reads 0 after a dropped write (no persistence in Node)", getChallengeProgress() === 0);
+}
+
+console.log("\n=== profileStore.ts challengeProgress: pure read-modify-write semantics (mirrors buy-atomicity tests) ===");
+{
+  // sanitizeChallengeProgress is private to profileStore.ts, so mirror its
+  // exact rules here directly on plain values — same pattern the existing
+  // coins `sanitize` mirror above uses for sanitizeCoins.
+  function sanitizeChallengeProgress(value: unknown): number {
+    const n = typeof value === "number" ? value : NaN;
+    if (!Number.isFinite(n) || n < 0) return 0;
+    return Math.min(Math.floor(n), CHALLENGE_LEVEL_COUNT);
+  }
+
+  check("sanitizeChallengeProgress(-5) -> 0 (negative)", sanitizeChallengeProgress(-5) === 0);
+  check("sanitizeChallengeProgress(NaN) -> 0", sanitizeChallengeProgress(NaN) === 0);
+  check("sanitizeChallengeProgress('garbage') -> 0", sanitizeChallengeProgress("garbage") === 0);
+  check("sanitizeChallengeProgress(undefined) -> 0 (missing key on old blobs)", sanitizeChallengeProgress(undefined) === 0);
+  // Infinity is !Number.isFinite -> degrades to 0, exactly mirroring
+  // sanitizeCoins' own `sanitize(Infinity) -> 0` precedent tested above
+  // (both treat non-finite input as garbage, not as "a huge value to clamp
+  // down to the ceiling").
+  check("sanitizeChallengeProgress(Infinity) -> 0 (non-finite, mirrors sanitizeCoins' precedent)", sanitizeChallengeProgress(Infinity) === 0);
+  check("sanitizeChallengeProgress(3.9) -> 3 (floors a float)", sanitizeChallengeProgress(3.9) === 3);
+  check("sanitizeChallengeProgress(3) -> 3 (valid passthrough)", sanitizeChallengeProgress(3) === 3);
+  check(
+    `sanitizeChallengeProgress(999) -> clamped to CHALLENGE_LEVEL_COUNT (${CHALLENGE_LEVEL_COUNT})`,
+    sanitizeChallengeProgress(999) === CHALLENGE_LEVEL_COUNT,
+  );
+  check(
+    `sanitizeChallengeProgress(CHALLENGE_LEVEL_COUNT) -> stays CHALLENGE_LEVEL_COUNT ("all cleared" sentinel is valid)`,
+    sanitizeChallengeProgress(CHALLENGE_LEVEL_COUNT) === CHALLENGE_LEVEL_COUNT,
+  );
+
+  // advanceChallengeProgress's actual read-modify-write, MAX-WRITE logic
+  // can't be exercised end-to-end without real localStorage (unavailable in
+  // this Node run — see the "Node fresh profile" precedent above for coins/
+  // skins), so this mirrors its exact "raise to clearedIdx+1, never lower"
+  // shape against plain numbers, the same way the buy-atomicity section
+  // above mirrors trySpend/read-modify-write against plain StoredProfile
+  // objects.
+  function mirrorAdvance(current: number, clearedIdx: number): number {
+    const safeCleared = Number.isFinite(clearedIdx) && clearedIdx >= 0 ? Math.floor(clearedIdx) : -1;
+    const unlockedThrough = Math.min(safeCleared + 1, CHALLENGE_LEVEL_COUNT);
+    return Math.max(current, unlockedThrough);
+  }
+
+  check("advancing from 0 by clearing level 0 (idx 0) -> unlocks 1", mirrorAdvance(0, 0) === 1);
+  check("advancing from 0 by clearing level 2 (idx 2) -> unlocks 3", mirrorAdvance(0, 2) === 3);
+  check(
+    "advancing to 2 then 'advancing' to 1 stays 2 (max-write never regresses)",
+    mirrorAdvance(mirrorAdvance(0, 1), 0) === 2,
+  );
+  check(
+    "clearing the SAME level twice in a row is idempotent (stays at the same unlock)",
+    mirrorAdvance(mirrorAdvance(0, 3), 3) === 4,
+  );
+  check(
+    `clearing the LAST level (idx ${CHALLENGE_LEVEL_COUNT - 1}) unlocks exactly CHALLENGE_LEVEL_COUNT (the "all cleared" sentinel)`,
+    mirrorAdvance(CHALLENGE_LEVEL_COUNT - 1, CHALLENGE_LEVEL_COUNT - 1) === CHALLENGE_LEVEL_COUNT,
+  );
+  check(
+    "clearing the last level again once already at CHALLENGE_LEVEL_COUNT stays at CHALLENGE_LEVEL_COUNT (never overflows past it)",
+    mirrorAdvance(CHALLENGE_LEVEL_COUNT, CHALLENGE_LEVEL_COUNT - 1) === CHALLENGE_LEVEL_COUNT,
+  );
+  check("a garbage clearedIdx (-1) never raises progress", mirrorAdvance(5, -1) === 5);
+  check("a garbage clearedIdx (NaN) never raises progress", mirrorAdvance(5, NaN) === 5);
+
+  // Old-blob compatibility: a blob saved before this field existed simply
+  // lacks the key — sanitizeChallengeProgress(undefined) degrades it to 0,
+  // exactly like a fresh profile, so an upgrading player starts with only
+  // level 1 unlocked rather than the app crashing on a missing field.
+  const oldBlobWithoutField = { equippedBeagleSkinId: "bagel", equippedEnemySkinId: "ghost", coins: 40 } as Record<string, unknown>;
+  check(
+    "old blob (no challengeProgress key at all) -> sanitizes to 0",
+    sanitizeChallengeProgress(oldBlobWithoutField.challengeProgress) === 0,
+  );
+
+  // Round-trip: a read-modify-write that only changes challengeProgress must
+  // preserve every other field untouched — mirrors the existing beagle/
+  // enemy/coins read-modify-write checks above exactly.
+  const existing: StoredProfile = {
+    equippedBeagleSkinId: "cookie",
+    equippedEnemySkinId: "beetle",
+    coins: 37,
+    ownedBeagleSkinIds: ["bagel", "cookie"],
+    ownedEnemySkinIds: ["ghost", "beetle"],
+    challengeProgress: 1,
+  };
+  const mergedProgressOnly: StoredProfile = { ...existing, challengeProgress: 4 };
+  check("read-modify-write preserves skin/owned/coins fields when only challengeProgress changes", (
+    mergedProgressOnly.equippedBeagleSkinId === "cookie" &&
+    mergedProgressOnly.equippedEnemySkinId === "beetle" &&
+    mergedProgressOnly.coins === 37 &&
+    mergedProgressOnly.ownedBeagleSkinIds.join(",") === "bagel,cookie" &&
+    mergedProgressOnly.ownedEnemySkinIds.join(",") === "ghost,beetle"
+  ));
+  check("read-modify-write applies the new challengeProgress value", mergedProgressOnly.challengeProgress === 4);
+
+  const mergedOtherFieldOnly: StoredProfile = { ...existing, coins: 100 };
+  check("read-modify-write preserves challengeProgress when only another field changes", mergedOtherFieldOnly.challengeProgress === 1);
 }
 
 console.log(`\ncosmetics/profileStore checks: ${failures === 0 ? "ALL OK" : `${failures} FAILED`}`);
