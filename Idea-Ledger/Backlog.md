@@ -16,21 +16,10 @@ Living backlog of ideas. Two purposes:
 ## 📥 Inbox (raw captures — untriaged)
 > `/idea` appends raw notes here with a date. `/idea-triage` turns them into registered ideas
 > below, then clears them from here. Don't assign IDs in the Inbox.
-_(nothing yet)_
+- (2026-07-11) challenge-mode twist deferred from IDEA-013 v1: maze changes mid-level / walls move around after a few seconds — needs live grid mutation with connectivity guarantees (validator-grade), so it ships as its own idea later
 
 ## Backlog (open ideas)
 > New registered ideas go here. Next free ID: IDEA-026
-
-### IDEA-013 — Challenge mode: per-level twists 💡
-- **Priority:** 🟡
-- **Area:** modes
-- **Description:** a new game mode using the same core game system but with a different challenge as
-  the player advances through levels. Level 1 plays like the classic game; level 2 is speed x2;
-  level 3 has more enemies; level 4 the maze changes after a few seconds or the walls move around —
-  and so on. Each level throws a new twist at the player.
-- **Notes:** reuses the classic engine; the twists are modifiers layered on top. Pairs with the
-  level select ([[IDEA-014]]).
-- **Dependencies:** —
 
 ### IDEA-014 — Level map / level select for challenge mode 💡
 - **Priority:** 🟢
@@ -61,6 +50,23 @@ _(nothing yet)_
 
 ## Delivered ✅
 > Already in production. Do NOT delete. Each keeps its version history.
+
+### IDEA-013 — Challenge mode: per-level twists ✅
+- **Priority:** 🟡
+- **Area:** modes
+- **Description:** a new game mode using the same core game system but with a different challenge as
+  the player advances through levels. Level 1 plays like the classic game; level 2 is speed x2;
+  level 3 has more enemies; level 4 the maze changes after a few seconds or the walls move around —
+  and so on. Each level throws a new twist at the player.
+- **Notes:** reuses the classic engine; the twists are modifiers layered on top. Pairs with the
+  level select ([[IDEA-014]]).
+  Third build of v3.0 "New Tricks" — the release's centerpiece. Rides the proven engine as a
+  MODIFIER layer; the 5-maze pool ([[IDEA-015]]) provides board variety; menu ([[IDEA-021]]) gets
+  the mode's entry point; [[IDEA-014]] adds the level map afterwards.
+- **Dependencies:** —
+- **History:**
+  - **v1** (2026-07-11) — 8-level challenge mode as a pure MODIFIER layer over the classic engine (`challenges.ts`, three-free: speedMult/ghostSpeedMult/ghostCount 3-5/frightSeconds per level; classic runs the explicit baseline and is verified untouched). Levels C1 "Warm-Up Walkies" → C8 "Top Dog" (speed ×2 + 5 ghosts + 3s fright on The Crossroads), dog-punny names + blurbs, all 5 pool mazes used. GHOST_DEFS generalized 3→5 (new team colors ghostViolet 0x9b6bd6 + ghostLeaf 0x6fb84a, 4th corner + bottom-mid spawns, enemy skins apply automatically); perfect-fright life bonus fixed to scale with pack size (was hardcoded 3). Menu gains 🏆 Challenge (continues at highest unlocked); per-level completion panels + an All Clear 🏆 finale; game-over "Play again" restarts the same challenge level. `challengeProgress` persisted in the profile blob (max-write, back-compat) — feeds [[IDEA-014]]'s level map next. Full coins/lives economy active in challenge levels. Moving-walls twist deferred to the Inbox. Verified live: C1 baseline vs C8 (5 ghosts @ ×2, fright 3), progress persists to all-clear=8, classic pristine, zero errors; build + tests green. `challenges.ts` (new), `game.ts`, `config.ts`, `profileStore.ts`, `index.html`, `scripts/test-cosmetics.ts`. _(PENDING)_
+
 
 ### IDEA-018 — Bonus lives: pickups & milestones ✅
 - **Priority:** 🟢

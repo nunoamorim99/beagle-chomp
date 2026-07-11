@@ -19,6 +19,12 @@ import { SPEEDS, SCORE, TIMING, COLORS, COINS, COIN_THRESHOLDS, LIVES, LIFE_THRE
 import { coinsDueFromScore } from "./coins";
 import { shouldFireThreshold } from "./pickups";
 import { type GameMode, createInitialGameState } from "./state";
+import {
+  CLASSIC_MODIFIERS,
+  CHALLENGE_LEVEL_COUNT,
+  getChallengeLevel,
+  type ChallengeModifiers,
+} from "./challenges";
 import { makeEntity, stepEntity, entityWorld, type Entity } from "./movement";
 import { chooseGhostDir, type Ghost, type GlobalMode } from "./ghostAI";
 import { attachKeyboard } from "../input/keyboard";
@@ -52,16 +58,40 @@ import {
 import { createHud, type Hud } from "../ui/hud";
 import { createSound, attachMuteButton, type Sound } from "../ui/sound";
 import { attachShop, type ShopHandle } from "../ui/shop";
-import { initProfileFromStorage, getCoins, addCoins } from "./profileStore";
+import {
+  initProfileFromStorage,
+  getCoins,
+  addCoins,
+  getChallengeProgress,
+  advanceChallengeProgress,
+} from "./profileStore";
 import { getEquippedEnemySkinId, getBeagleSkin } from "./cosmetics";
 
 // Scatter-corner targets per ghost personality (prototype section 7,
 // GHOST_DEFS): rose/chaser -> top-right, teal/ambusher -> top-left,
-// amber/clyde -> bottom-left.
+// amber/clyde -> bottom-left. Classic mode only ever uses the first 3 of
+// these 5 (see resetActors' `GHOST_DEFS.slice(0, activeModifiers.ghostCount)`
+// below) — CLASSIC_MODIFIERS.ghostCount is always 3, so classic's actual
+// on-screen ghosts (colors/corners/kinds/order) are byte-for-byte unchanged
+// from before IDEA-013.
+//
+// IDEA-013 (Challenge Mode) generalizes this from 3 to 5 defs so challenge
+// levels with ghostCount 4 or 5 have two more full personalities to draw on:
+// #4 (violet) reuses the remaining 4th true corner of the board
+// (bottom-right — the 3 classic defs already claim top-right/top-left/
+// bottom-left), and #5 (leaf) uses a bottom-mid-edge point instead of
+// reusing any of the 4 true corners a second time, so five simultaneous
+// scatter targets are still five visually distinct directions around the
+// board rather than two ghosts scattering to the same spot. Kinds mix
+// "chaser"/"ambusher" for the two new personalities (mirroring the
+// chaser/ambusher/clyde spread of the original 3, just without a second
+// "clyde" — clyde's shyness rule reads oddly duplicated).
 const GHOST_DEFS = [
   { color: COLORS.ghostRose, corner: { x: COLS - 2, y: 1 }, kind: "chaser" },
   { color: COLORS.ghostTeal, corner: { x: 1, y: 1 }, kind: "ambusher" },
   { color: COLORS.ghostAmber, corner: { x: 1, y: ROWS - 2 }, kind: "clyde" },
+  { color: COLORS.ghostViolet, corner: { x: COLS - 2, y: ROWS - 2 }, kind: "chaser" },
+  { color: COLORS.ghostLeaf, corner: { x: Math.floor((COLS - 1) / 2), y: ROWS - 2 }, kind: "ambusher" },
 ] as const;
 
 // Seconds each ghost waits in the pen before its AI takes over, staggered so
@@ -151,12 +181,27 @@ export class Game {
   private readonly detachMenuResize: () => void;
   private readonly detachPlayButton: () => void;
   private readonly detachMenuShopButton: () => void;
+  private readonly detachChallengeButton: () => void;
 
   private ghosts: GhostRig[] = [];
 
   private score = 0;
   private lives = 0;
   private levelIdx = 0;
+
+  // IDEA-013 (Challenge Mode): which mode the CURRENT run is — "classic" is
+  // the default/idle-preview baseline (see the constructor and quitToMenu(),
+  // both of which reset this explicitly) so a stray challenge run can never
+  // leak its modifiers into a later classic run. `challengeIdx` is only
+  // meaningful while gameKind==="challenge" — it's the index into
+  // CHALLENGE_LEVELS of the level currently being played (see
+  // startChallenge()). `activeModifiers` is what every speed/ghost-count/
+  // fright-duration read in this class threads through — CLASSIC_MODIFIERS
+  // for classic (a mathematical no-op on top of the raw config.ts numbers),
+  // or a specific ChallengeLevel's modifiers while gameKind==="challenge".
+  private gameKind: "classic" | "challenge" = "classic";
+  private challengeIdx = 0;
+  private activeModifiers: ChallengeModifiers = CLASSIC_MODIFIERS;
 
   // Boots idle on the Start panel ("start" — see state.ts for why this is
   // distinct from "ready") and only ever leaves it via the Start button's
@@ -268,7 +313,11 @@ export class Game {
     initProfileFromStorage();
     this.beagleMesh = makeBeagle();
     this.rig.scene.add(this.beagleMesh);
-    this.beagle = makeEntity(this.level.beagleSpawn.x, this.level.beagleSpawn.y, SPEEDS.beagle);
+    // IDEA-013: scaled by activeModifiers.speedMult (1 at boot, since
+    // gameKind/activeModifiers default to the classic baseline — see the
+    // field declarations above) so this stays a byte-for-byte no-op for
+    // classic/the idle preview.
+    this.beagle = makeEntity(this.level.beagleSpawn.x, this.level.beagleSpawn.y, SPEEDS.beagle * this.activeModifiers.speedMult);
 
     // The real shop UI (IDEA-012) — replaces the old skin/enemy cycle
     // buttons. Lives alongside attachMuteButton with the same lifecycle
@@ -365,6 +414,23 @@ export class Game {
     menuShopBtn.addEventListener("click", onMenuShopClick);
     this.detachMenuShopButton = () => menuShopBtn.removeEventListener("click", onMenuShopClick);
 
+    // IDEA-013 (Challenge Mode): #challengeBtn is static markup in
+    // index.html's #mainMenu (between Play and Shop), wired once here
+    // exactly like playBtn/menuShopBtn above. Continues at the player's
+    // highest unlocked level (getChallengeProgress()) — if every level has
+    // already been cleared (challengeProgress === CHALLENGE_LEVEL_COUNT),
+    // startChallenge's own clamp lands on the LAST level (COUNT-1) rather
+    // than a phantom one-past-the-end level, per its own doc comment.
+    const challengeBtn = document.getElementById("challengeBtn") as HTMLButtonElement | null;
+    if (!challengeBtn) throw new Error("Game: missing #challengeBtn — check index.html");
+    const onChallengeClick = (): void => {
+      this.sound.resume();
+      this.hideMenu();
+      this.startChallenge(getChallengeProgress());
+    };
+    challengeBtn.addEventListener("click", onChallengeClick);
+    this.detachChallengeButton = () => challengeBtn.removeEventListener("click", onChallengeClick);
+
     // IDEA-021 v2 / IDEA-023: the menu scene's and shop scene's cameras are
     // both plain perspective cams (no maze-fit math) — just need their
     // aspect kept current, independent of scene.ts's own resize() (which
@@ -446,11 +512,23 @@ export class Game {
    * Board (walls/floor/pellet meshes), the mutable pellet set, the fruit-tile
    * list, and the P/G spawn tiles. Pure construction — does not touch scene
    * membership of any *previous* level's meshes; callers (constructor,
-   * startLevel) are responsible for removing the old ones first so nothing
-   * leaks across levels.
+   * startLevel, startChallenge) are responsible for removing the old ones
+   * first so nothing leaks across levels.
+   *
+   * `mazeIdx` is the ALREADY-RESOLVED index into MAZES (0..MAZE_COUNT-1) —
+   * this method itself does no modulo/lap math. That resolution is entirely
+   * the caller's job (IDEA-013 refactor): startLevel (classic) resolves it
+   * as `idx % MAZE_COUNT` so an ever-increasing classic level index loops
+   * through the maze pool with laps, exactly as before this refactor;
+   * startChallenge (Challenge Mode) resolves it as the fixed
+   * `CHALLENGE_LEVELS[idx].mazeIdx`, which is never subject to any lap
+   * arithmetic. Splitting the resolution out here is what keeps classic's
+   * own behavior byte-for-byte identical: `buildLevel(idx % MAZE_COUNT)`
+   * from startLevel computes exactly the same maze this method used to pick
+   * internally via `MAZES[idx % MAZE_COUNT]`.
    */
-  private buildLevel(idx: number): LevelAssets {
-    const grid = new Grid(MAZES[idx % MAZE_COUNT]);
+  private buildLevel(mazeIdx: number): LevelAssets {
+    const grid = new Grid(MAZES[mazeIdx]);
     const board = buildBoard(this.rig.scene, grid);
 
     const pellets = new Set<string>();
@@ -511,6 +589,7 @@ export class Game {
     this.detachMenuResize();
     this.detachPlayButton();
     this.detachMenuShopButton();
+    this.detachChallengeButton();
     this.shop.detach();
     this.menuScene.dispose();
     this.shopScene.dispose();
@@ -518,9 +597,22 @@ export class Game {
 
   // ---- level flow (prototype startLevel, line 419) ----
 
+  /**
+   * CLASSIC MODE level flow — unchanged behavior from before IDEA-013.
+   * `idx` is the ever-increasing classic level index (0-based, loops through
+   * MAZES with a lap indicator once idx >= MAZE_COUNT — see mapNumber/lap
+   * below). Always resolves gameKind/activeModifiers to the classic baseline
+   * before building, so calling this can never leave a stray challenge
+   * modifier active (defence in depth alongside the Play button handler and
+   * quitToMenu(), which already set these explicitly at every classic entry
+   * point).
+   */
   private startLevel(idx: number): void {
+    this.gameKind = "classic";
+    this.activeModifiers = CLASSIC_MODIFIERS;
+
     this.disposeLevel(this.level);
-    this.level = this.buildLevel(idx);
+    this.level = this.buildLevel(idx % MAZE_COUNT);
 
     this.levelIdx = idx;
     const mapNumber = (idx % MAZE_COUNT) + 1;
@@ -533,10 +625,78 @@ export class Game {
     this.hud.showBanner("Ready!");
   }
 
+  // ---- Challenge Mode level flow (IDEA-013) ----
+
+  /**
+   * CHALLENGE MODE level flow — mirrors startLevel's shape (dispose old
+   * level, build the new one, reset actors, enter "ready") but resolves the
+   * maze from the fixed CHALLENGE_LEVELS table instead of a looping
+   * `idx % MAZE_COUNT`, and sets gameKind/challengeIdx/activeModifiers so
+   * every speed/ghost-count/fright-duration read elsewhere in this class
+   * (resetActors, updatePlay, triggerFright) picks up this level's twist.
+   * `idx` is clamped via getChallengeLevel (never throws for an
+   * out-of-range idx, e.g. a corrupt persisted challengeProgress) —
+   * `this.challengeIdx`/the HUD label are set from THAT CLAMPED index
+   * (`level`'s own position in CHALLENGE_LEVELS via getChallengeLevel's
+   * clamp), not the raw `idx` passed in, so a caller passing
+   * CHALLENGE_LEVEL_COUNT (the "all cleared" sentinel — see
+   * profileStore.ts's StoredProfile doc comment) correctly lands on and
+   * tracks the LAST real level (index COUNT-1), not a phantom one-past-the-
+   * end level.
+   *
+   * ALWAYS a FRESH run: score/lives reset exactly like the Play button's
+   * handler does (createInitialGameState + the same 3 counter resets),
+   * since a challenge run is its own self-contained playthrough, not a
+   * continuation of whatever classic run (if any) was last in progress.
+   * Called from the #challengeBtn handler (fresh run, entering at the
+   * highest unlocked level), the challenge level-complete panel's "Next
+   * level" button, and the game-over panel's "Play again" button while
+   * gameKind==="challenge" (both restart/advance a challenge run, not a
+   * classic one — see gameOver()/levelClear()'s challenge branches below).
+   */
+  private startChallenge(idx: number): void {
+    // Same clamp getChallengeLevel itself applies internally (see
+    // challenges.ts) — duplicated here (rather than reverse-looking-up the
+    // returned level's index) so resolvedIdx is unambiguously "the index
+    // that produced this exact level", with no reliance on array reference
+    // identity between the two calls.
+    const safeIdx = Number.isFinite(idx) ? Math.floor(idx) : 0;
+    const resolvedIdx = Math.max(0, Math.min(safeIdx, CHALLENGE_LEVEL_COUNT - 1));
+    const level = getChallengeLevel(resolvedIdx);
+
+    this.gameKind = "challenge";
+    this.challengeIdx = resolvedIdx;
+    this.activeModifiers = level.modifiers;
+
+    const fresh = createInitialGameState();
+    this.score = fresh.score;
+    this.lives = fresh.lives;
+    this.coinsAwardedFromScore = 0;
+    this.livesAwardedFromScore = 0;
+    this.hud.setScore(this.score);
+    this.hud.setLives(this.lives);
+
+    this.disposeLevel(this.level);
+    this.level = this.buildLevel(level.mazeIdx);
+
+    // Small, readable challenge-level HUD label (e.g. "C3") — distinct from
+    // classic's "map · lap" label so the player can always tell which mode
+    // they're in from the HUD alone.
+    this.hud.setLevel(`C${resolvedIdx + 1}`);
+
+    this.resetActors();
+    this.mode = "ready";
+    this.stateTimer = TIMING.readySeconds;
+    this.hud.showBanner("Ready!");
+  }
+
   // ---- actor (beagle + ghosts) reset (prototype resetActors, line 404) ----
 
   private resetActors(): void {
-    this.beagle = makeEntity(this.level.beagleSpawn.x, this.level.beagleSpawn.y, SPEEDS.beagle);
+    // IDEA-013: scaled by activeModifiers.speedMult — CLASSIC_MODIFIERS'
+    // speedMult is 1, so this is a byte-for-byte no-op for every classic
+    // call site (startLevel's death-respawn/level-transition resets).
+    this.beagle = makeEntity(this.level.beagleSpawn.x, this.level.beagleSpawn.y, SPEEDS.beagle * this.activeModifiers.speedMult);
     this.beagle.dir = { x: 0, y: 0 };
     this.beagle.queued = { x: -1, y: 0 };
     this.beagle.facing = { x: 0, y: 1 };
@@ -547,10 +707,22 @@ export class Game {
     this.ghosts.forEach((rig) => this.rig.scene.remove(rig.mesh));
     const spawn = this.level.ghostSpawn;
     const enemySkinId = getEquippedEnemySkinId();
-    this.ghosts = GHOST_DEFS.map((def, i) => {
+    // IDEA-013: only the first activeModifiers.ghostCount of the 5 GHOST_DEFS
+    // are built — CLASSIC_MODIFIERS.ghostCount is 3, the original fixed
+    // count, so classic (and the idle menu preview, which also runs through
+    // resetActors — see the constructor) still gets exactly the same 3
+    // ghosts, in the same order, as before this refactor.
+    this.ghosts = GHOST_DEFS.slice(0, this.activeModifiers.ghostCount).map((def, i) => {
       const mesh = makeEnemy(enemySkinId, def.color);
       this.rig.scene.add(mesh);
-      const e = makeEntity(spawn.x, spawn.y, SPEEDS.ghost);
+      // IDEA-013: scaled by activeModifiers.ghostSpeedMult for the same
+      // "byte-for-byte no-op in classic" reason as the beagle above — the
+      // per-frame reassignment in updatePlay (SPEEDS.ghost/frightened/eaten
+      // * ghostSpeedMult) overwrites this on the very next "play" frame
+      // regardless, but setting it correctly here too keeps the Entity
+      // internally consistent from the moment it's created (e.g. during the
+      // "ready" countdown, before "play" ever runs).
+      const e = makeEntity(spawn.x, spawn.y, SPEEDS.ghost * this.activeModifiers.ghostSpeedMult);
       e.dir = { x: 0, y: -1 };
       e.queued = { x: 0, y: -1 };
       const gh: Ghost = { e, state: "scatter", kind: def.kind, corner: def.corner };
@@ -622,6 +794,11 @@ export class Game {
    */
   private rebuildEnemySkins(): void {
     const skinId = getEquippedEnemySkinId();
+    // IDEA-013: this.ghosts is built via GHOST_DEFS.slice(0, ghostCount) in
+    // resetActors(), so its index `i` still lines up 1:1 with GHOST_DEFS[i]
+    // even when ghostCount < GHOST_DEFS.length (a slice from 0 preserves the
+    // original indices) — GHOST_DEFS[i].color below is still the right color
+    // for whichever subset of ghosts a challenge level actually built.
     this.ghosts = this.ghosts.map((rig, i) => {
       this.rig.scene.remove(rig.mesh);
       const mesh = makeEnemy(skinId, GHOST_DEFS[i].color);
@@ -912,7 +1089,11 @@ export class Game {
   // ---- fright window (prototype triggerFright/e_reverse, line 485) ----
 
   private triggerFright(): void {
-    this.frightTimer = TIMING.frightSeconds;
+    // IDEA-013: activeModifiers.frightSeconds replaces the raw
+    // TIMING.frightSeconds literal — CLASSIC_MODIFIERS.frightSeconds IS
+    // TIMING.frightSeconds (see challenges.ts), so this is a byte-for-byte
+    // no-op in classic mode.
+    this.frightTimer = this.activeModifiers.frightSeconds;
     this.ghostEatChain = 0;
     this.ghosts.forEach(({ gh }) => {
       if (gh.state !== "eaten") {
@@ -1004,13 +1185,19 @@ export class Game {
           // incremented above, so the first ghost eaten has chain=1 here ->
           // pass chain-1=0, matching the exponent math on the two lines above.
           this.sound.eatGhost(this.ghostEatChain - 1);
-          // IDEA-018: "perfect fright" bonus life — there are always exactly
-          // 3 ghosts (GHOST_DEFS), so a chain reaching 3 within one fright
-          // window means all three were eaten before it ran out. Checked with
-          // `=== 3` (not `>=`) so this can only ever fire once per fright
+          // IDEA-018: "perfect fright" bonus life — a chain reaching the
+          // level's full ghost count within one fright window means every
+          // ghost currently in play was eaten before it ran out.
+          // IDEA-013: generalized from a hardcoded `=== 3` to
+          // `=== activeModifiers.ghostCount` — classic's ghostCount is
+          // always 3 (CLASSIC_MODIFIERS), so this is byte-for-byte identical
+          // there, while a challenge level with 4 or 5 ghosts now requires
+          // eating that many, not just 3, to earn the bonus. Checked with
+          // `===` (not `>=`) so this can only ever fire once per fright
           // window — triggerFright() resets ghostEatChain to 0, so the chain
-          // can't somehow reach 3 twice without a fresh bone in between.
-          if (this.ghostEatChain === 3) this.grantLife();
+          // can't somehow reach the full count twice without a fresh bone in
+          // between.
+          if (this.ghostEatChain === this.activeModifiers.ghostCount) this.grantLife();
         } else if (gh.state !== "eaten") {
           this.beagleDies();
           return;
@@ -1037,8 +1224,106 @@ export class Game {
     this.sound.levelClear();
   }
 
+  // ---- Challenge Mode level-complete panel (IDEA-013) ----
+
+  /**
+   * Fired once the "levelclear" banner's stateTimer runs out WHILE
+   * gameKind==="challenge" (see the "levelclear" case in update() below) —
+   * takes over from classic's plain timer-driven auto-advance
+   * (`startLevel(this.levelIdx + 1)`) with a completion PANEL instead, since
+   * challenge levels are discrete, named, curated levels rather than an
+   * infinite looping lap counter. Persists progress first
+   * (advanceChallengeProgress — a max-write, so replaying an already-
+   * cleared level can never regress the unlock), then shows either:
+   *   - the last level (challengeIdx === CHALLENGE_LEVEL_COUNT-1): an
+   *     "ALL CLEAR" congratulations panel with only a Menu button (there is
+   *     no "next level" to advance to).
+   *   - any earlier level: the just-cleared level's own name plus the NEXT
+   *     level's blurb (previews the upcoming twist), with a "Next level"
+   *     button (advances to challengeIdx+1) and a "Menu" button (mirrors
+   *     quitToMenu's classic-baseline reset).
+   *
+   * Sets mode to "over" (the existing idle mode gameOver() also uses) as its
+   * very first move — CRITICAL: without this, mode would stay "levelclear"
+   * with a now-negative stateTimer, and update()'s "levelclear" case would
+   * re-enter this method (or call startLevel) on EVERY subsequent frame,
+   * since its own `if (this.stateTimer <= 0)` check keeps re-passing forever
+   * once stateTimer has gone negative. "over" is update()'s documented
+   * do-nothing case (`// idle — the game-over panel's own buttons drive the
+   * next transition`), which is exactly the semantics this panel needs too —
+   * only the panel's own "Next level"/"Menu" buttons should ever move things
+   * on from here.
+   */
+  private challengeLevelComplete(): void {
+    this.mode = "over";
+    advanceChallengeProgress(this.challengeIdx);
+
+    const isLast = this.challengeIdx >= CHALLENGE_LEVEL_COUNT - 1;
+    const clearedLevel = getChallengeLevel(this.challengeIdx);
+
+    if (isLast) {
+      const panel = this.hud.showPanel(
+        '<div class="eyebrow">challenge complete</div>' +
+        "<h1>All Clear! \u{1F3C6}</h1>" +
+        `<p>You beat every challenge level, finishing with <strong>${clearedLevel.name}</strong>. The whole pack bows to the top dog.</p>` +
+        '<div class="menu-actions">' +
+        '<button id="challengeMenuBtn" class="btn-secondary">Menu</button>' +
+        "</div>",
+      );
+      this.wireChallengeMenuButton(panel);
+      return;
+    }
+
+    const nextLevel = getChallengeLevel(this.challengeIdx + 1);
+    const panel = this.hud.showPanel(
+      `<div class="eyebrow">${clearedLevel.name} cleared</div>` +
+      `<h1>Level ${this.challengeIdx + 2}: ${nextLevel.name}</h1>` +
+      `<p>${nextLevel.blurb}</p>` +
+      '<div class="menu-actions">' +
+      '<button id="nextChallengeBtn">Next level</button>' +
+      '<button id="challengeMenuBtn" class="btn-secondary">Menu</button>' +
+      "</div>",
+    );
+    const nextBtn = panel.querySelector<HTMLButtonElement>("#nextChallengeBtn");
+    nextBtn?.addEventListener("click", () => {
+      this.sound.resume();
+      this.startChallenge(this.challengeIdx + 1);
+    });
+    this.wireChallengeMenuButton(panel);
+  }
+
+  /** Wires the "Menu" button shared by both challengeLevelComplete() panels
+   *  (the mid-run "next level" panel and the final "ALL CLEAR" panel) —
+   *  mirrors quitToMenu()/gameOver()'s gameOverMenuBtn handler exactly
+   *  (classic-baseline reset + fresh score/lives + idle menu), factored out
+   *  since both panel branches above need the identical handler. */
+  private wireChallengeMenuButton(panel: HTMLElement): void {
+    const menuBtn = panel.querySelector<HTMLButtonElement>("#challengeMenuBtn");
+    menuBtn?.addEventListener("click", () => {
+      this.gameKind = "classic";
+      this.activeModifiers = CLASSIC_MODIFIERS;
+
+      const fresh = createInitialGameState();
+      this.score = fresh.score;
+      this.lives = fresh.lives;
+      this.coinsAwardedFromScore = 0;
+      this.livesAwardedFromScore = 0;
+      this.hud.setScore(this.score);
+      this.hud.setLives(this.lives);
+      this.resetActors();
+      this.mode = "start";
+      this.showMenu();
+    });
+  }
+
   private gameOver(): void {
     this.mode = "over";
+    // IDEA-013: the "Play again" button restarts THE SAME challenge level
+    // when the run that just ended was a challenge run, rather than always
+    // jumping to classic level 0 — losing a challenge level shouldn't dump
+    // the player back into classic. The panel copy/subtext stays identical
+    // either way (only the button's own handler branches).
+    const isChallenge = this.gameKind === "challenge";
     const panel = this.hud.showPanel(
       '<div class="eyebrow">final score</div>' +
       `<h1>${this.score}</h1>` +
@@ -1051,6 +1336,13 @@ export class Game {
     const againBtn = panel.querySelector<HTMLButtonElement>("#againBtn");
     againBtn?.addEventListener("click", () => {
       this.sound.resume();
+      if (isChallenge) {
+        // startChallenge() itself resets score/lives/coinsAwardedFromScore/
+        // livesAwardedFromScore (see its own doc comment) — no need to
+        // duplicate that here.
+        this.startChallenge(this.challengeIdx);
+        return;
+      }
       const fresh = createInitialGameState();
       this.score = fresh.score;
       this.lives = fresh.lives;
@@ -1071,7 +1363,15 @@ export class Game {
     // preview behavior — buildLevel is not re-run) rather than rebuilding
     // level 0, since a game over can happen on any level and re-showing that
     // same level's board underneath the menu is visually seamless.
+    //
+    // IDEA-013: also resets gameKind/activeModifiers to the classic baseline
+    // (mirrors quitToMenu()) — from game over, "Menu" must return to the
+    // SAME classic-baseline idle preview quitToMenu uses, not leave a just-
+    // ended challenge run's extra ghosts/speed active behind the menu.
     gameOverMenuBtn?.addEventListener("click", () => {
+      this.gameKind = "classic";
+      this.activeModifiers = CLASSIC_MODIFIERS;
+
       const fresh = createInitialGameState();
       this.score = fresh.score;
       this.lives = fresh.lives;
@@ -1132,6 +1432,13 @@ export class Game {
     this.hud.hideCenter();
     resetBeagleScale(this.beagleMesh);
 
+    // IDEA-013: quitting always returns to the CLASSIC baseline — the idle
+    // menu's preview (posed via resetActors() below, which reads
+    // activeModifiers) must never keep showing a challenge level's extra
+    // ghosts/speed after the player has backed out of a challenge run.
+    this.gameKind = "classic";
+    this.activeModifiers = CLASSIC_MODIFIERS;
+
     const fresh = createInitialGameState();
     this.score = fresh.score;
     this.lives = fresh.lives;
@@ -1164,7 +1471,13 @@ export class Game {
       }
       const gh = rig.gh;
       const spawn = this.level.ghostSpawn;
-      gh.e.speed = gh.state === "eaten" ? SPEEDS.eaten : gh.state === "frightened" ? SPEEDS.frightened : SPEEDS.ghost;
+      // IDEA-013: every tier scaled by activeModifiers.ghostSpeedMult (1 in
+      // classic — byte-for-byte no-op) so a fast challenge level's eaten/
+      // frightened ghosts stay just as proportionally fast/slow as its
+      // normal-state ghosts, keeping the whole speed relationship coherent
+      // rather than only the "normal" tier scaling up.
+      const ghostSpeedMult = this.activeModifiers.ghostSpeedMult;
+      gh.e.speed = (gh.state === "eaten" ? SPEEDS.eaten : gh.state === "frightened" ? SPEEDS.frightened : SPEEDS.ghost) * ghostSpeedMult;
       stepEntity(gh.e, dt, this.level.grid, true, (e) => {
         if (gh.state === "eaten" && e.tx === spawn.x && e.ty === spawn.y) {
           gh.state = this.globalMode; // respawned to current global mode
@@ -1250,7 +1563,15 @@ export class Game {
       case "levelclear": {
         this.syncAllPosed(dt);
         this.stateTimer -= dt;
-        if (this.stateTimer <= 0) this.startLevel(this.levelIdx + 1);
+        if (this.stateTimer <= 0) {
+          // IDEA-013: challenge levels show a completion panel (named level,
+          // next-level blurb, "Next level"/"Menu" buttons — or an "ALL
+          // CLEAR" panel after the last level) instead of classic's plain
+          // auto-advance to the next map. Classic's own branch
+          // (`startLevel(this.levelIdx + 1)`) is completely unchanged.
+          if (this.gameKind === "challenge") this.challengeLevelComplete();
+          else this.startLevel(this.levelIdx + 1);
+        }
         break;
       }
       case "over":

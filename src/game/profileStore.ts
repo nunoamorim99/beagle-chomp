@@ -26,6 +26,7 @@ import {
   setEquippedEnemySkinId,
   getEnemySkinPrice,
 } from "./cosmetics";
+import { CHALLENGE_LEVEL_COUNT } from "./challenges";
 
 const PROFILE_STORAGE_KEY = "beagle-chomp:profile";
 
@@ -41,13 +42,26 @@ const PROFILE_STORAGE_KEY = "beagle-chomp:profile";
  *  `ownedBeagleSkinIds`/`ownedEnemySkinIds` (IDEA-012) were added later
  *  still: old blobs without the keys default to just the default skin owned
  *  (["bagel"]/["ghost"]) — same fallback loadProfile already uses for a
- *  garbage/unknown-id value. */
+ *  garbage/unknown-id value.
+ *  `challengeProgress` (IDEA-013 Challenge Mode) was added later still: old
+ *  blobs without the key default to 0. Convention: the highest challenge
+ *  LEVEL INDEX (0-based) the player has UNLOCKED, i.e. is allowed to play —
+ *  0 means only CHALLENGE_LEVELS[0] (level 1) is playable, and in general a
+ *  value of N means levels 0..N are all playable (level N+1 is the next one
+ *  to clear to unlock further). The special value
+ *  CHALLENGE_LEVEL_COUNT (one past the last valid level index) means "every
+ *  level has been cleared" — chosen deliberately over reusing
+ *  CHALLENGE_LEVEL_COUNT-1 (the last level's own index) so "cleared the
+ *  finale" is distinguishable from "unlocked but haven't cleared the
+ *  finale yet"; see advanceChallengeProgress/getChallengeProgress below for
+ *  how this value is read/written. */
 export interface StoredProfile {
   equippedBeagleSkinId: string;
   equippedEnemySkinId: string;
   coins: number;
   ownedBeagleSkinIds: string[];
   ownedEnemySkinIds: string[];
+  challengeProgress: number;
 }
 
 function defaultProfile(): StoredProfile {
@@ -57,6 +71,7 @@ function defaultProfile(): StoredProfile {
     coins: 0,
     ownedBeagleSkinIds: [DEFAULT_BEAGLE_SKIN_ID],
     ownedEnemySkinIds: [DEFAULT_ENEMY_SKIN_ID],
+    challengeProgress: 0,
   };
 }
 
@@ -70,6 +85,21 @@ function sanitizeCoins(value: unknown): number {
   const n = typeof value === "number" ? value : NaN;
   if (!Number.isFinite(n) || n < 0) return 0;
   return Math.floor(n);
+}
+
+/** A valid challengeProgress value: a finite, non-negative integer clamped to
+ *  [0, CHALLENGE_LEVEL_COUNT] — mirrors sanitizeCoins' "degrade garbage to a
+ *  safe default" shape exactly (missing, NaN, negative, a string, Infinity,
+ *  a float all degrade rather than propagating garbage), plus the extra
+ *  upper clamp coins doesn't need (challengeProgress has a real ceiling —
+ *  see StoredProfile's own doc comment on the CHALLENGE_LEVEL_COUNT
+ *  "all cleared" convention — whereas coins can grow unbounded). Floats are
+ *  floored rather than rejected outright, for the same "survive a corrupted
+ *  or hand-edited blob" reason sanitizeCoins floors floats. */
+function sanitizeChallengeProgress(value: unknown): number {
+  const n = typeof value === "number" ? value : NaN;
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.min(Math.floor(n), CHALLENGE_LEVEL_COUNT);
 }
 
 function isKnownSkinId(id: unknown): id is string {
@@ -123,6 +153,7 @@ export function loadProfile(): StoredProfile {
       coins: sanitizeCoins(record.coins),
       ownedBeagleSkinIds: sanitizeOwnedBeagleSkinIds(record.ownedBeagleSkinIds),
       ownedEnemySkinIds: sanitizeOwnedEnemySkinIds(record.ownedEnemySkinIds),
+      challengeProgress: sanitizeChallengeProgress(record.challengeProgress),
     };
   } catch {
     // Covers `window`/`localStorage` being unavailable, JSON.parse throwing
@@ -205,6 +236,63 @@ export function addCoins(n: number): void {
   const current = getCoins();
   const next = Math.max(0, current + delta);
   saveCoins(next);
+}
+
+// ---------------------------------------------------------------------------
+// IDEA-013: Challenge Mode progress. Mirrors the coins section immediately
+// above exactly (a private save* + a public get* + a public mutator), except
+// the mutator here is a "raise to the max" write rather than an additive one
+// — see advanceChallengeProgress's own doc comment for why.
+
+/**
+ * Persists just the challengeProgress field, via read-modify-write so every
+ * other field already in the stored blob survives untouched — mirrors
+ * saveCoins exactly. Internal: callers outside this module should go through
+ * getChallengeProgress/advanceChallengeProgress below.
+ */
+function saveChallengeProgress(value: number): void {
+  try {
+    const current = loadProfile();
+    const next: StoredProfile = { ...current, challengeProgress: sanitizeChallengeProgress(value) };
+    window.localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(next));
+  } catch {
+    /* storage unavailable/throwing — keep progress in memory for this
+       session only (the caller's own view, if any, is unaffected); nothing
+       else to do, and this must never throw upward */
+  }
+}
+
+/**
+ * Reads the persisted Challenge Mode progress (IDEA-013) — the highest
+ * challenge level index unlocked (see StoredProfile's own doc comment for
+ * the full 0-based / "=== CHALLENGE_LEVEL_COUNT means all cleared"
+ * convention). Degrades to 0 (only level 1 unlocked) on any failure via
+ * loadProfile's own defensive handling, and on any old blob saved before
+ * this field existed — never throws.
+ */
+export function getChallengeProgress(): number {
+  return loadProfile().challengeProgress;
+}
+
+/**
+ * Records that challenge level `clearedIdx` (0-based) has just been cleared,
+ * unlocking `clearedIdx + 1` (or, if `clearedIdx` was already the last
+ * level, marking every level cleared via CHALLENGE_LEVEL_COUNT — see
+ * StoredProfile's doc comment). This is a READ-MODIFY-WRITE that only ever
+ * RAISES the stored value (`Math.max(current, ...)`), never lowers it:
+ * clearing level 2 after already having cleared level 4 must not regress
+ * progress back down to "level 3 unlocked" — the player keeps their best
+ * unlock, exactly like a high score. Guarded like every other write here —
+ * never throws, and a garbage/negative/non-finite `clearedIdx` is treated as
+ * "no progress to record" (contributes 0, so `Math.max` is a no-op) rather
+ * than corrupting the stored value.
+ */
+export function advanceChallengeProgress(clearedIdx: number): void {
+  const safeCleared = Number.isFinite(clearedIdx) && clearedIdx >= 0 ? Math.floor(clearedIdx) : -1;
+  const unlockedThrough = Math.min(safeCleared + 1, CHALLENGE_LEVEL_COUNT);
+  const current = getChallengeProgress();
+  const next = Math.max(current, unlockedThrough);
+  if (next > current) saveChallengeProgress(next);
 }
 
 // ---------------------------------------------------------------------------

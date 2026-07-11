@@ -103,5 +103,15 @@ export const COLORS = {
   ghostRose: 0xe0577a,
   ghostTeal: 0x53c7c0,
   ghostAmber: 0xe8a23d,
+  // IDEA-013 (Challenge Mode): two more team colors for the 4th/5th ghost
+  // slots that only spawn when a challenge level's ghostCount is 4 or 5 —
+  // never used in classic (GHOST_DEFS.slice(0, 3) there). Chosen to sit
+  // comfortably in the same tasteful, garden-fitting palette as rose/teal/
+  // amber (bright, saturated, but not neon) while staying visually distinct
+  // from all three at a glance: a violet (cool, between the rose and teal in
+  // hue) and a leaf-green (echoes the hedge-green wall color family without
+  // matching it exactly, so a ghost never camouflages against a wall).
+  ghostViolet: 0x9b6bd6,
+  ghostLeaf: 0x6fb84a,
   frightened: 0x2537c8,
 } as const;
