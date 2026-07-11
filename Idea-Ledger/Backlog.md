@@ -40,16 +40,6 @@ _(nothing yet)_
 - **Notes:** the front end for [[IDEA-013]]; reached from the main menu ([[IDEA-020]]).
 - **Dependencies:** [[IDEA-013]]
 
-### IDEA-015 — Classic mode: change the maze each level 💡
-- **Priority:** 🟡
-- **Area:** modes
-- **Description:** in the classic mode, when the player clears a level, change something to keep it
-  fresh. Proposal: swap the maze on each level so there's something different to challenge the
-  player instead of replaying the same board.
-- **Notes:** needs a pool of mazes to rotate through (level-designer work). Ties into the maze-detail
-  themes ([[IDEA-011]]).
-- **Dependencies:** —
-
 ### IDEA-018 — Bonus lives: pickups & milestones 💡
 - **Priority:** 🟢
 - **Area:** economy
@@ -81,6 +71,22 @@ _(nothing yet)_
 
 ## Delivered ✅
 > Already in production. Do NOT delete. Each keeps its version history.
+
+### IDEA-015 — Classic mode: change the maze each level ✅
+- **Priority:** 🟡
+- **Area:** modes
+- **Description:** in the classic mode, when the player clears a level, change something to keep it
+  fresh. Proposal: swap the maze on each level so there's something different to challenge the
+  player instead of replaying the same board.
+- **Notes:** needs a pool of mazes to rotate through (level-designer work). Ties into the maze-detail
+  themes ([[IDEA-011]]).
+  First build of v3.0 "New Tricks". Awareness: the ROTATION mechanism already ships (levelClear →
+  startLevel(idx+1) → MAZES[idx % MAZE_COUNT], HUD "MAP n · lap") — the gap is the POOL (only 2
+  mazes). This build = author new validated mazes; the pool later feeds challenge mode ([[IDEA-013]]).
+- **Dependencies:** —
+- **History:**
+  - **v1** (2026-07-11) — maze pool grown 2 → 5 with three new authored boards, each a distinct personality: **The Courtyard** (open central plaza, lone pillars, risky sightlines, 204 pellets), **The Warren** (dense pillar lattice, narrow paths everywhere, 202), **The Crossroads** (big hedge slabs, long arteries + tunnel wrap, 180). Pure 69-line append to `mazes.json` — zero engine changes (rotation/HUD/camera/decor/spawns are all grid-driven). All 5 mazes pass the validator + full gameplay sim; the sim caught two authoring issues (corridor-spacing stall, spawn-funnel) that were fixed before ship. `mazes.json`. _(37fae8b)_
+
 
 ### IDEA-023 — Shop v2: dedicated page with tabs + 3D skin gallery ✅
 - **Priority:** 🟡
