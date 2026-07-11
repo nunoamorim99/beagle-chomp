@@ -21,7 +21,7 @@ import {
   setEquippedEnemySkinId,
   cycleEnemySkinId,
 } from "../src/game/cosmetics";
-import { COLORS, COINS } from "../src/game/config";
+import { COLORS, COINS, LIVES, LIFE_THRESHOLDS, COIN_THRESHOLDS } from "../src/game/config";
 import {
   loadProfile,
   getCoins,
@@ -37,6 +37,7 @@ import {
   type StoredProfile,
 } from "../src/game/profileStore";
 import { coinsDueFromScore } from "../src/game/coins";
+import { shouldFireThreshold } from "../src/game/pickups";
 
 let failures = 0;
 function check(label: string, cond: boolean): void {
@@ -208,6 +209,96 @@ console.log("\n=== coins.ts (IDEA-016 points->coins math) ===");
     "coinsDueFromScore matches config.ts's COINS.perPoints for a 3450 score -> 3 coins",
     coinsDueFromScore(3450, COINS.perPoints) === 3,
   );
+}
+
+console.log("\n=== pickups.ts (bugfix: shouldFireThreshold — each threshold fires ONCE per level) ===");
+{
+  const T = [20, 60, 105, 150] as const; // mirrors COIN_THRESHOLDS's shape
+
+  // Fires once at >= threshold, with idx pointing at the pending entry.
+  check("does not fire below the first threshold (eaten=19, idx=0)", shouldFireThreshold(19, T, 0) === false);
+  check("fires exactly at the first threshold (eaten=20, idx=0)", shouldFireThreshold(20, T, 0) === true);
+  // `>=` (not `===`) so a skipped tick still fires the pending threshold.
+  check("fires PAST the first threshold too (eaten=25, idx=0) — robust to a skipped tick", shouldFireThreshold(25, T, 0) === true);
+
+  // THE BUG THIS FIXES: does NOT refire at the same `eaten` once the caller
+  // has advanced idx past it (simulating game.ts's `this.level.nextX++` right
+  // after a spawn) — this is exactly the farming exploit's repro: eating a
+  // pickup doesn't change `eaten`, so the old `includes(eaten)` gate kept
+  // matching on the very next check. With the index pointer, the SAME eaten
+  // value no longer matches once its threshold has fired.
+  check(
+    "does NOT refire at the same eaten value once idx has advanced past it (eaten=20, idx=1) — the farming-exploit repro",
+    shouldFireThreshold(20, T, 1) === false,
+  );
+  check(
+    "does NOT refire even well past it, still on the same maze visit (eaten=59, idx=1) — next threshold (60) not reached yet",
+    shouldFireThreshold(59, T, 1) === false,
+  );
+  check("fires the SECOND threshold once eaten catches up (eaten=60, idx=1)", shouldFireThreshold(60, T, 1) === true);
+
+  // Mid-array and last-entry behavior.
+  check("fires the third threshold (eaten=105, idx=2)", shouldFireThreshold(105, T, 2) === true);
+  check("fires the fourth (last) threshold (eaten=150, idx=3)", shouldFireThreshold(150, T, 3) === true);
+
+  // End-of-array: once every threshold has fired (idx === thresholds.length),
+  // always false — no out-of-bounds access, no re-firing for the rest of the
+  // level no matter how high `eaten` climbs.
+  check("idx at thresholds.length -> always false (eaten=150)", shouldFireThreshold(150, T, T.length) === false);
+  check("idx at thresholds.length -> always false (eaten=9999, deep into the level)", shouldFireThreshold(9999, T, T.length) === false);
+  check("idx past thresholds.length (defensive) -> always false", shouldFireThreshold(200, T, T.length + 5) === false);
+
+  // Negative idx (defensive — shouldn't happen from game.ts, which only ever
+  // starts at 0 and increments, but the helper must not throw/misbehave).
+  check("negative idx -> always false (defensive)", shouldFireThreshold(50, T, -1) === false);
+
+  // Single-entry array (mirrors LIFE_THRESHOLDS = [130] exactly).
+  const singleT = [130] as const;
+  check("single-entry array: does not fire before (eaten=129, idx=0)", shouldFireThreshold(129, singleT, 0) === false);
+  check("single-entry array: fires at threshold (eaten=130, idx=0)", shouldFireThreshold(130, singleT, 0) === true);
+  check(
+    "single-entry array: does not refire after idx advances (eaten=130, idx=1) — the exact IDEA-018 farming repro",
+    shouldFireThreshold(130, singleT, 1) === false,
+  );
+
+  // Empty thresholds array (defensive edge case) -> always false.
+  check("empty thresholds array -> always false", shouldFireThreshold(100, [], 0) === false);
+}
+
+console.log("\n=== config.ts (IDEA-018 bonus lives: coinsDueFromScore reused with LIVES.milestonePoints) ===");
+{
+  // Same pure helper as coins (IDEA-016) reused verbatim with a different
+  // divisor for the lives milestone (game.ts's maybeAwardLivesFromScore) —
+  // exercised here at LIVES.milestonePoints (5000) to guard against a future
+  // config change silently breaking the milestone math, mirroring the
+  // COINS.perPoints check just above.
+  check("coinsDueFromScore(0, LIVES.milestonePoints) === 0", coinsDueFromScore(0, LIVES.milestonePoints) === 0);
+  check("coinsDueFromScore(4999, LIVES.milestonePoints) === 0", coinsDueFromScore(4999, LIVES.milestonePoints) === 0);
+  check("coinsDueFromScore(5000, LIVES.milestonePoints) === 1", coinsDueFromScore(5000, LIVES.milestonePoints) === 1);
+  check(
+    "coinsDueFromScore(12000, LIVES.milestonePoints) === 2 (crossing multiple at once)",
+    coinsDueFromScore(12000, LIVES.milestonePoints) === 2,
+  );
+  check(
+    "coinsDueFromScore matches config.ts's LIVES.milestonePoints for a 17500 score -> 3 lives",
+    coinsDueFromScore(17500, LIVES.milestonePoints) === 3,
+  );
+
+  // LIVES.max sanity: a positive, finite cap greater than START_LIVES (3),
+  // so bonus lives always have real headroom to grant.
+  check("LIVES.max is a positive integer greater than 3", Number.isInteger(LIVES.max) && LIVES.max > 3);
+
+  // LIFE_THRESHOLDS must never collide with COIN_THRESHOLDS or the fruit
+  // thresholds (game.ts's private FRUIT_THRESHOLDS = [70, 140], mirrored here
+  // as a literal since it isn't exported) — a shared eaten-pellet tick would
+  // mean two maybeSpawn* guards racing for the same frame. Cheap regression
+  // guard so a future retune of any of these three lists can't silently
+  // introduce a collision.
+  const FRUIT_THRESHOLDS_MIRROR = [70, 140] as const;
+  const collidesWithCoins = LIFE_THRESHOLDS.some((t) => (COIN_THRESHOLDS as readonly number[]).includes(t));
+  const collidesWithFruit = LIFE_THRESHOLDS.some((t) => (FRUIT_THRESHOLDS_MIRROR as readonly number[]).includes(t));
+  check("LIFE_THRESHOLDS never collides with COIN_THRESHOLDS", !collidesWithCoins);
+  check("LIFE_THRESHOLDS never collides with FRUIT_THRESHOLDS", !collidesWithFruit);
 }
 
 console.log("\n=== profileStore.ts coins (Node, no window/localStorage) ===");

@@ -12,6 +12,10 @@ Eat every biscuit on a map to advance. Avoid ghosts unless a bone is active.
   cleared floor, IDEA-017): appears 4 times per map at pellet-count
   thresholds; grants 1 coin directly (no points) to the persistent wallet;
   auto-despawns if not grabbed in time.
+- **Golden bone** (bonus life pickup, IDEA-018): a bigger, glowing gold
+  version of the power-bone; appears once per map at a pellet-count
+  threshold; grants 1 extra life directly (no points), capped at `LIVES.max`;
+  auto-despawns if not grabbed in time.
 - **Ghosts** ×3: chaser, ambusher, clyde (see AI).
 
 ## Scoring
@@ -93,6 +97,47 @@ score/lives), meant to fund a future shop. Two ways to earn them:
 
 Coins are shown in the HUD (`#coins`) alongside score/lives, initialized from
 the persisted wallet at boot.
+
+## Bonus lives (IDEA-018)
+Lives are **per-run** (in-memory only — never persisted, unlike the coin
+wallet), capped at `LIVES.max` (5). Three triggers all grant a life through
+one central helper, `Game.grantLife()`: increments `this.lives`, updates the
+HUD, and plays `sound.extraLife()` — or, once already at the cap, silently
+no-ops (no HUD change, no sound; a bonus life is simply wasted at the cap).
+
+- **Maze pickup (a golden bone):** appears once per map, at pellet-eaten
+  threshold `LIFE_THRESHOLDS` = 130 — deliberately offset from both
+  `COIN_THRESHOLDS` (20/60/105/150) and the fruit's 70/140 thresholds so
+  nothing collides on the same eaten-pellet tick, and rarer than either (one
+  per map vs. four coins/two fruit) since a bonus life is a stronger reward.
+  Placement uses the same `pickRandomFreeTile` picker the maze coin uses
+  (generalized from IDEA-017's coin-only picker so both share one
+  implementation), excluding the beagle's tile, the active fruit tile, *and*
+  the active coin tile so a golden bone never doubles up with another pickup.
+  Like the coin, it's **time-limited**: auto-despawns after
+  `LIVES.pickupLifespanSeconds` (18s) if not grabbed, granting nothing. Even
+  if the beagle is already at `LIVES.max` when it steps on the pickup, the
+  golden bone is still consumed (despawns) — `grantLife()` just no-ops.
+- **Points milestone:** every `LIVES.milestonePoints` (5000) points of
+  cumulative run score grants 1 life — reuses `coinsDueFromScore` (the exact
+  same pure helper IDEA-016's coin milestone uses, just a coarser divisor and
+  its own in-memory counter, `livesAwardedFromScore`). A single scoring event
+  crossing multiple thresholds at once grants all of them together. The
+  counter always advances to the newly-crossed threshold even when
+  `grantLife()` is capped out, so a milestone reached while already at
+  `LIVES.max` can never silently re-fire (and grant a surprise life) once the
+  life count later drops back below the cap. Resets to 0 at the same 3
+  new-game sites `coinsAwardedFromScore` resets at (score/lives themselves
+  reset there too).
+- **Perfect fright:** eating all 3 ghosts within a single fright window (the
+  eat-chain, `ghostEatChain`, reaching exactly 3 — there are always exactly 3
+  ghosts) grants 1 life on the spot, on top of the normal escalating
+  ghost-eat score.
+
+The golden bone reuses the regular power-bone's shaft-and-knuckles geometry,
+scaled up ~1.6x with a warm metallic-gold material (distinct from both the
+flat off-white pellet bone and the coin's palette) and spins at the coin's
+faster rate so its rarity reads at a glance.
 
 ## Controls
 - Desktop: Arrow keys / WASD.

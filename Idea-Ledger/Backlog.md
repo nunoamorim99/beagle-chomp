@@ -40,16 +40,6 @@ _(nothing yet)_
 - **Notes:** the front end for [[IDEA-013]]; reached from the main menu ([[IDEA-020]]).
 - **Dependencies:** [[IDEA-013]]
 
-### IDEA-018 — Bonus lives: pickups & milestones 💡
-- **Priority:** 🟢
-- **Area:** economy
-- **Description:** same logic as the classic-mode coins, but for lives. Give the player extra lives
-  via: a bone appearing at random in the maze, or after a big group of points, or when they eat all
-  3 enemies in a single power-up.
-- **Notes:** mirrors the coin-drop mechanic ([[IDEA-017]]) but rewards lives. The "eat 3 enemies →
-  bone" trigger ties into scoring in [[IDEA-003]].
-- **Dependencies:** —
-
 ### IDEA-019 — Player login & cross-device account recovery 💡
 - **Priority:** 🟡
 - **Area:** accounts
@@ -71,6 +61,22 @@ _(nothing yet)_
 
 ## Delivered ✅
 > Already in production. Do NOT delete. Each keeps its version history.
+
+### IDEA-018 — Bonus lives: pickups & milestones ✅
+- **Priority:** 🟢
+- **Area:** economy
+- **Description:** same logic as the classic-mode coins, but for lives. Give the player extra lives
+  via: a bone appearing at random in the maze, or after a big group of points, or when they eat all
+  3 enemies in a single power-up.
+- **Notes:** mirrors the coin-drop mechanic ([[IDEA-017]]) but rewards lives. The "eat 3 enemies →
+  bone" trigger ties into scoring in [[IDEA-003]].
+  Second build of v3.0 "New Tricks". All three proposed triggers have proven machinery to mirror:
+  the maze pickup ([[IDEA-017]]'s coin spawn/despawn), the points milestone ([[IDEA-016]]'s
+  coinsDueFromScore), and the perfect-fright bonus (game.ts's ghostEatChain already counts).
+- **Dependencies:** —
+- **History:**
+  - **v1** (2026-07-11) — three extra-life triggers, all through one cap-aware `grantLife()` (max 5, START_LIVES 3, happy 1-UP jingle): a **golden bone** maze pickup (once per level at pellet 130, empty-tile placement, 18s despawn — big glowing gold, unmistakable vs white power-bones), a **5,000-point milestone** (reuses `coinsDueFromScore`), and a **perfect fright** (all 3 enemies in one bone). Lives stay per-run in memory (core-state rule — no persistence). Verification caught a real exploit: threshold spawn gates REFIRED after a pickup was consumed (eaten count unchanged) → infinite farming; latent in coins ([[IDEA-017]]) and the v1.0 fruit ([[IDEA-003]]) too. Fixed for all three with once-per-level threshold pointers on `LevelAssets` + pure `shouldFireThreshold` (`pickups.ts`, new) + 17 regression assertions; farm re-repro'd dead live (exactly +1, no respawn, twice). `config.ts`, `game.ts`, `pickups.ts`, `board.ts`, `sound.ts`, `scripts/test-cosmetics.ts`. _(PENDING)_
+
 
 ### IDEA-015 — Classic mode: change the maze each level ✅
 - **Priority:** 🟡
@@ -217,6 +223,7 @@ _(nothing yet)_
 - **History:**
   - **v1** (2026-07-09) — a gold coin (rim + emboss, glowing, spins) spawns in the maze like the fruit and grants 1 coin on pickup (no points). Unlike the fruit it **auto-despawns** after `COINS.lifespanSeconds` — a "grab it quick" bonus. Tuned to **4 coins per level** at pellet-eaten `[20, 60, 105, 150]` (first one early so it's actually encountered), placed on a **random reachable tile** (drawn from the remaining-pellet set, not just fruit spots), with an **18s** lifespan so a coin across the map is reachable before it vanishes. `makeCoin`/`spawnCoin`/`clearCoin`/`board.coin` + coin spin in `spinDecor` (`board.ts`); `despawnCoin()` single-teardown helper + `tickCoinLifespan` (play-only) + `pickRandomCoinTile` (`game.ts`). Verified live (instrumented): coin spawns on threshold at a random tile with the countdown running, banks on pickup, no errors. `board.ts`, `game.ts`, `config.ts`. _(f561491)_
   - **v2** (2026-07-09) — placement rework: coins now spawn on **EMPTY walkable tiles** (already-cleared corridors) instead of tiles that still hold a biscuit — so the coin stands out against bare floor AND creates a real decision (detour back to a cleared area, or press on). New `walkableTiles` precomputed per level (`grid.walkable(x,y,false)` scan in `buildLevel`); `pickRandomCoinTile` prefers the empty set (walkable minus pellets minus beagle/fruit tiles) and falls back to any walkable tile so a spawn never skips. Verified (instrumented): 200/200 picks on empty tiles, 0 on biscuits. `game.ts`. _(9126a00)_
+  - **v3** (2026-07-11) — fix: the coin spawn threshold could REFIRE after the coin was grabbed without eating another pellet (same-`eaten` re-pass), allowing coin farming. Once-per-level threshold pointers (`shouldFireThreshold`, shipped with [[IDEA-018]]). `game.ts`, `pickups.ts`. _(PENDING)_
 
 ### IDEA-009 — Enemy skin system (break away from the classic ghost) ✅
 - **Priority:** 🟡
@@ -330,6 +337,7 @@ _(nothing yet)_
 - **Dependencies:** [[IDEA-002]]
 - **History:**
   - **v1** (2026-07-07) — `src/game/game.ts` + `src/game/state.ts`, `main.ts` wiring. _(a426ced)_
+  - **v2** (2026-07-11) — fix: latent since v1.0, the fruit spawn threshold could REFIRE after the fruit was eaten (pellet count unchanged), allowing +100 farming by oscillating on the tile. Same once-per-level pointer fix as [[IDEA-018]]/[[IDEA-017]]. `game.ts`. _(PENDING)_
 
 ### IDEA-004 — three.js render layer (scene, board, characters, effects) ✅
 - **Area:** render

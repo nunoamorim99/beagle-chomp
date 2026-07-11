@@ -54,6 +54,39 @@ export const COINS = {
 //     never appear on the exact same tick.
 export const COIN_THRESHOLDS = [20, 60, 105, 150] as const;
 
+// IDEA-018: bonus lives — same "earn a scarce resource" shape as COINS above,
+// but for per-run lives instead of the persisted wallet. Three triggers all
+// funnel through Game.grantLife(): a maze pickup (a golden bone, mirroring
+// the coin/fruit pickups), a points milestone (mirrors COINS.perPoints via
+// the same coinsDueFromScore helper — the math is identical, just a
+// different divisor and a different in-memory counter), and a "perfect
+// fright" (eating all 3 ghosts within one fright window).
+export const LIVES = {
+  // Lives are capped — unlike coins, which can accumulate without bound, a
+  // run with unlimited extra lives would trivialize difficulty. 5 leaves
+  // meaningful headroom above START_LIVES (3) without being effectively
+  // infinite.
+  max: 5,
+  // Every 5000 points of cumulative run score grants 1 life (mirrors
+  // COINS.perPoints's shape exactly, just a coarser divisor — lives should be
+  // rarer than coins since they're a much stronger reward).
+  milestonePoints: 5000,
+  // The golden-bone pickup auto-despawns if not grabbed in time, same
+  // "grab it quick" urgency as the maze coin (COINS.lifespanSeconds).
+  pickupLifespanSeconds: 18,
+} as const;
+
+// IDEA-018: pellets-eaten threshold for the maze life pickup — ONE golden
+// bone per level (rarer than coins by design: bonus lives are a stronger
+// reward than bonus currency). 130 is deliberately offset from both
+// COIN_THRESHOLDS (20/60/105/150) and FRUIT_THRESHOLDS (70/140) so nothing
+// collides on the same eaten-pellet tick, and late enough (comfortably past
+// every coin/fruit threshold) that it reads as a rarer, later-game bonus
+// rather than competing with the earlier pickups for attention. Every
+// validated maze has 179+ pellets (see mazes.json), so 130 is always
+// reachable with room to spare before the level clears.
+export const LIFE_THRESHOLDS = [130] as const;
+
 // Palette (hex) — shared by renderer and UI
 // Bright daytime garden (IDEA-008): soft sky, hedge-green walls, warm soil
 // floor. Everything else in render/* reads these values, so a future theme
