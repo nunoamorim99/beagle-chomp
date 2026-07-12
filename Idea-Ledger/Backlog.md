@@ -53,7 +53,12 @@ _(empty — nothing to triage)_
 - **Dependencies:** —
 
 ## In progress 🔨
-### IDEA-026 — Maze themes in the shop (garden · classic · forest · beach · park · city) 🔨
+_(nothing yet)_
+
+## Delivered ✅
+> Already in production. Do NOT delete. Each keeps its version history.
+
+### IDEA-026 — Maze themes in the shop (garden · classic · forest · beach · park · city) ✅
 - **Priority:** 🟡
 - **Area:** theme
 - **Registered:** 2026-07-12
@@ -68,8 +73,10 @@ _(empty — nothing to triage)_
   themes tab [[IDEA-023]] reserved). "Classic black and blue" honors the pre-garden v1.0 look.
   Per-theme decor detailing pairs with the maze editor idea ([[IDEA-027]]).
 - **Dependencies:** — (shop [[IDEA-012]] already delivered)
+- **History:**
+  - **v1** (2026-07-12) — the theme system + storefront + WORLD PROPS, first item of v4.0 "New Territory". Pure `themes.ts` registry (mirrors cosmetics.ts): 6 themes — **The Garden** (free default, palette regression-guarded byte-for-byte), **Arcade Night** (5🪙, the exact v1.0 black/blue palette recovered from git history, deliberately clean/propless), **Deep Forest**, **Sunny Beach**, **City Park**, **Night City** (10🪙). A theme = full palette (bg/backdrop/walls/floor/biscuits/3-light rig/bloom+speck decor) + PROPS (Nuno's follow-up ask): shrub/tree/pine/palm/building/streetlight/umbrella populations on the board's apron ring — deterministic placement, tunnel mouths excluded, per-side height caps so the city SKYLINE (lit windows!) rises behind the board and never blocks the camera; forest reads as a clearing in a pine ring, beach gets umbrellas + palms, park gets trees + lamps. Shop gains the 🌳 Themes tab (4-dot palette swatches) with live 3D maze-corner DIORAMAS per theme incl. signature props; buy/equip mirrors skins (atomic, ownership-gated, persisted). Re-theming is LIVE: shared materials mutate in place + decor/props rebuild — works mid-run with every eaten pellet preserved, and survives resize + reload. Menu showcase deliberately stays garden. Build fixes caught in screenshot review: backdrop dome captured module-scope colors at import time (booted under the garden sky), diorama camera 2.4x too close, Night City reading as an Arcade Night clone (now purple-dusk + sodium-amber identity), shared trunk material that dispose would corrupt, city draw-call trim. `themes.ts` (new), `profileStore.ts`, `shop.ts`, `board.ts`, `scene.ts`, `shopScene.ts`, `game.ts`, `scripts/test-cosmetics.ts`. _(935a411, 17f722c)_
 
-### IDEA-027 — Editor: edit the maze too (theme-aware board editing) 🔨
+### IDEA-027 — Editor: edit the maze too (theme-aware board editing) ✅
 - **Priority:** 🟢
 - **Area:** tooling
 - **Registered:** 2026-07-12
@@ -82,11 +89,9 @@ _(empty — nothing to triage)_
   rather than dragging individual meshes. Purpose-built for theme detailing ([[IDEA-026]]): pick a
   theme, tweak its look, copy the code.
 - **Dependencies:** [[IDEA-026]] (soft — could prototype on the garden theme alone)
+- **History:**
+  - **v1** (2026-07-12) — the "Board & Themes" workbench, second item of v4.0 "New Territory". The /editor/ page gains a mode toggle: pick any of the 6 themes as a base and see a REAL validated maze (built by the actual `buildBoard`) under that theme's own atmosphere, orbit-framed via scene.ts's real fit math. EVERYTHING edits live through lil-gui — Atmosphere/Walls/Floor/Biscuits/Blooms/Specks folders plus a PROPS panel (Nuno's ask: add/remove/tune the shrub/building/streetlight/umbrella/... populations per theme — kind dropdown, density, scale band, up to 4 colors) — all applying through the real `applyBoardTheme` so the preview is honest. "Copy theme code" emits a paste-ready `MAZE_THEMES` entry (id/name/price editable, so brand-new themes can be authored, not just tuned); format byte-compatible with themes.ts, round-trip verified. Switching back to Character restores the workbench exactly (nothing torn down). Board mode ships without undo by design (the base-theme dropdown is the reset; documented). New committed Playwright suite `scripts/test-editor-board.ts` (86 checks incl. live prop-mesh-count assertions); `npm run test:editor` now runs character (40) + board (86). Dev-only boundary verified (dist/ greps clean). `src/editor/board*.ts` (4 new), `main.ts`, `stage.ts`, `editor/index.html`, `editor.css`, `package.json`. _(9fba958, 17f722c)_
 
-_(also building: [[IDEA-025]] v2 scope — delete any part — tracked on the delivered idea)_
-
-## Delivered ✅
-> Already in production. Do NOT delete. Each keeps its version history.
 
 ### IDEA-014 — Level map / level select for challenge mode ✅
 - **Priority:** 🟢
@@ -203,9 +208,10 @@ _(also building: [[IDEA-025]] v2 scope — delete any part — tracked on the de
   **Queued v2 scope (triaged 2026-07-12):** allow deleting ANY selected component/part — today the
   🗑 delete button exists only for editor-added parts (original model parts are protected, see
   `inspector.ts`); Nuno wants to delete a component or a selected part of the original model too
-  (e.g. to try a character without a marking). Small, ships as the next vN on this idea.
+  (e.g. to try a character without a marking). Shipped as **v2** (2026-07-12) — see History.
 - **Dependencies:** —
 - **History:**
+  - **v2** (2026-07-12) — delete ANY selected part (Nuno's ask; third item of v4.0 "New Territory"): the 🗑 action now works on every node except the character root — original meshes AND groups (a group shows "delete part + N inside"), not just editor-added parts. Undo restores the part at its EXACT original sibling index (hand-rolled `insertChildAt` — THREE's `add()` only appends); original parts are never disposed while restorable. Deleted originals export as `<varName>.removeFromParent();` in both Copy edits and Copy full file; undone deletes emit nothing. Delete key wired with the same capture-phase/text-field guards. Plus a NEW COMMITTED Playwright suite `scripts/test-editor.ts` (`npm run test:editor`, 40 checks) — the v1 session's "65 checks" were never committed, so the editor finally has a permanent regression net. `editLog.ts`, `codegen.ts`, `inspector.ts`, `main.ts`, `scripts/test-editor.ts` (new), `package.json`. _(552d3d3)_
   - **v1** (2026-07-11) — the learning workbench: `/editor/` dev-only page (`npm run editor`) with a 3-pane layout — part tree (real source names via a 59-name `.name` pass in `characters.ts`, the only game-code change, non-visual) | live 3D viewport (menuScene's daylight rig, orbit camera, idle animation with auto-pause on select, click-to-pick raycast, wireframe/BoxHelper highlight with a show/hide toggle) | lil-gui inspector (transform/material/visibility per part, character + skin + team-color pickers, add/delete primitive parts). Bottom panel: Generated code (tree-ordered, real variable names, edits wiggled back to baseline drop out) ⇄ Real source (`?raw`, brace-count extraction, selecting a part marks the line that creates it), with **Copy edits** + **Copy full file** (edit block injected before the builder's `return g;` — round-trip verified: exported file builds, tests pass, edits appear in the real game). Full undo/redo (gesture-level; nudge runs coalesce into one Ctrl+Z) + keyboard nudging (arrows = move, S = scale, R = rotate; Shift/Alt/Ctrl step modifiers). Dev-only by construction: not a rollup input → dist/ has zero editor code (verified, incl. lil-gui + OrbitControls). 65 automated Playwright checks across 4 suites; build/tests green. Gotchas for next time: lil-gui step grids anchor at the range MIN (never step an irrational min like -π); lil-gui swallows keydown on focused widgets (global shortcuts need a capture-phase listener). `editor/index.html`, `src/editor/*` (12 modules), `characters.ts` (names only), `CLAUDE.md`, `docs/ARCHITECTURE.md`, `vite.config.ts` (comment only), `package.json`. _(7970749)_
 
 ### IDEA-024 — Beagle model glow-up (cuter: ears, eyes, coat pigmentation) ✅

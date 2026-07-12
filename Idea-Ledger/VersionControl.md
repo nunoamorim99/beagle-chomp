@@ -21,22 +21,24 @@ _(nothing yet — all shipped work is captured in the versions below)_
 > Forward-looking targets from `/plan-version`. Each is a checklist of IDEAs intended for a
 > future numbered release. Items move to Unreleased as they ship.
 
-### 📌 v4.0 — "New Territory" (working name) — planned 2026-07-12
-The themes pillar: personalize the world itself. The maze gets swappable themes sold through the
-shop (completing the vision [[IDEA-012]] set out), and the editor grows into the tool that makes
-theme detailing hands-on. Build order: IDEA-026 first — IDEA-027 soft-depends on the theme
-system existing; the IDEA-025 v2 scope is small and pairs naturally with the editor work.
-- [ ] **IDEA-026** — maze themes in the shop 🟡: theme-swap system (palette + materials + decor
-      set + sky/lighting) with the garden as default; classic black & blue honoring v1.0; then
-      forest, beach, park, city. Shop gains the themes tab reserved since [[IDEA-023]];
-      equipped/owned themes join the profile blob.
-- [ ] **IDEA-027** — editor: edit the maze too 🟢 (soft dep: [[IDEA-026]]): a board workbench in
-      /editor/ — tweak a theme's recipe (wall/floor/rim materials, decor placement, flowers) live
-      and export the code, so each theme gets its personal touch.
-- [ ] **IDEA-025 v2** — editor: delete ANY selected part (today only editor-added parts are
-      deletable) — small tooling increment, ships as a vN on the delivered idea.
+_(nothing planned yet — v4.0 "New Territory" was fulfilled and cut on 2026-07-12)_
 
 ## Version history
+
+### v4.0 — New Territory (2026-07-12)
+The themes pillar: the world itself became personal. Six swappable maze themes sold through the
+shop — each a full world with its own sky, lighting, materials and PROPS (a lit skyline behind
+Night City, a pine ring around Deep Forest, umbrellas on Sunny Beach, shrubs in The Garden) —
+plus the editor grew into the tool that authors them. Fulfilled the planned v4.0 in full.
+- **IDEA-026** — maze themes in the shop: The Garden (free) · Arcade Night (the true v1.0
+  black/blue) · Deep Forest · Sunny Beach · City Park · Night City; 🌳 shop tab with live 3D
+  dioramas; instant re-theming (even mid-run, pellets preserved); theme props framing the board.
+- **IDEA-027** — editor "Board & Themes" workbench: a real themed maze in the editor, every
+  palette slot + prop population editable live, "Copy theme code" round-trips into themes.ts —
+  new themes can be authored, not just tuned.
+- **IDEA-025 v2** — editor: delete ANY selected part (original meshes/groups included) with
+  exact-position undo and code export; the editor gained its first permanently committed
+  Playwright suites (126 checks total).
 
 ### v3.2 — Trail Polish (2026-07-12)
 Two playtest-driven touches: the challenge map earns a proper desktop layout, and the home
