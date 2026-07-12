@@ -21,14 +21,6 @@ Living backlog of ideas. Two purposes:
 ## Backlog (open ideas)
 > New registered ideas go here. Next free ID: IDEA-026
 
-### IDEA-014 — Level map / level select for challenge mode 💡
-- **Priority:** 🟢
-- **Area:** modes
-- **Description:** let the player see the levels that exist in the new challenge mode and pick the
-  one they want to play — like a level map.
-- **Notes:** the front end for [[IDEA-013]]; reached from the main menu ([[IDEA-020]]).
-- **Dependencies:** [[IDEA-013]]
-
 ### IDEA-019 — Player login & cross-device account recovery 💡
 - **Priority:** 🟡
 - **Area:** accounts
@@ -50,6 +42,20 @@ _(nothing yet)_
 
 ## Delivered ✅
 > Already in production. Do NOT delete. Each keeps its version history.
+
+### IDEA-014 — Level map / level select for challenge mode ✅
+- **Priority:** 🟢
+- **Area:** modes
+- **Description:** let the player see the levels that exist in the new challenge mode and pick the
+  one they want to play — like a level map.
+- **Notes:** the front end for [[IDEA-013]]; reached from the main menu ([[IDEA-020]]).
+  Fourth/final build of v3.0 "New Tricks". Replaces the menu 🏆 button's auto-continue with a
+  proper selection screen; `challengeProgress` ([[IDEA-013]]) provides locked/unlocked/cleared
+  states; CHALLENGE_LEVELS provides names/blurbs/mazes for the cards.
+- **Dependencies:** [[IDEA-013]]
+- **History:**
+  - **v1** (2026-07-12) — the 🏆 Challenge button now opens a full-screen GARDEN PATH level map (`ui/levelMap.ts`, three-free): a winding SVG trail with the 8 levels as stepping stones — cleared = hedge-green with a 🐾 stamp, current = pulsing gold, locked = dimmed with a 🔒; tap a stone → footer shows name + blurb + twist summary → ▶ Play starts exactly that level; cleared levels replayable; grounded hedge hills anchor C1 (start) and C8 (summit) and scroll with the trail; "n/8 cleared" header. Post-playtest fix (Nuno's report): the map's Play path closed the page WITHOUT firing onClose, leaving `body.map-open` set — the HUD stayed hidden all run and the menu's buttons stayed hidden after game-over → Menu; close() now always fires onClose (verified live: HUD visible on a map-launched run, game-over→Menu buttons visible, Back path regression-checked). Build iterations also fixed tap fall-through (pointer-events) and scroll-position timing, and compressed the trail so a screen shows the journey (~5-6 stones desktop, ~7 phone). `levelMap.ts` (new), `game.ts`, `index.html`, `style.css`. _(51df1ce)_
+
 
 ### IDEA-013 — Challenge mode: per-level twists ✅
 - **Priority:** 🟡
