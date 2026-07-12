@@ -58,11 +58,11 @@ import {
 import { createHud, type Hud } from "../ui/hud";
 import { createSound, attachMuteButton, type Sound } from "../ui/sound";
 import { attachShop, type ShopHandle } from "../ui/shop";
+import { attachLevelMap, type LevelMapHandle } from "../ui/levelMap";
 import {
   initProfileFromStorage,
   getCoins,
   addCoins,
-  getChallengeProgress,
   advanceChallengeProgress,
 } from "./profileStore";
 import { getEquippedEnemySkinId, getBeagleSkin } from "./cosmetics";
@@ -177,6 +177,10 @@ export class Game {
   private readonly detachMuteButton: () => void;
   private readonly detachAudioUnlock: () => void;
   private readonly shop: ShopHandle;
+  // IDEA-014: the Challenge "garden path" level-select page — opened by
+  // #challengeBtn (see the constructor) instead of the old direct
+  // startChallenge(getChallengeProgress()) auto-continue call.
+  private readonly levelMap: LevelMapHandle;
   private readonly detachHomeButton: () => void;
   private readonly detachMenuResize: () => void;
   private readonly detachPlayButton: () => void;
@@ -379,6 +383,31 @@ export class Game {
       },
     });
 
+    // IDEA-014: the Challenge "garden path" level-select page. Lives
+    // alongside this.shop with the same lifecycle (detached in stop() below).
+    // Sits over the menu's existing 3D backdrop (mode stays "start" while the
+    // map is open — see #challengeBtn's handler below, which does NOT call
+    // hideMenu()), so its own onOpen/onClose only need to toggle
+    // body.map-open for HUD/menu chrome-hiding, mirroring the shop's
+    // onOpen/onClose exactly (see style.css's body.map-open rules).
+    this.levelMap = attachLevelMap(document.body, {
+      onPlayLevel: (idx) => {
+        // The map has already closed itself AND fired onClose (restoring
+        // body.map-open chrome — see levelMap.ts's close()) before this
+        // fires; startChallenge() below hides #mainMenu itself (via
+        // hideMenu()) the same way the other run-start paths do.
+        this.sound.resume();
+        this.hideMenu();
+        this.startChallenge(idx);
+      },
+      onOpen: () => {
+        document.body.classList.add("map-open");
+      },
+      onClose: () => {
+        document.body.classList.remove("map-open");
+      },
+    });
+
     this.detachKeyboard = attachKeyboard((d) => { this.beagle.queued = d; });
     this.detachTouch = attachTouch(canvas, (d) => { this.beagle.queued = d; });
     this.detachHomeButton = this.attachHomeButton();
@@ -414,19 +443,23 @@ export class Game {
     menuShopBtn.addEventListener("click", onMenuShopClick);
     this.detachMenuShopButton = () => menuShopBtn.removeEventListener("click", onMenuShopClick);
 
-    // IDEA-013 (Challenge Mode): #challengeBtn is static markup in
-    // index.html's #mainMenu (between Play and Shop), wired once here
-    // exactly like playBtn/menuShopBtn above. Continues at the player's
-    // highest unlocked level (getChallengeProgress()) — if every level has
-    // already been cleared (challengeProgress === CHALLENGE_LEVEL_COUNT),
-    // startChallenge's own clamp lands on the LAST level (COUNT-1) rather
-    // than a phantom one-past-the-end level, per its own doc comment.
+    // IDEA-013/IDEA-014 (Challenge Mode + its level map): #challengeBtn is
+    // static markup in index.html's #mainMenu (between Play and Shop), wired
+    // once here exactly like playBtn/menuShopBtn above. Previously called
+    // `this.startChallenge(getChallengeProgress())` directly (silently
+    // auto-continuing at the highest unlocked level); now OPENS the garden-
+    // path level-select page instead, so the player picks which unlocked
+    // level to (re)play — the page's own Play button is what actually calls
+    // startChallenge(idx) (see the onPlayLevel callback above). Deliberately
+    // does NOT call hideMenu() here (unlike onPlayClick) — the map sits over
+    // the still-visible #mainMenu backdrop (its own CSS hides #mainMenu while
+    // body.map-open, see style.css), and hideMenu() only happens once the
+    // player actually presses Play on a chosen level.
     const challengeBtn = document.getElementById("challengeBtn") as HTMLButtonElement | null;
     if (!challengeBtn) throw new Error("Game: missing #challengeBtn — check index.html");
     const onChallengeClick = (): void => {
       this.sound.resume();
-      this.hideMenu();
-      this.startChallenge(getChallengeProgress());
+      this.levelMap.open();
     };
     challengeBtn.addEventListener("click", onChallengeClick);
     this.detachChallengeButton = () => challengeBtn.removeEventListener("click", onChallengeClick);
@@ -591,6 +624,7 @@ export class Game {
     this.detachMenuShopButton();
     this.detachChallengeButton();
     this.shop.detach();
+    this.levelMap.detach();
     this.menuScene.dispose();
     this.shopScene.dispose();
   }

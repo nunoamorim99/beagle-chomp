@@ -64,6 +64,13 @@
          as #mainMenu. -->
     <div class="hidden" id="shop"></div>
 
+    <!-- IDEA-014: the Challenge "garden path" level-select PAGE — same
+         "full-screen dedicated page, deliberately separate from #center/
+         #mainMenu" pattern as #shop above, entirely (re)rendered by
+         src/ui/levelMap.ts. Opened by #challengeBtn (replacing the old
+         auto-continue-at-progress behavior) and closes back to #mainMenu. -->
+    <div class="hidden" id="levelMap"></div>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

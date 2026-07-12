@@ -156,6 +156,21 @@ body.shop-open .shop-btn,
 body.shop-open .home-btn,
 body.shop-open #mainMenu{display:none}
 
+/* IDEA-014: the Challenge level-select map is also a full-screen PAGE (like
+   the shop above) that opens FROM the main menu while mode stays "start" —
+   the menu's own 3D scene keeps rendering behind it (game.ts's tick() only
+   ever branches on shopOpen/mode, never a map-specific flag, since the map
+   never freezes/redirects the frame loop the way the shop does), so the map
+   page itself needs a mostly-opaque backdrop for text readability (see
+   #levelMap below) rather than relying on hiding what's under it. Still hide
+   the HUD/menu chrome buttons so nothing underneath fights the map's own
+   touch targets. body.map-open is toggled by game.ts's levelMap onOpen/onClose. */
+body.map-open .hud,
+body.map-open .mute-btn,
+body.map-open .shop-btn,
+body.map-open .home-btn,
+body.map-open #mainMenu{display:none}
+
 /* ---------------------------------------------------------------------- */
 /* IDEA-023 (shop v2): the shop is now a full-screen dedicated PAGE with a
    live 3D hero turntable showing through from the canvas behind it
@@ -312,4 +327,138 @@ body.shop-open #mainMenu{display:none}
     padding:10px 12px;scroll-snap-align:start}
   .shop-rail-card .skin-swatch{width:40px;height:40px;flex:0 0 auto}
   .shop-rail-card-body{flex:1 1 auto}
+}
+
+/* ---------------------------------------------------------------------- */
+/* IDEA-014: the Challenge "garden path" level-select PAGE
+   (src/ui/levelMap.ts). Same full-screen page shell as #shop (fixed inset,
+   safe-area padding, its own header), but — unlike the shop's transparent
+   hero stage — this page carries a MOSTLY-OPAQUE sky-gradient backdrop of its
+   own (see the module doc comment: the menu's 3D scene keeps rendering behind
+   it while mode stays "start", so text needs real contrast rather than
+   relying on hiding what's underneath). Colors echo COLORS.bg (0x9ecbe8) at
+   the top fading toward the hedge-green hill silhouette pinned to the bottom
+   of the body region, matching the game's daytime-garden identity used
+   everywhere else (menuScene/shopScene's own hedge+bloom dressing). */
+#levelMap{position:fixed;inset:0;z-index:20;display:flex;flex-direction:column;
+  pointer-events:none;
+  background:linear-gradient(180deg,#bfe0f2 0%,#9ecbe8 45%,#7fb9dd 100%);
+  padding:calc(14px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right))
+    calc(14px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left));}
+.map-page{flex:1 1 auto;display:flex;flex-direction:column;min-height:0;gap:12px;
+  max-width:560px;width:100%;margin:0 auto}
+
+.map-header{pointer-events:auto;display:flex;align-items:center;gap:12px;
+  padding:10px 14px;border-radius:14px;flex:0 0 auto;
+  background:rgba(16,16,30,.55);border:1px solid rgba(255,255,255,.12);
+  backdrop-filter:blur(6px)}
+.map-back{pointer-events:auto;flex:0 0 auto;font:inherit;font-weight:700;font-size:13px;
+  color:var(--ink);background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);
+  border-radius:999px;padding:10px 16px;min-height:44px;cursor:pointer;white-space:nowrap;
+  transition:transform .12s ease,filter .12s ease}
+.map-back:hover{transform:translateY(-1px);filter:brightness(1.15);background:rgba(255,255,255,.14)}
+.map-back:focus-visible{outline:2px solid #fff;outline-offset:2px}
+.map-title-block{flex:1 1 auto;text-align:center;min-width:0}
+.map-title{font-size:18px;font-weight:800;letter-spacing:-.01em}
+.map-progress{font-family:ui-monospace,"SF Mono",monospace;font-size:12px;
+  color:var(--accent);margin-top:2px}
+/* Balances the back button's own width so .map-title-block stays visually
+   centered in the header row (mirrors a common flex-header trick — an empty
+   flex sibling matching the opposite side's footprint). */
+.map-header-spacer{flex:0 0 auto;width:70px}
+
+/* Body region: the scrollable path. #levelMap itself is pointer-events:none
+   (see above — only its own header/footer buttons opt back in by default,
+   mirroring #shop), so this region needs to explicitly re-enable pointer
+   events for BOTH its own vertical scroll gesture AND the node taps inside it
+   (.map-node below) — without this, clicks on a node fall straight through to
+   the canvas rendered behind the page. */
+.map-body{position:relative;flex:1 1 auto;min-height:0;overflow-y:auto;
+  overflow-x:hidden;border-radius:14px;-webkit-overflow-scrolling:touch;
+  pointer-events:auto;touch-action:pan-y}
+
+.map-path-scroll{position:relative;z-index:1;display:flex;justify-content:center;
+  padding:8px 0 18px}
+.map-path-svg{width:100%;max-width:340px;height:auto;overflow:visible}
+
+/* Ground/summit hills (composition pass, coordinator review): drawn AS PART
+   OF the SVG itself now (see levelMap.ts's buildGroundHill/buildSummitHill),
+   not a separately absolutely-positioned HTML element — that previous
+   version was pinned to the bottom of .map-body's VIEWPORT, so at any scroll
+   position other than "all the way down" it floated mid-trail like a slab
+   instead of sitting behind C1 where the journey starts. Being real SVG
+   content means these two shapes scroll together with the trail/nodes and
+   are geometrically anchored to C1/C8's own coordinates — they can never
+   drift from "behind the first/last stone" regardless of scroll position.
+   Ground hill (behind C1, the start): full hedge-green, matches the wall
+   color used everywhere else in the game. Summit hill (behind C8, the
+   finale) is deliberately smaller/shorter and paler/more desaturated so it
+   reads as a distant peak peeking over the top edge, not a second full band. */
+.map-ground-hill path{fill:#3f8f3a;opacity:.92}
+.map-summit-hill path{fill:#8fc98c;opacity:.55}
+
+.map-trail{fill:none;stroke:#6b4a2f;stroke-width:14;stroke-linecap:round;
+  stroke-linejoin:round;stroke-dasharray:1 15;opacity:.9}
+.map-flower{pointer-events:none}
+
+/* Stepping-stone nodes. `.map-node` is the shared shape; state modifiers
+   (`-cleared`/`-current`/`-locked`) recolor the stone + number, and
+   `-selected` adds a bright ring so the currently footer-bound node is
+   obvious at a glance even among several cleared/locked stones. */
+.map-node{cursor:pointer;pointer-events:auto}
+.map-node-locked{cursor:default}
+.map-node-stone{stroke:rgba(0,0,0,.18);stroke-width:2;
+  transition:transform .12s ease,filter .12s ease}
+.map-node:not(.map-node-locked):hover .map-node-stone{transform:scale(1.06)}
+.map-node:focus-visible{outline:none}
+.map-node:focus-visible .map-node-stone{stroke:#fff;stroke-width:3}
+
+.map-node-cleared .map-node-stone{fill:#3f8f3a}
+.map-node-current .map-node-stone{fill:var(--accent)}
+.map-node-locked .map-node-stone{fill:#8a8a96;opacity:.62}
+
+.map-node-num{font-family:ui-monospace,"SF Mono",monospace;font-weight:800;
+  font-size:15px;fill:#1a1206;paint-order:stroke;stroke:rgba(255,255,255,.35);stroke-width:.5}
+.map-node-locked .map-node-num{fill:#e6e6ea}
+.map-node-glyph{font-size:16px}
+
+/* Soft pulse/glow ring behind the CURRENT node — pure CSS animation, no JS
+   re-render needed to keep it alive. */
+.map-node-glow{fill:none;stroke:var(--accent);stroke-width:3;opacity:.55;
+  animation:map-pulse 1.8s ease-out infinite}
+@keyframes map-pulse{
+  0%{r:22;opacity:.6}
+  70%{r:34;opacity:0}
+  100%{r:34;opacity:0}
+}
+
+.map-node-selected .map-node-stone{stroke:#fff;stroke-width:3}
+
+.map-footer{pointer-events:auto;flex:0 0 auto;display:flex;align-items:center;
+  gap:14px;padding:14px 16px;border-radius:14px;
+  background:rgba(16,16,30,.62);border:1px solid rgba(255,255,255,.12);
+  backdrop-filter:blur(6px)}
+.map-footer-info{flex:1 1 auto;min-width:0}
+.map-footer-title{font-weight:800;font-size:15px;margin-bottom:2px}
+.map-footer-blurb{color:var(--muted);font-size:12px;line-height:1.5}
+.map-footer-twist{font-family:ui-monospace,"SF Mono",monospace;font-size:11px;
+  color:var(--accent);margin-top:4px}
+.map-play-btn{pointer-events:auto;flex:0 0 auto;font:inherit;font-weight:700;font-size:14px;
+  color:#1a1206;background:var(--accent);border:none;border-radius:999px;
+  padding:13px 22px;min-height:44px;cursor:pointer;white-space:nowrap;
+  transition:transform .12s ease,filter .12s ease}
+.map-play-btn:hover{transform:translateY(-1px);filter:brightness(1.06)}
+.map-play-btn:focus-visible{outline:2px solid #fff;outline-offset:2px}
+.map-play-btn:disabled{cursor:default;transform:none;color:var(--muted);
+  background:rgba(255,255,255,.35)}
+
+@media (max-width:480px){
+  #levelMap{padding:calc(10px + env(safe-area-inset-top)) calc(10px + env(safe-area-inset-right))
+    calc(10px + env(safe-area-inset-bottom)) calc(10px + env(safe-area-inset-left))}
+  .map-page{gap:8px}
+  .map-title{font-size:16px}
+  .map-header-spacer{width:60px}
+  .map-footer{padding:12px 14px;gap:10px}
+  .map-footer-title{font-size:14px}
+  .map-play-btn{padding:12px 18px;font-size:13px}
 }
