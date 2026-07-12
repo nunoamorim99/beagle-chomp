@@ -1,29 +1,33 @@
-// OWNER: render-artist (IDEA-023 shop v2)
+// OWNER: render-artist (IDEA-023 shop v2, IDEA-026 theme diorama)
 // The shop page's live 3D hero preview: a dedicated THREE.Scene — separate
 // from both the game's own SceneRig (scene.ts) and the main menu's showcase
 // (menuScene.ts) — that turntables whichever skin the player is currently
-// browsing (a beagle OR one of the four enemy forms) on a small garden patch,
-// under the same daytime-garden identity as the rest of the app.
+// browsing (a beagle, one of the four enemy forms, OR — IDEA-026 — a maze
+// theme's own compact diorama) on a small garden patch, under the same
+// daytime-garden identity as the rest of the app.
 //
 // Deliberately NOT a copy-paste of menuScene.ts's exact geometry (this scene
 // only ever shows ONE hero at a time, and that hero is swapped repeatedly as
-// the player taps cards/tabs — see showBeagle/showEnemy below), but reuses
-// its techniques verbatim: the same inward-facing gradient skydome, the same
-// daylight rig (hemisphere + warm key + cool rim) so a skin reads with
+// the player taps cards/tabs — see showBeagle/showEnemy/showTheme below), but
+// reuses its techniques verbatim: the same inward-facing gradient skydome, the
+// same daylight rig (hemisphere + warm key + cool rim) so a skin reads with
 // IDENTICAL lighting whether previewed here or worn in the menu/maze, and the
-// same small soil+turf+hedge vignette so the hero always stands on "the same
-// world" rather than a blank studio backdrop.
+// same small soil+turf+hedge vignette so a CHARACTER hero always stands on
+// "the same world" rather than a blank studio backdrop (a THEME hero brings
+// its own ground instead — see the vignette show/hide note on showTheme).
 //
 // Contract: createShopScene() -> { scene, camera, update(dt), resize(aspect),
-// showBeagle(skin), showEnemy(skinId), dispose() } — created ONCE by game.ts
-// alongside menuScene and reused for every shop visit; never rebuilt. Swapping
-// the hero disposes the OUTGOING mesh's geometries/materials (a shopping
-// session can swap the hero dozens of times as the player browses tabs/cards,
-// so leaking one THREE.Group per tap would add up fast) and resets the
-// turntable angle so every new hero starts front-on.
+// showBeagle(skin), showEnemy(skinId), showTheme(themeId), dispose() } —
+// created ONCE by game.ts alongside menuScene and reused for every shop
+// visit; never rebuilt. Swapping the hero disposes the OUTGOING mesh's
+// geometries/materials (a shopping session can swap the hero dozens of times
+// as the player browses tabs/cards, so leaking one THREE.Group per tap would
+// add up fast) and resets the turntable angle so every new hero starts
+// front-on.
 import * as THREE from "three";
 import { COLORS } from "../game/config";
 import { type BeagleSkin } from "../game/cosmetics";
+import { getMazeTheme, type ThemePalette } from "../game/themes";
 import { makeBeagle, makeEnemy, applyBeagleSkin, type BeagleParts } from "./characters";
 
 // Same cheap inward-facing skydome technique as menuScene.ts's own
@@ -141,6 +145,211 @@ function makeGardenPatch(): THREE.Group {
   return g;
 }
 
+// ---------------------------------------------------------------------------
+// IDEA-026: the maze-theme diorama hero — a compact maze-corner staging built
+// FROM the theme's own ThemePalette, reusing board.ts's exact material
+// recipe (same roughness/metalness/emissive treatment per slot) so the
+// preview is honest: what you see here is what the real board will look
+// like, not a stylized stand-in. TILE/WALL_H match board.ts's real wall
+// block proportions (1x1x1) exactly, just a short 5-tile L-run rather than a
+// full maze, small enough to sit comfortably in the same hero region a
+// beagle/enemy occupies.
+const DIORAMA_TILE = 1;
+const DIORAMA_WALL_H = 1;
+
+// The L-shaped run, in local diorama tile coords (x grows right, z grows
+// "into" the corner) — 5 wall tiles: a 3-long back arm plus a 2-long side arm
+// sharing the corner tile, reading unambiguously as "a maze corner" at a
+// glance rather than a straight featureless row.
+const DIORAMA_WALL_TILES: ReadonlyArray<[number, number]> = [
+  [0, 0],
+  [1, 0],
+  [2, 0],
+  [0, 1],
+  [0, 2],
+];
+// The floor footprint is a little larger than the wall run's own bounding
+// box so there's visible walkable ground in front of the corner (where the
+// trail sits), not just under the walls themselves.
+// Sized so the WHOLE trail (including the bone's own ~0.3-unit knuckle
+// span) sits on the slab with margin — the first cut (4.4 x 4.0 around
+// center 1.0) ended at x=3.2 while the trail ran to x~4.2, so the last
+// biscuit sat on the slab's corner edge and the bone floated past it in
+// mid-air (visible in the shop screenshots).
+const DIORAMA_FLOOR_SIZE = { w: 5.0, d: 4.6 };
+const DIORAMA_FLOOR_CENTER = { x: 1.1, z: 1.05 };
+
+// The trail: 4 biscuits stepping away from the corner along the open
+// diagonal, plus one bone at the far end — echoes board.ts's actual pellet
+// spacing (one per tile) and the bone-marks-progress read of the real board.
+const DIORAMA_BISCUIT_TILES: ReadonlyArray<[number, number]> = [
+  [1.5, 1.5],
+  [2.0, 1.85],
+  [2.5, 2.2],
+  [3.0, 2.55],
+];
+const DIORAMA_BONE_TILE: [number, number] = [3.3, 2.95];
+
+// Bloom/speck spots on the wall tops, keyed to specific wall tiles above (not
+// hashed per-tile like board.ts's full-maze buildHedgeDecor — a 5-tile
+// diorama is small enough to hand-place for a deliberately "planted" rather
+// than "randomly sparse" read) — a theme with bloomChance 0 (classic) or an
+// empty bloomColors array (also classic) simply shows none, same contract as
+// board.ts's buildHedgeDecor.
+const DIORAMA_BLOOM_SPOTS: ReadonlyArray<{ tile: [number, number]; jx: number; jz: number; colorIdx: number }> = [
+  { tile: [0, 0], jx: -0.18, jz: 0.12, colorIdx: 0 },
+  { tile: [1, 0], jx: 0.1, jz: -0.15, colorIdx: 1 },
+  { tile: [0, 1], jx: 0.15, jz: 0.1, colorIdx: 2 },
+];
+const DIORAMA_SPECK_SPOTS: ReadonlyArray<{ tile: [number, number]; jx: number; jz: number }> = [
+  { tile: [2, 0], jx: -0.1, jz: 0.15 },
+  { tile: [0, 2], jx: 0.12, jz: -0.1 },
+];
+
+/** Converts a diorama tile coord to a local position, centered under
+ *  DIORAMA_FLOOR_CENTER so the whole staging sits roughly on the vignette
+ *  origin the camera rig is tuned for. */
+function dioramaPos(tx: number, tz: number): [number, number] {
+  return [(tx - DIORAMA_FLOOR_CENTER.x) * DIORAMA_TILE, (tz - DIORAMA_FLOOR_CENTER.z) * DIORAMA_TILE];
+}
+
+/**
+ * Builds a maze-theme diorama: a small floor slab, an L-shaped run of wall
+ * blocks, a short biscuit trail + one bone, and a few theme-appropriate
+ * blooms/specks on the wall tops — all skinned from `palette` using the same
+ * material recipe board.ts uses for the real board (so a city theme's
+ * glowing "windows" and a classic theme's clean unplanted walls both read
+ * exactly as they would in the actual maze). The bone keeps its FIXED
+ * off-white identity color, matching board.ts's pellet bones in every theme.
+ */
+function makeThemeDiorama(palette: ThemePalette): THREE.Group {
+  const g = new THREE.Group();
+
+  // Floor — same roughness/emissive treatment as board.ts's matFloor.
+  const floorMat = new THREE.MeshStandardMaterial({
+    color: palette.floor,
+    roughness: 1,
+    emissive: palette.floorEmissive,
+    emissiveIntensity: palette.floorEmissiveIntensity,
+  });
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(DIORAMA_FLOOR_SIZE.w, DIORAMA_FLOOR_SIZE.d), floorMat);
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.y = -0.01;
+  floor.receiveShadow = true;
+  g.add(floor);
+
+  // Walls — same roughness/metalness/emissive treatment as board.ts's
+  // matWall, instanced exactly like the real board (one draw call for the
+  // whole run, even though 5 instances hardly needs it — keeps the "reuse
+  // board.ts's recipe" promise literal, not just visual).
+  const wallMat = new THREE.MeshStandardMaterial({
+    color: palette.wall,
+    roughness: 0.5,
+    metalness: 0.1,
+    emissive: palette.wallEmissive,
+    emissiveIntensity: palette.wallEmissiveIntensity,
+  });
+  const wallGeo = new THREE.BoxGeometry(DIORAMA_TILE, DIORAMA_WALL_H, DIORAMA_TILE);
+  const walls = new THREE.InstancedMesh(wallGeo, wallMat, DIORAMA_WALL_TILES.length);
+  walls.castShadow = true;
+  walls.receiveShadow = true;
+  const dummy = new THREE.Object3D();
+  DIORAMA_WALL_TILES.forEach(([tx, tz], i) => {
+    const [x, z] = dioramaPos(tx, tz);
+    dummy.position.set(x, DIORAMA_WALL_H / 2, z);
+    dummy.updateMatrix();
+    walls.setMatrixAt(i, dummy.matrix);
+  });
+  g.add(walls);
+
+  // Biscuits — same roughness/emissive treatment as board.ts's matBiscuit;
+  // biscuits theme (they're the trail), unlike the fixed-identity bone below.
+  const biscuitMat = new THREE.MeshStandardMaterial({
+    color: palette.biscuit,
+    roughness: 0.7,
+    emissive: palette.biscuitEmissive,
+    emissiveIntensity: palette.biscuitEmissiveIntensity,
+  });
+  const biscuitGeo = new THREE.SphereGeometry(0.13, 12, 12);
+  DIORAMA_BISCUIT_TILES.forEach(([tx, tz]) => {
+    const [x, z] = dioramaPos(tx, tz);
+    const biscuit = new THREE.Mesh(biscuitGeo, biscuitMat);
+    biscuit.position.set(x, 0.13, z);
+    biscuit.castShadow = true;
+    g.add(biscuit);
+  });
+
+  // Bone — fixed off-white identity color in every theme, matching
+  // board.ts's makeBone exactly (same shaft + four-knuckle shape/material).
+  const boneMat = new THREE.MeshStandardMaterial({
+    color: 0xf6f1e6,
+    roughness: 0.5,
+    emissive: 0x6a5730,
+    emissiveIntensity: 0.4,
+  });
+  const bone = new THREE.Group();
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.34, 10), boneMat);
+  shaft.rotation.z = Math.PI / 2;
+  bone.add(shaft);
+  ([[-0.2, 0.09], [-0.2, -0.09], [0.2, 0.09], [0.2, -0.09]] as const).forEach(([kx, kz]) => {
+    const k = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 10), boneMat);
+    k.position.set(kx, 0, kz);
+    bone.add(k);
+  });
+  bone.traverse((o) => { o.castShadow = true; });
+  const [boneX, boneZ] = dioramaPos(DIORAMA_BONE_TILE[0], DIORAMA_BONE_TILE[1]);
+  bone.position.set(boneX, 0.13, boneZ);
+  bone.rotation.y = 0.5;
+  g.add(bone);
+
+  // Hedge-top blooms/specks — same recipe as board.ts's buildHedgeDecor
+  // materials (color==emissive for blooms, a dedicated speck color/emissive),
+  // just individual meshes rather than InstancedMesh (a handful of decor
+  // items on a 5-tile diorama doesn't need batching). bloomChance <= 0 or an
+  // empty bloomColors (classic) mean DIORAMA_BLOOM_SPOTS/SPECK_SPOTS are
+  // simply skipped below, so the diorama shows a clean, unplanted wall top —
+  // exactly matching the real board's contract for that theme.
+  if (palette.bloomChance > 0 && palette.bloomColors.length > 0) {
+    const bloomGeo = new THREE.SphereGeometry(0.075, 6, 6);
+    const bloomMats = palette.bloomColors.map(
+      (color) =>
+        new THREE.MeshStandardMaterial({
+          color,
+          roughness: 0.5,
+          emissive: color,
+          emissiveIntensity: palette.bloomEmissiveIntensity,
+        }),
+    );
+    DIORAMA_BLOOM_SPOTS.forEach(({ tile, jx, jz, colorIdx }) => {
+      const [x, z] = dioramaPos(tile[0], tile[1]);
+      const mat = bloomMats[colorIdx % bloomMats.length];
+      const bloom = new THREE.Mesh(bloomGeo, mat);
+      bloom.position.set(x + jx, DIORAMA_WALL_H + 0.06, z + jz);
+      bloom.castShadow = true;
+      g.add(bloom);
+    });
+
+    if (palette.speckChance > 0) {
+      const speckGeo = new THREE.SphereGeometry(0.05, 6, 6);
+      const speckMat = new THREE.MeshStandardMaterial({
+        color: palette.speckColor,
+        roughness: 0.6,
+        emissive: palette.speckEmissive,
+        emissiveIntensity: 0.2,
+      });
+      DIORAMA_SPECK_SPOTS.forEach(({ tile, jx, jz }) => {
+        const [x, z] = dioramaPos(tile[0], tile[1]);
+        const speck = new THREE.Mesh(speckGeo, speckMat);
+        speck.position.set(x + jx, DIORAMA_WALL_H + 0.04, z + jz);
+        speck.scale.set(1.3, 0.6, 1);
+        g.add(speck);
+      });
+    }
+  }
+
+  return g;
+}
+
 // Camera framing: ONE rig tuned to flatter both hero shapes — the beagle
 // (long, low, z-elongated ~0.5..0.75 nose-to-tail-tip pre-scale, scale 0.9)
 // and the round enemies (~0.6-0.7 diameter, y 0..~0.5). Lower toward
@@ -163,15 +372,47 @@ const PORTRAIT_DIST = 5.6;
 const BASE_DIST = CAM_POS.distanceTo(CAM_LOOK);
 const CAM_DIR = CAM_POS.clone().sub(CAM_LOOK).normalize();
 
+// IDEA-026: a SECOND camera rig, used only while a theme diorama is staged.
+// The character rig above (CAM_POS/CAM_LOOK) is tuned for a compact, roughly
+// egg-shaped hero ~0.6-0.9 units across; the diorama is a low, WIDE ~4x4
+// footprint with walls only 1 unit tall, so reusing the character framing
+// verbatim would either crop the L-run's far corner or leave the hero region
+// mostly empty floor. Same technique as the character rig (fixed FOV, a
+// raised/pulled-back eye-line position with a modest downward tilt so the
+// wall-block volumes read dimensionally rather than flattening under a steep
+// top-down look, portrait dolly-back along the same look-ray) — just
+// re-tuned distances/height for the wider, flatter subject: higher (more of
+// a "looking into a garden corner" angle than the character rig's near-eye-
+// level one, so both wall arms of the L are visible past each other) and
+// further back so the diorama's far corner (tile [2,0]/[0,2], local ~1.7
+// units from the pivot) still clears the frame with margin.
+const DIORAMA_CAM_FOV = 40;
+// Pulled well back from the first pass (1.3, 2.6, 3.4 — dist ~4.4): the
+// diorama is a ~4.4-unit slab, an order of magnitude wider than the
+// ~0.6-unit character heroes, and at that distance single wall blocks
+// filled the entire stage. ~10.6 units frames the WHOLE vignette as a
+// tabletop miniature with comfortable margins through a full turntable
+// spin, and the look-at sits slightly right of center so the model reads
+// centered in the stage region left of the desktop side panel.
+const DIORAMA_CAM_POS = new THREE.Vector3(3.2, 6.2, 8.6);
+const DIORAMA_CAM_LOOK = new THREE.Vector3(0.35, 0.25, 0);
+const DIORAMA_PORTRAIT_DIST = 12.2;
+const DIORAMA_BASE_DIST = DIORAMA_CAM_POS.distanceTo(DIORAMA_CAM_LOOK);
+const DIORAMA_CAM_DIR = DIORAMA_CAM_POS.clone().sub(DIORAMA_CAM_LOOK).normalize();
+
 // Idle life tuning — same spirit as menuScene's TURNTABLE_SPEED: a slow,
 // continuous showcase spin so the player can see the whole skin without
-// touching anything.
+// touching anything. The diorama turntables noticeably slower than a
+// character hero: a wide low structure reads its shape from a full rotation
+// far more than a compact hero does, so a slower spin gives the eye time to
+// take in each wall arm as it comes into view instead of blurring past.
 const TURNTABLE_SPEED = 0.22;
+const DIORAMA_TURNTABLE_SPEED = 0.14;
 
-/** Kind of hero currently staged, so update()/resize() can special-case
- *  nothing (both kinds share one camera rig) but showBeagle/showEnemy can
- *  tell whether a rebuild is even needed. */
-type HeroKind = "beagle" | "enemy";
+/** Kind of hero currently staged. "theme" (IDEA-026) uses its own camera rig
+ *  (DIORAMA_CAM_*) and turntable speed, and hides the garden-patch vignette
+ *  (the diorama brings its own floor/walls) — see resize()/showTheme below. */
+type HeroKind = "beagle" | "enemy" | "theme";
 
 export interface ShopScene {
   scene: THREE.Scene;
@@ -189,6 +430,16 @@ export interface ShopScene {
    *  in the canonical preview color. Disposes the previous hero and resets
    *  the turntable angle. */
   showEnemy(skinId: string): void;
+  /** IDEA-026: swaps the hero to `themeId`'s maze-corner diorama (a small
+   *  floor + L-shaped wall run + biscuit trail + bone + theme-appropriate
+   *  hedge-top blooms/specks, all skinned from the theme's own ThemePalette
+   *  via the same material recipe board.ts uses for the real board). Unknown
+   *  ids degrade to the default theme (mirrors getMazeTheme's own fallback —
+   *  never throws). Disposes the previous hero, resets the turntable angle,
+   *  switches to the diorama's own camera framing, and hides the
+   *  garden-patch vignette (the diorama brings its own ground) — see the
+   *  showTheme implementation below for exactly what toggles. */
+  showTheme(themeId: string): void;
   /** Releases the current hero's + patch's geometries/materials. Only
    *  meaningful if the whole game is being torn down — the shop scene is
    *  otherwise created once and kept alive for the app's lifetime. */
@@ -211,6 +462,9 @@ const ENEMY_PREVIEW_COLOR = 0xe0577a;
  */
 export function createShopScene(): ShopScene {
   const scene = new THREE.Scene();
+  // IDEA-026: DEFAULT_BG/DEFAULT_HEMI_* below are this exact value/rig — kept
+  // as named background/hemisphere so showTheme can subtly tint them toward
+  // a staged theme and showBeagle/showEnemy can restore them exactly.
   scene.background = new THREE.Color(COLORS.bg);
   scene.add(makeBackdrop());
 
@@ -219,8 +473,11 @@ export function createShopScene(): ShopScene {
   camera.lookAt(CAM_LOOK);
 
   // Mirrors menuScene.ts's (and, in turn, scene.ts's) daylight rig exactly so
-  // a skin reads with identical lighting in every showcase.
-  scene.add(new THREE.HemisphereLight(0xd8f0ff, 0x4a3a20, 0.65));
+  // a skin reads with identical lighting in every showcase. Named (`hemi`,
+  // not an inline scene.add(new ...)) so showTheme/showBeagle/showEnemy can
+  // nudge/restore its sky+ground colors for the subtle theme tint below.
+  const hemi = new THREE.HemisphereLight(0xd8f0ff, 0x4a3a20, 0.65);
+  scene.add(hemi);
   const key = new THREE.DirectionalLight(0xfff4e0, 1.1);
   key.position.set(2.5, 4.5, 3);
   key.castShadow = true;
@@ -238,7 +495,23 @@ export function createShopScene(): ShopScene {
   rim.position.set(-2, 2.5, -2.5);
   scene.add(rim);
 
-  scene.add(makeGardenPatch());
+  // IDEA-026: the garden-patch vignette only makes sense under a CHARACTER
+  // hero (it's the "same world" grounding for a beagle/enemy that otherwise
+  // has no floor of its own) — a theme diorama brings its own floor + walls,
+  // so the two would visually collide (two overlapping ground planes) if
+  // both were visible. Kept as a named reference so showTheme/setHero can
+  // toggle its `.visible` rather than add/remove it from the scene (cheaper,
+  // and avoids re-triggering shadow-map/matrix churn on every tab switch).
+  const gardenPatch = makeGardenPatch();
+  scene.add(gardenPatch);
+
+  // IDEA-026: default atmosphere values, captured once, so showBeagle/
+  // showEnemy can restore the standard shop look exactly (bitwise) after a
+  // theme diorama tinted it — avoids any drift from repeated tint/restore
+  // round-trips as the player bounces between the Beagle/Enemy/Theme tabs.
+  const DEFAULT_BG = COLORS.bg;
+  const DEFAULT_HEMI_SKY = 0xd8f0ff;
+  const DEFAULT_HEMI_GROUND = 0x4a3a20;
 
   let heroKind: HeroKind = "beagle";
   let hero: THREE.Group = makeBeagle();
@@ -246,6 +519,11 @@ export function createShopScene(): ShopScene {
 
   let idleT = 0;
   let turntableAngle = 0;
+  // Tracks the aspect passed to the last resize() call so a hero-kind swap
+  // (which can change which camera rig applies — see applyCameraFraming
+  // below) can immediately re-run the SAME framing math without waiting for
+  // the next real window resize event.
+  let lastAspect = 1;
 
   /** Disposes `hero`'s geometries/materials and removes it from the scene —
    *  the shared teardown step for both a hero SWAP (called right before the
@@ -262,10 +540,40 @@ export function createShopScene(): ShopScene {
     });
   }
 
-  /** Shared by showBeagle/showEnemy: swaps `hero` to `next`, disposing the
-   *  outgoing mesh and resetting the turntable so every new hero starts
-   *  front-on rather than continuing mid-spin from wherever the last one
-   *  stopped. */
+  /** Positions `camera` per the framing rig for `kind` at `aspect` — the
+   *  character rig (CAM_*) for "beagle"/"enemy", the diorama rig
+   *  (DIORAMA_CAM_*) for "theme" — including each rig's own portrait
+   *  dolly-back. Shared by resize() (called on every real window resize) and
+   *  setHero() (called on every hero-kind swap, so the camera framing is
+   *  correct the instant a theme diorama — or a character hero returning
+   *  from one — is staged, not just after the next resize). */
+  function applyCameraFraming(kind: HeroKind, aspect: number): void {
+    camera.aspect = aspect;
+
+    if (kind === "theme") {
+      camera.fov = DIORAMA_CAM_FOV;
+      const t = aspect >= 1 ? 0 : Math.min(1, (1 - aspect) / (1 - PORTRAIT_ASPECT_REF));
+      const dist = DIORAMA_BASE_DIST + (DIORAMA_PORTRAIT_DIST - DIORAMA_BASE_DIST) * t;
+      camera.position.copy(DIORAMA_CAM_LOOK).addScaledVector(DIORAMA_CAM_DIR, dist);
+      camera.lookAt(DIORAMA_CAM_LOOK);
+    } else {
+      camera.fov = CAM_FOV;
+      const t = aspect >= 1 ? 0 : Math.min(1, (1 - aspect) / (1 - PORTRAIT_ASPECT_REF));
+      const dist = BASE_DIST + (PORTRAIT_DIST - BASE_DIST) * t;
+      camera.position.copy(CAM_LOOK).addScaledVector(CAM_DIR, dist);
+      camera.lookAt(CAM_LOOK);
+    }
+
+    camera.updateProjectionMatrix();
+  }
+
+  /** Shared by showBeagle/showEnemy/showTheme: swaps `hero` to `next`,
+   *  disposing the outgoing mesh, resetting the turntable so every new hero
+   *  starts front-on rather than continuing mid-spin from wherever the last
+   *  one stopped, showing/hiding the garden-patch vignette for the new kind
+   *  (visible for a character hero, hidden for a theme diorama — see
+   *  gardenPatch's doc comment above), and re-applying camera framing
+   *  immediately in case `kind` changed the active rig. */
   function setHero(next: THREE.Group, kind: HeroKind): void {
     disposeHero(hero);
     hero = next;
@@ -273,6 +581,8 @@ export function createShopScene(): ShopScene {
     scene.add(hero);
     turntableAngle = 0;
     hero.rotation.y = 0;
+    gardenPatch.visible = kind !== "theme";
+    applyCameraFraming(kind, lastAspect);
   }
 
   // Same local idle-animation approach as menuScene.ts's animateIdle: the
@@ -282,7 +592,10 @@ export function createShopScene(): ShopScene {
   // characters.ts's animateBeagleParts already implements for the idle case.
   function animateIdle(dt: number): void {
     idleT += dt;
-    turntableAngle += dt * TURNTABLE_SPEED;
+    // IDEA-026: the diorama turntables at its own, slower speed — see
+    // DIORAMA_TURNTABLE_SPEED's doc comment above.
+    const speed = heroKind === "theme" ? DIORAMA_TURNTABLE_SPEED : TURNTABLE_SPEED;
+    turntableAngle += dt * speed;
     hero.rotation.y = turntableAngle;
 
     if (heroKind !== "beagle") return;
@@ -300,6 +613,33 @@ export function createShopScene(): ShopScene {
     hero.scale.y = hero.scale.x * (1 + breathe);
   }
 
+  /** IDEA-026: nudges the shop scene's own background + hemisphere subtly
+   *  toward `bg`/`hemiSky`/`hemiGround` (a 35% lerp — enough to read as "the
+   *  world outside the diorama shares its mood" without fighting the fixed
+   *  key/rim sun rig or repainting the whole page). Called by showTheme;
+   *  restoreAtmosphere (below) undoes it exactly when a character hero
+   *  returns. Deliberately does NOT touch the backdrop dome/fog (this scene
+   *  has no fog, and the backdrop is barely visible behind the hero region
+   *  regardless — the tint reads entirely through the background clear color
+   *  and the hemisphere's ambient bounce on the hero/vignette).
+   */
+  function tintAtmosphere(bg: number, hemiSky: number, hemiGround: number): void {
+    const TINT = 0.35;
+    (scene.background as THREE.Color).lerp(new THREE.Color(bg), TINT);
+    hemi.color.lerp(new THREE.Color(hemiSky), TINT);
+    hemi.groundColor.lerp(new THREE.Color(hemiGround), TINT);
+  }
+
+  /** Restores the standard shop atmosphere exactly (bitwise, via the
+   *  captured DEFAULT_* constants — not an inverse-lerp, which would drift)
+   *  — called by showBeagle/showEnemy so returning from a theme diorama
+   *  always lands back on the identical baseline look. */
+  function restoreAtmosphere(): void {
+    (scene.background as THREE.Color).set(DEFAULT_BG);
+    hemi.color.set(DEFAULT_HEMI_SKY);
+    hemi.groundColor.set(DEFAULT_HEMI_GROUND);
+  }
+
   return {
     scene,
     camera,
@@ -307,30 +647,32 @@ export function createShopScene(): ShopScene {
       animateIdle(dt);
     },
     resize(aspect: number): void {
-      camera.aspect = aspect;
-
-      const t = aspect >= 1 ? 0 : Math.min(1, (1 - aspect) / (1 - PORTRAIT_ASPECT_REF));
-      const dist = BASE_DIST + (PORTRAIT_DIST - BASE_DIST) * t;
-      camera.position.copy(CAM_LOOK).addScaledVector(CAM_DIR, dist);
-      camera.lookAt(CAM_LOOK);
-
-      camera.updateProjectionMatrix();
+      lastAspect = aspect;
+      applyCameraFraming(heroKind, aspect);
     },
     showBeagle(skin: BeagleSkin): void {
       // Build fresh rather than recolor-in-place: unlike menuScene's single
       // long-lived showcase beagle (which stays a beagle forever, so
       // applyBeagleSkin is the right live-recolor tool), this hero can BECOME
-      // an enemy and back again as the player switches tabs, so every call
-      // here is a full swap — a plain applyBeagleSkin would only be correct
-      // when the hero is already a beagle, and silently do nothing useful
-      // when it's currently an enemy shape.
+      // an enemy (or a theme diorama) and back again as the player switches
+      // tabs, so every call here is a full swap — a plain applyBeagleSkin
+      // would only be correct when the hero is already a beagle, and
+      // silently do nothing useful otherwise.
       const next = makeBeagle(skin);
       applyBeagleSkin(next, skin); // belt-and-suspenders: makeBeagle(skin) already bakes the coat in, but keeps this path obviously correct even if that ever changes
       setHero(next, "beagle");
+      restoreAtmosphere();
     },
     showEnemy(skinId: string): void {
       const next = makeEnemy(skinId, ENEMY_PREVIEW_COLOR);
       setHero(next, "enemy");
+      restoreAtmosphere();
+    },
+    showTheme(themeId: string): void {
+      const theme = getMazeTheme(themeId); // never throws — degrades to the default theme on an unknown id
+      const next = makeThemeDiorama(theme.palette);
+      setHero(next, "theme");
+      tintAtmosphere(theme.palette.bg, theme.palette.hemiSky, theme.palette.hemiGround);
     },
     dispose(): void {
       disposeHero(hero);

@@ -37,35 +37,7 @@ _(empty — nothing to triage)_
 - **Notes:** needs identity to attribute scores ([[IDEA-019]]) and a home in the menu ([[IDEA-021]]).
 - **Dependencies:** [[IDEA-019]]
 
-### IDEA-026 — Maze themes in the shop (garden · classic · forest · beach · park · city) 💡
-- **Priority:** 🟡
-- **Area:** theme
-- **Registered:** 2026-07-12
-- **Description:** add maze skins to the shop too — themes for the maze so the player can
-  personalize it. The default is the garden, but we can have the classic one in black and blue,
-  then add a few variations: forest, beach, park, city, etc.
-- **Notes:** the future scope that [[IDEA-012]] and [[IDEA-023]] explicitly deferred ("map themes
-  need a theme-swap system first"). The groundwork anticipated it: the palette lives centrally in
-  `config.ts` COLORS ([[IDEA-008]]) and the hedge-top detailing was built as a per-theme hook
-  ([[IDEA-011]]) — a theme = palette + wall/floor materials + decor set (+ sky/lighting). Sold and
-  equipped through the shop like skins (profile blob gains equipped/owned themes; shop gets the
-  themes tab [[IDEA-023]] reserved). "Classic black and blue" honors the pre-garden v1.0 look.
-  Per-theme decor detailing pairs with the maze editor idea ([[IDEA-027]]).
-- **Dependencies:** — (shop [[IDEA-012]] already delivered)
 
-### IDEA-027 — Editor: edit the maze too (theme-aware board editing) 💡
-- **Priority:** 🟢
-- **Area:** tooling
-- **Registered:** 2026-07-12
-- **Description:** the editor should allow editing the maze too — this way we can add a personal
-  touch for each theme, make the maze more relatable to its theme, and upgrade the visuals.
-- **Notes:** grows the character editor ([[IDEA-025]]) a second workbench: the BOARD. A different
-  problem than characters — the board is generated per-tile from grid data as instanced meshes
-  (`render/board.ts`), not a hand-built group — so this likely means editing the theme RECIPE live
-  (wall/floor/rim materials, decor placement, flower palette) and exporting the recipe code,
-  rather than dragging individual meshes. Purpose-built for theme detailing ([[IDEA-026]]): pick a
-  theme, tweak its look, copy the code.
-- **Dependencies:** [[IDEA-026]] (soft — could prototype on the garden theme alone)
 
 ### IDEA-028 — Challenge twist: moving walls / maze changes mid-level 💡
 - **Priority:** 🟢
@@ -81,7 +53,37 @@ _(empty — nothing to triage)_
 - **Dependencies:** —
 
 ## In progress 🔨
-_(nothing yet)_
+### IDEA-026 — Maze themes in the shop (garden · classic · forest · beach · park · city) 🔨
+- **Priority:** 🟡
+- **Area:** theme
+- **Registered:** 2026-07-12
+- **Description:** add maze skins to the shop too — themes for the maze so the player can
+  personalize it. The default is the garden, but we can have the classic one in black and blue,
+  then add a few variations: forest, beach, park, city, etc.
+- **Notes:** the future scope that [[IDEA-012]] and [[IDEA-023]] explicitly deferred ("map themes
+  need a theme-swap system first"). The groundwork anticipated it: the palette lives centrally in
+  `config.ts` COLORS ([[IDEA-008]]) and the hedge-top detailing was built as a per-theme hook
+  ([[IDEA-011]]) — a theme = palette + wall/floor materials + decor set (+ sky/lighting). Sold and
+  equipped through the shop like skins (profile blob gains equipped/owned themes; shop gets the
+  themes tab [[IDEA-023]] reserved). "Classic black and blue" honors the pre-garden v1.0 look.
+  Per-theme decor detailing pairs with the maze editor idea ([[IDEA-027]]).
+- **Dependencies:** — (shop [[IDEA-012]] already delivered)
+
+### IDEA-027 — Editor: edit the maze too (theme-aware board editing) 🔨
+- **Priority:** 🟢
+- **Area:** tooling
+- **Registered:** 2026-07-12
+- **Description:** the editor should allow editing the maze too — this way we can add a personal
+  touch for each theme, make the maze more relatable to its theme, and upgrade the visuals.
+- **Notes:** grows the character editor ([[IDEA-025]]) a second workbench: the BOARD. A different
+  problem than characters — the board is generated per-tile from grid data as instanced meshes
+  (`render/board.ts`), not a hand-built group — so this likely means editing the theme RECIPE live
+  (wall/floor/rim materials, decor placement, flower palette) and exporting the recipe code,
+  rather than dragging individual meshes. Purpose-built for theme detailing ([[IDEA-026]]): pick a
+  theme, tweak its look, copy the code.
+- **Dependencies:** [[IDEA-026]] (soft — could prototype on the garden theme alone)
+
+_(also building: [[IDEA-025]] v2 scope — delete any part — tracked on the delivered idea)_
 
 ## Delivered ✅
 > Already in production. Do NOT delete. Each keeps its version history.

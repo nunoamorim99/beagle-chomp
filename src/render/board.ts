@@ -3,9 +3,18 @@
 // Reference: /prototype/beagle-chomp.html (buildBoard, makeBone).
 // Contract: buildBoard(scene, grid) -> { pelletMeshes: Map<string, {...}>, ... }
 // Keep walls as a single InstancedMesh (performance requirement).
+//
+// IDEA-026 (maze themes, v4.0): wall/floor/biscuit materials and the
+// hedge-top decor are now THEME-DRIVEN (src/game/themes.ts's ThemePalette) —
+// buildBoard reads the currently equipped theme so a fresh level is always
+// correctly skinned, and applyBoardTheme (below) lets a mid-run re-theme
+// recolour the shared materials IN PLACE (zero rebuild, zero pellet-state
+// loss) while rebuilding only the purely-cosmetic hedge decor. Pickups
+// (bones/fruit/coin/golden bone) keep FIXED identity colors in every theme —
+// only wall/floor/biscuit/hedge-decor read the palette.
 import * as THREE from "three";
 import { Grid, COLS, ROWS, TILE, worldX, worldZ } from "../game/grid";
-import { COLORS } from "../game/config";
+import { getEquippedMazeTheme, type MazeTheme, type ThemePalette } from "../game/themes";
 
 export const WALL_H = 1;
 
@@ -37,66 +46,67 @@ export interface Board {
   life: THREE.Object3D | null;
   /** IDEA-011 hedge-top decoration: a handful of InstancedMeshes (one per
    *  bloom color + one for leaf specks). Purely cosmetic, lives for the
-   *  level like the walls do — not tracked per-tile like pellets. */
+   *  level like the walls do — not tracked per-tile like pellets.
+   *  IDEA-026: theme-parameterized (buildHedgeDecor takes a ThemePalette) and
+   *  entirely rebuilt (materials + instances) by applyBoardTheme on a
+   *  mid-run re-theme — never mutated in place like matWall/matFloor/
+   *  matBiscuit, since the SET of decorated tiles/colors can itself change
+   *  (e.g. classic's bloomChance 0 means no decor at all). */
   hedgeDecor: THREE.InstancedMesh[];
 }
 
+// IDEA-026: wall/floor/biscuit materials are shared, module-level, and
+// SHARED singletons (matching the "one InstancedMesh for all walls"
+// performance requirement) — a theme is applied by mutating THESE instances'
+// color/emissive/emissiveIntensity in place (see applyBoardTheme), never by
+// creating new materials or new meshes. Seeded from the equipped theme at
+// module load so a fresh session (before any applyBoardTheme call) already
+// shows the right theme.
+const initialPalette = getEquippedMazeTheme().palette;
+
 // IDEA-008 (daytime garden): emissive intensity dropped sharply (0.72 -> 0.2)
 // so the hedges read as matte, sunlit foliage under daylight instead of
-// glowing neon — roughness/metalness/base color untouched.
+// glowing neon — roughness/metalness/base color untouched. IDEA-026: color/
+// emissive/emissiveIntensity now come from the theme palette (garden's values
+// above still equal the pre-theme constants, so equipping garden is a
+// visual no-op — see themes.ts's regression note).
 const matWall = new THREE.MeshStandardMaterial({
-  color: COLORS.wall,
+  color: initialPalette.wall,
   roughness: 0.5,
   metalness: 0.1,
-  emissive: COLORS.wallEmissive,
-  emissiveIntensity: 0.2,
+  emissive: initialPalette.wallEmissive,
+  emissiveIntensity: initialPalette.wallEmissiveIntensity,
 });
 // IDEA-008 (daytime garden): emissive swapped from a cold blue-black
 // (0x0a0a18) to a warm dark brown so the soil reads as sunlit earth rather
 // than picking up a cold night cast — still a faint whisper of lift, not a
-// glow, on an otherwise diffuse, roughness: 1 surface.
+// glow, on an otherwise diffuse, roughness: 1 surface. IDEA-026: themed.
 const matFloor = new THREE.MeshStandardMaterial({
-  color: COLORS.floor,
+  color: initialPalette.floor,
   roughness: 1,
-  emissive: 0x2a1a0c,
-  emissiveIntensity: 0.3,
+  emissive: initialPalette.floorEmissive,
+  emissiveIntensity: initialPalette.floorEmissiveIntensity,
 });
 const geoBiscuit = new THREE.SphereGeometry(0.13, 12, 12);
 // Biscuit glow warmed and strengthened (0x3a2a10/0.4 -> 0x6a4a18/0.55) so
 // pellets read as gently lit treats rather than flat spheres, without
 // blowing out at the tuned exposure (see scene.ts toneMappingExposure note).
+// IDEA-026: themed — biscuits ARE the trail, so they re-skin with the world
+// (unlike the fixed-identity pickups below).
 const matBiscuit = new THREE.MeshStandardMaterial({
-  color: COLORS.biscuit,
+  color: initialPalette.biscuit,
   roughness: 0.7,
-  emissive: 0x6a4a18,
-  emissiveIntensity: 0.55,
+  emissive: initialPalette.biscuitEmissive,
+  emissiveIntensity: initialPalette.biscuitEmissiveIntensity,
 });
 
-// IDEA-011 (hedge detail): a small, fixed palette of cheerful bloom colors
-// plus a leaf-speck green, each with a gentle emissive so they read as tiny
-// sunlit accents (matching the biscuit/fruit "soft glow" language) without
-// competing with the biscuits or the beagle for attention.
-const BLOOM_COLORS = [0xf4efe6, 0xf2d43a, 0xe8709a, 0xd8483f] as const; // white, yellow, pink, red
-const LEAF_SPECK_COLOR = 0x8fd15c;
-
+// IDEA-011 (hedge detail) / IDEA-026 (themed): hedge-top bloom/speck
+// geometries stay shared, module-level constants (cheap spheres, reused by
+// every theme) — only the MATERIALS are theme-specific, built fresh per
+// buildHedgeDecor call from the palette's bloomColors/speckColor/emissives
+// (see buildHedgeDecor below) and disposed by applyBoardTheme on swap.
 const geoBloom = new THREE.SphereGeometry(0.075, 6, 6);
 const geoLeafSpeck = new THREE.SphereGeometry(0.05, 6, 6);
-
-const matBlooms = BLOOM_COLORS.map(
-  (color) =>
-    new THREE.MeshStandardMaterial({
-      color,
-      roughness: 0.5,
-      emissive: color,
-      emissiveIntensity: 0.25,
-    }),
-);
-const matLeafSpeck = new THREE.MeshStandardMaterial({
-  color: LEAF_SPECK_COLOR,
-  roughness: 0.6,
-  emissive: 0x1c3a18,
-  emissiveIntensity: 0.2,
-});
 
 /** Small deterministic hash of a tile coord -> [0,1), stable across builds
  *  (no Math.random/Date.now) so the garden layout doesn't shuffle every
@@ -285,8 +295,20 @@ export function makeCoin(): THREE.Group {
   return g;
 }
 
-/** Builds the floor, instanced walls, and pellet meshes for one level. */
+/**
+ * Builds the floor, instanced walls, and pellet meshes for one level. Reads
+ * the currently EQUIPPED theme (src/game/themes.ts) so a fresh level always
+ * starts correctly skinned — the shared matWall/matFloor/matBiscuit were
+ * already seeded from the equipped theme at module load, but re-reading it
+ * here keeps buildBoard correct even if the equipped theme changed since
+ * (e.g. the player re-themed while dead/between levels, before a fresh
+ * buildBoard ran) without requiring every caller to remember to call
+ * applyBoardTheme right after buildBoard.
+ */
 export function buildBoard(scene: THREE.Object3D, grid: Grid): Board {
+  const theme = getEquippedMazeTheme();
+  syncBoardMaterials(theme.palette);
+
   const pelletMeshes = new Map<string, PelletMesh>();
   let pelletsLeft = 0;
 
@@ -323,35 +345,93 @@ export function buildBoard(scene: THREE.Object3D, grid: Grid): Board {
 
   scene.add(walls);
 
-  const hedgeDecor = buildHedgeDecor(scene, grid);
+  const hedgeDecor = buildHedgeDecor(scene, grid, theme.palette);
 
   return { pelletMeshes, pelletsLeft, walls, floor, fruit: null, coin: null, life: null, hedgeDecor };
 }
 
 /**
- * IDEA-011: sparse, tasteful hedge-top detail. Deterministically picks
- * roughly 1-in-5 wall tiles to get a tiny bloom (one of a few cheerful
- * colors), and a smaller fraction of those also get a leaf speck beside the
- * bloom. Batched into one InstancedMesh per bloom color plus one for leaf
- * specks — a handful of draw calls total, not one mesh per flower.
+ * IDEA-026: mutates matWall/matFloor/matBiscuit's color/emissive/
+ * emissiveIntensity IN PLACE from `palette` — this is the whole mechanism
+ * behind a zero-rebuild re-theme: every wall instance, the floor plane, and
+ * every biscuit mesh already reference these three shared material objects,
+ * so a `.color.set(...)` here is instantly visible on all of them with no
+ * geometry rebuild and no pellet-state loss (safe to call mid-run). Shared
+ * by buildBoard (fresh level) and applyBoardTheme (mid-run re-theme) so the
+ * two can never drift.
  */
-function buildHedgeDecor(scene: THREE.Object3D, grid: Grid): THREE.InstancedMesh[] {
-  const BLOOM_CHANCE = 0.2; // ~1 in 5 hedge tiles gets a flower
-  const LEAF_CHANCE = 0.35; // of those, a bit over a third also get a leaf speck
+function syncBoardMaterials(palette: ThemePalette): void {
+  matWall.color.set(palette.wall);
+  matWall.emissive.set(palette.wallEmissive);
+  matWall.emissiveIntensity = palette.wallEmissiveIntensity;
+
+  matFloor.color.set(palette.floor);
+  matFloor.emissive.set(palette.floorEmissive);
+  matFloor.emissiveIntensity = palette.floorEmissiveIntensity;
+
+  matBiscuit.color.set(palette.biscuit);
+  matBiscuit.emissive.set(palette.biscuitEmissive);
+  matBiscuit.emissiveIntensity = palette.biscuitEmissiveIntensity;
+}
+
+/**
+ * IDEA-011 (garden) / IDEA-026 (themed): sparse, tasteful hedge-top detail.
+ * Deterministically picks a `palette.bloomChance` fraction of wall tiles to
+ * get a tiny bloom (one of `palette.bloomColors`), and a `palette.speckChance`
+ * fraction of those also get a leaf/vent speck beside the bloom. Batched into
+ * one InstancedMesh per bloom color plus one for specks — a handful of draw
+ * calls total, not one mesh per flower.
+ *
+ * The deterministic hash01 placement (seeded only by tile coord, never by
+ * palette) is unchanged from the original garden-only version, so WHICH
+ * tiles get decorated stays stable across a re-theme — only the count
+ * (bloomChance/speckChance) and appearance (colors/emissives) vary. An empty
+ * `bloomColors` or `bloomChance` of 0 (e.g. classic's clean neon walls)
+ * short-circuits to no decor at all, returning `[]`.
+ *
+ * Builds its OWN materials from `palette` (not the old module-level
+ * matBlooms/matLeafSpeck constants) so applyBoardTheme can swap the whole
+ * decor set — colors, counts, and all — by rebuilding rather than mutating;
+ * see applyBoardTheme's disposal of the outgoing meshes' materials below.
+ */
+function buildHedgeDecor(
+  scene: THREE.Object3D,
+  grid: Grid,
+  palette: ThemePalette,
+): THREE.InstancedMesh[] {
+  if (palette.bloomChance <= 0 || palette.bloomColors.length === 0) return [];
+
+  const bloomColors = palette.bloomColors;
 
   // Bucket chosen tile positions per bloom color first, so we know exact
   // instance counts before allocating each InstancedMesh.
-  const perColor: Array<Array<[number, number]>> = BLOOM_COLORS.map(() => []);
+  const perColor: Array<Array<[number, number]>> = bloomColors.map(() => []);
   const leafSpots: Array<[number, number]> = [];
 
   grid.cells.forEach((row, y) => row.forEach((c, x) => {
     if (c !== "#") return;
     const r = hash01(x, y, 1);
-    if (r >= BLOOM_CHANCE) return;
-    const colorIdx = Math.floor(hash01(x, y, 2) * BLOOM_COLORS.length) % BLOOM_COLORS.length;
+    if (r >= palette.bloomChance) return;
+    const colorIdx = Math.floor(hash01(x, y, 2) * bloomColors.length) % bloomColors.length;
     perColor[colorIdx].push([x, y]);
-    if (hash01(x, y, 3) < LEAF_CHANCE) leafSpots.push([x, y]);
+    if (hash01(x, y, 3) < palette.speckChance) leafSpots.push([x, y]);
   }));
+
+  const matBlooms = bloomColors.map(
+    (color) =>
+      new THREE.MeshStandardMaterial({
+        color,
+        roughness: 0.5,
+        emissive: color,
+        emissiveIntensity: palette.bloomEmissiveIntensity,
+      }),
+  );
+  const matLeafSpeck = new THREE.MeshStandardMaterial({
+    color: palette.speckColor,
+    roughness: 0.6,
+    emissive: palette.speckEmissive,
+    emissiveIntensity: 0.2,
+  });
 
   const dummy = new THREE.Object3D();
   const meshes: THREE.InstancedMesh[] = [];
@@ -393,6 +473,48 @@ function buildHedgeDecor(scene: THREE.Object3D, grid: Grid): THREE.InstancedMesh
   }
 
   return meshes;
+}
+
+/**
+ * IDEA-026: applies `theme` to an already-built board, LIVE — safe to call
+ * mid-run (e.g. the player re-themes from the shop between levels, or a
+ * future "preview while playing" flow). Two very different mechanisms, by
+ * design:
+ *
+ *  1. Wall/floor/biscuit: `syncBoardMaterials` mutates the shared matWall/
+ *     matFloor/matBiscuit in place. Because every wall instance, the floor
+ *     plane, and every biscuit mesh on `board` already reference these same
+ *     three material objects, this alone re-themes ALL of them instantly —
+ *     zero geometry rebuild, zero pellet Map churn, `board.pelletMeshes`
+ *     keeps every existing entry untouched (eating still works exactly as
+ *     before the re-theme).
+ *  2. Hedge decor: rebuilt from scratch — the SET of decorated tiles/colors
+ *     can itself change size (a theme with fewer bloomColors or a different
+ *     bloomChance produces a different instance count per InstancedMesh,
+ *     which isn't something you can resize in place), so the old
+ *     `board.hedgeDecor` meshes are removed from `scene` and their
+ *     per-build materials disposed (their geometries — geoBloom/
+ *     geoLeafSpeck — are shared module-level constants and must NOT be
+ *     disposed here), then buildHedgeDecor runs again with the new theme and
+ *     `board.hedgeDecor` is reassigned to the fresh array.
+ *
+ * Pickups (bones/fruit/coin/golden bone) are untouched — they keep fixed
+ * identity colors in every theme (see makeBone/makeFruit/makeCoin/
+ * makeLifeBone above) and are never read from ThemePalette.
+ */
+export function applyBoardTheme(board: Board, scene: THREE.Object3D, grid: Grid, theme: MazeTheme): void {
+  syncBoardMaterials(theme.palette);
+
+  board.hedgeDecor.forEach((mesh) => {
+    scene.remove(mesh);
+    const mat = mesh.material;
+    if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
+    else mat.dispose();
+    // geometry (geoBloom/geoLeafSpeck) is a shared module-level constant —
+    // intentionally NOT disposed here, it's reused by the next build.
+  });
+
+  board.hedgeDecor = buildHedgeDecor(scene, grid, theme.palette);
 }
 
 /**

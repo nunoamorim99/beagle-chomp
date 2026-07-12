@@ -2,10 +2,18 @@
 // Sets up renderer, camera (angled top-down framing the whole maze), and lights.
 // Reference implementation: /prototype/beagle-chomp.html (section 2).
 // Contract: export a function that returns { renderer, scene, camera, resize() }.
+//
+// IDEA-026 (maze themes, v4.0): background/fog/backdrop-dome/lights are now
+// THEME-DRIVEN (src/game/themes.ts's ThemePalette) — createScene seeds every
+// atmosphere slot from the equipped theme, and the rig's applySceneTheme lets
+// a mid-run re-theme mutate all of it in place (no scene rebuild). The
+// camera/fit math below (BASE_FOV/BASE_POS/BOARD_CORNERS/computeFitDistance/
+// resize's portrait ramp) is IDEA-022's regression-sensitive portrait framing
+// and stays byte-for-byte untouched by this change.
 import * as THREE from "three";
-import { COLORS } from "../game/config";
 import { COLS, ROWS, TILE } from "../game/grid";
 import { WALL_H } from "./board";
+import { getEquippedMazeTheme, type MazeTheme } from "../game/themes";
 
 // Half-extents of the maze in world units, plus a little breathing room so
 // walls at the border never touch the viewport edge.
@@ -189,6 +197,10 @@ export interface SceneRig {
   scene: THREE.Scene;
   camera: THREE.PerspectiveCamera;
   resize(): void;
+  /** IDEA-026: applies a maze theme's atmosphere (background/fog/backdrop
+   *  dome/lights) to the running scene, LIVE — see the implementation below
+   *  createScene for exactly what it mutates and why it survives resize(). */
+  applySceneTheme(theme: MazeTheme): void;
 }
 
 // ---------------------------------------------------------------------------
@@ -219,13 +231,17 @@ const BACKDROP_RADIUS = 260;
 // cutoff, widened from the prototype's 200 so BACKDROP_RADIUS's far side
 // never clips even at the dolly distances above.
 const CAMERA_FAR = 420;
-// Vertical-gradient backdrop colors: the bottom matches the scene background
-// (COLORS.bg, a soft daytime sky blue), and the top is a paler, brighter blue
-// so the dome reads as an open daytime sky rather than a night dome. The top
+
+// IDEA-026: vertical-gradient backdrop colors used to be fixed constants
+// (garden's daytime sky blue bottom / paler blue top); now they're seeded
+// from the equipped theme's palette.bg/backdropTop and mutated in place by
+// applySceneTheme on a re-theme (`.set(hex)` on these same THREE.Color
+// instances, which the shader material's uniforms reference directly — see
+// makeBackdrop below — so a re-theme needs no new material/mesh). The top
 // only shows if you look up, which the fixed camera never does — so this is
-// still mostly a "hint of depth" above the crisp board, just tuned for day.
-const BACKDROP_TOP_COLOR = new THREE.Color(0xcfe9f7);
-const BACKDROP_BOTTOM_COLOR = new THREE.Color(COLORS.bg);
+// still mostly a "hint of depth" above the crisp board.
+const BACKDROP_TOP_COLOR = new THREE.Color(getEquippedMazeTheme().palette.backdropTop);
+const BACKDROP_BOTTOM_COLOR = new THREE.Color(getEquippedMazeTheme().palette.bg);
 
 function makeBackdrop(): THREE.Mesh {
   const material = new THREE.ShaderMaterial({
@@ -277,17 +293,37 @@ export function createScene(canvas: HTMLCanvasElement): SceneRig {
   // — keeps the sunlit board from blowing out highlights on walls/floor.
   renderer.toneMappingExposure = 0.92;
 
+  const initialPalette = getEquippedMazeTheme().palette;
+
+  // The backdrop's two Color objects are MODULE-level (applySceneTheme below
+  // mutates them, and makeBackdrop's shader uniforms hold references to the
+  // same objects) — which means they were constructed at IMPORT time, before
+  // Game's constructor ran initProfileFromStorage(). Re-set them here at
+  // construction time or a non-garden equipped theme boots under the
+  // garden sky: the dome fully encloses the camera, so it — not
+  // scene.background — is what the player actually sees around the board.
+  BACKDROP_TOP_COLOR.set(initialPalette.backdropTop);
+  BACKDROP_BOTTOM_COLOR.set(initialPalette.bg);
+
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(COLORS.bg);
+  scene.background = new THREE.Color(initialPalette.bg);
   scene.add(makeBackdrop());
-  // Fog fades toward COLORS.bg (the scene background) and its range only
-  // catches the very farthest maze corners, so on the game's top-down board
-  // the maze reads crisp against clean dark with no visible haze — the
+  // Fog fades toward the theme's bg (the scene background) and its range
+  // only catches the very farthest maze corners, so on the game's top-down
+  // board the maze reads crisp against clean dark with no visible haze — the
   // intentional "clean" look. (An earlier pass tinted the fog a distinct
   // indigo and pulled the range in to melt the far edge into a glow; that was
   // reverted here in favour of the crisp look.) resize() scales near/far by
   // the dolly so portrait doesn't behave differently.
-  const FOG_COLOR = COLORS.bg;
+  //
+  // IDEA-026: FOG_COLOR is a mutable `let` (not the original `const`) so
+  // applySceneTheme can update it in place — critical because resize()
+  // re-creates `scene.fog` from scratch on every call (see below), so if
+  // FOG_COLOR never changed, a re-theme's fog color would be silently
+  // reverted the next time the window resizes (or even just rotates on a
+  // phone). Reading this mutable value each time is what makes a re-theme
+  // survive every subsequent resize.
+  let FOG_COLOR = initialPalette.bg;
   const FOG_NEAR_BASE = 30;
   const FOG_FAR_BASE = 55;
   scene.fog = new THREE.Fog(FOG_COLOR, FOG_NEAR_BASE, FOG_FAR_BASE);
@@ -296,14 +332,16 @@ export function createScene(canvas: HTMLCanvasElement): SceneRig {
   camera.position.copy(BASE_POS);
   camera.lookAt(BASE_LOOK);
 
-  // IDEA-008 (daytime garden): hemisphere pushed to a bright daylight
-  // sky/white above and a warm earthy-green ground bounce below (was a cool
-  // lavender/indigo pair tuned for a neon-night board); intensity lifted a
-  // touch since we lost the dark backdrop to soak up ambient light.
-  scene.add(new THREE.HemisphereLight(0xd8f0ff, 0x4a3a20, 0.65));
+  // IDEA-008 (daytime garden) / IDEA-026 (themed): hemisphere sky/ground
+  // colors + intensity, key sun color/intensity, and rim color/intensity all
+  // come from the theme palette now. Kept as named `const` light references
+  // (not just `scene.add(new ...)` inline) specifically so applySceneTheme
+  // below can mutate their `.color`/`.groundColor`/`.intensity` in place.
+  const hemi = new THREE.HemisphereLight(initialPalette.hemiSky, initialPalette.hemiGround, initialPalette.hemiIntensity);
+  scene.add(hemi);
   // Key: shifted from a candle-warm amber to a neutral, slightly-warm
   // sunlight tone, and lifted a touch for a bright daytime read.
-  const key = new THREE.DirectionalLight(0xfff4e0, 1.1);
+  const key = new THREE.DirectionalLight(initialPalette.sunColor, initialPalette.sunIntensity);
   key.position.set(6, 20, 10);
   key.castShadow = true;
   key.shadow.mapSize.set(2048, 2048);
@@ -321,7 +359,7 @@ export function createScene(canvas: HTMLCanvasElement): SceneRig {
   // than a night-time cool rim: no shadow casting (a second shadow-casting
   // light would double the shadow-map cost for a subtle effect), just enough
   // to lift the walls' far faces off pure black so they stay dimensional.
-  const rim = new THREE.DirectionalLight(0xaed4f0, 0.35);
+  const rim = new THREE.DirectionalLight(initialPalette.rimColor, initialPalette.rimIntensity);
   rim.position.set(-8, 10, -12);
   scene.add(rim);
 
@@ -416,5 +454,46 @@ export function createScene(canvas: HTMLCanvasElement): SceneRig {
   window.addEventListener("resize", resize);
   resize();
 
-  return { renderer, scene, camera, resize };
+  /**
+   * IDEA-026: applies `theme` to the already-running rig, LIVE — mutates
+   * every atmosphere slot in place, no scene rebuild:
+   *  - `scene.background` (already a THREE.Color instance — `.set(...)`)
+   *  - the backdrop dome's shader uniforms, via the SAME THREE.Color objects
+   *    (BACKDROP_TOP_COLOR/BACKDROP_BOTTOM_COLOR) the material's `topColor`/
+   *    `bottomColor` uniforms reference — mutating them is instantly visible
+   *    with no material/uniform reassignment needed.
+   *  - `FOG_COLOR` (the closure `let` above) — doesn't touch `scene.fog`
+   *    directly (fog near/far is dolly-dependent, recomputed by resize()
+   *    only), but updating this value is what makes the NEXT resize() call
+   *    (and thus every one after this point, including a plain window
+   *    resize/orientation change with no further re-theme) produce a Fog in
+   *    the new color instead of silently reverting to the old one. Also
+   *    updates the fog actually installed on `scene` right now, in the
+   *    CURRENT near/far, so the color is correct even before any resize.
+   *  - hemisphere (sky + ground + intensity), key sun (color + intensity),
+   *    rim (color + intensity) — direct `.color.set()`/`.intensity =` on the
+   *    named light references captured above.
+   */
+  function applySceneTheme(theme: MazeTheme): void {
+    const p = theme.palette;
+
+    (scene.background as THREE.Color).set(p.bg);
+    BACKDROP_TOP_COLOR.set(p.backdropTop);
+    BACKDROP_BOTTOM_COLOR.set(p.bg);
+
+    FOG_COLOR = p.bg;
+    if (scene.fog instanceof THREE.Fog) scene.fog.color.set(p.bg);
+
+    hemi.color.set(p.hemiSky);
+    hemi.groundColor.set(p.hemiGround);
+    hemi.intensity = p.hemiIntensity;
+
+    key.color.set(p.sunColor);
+    key.intensity = p.sunIntensity;
+
+    rim.color.set(p.rimColor);
+    rim.intensity = p.rimIntensity;
+  }
+
+  return { renderer, scene, camera, resize, applySceneTheme };
 }

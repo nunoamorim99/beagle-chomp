@@ -36,8 +36,21 @@ import {
   equipEnemySkin,
   getChallengeProgress,
   advanceChallengeProgress,
+  getOwnedMazeThemeIds,
+  isMazeThemeOwned,
+  buyMazeTheme,
+  equipMazeTheme,
   type StoredProfile,
 } from "../src/game/profileStore";
+import {
+  MAZE_THEMES,
+  DEFAULT_MAZE_THEME_ID,
+  getMazeTheme,
+  getMazeThemePrice,
+  getEquippedMazeThemeId,
+  getEquippedMazeTheme,
+  setEquippedMazeThemeId,
+} from "../src/game/themes";
 import { coinsDueFromScore } from "../src/game/coins";
 import { shouldFireThreshold } from "../src/game/pickups";
 import {
@@ -180,6 +193,87 @@ check("getEnemySkin(unknown) falls back to default (ghost)", unknownEnemy.id ===
   setEquippedEnemySkinId(DEFAULT_ENEMY_SKIN_ID);
 }
 
+console.log("\n=== themes.ts (IDEA-026 maze themes registry) ===");
+{
+  check("exactly 6 maze themes", MAZE_THEMES.length === 6);
+  check(
+    "theme ids are garden, classic, forest, beach, park, city in order",
+    MAZE_THEMES.map((t) => t.id).join(",") === "garden,classic,forest,beach,park,city",
+  );
+  check(
+    "theme ids are all unique",
+    new Set(MAZE_THEMES.map((t) => t.id)).size === MAZE_THEMES.length,
+  );
+  check("garden is MAZE_THEMES[0]", MAZE_THEMES[0].id === "garden");
+  check("DEFAULT_MAZE_THEME_ID is garden", DEFAULT_MAZE_THEME_ID === "garden");
+  check("garden.price === 0 (default, free)", getMazeTheme("garden").price === 0);
+  check(
+    "every non-garden theme is priced > 0 (never free/default)",
+    MAZE_THEMES.filter((t) => t.id !== "garden").every((t) => t.price > 0),
+  );
+  check("classic.price === 5", getMazeTheme("classic").price === 5);
+  check("forest.price === 10", getMazeTheme("forest").price === 10);
+  check("beach.price === 10", getMazeTheme("beach").price === 10);
+  check("park.price === 10", getMazeTheme("park").price === 10);
+  check("city.price === 10", getMazeTheme("city").price === 10);
+  check("getMazeThemePrice('garden') === 0", getMazeThemePrice("garden") === 0);
+  check("getMazeThemePrice('classic') === 5", getMazeThemePrice("classic") === 5);
+  check("getMazeThemePrice(unknown) === 0 (falls back to default's price)", getMazeThemePrice("nope") === 0);
+
+  // Every theme's every palette color slot is a valid 24-bit hex number
+  // (basic sanity so a typo'd hex constant doesn't silently pass as some
+  // huge/negative number) — mirrors the BEAGLE_SKINS coat-channel sanity
+  // check above, generalized to every numeric palette field.
+  const HEX_FIELDS = [
+    "bg", "backdropTop", "wall", "wallEmissive", "floor", "floorEmissive",
+    "biscuit", "biscuitEmissive", "hemiSky", "hemiGround", "sunColor",
+    "rimColor", "speckColor", "speckEmissive",
+  ] as const;
+  MAZE_THEMES.forEach((t) => {
+    HEX_FIELDS.forEach((field) => {
+      const v = t.palette[field];
+      check(`${t.id}.palette.${field} is a valid 24-bit hex color`, Number.isInteger(v) && v >= 0 && v <= 0xffffff);
+    });
+    t.palette.bloomColors.forEach((c, i) => {
+      check(`${t.id}.palette.bloomColors[${i}] is a valid 24-bit hex color`, Number.isInteger(c) && c >= 0 && c <= 0xffffff);
+    });
+  });
+
+  // getMazeTheme(unknown) -> default, never throws.
+  const unknownTheme = getMazeTheme("does-not-exist");
+  check("getMazeTheme(unknown) falls back to default", unknownTheme.id === DEFAULT_MAZE_THEME_ID);
+}
+
+console.log("\n=== themes.ts equipped-state clamp (IDEA-026) ===");
+{
+  setEquippedMazeThemeId("forest");
+  check("equip known theme id -> getEquippedMazeThemeId reflects it", getEquippedMazeThemeId() === "forest");
+  check("equip known theme id -> getEquippedMazeTheme reflects it", getEquippedMazeTheme().id === "forest");
+
+  setEquippedMazeThemeId("totally-bogus");
+  check("equip unknown theme id clamps to default", getEquippedMazeThemeId() === DEFAULT_MAZE_THEME_ID);
+
+  // restore default state for any later test that might run in this process
+  setEquippedMazeThemeId(DEFAULT_MAZE_THEME_ID);
+}
+
+console.log("\n=== themes.ts garden-regression guard (garden palette must match the shipped COLORS) ===");
+{
+  // The garden theme's shipped-look colors MUST equal config.ts's live
+  // COLORS constants exactly — this is the guard that keeps the default
+  // theme from ever silently drifting away from what every player who never
+  // opens the shop's Themes tab currently sees (see themes.ts's own doc
+  // comment on the garden entry). If this ever fails, either COLORS changed
+  // (and the garden palette needs to follow) or the garden palette
+  // regressed on its own — both are real bugs this check exists to catch.
+  const garden = getMazeTheme("garden").palette;
+  check("garden.palette.bg === COLORS.bg", garden.bg === COLORS.bg);
+  check("garden.palette.wall === COLORS.wall", garden.wall === COLORS.wall);
+  check("garden.palette.wallEmissive === COLORS.wallEmissive", garden.wallEmissive === COLORS.wallEmissive);
+  check("garden.palette.floor === COLORS.floor", garden.floor === COLORS.floor);
+  check("garden.palette.biscuit === COLORS.biscuit", garden.biscuit === COLORS.biscuit);
+}
+
 console.log("\n=== profileStore.ts (Node, no window/localStorage) ===");
 // In this plain tsx/Node run there is no `window`, so loadProfile()'s
 // try/catch must catch the ReferenceError and degrade to the default —
@@ -189,6 +283,7 @@ console.log("\n=== profileStore.ts (Node, no window/localStorage) ===");
   const profile = loadProfile();
   check("loadProfile() in Node (no window) returns the default beagle skin", profile.equippedBeagleSkinId === DEFAULT_BEAGLE_SKIN_ID);
   check("loadProfile() in Node (no window) returns the default enemy skin", profile.equippedEnemySkinId === DEFAULT_ENEMY_SKIN_ID);
+  check("loadProfile() in Node (no window) returns the default maze theme", profile.equippedMazeThemeId === DEFAULT_MAZE_THEME_ID);
 }
 
 // Round-trip check on the pure merge logic loadProfile() uses: a blob that
@@ -375,13 +470,21 @@ console.log("\n=== profileStore.ts ownership defaults (Node, no window/localStor
     profile.ownedEnemySkinIds.length === 1 && profile.ownedEnemySkinIds[0] === "ghost",
   );
 
+  check(
+    "fresh profile owns exactly ['garden']",
+    profile.ownedMazeThemeIds.length === 1 && profile.ownedMazeThemeIds[0] === "garden",
+  );
+
   check("getOwnedBeagleSkinIds() matches loadProfile()", getOwnedBeagleSkinIds().join(",") === "bagel");
   check("getOwnedEnemySkinIds() matches loadProfile()", getOwnedEnemySkinIds().join(",") === "ghost");
+  check("getOwnedMazeThemeIds() matches loadProfile()", getOwnedMazeThemeIds().join(",") === "garden");
 
   check("isBeagleSkinOwned('bagel') === true (default always owned)", isBeagleSkinOwned("bagel") === true);
   check("isBeagleSkinOwned('cookie') === false initially", isBeagleSkinOwned("cookie") === false);
   check("isEnemySkinOwned('ghost') === true (default always owned)", isEnemySkinOwned("ghost") === true);
   check("isEnemySkinOwned('beetle') === false initially", isEnemySkinOwned("beetle") === false);
+  check("isMazeThemeOwned('garden') === true (default always owned)", isMazeThemeOwned("garden") === true);
+  check("isMazeThemeOwned('classic') === false initially", isMazeThemeOwned("classic") === false);
 }
 
 console.log("\n=== profileStore.ts loadProfile defensive ownership sanitizing ===");
@@ -396,6 +499,9 @@ console.log("\n=== profileStore.ts loadProfile defensive ownership sanitizing ==
   function isKnownEnemy(id: unknown): id is string {
     return typeof id === "string" && ENEMY_SKINS.some((s) => s.id === id);
   }
+  function isKnownTheme(id: unknown): id is string {
+    return typeof id === "string" && MAZE_THEMES.some((t) => t.id === id);
+  }
   function sanitizeOwnedBeagle(value: unknown): string[] {
     const known = Array.isArray(value) ? value.filter(isKnownBeagle) : [];
     return Array.from(new Set(["bagel", ...known]));
@@ -404,17 +510,29 @@ console.log("\n=== profileStore.ts loadProfile defensive ownership sanitizing ==
     const known = Array.isArray(value) ? value.filter(isKnownEnemy) : [];
     return Array.from(new Set(["ghost", ...known]));
   }
+  /** Mirrors sanitizeOwnedBeagle/sanitizeOwnedEnemy exactly, for maze themes
+   *  (IDEA-026) — same rules profileStore.ts's private
+   *  sanitizeOwnedMazeThemeIds applies to a parsed blob. */
+  function sanitizeOwnedTheme(value: unknown): string[] {
+    const known = Array.isArray(value) ? value.filter(isKnownTheme) : [];
+    return Array.from(new Set(["garden", ...known]));
+  }
 
   // Old blob without the owned keys at all (undefined) -> just the default.
   check(
     "old blob (no owned key) -> defaults owned",
-    sanitizeOwnedBeagle(undefined).join(",") === "bagel" && sanitizeOwnedEnemy(undefined).join(",") === "ghost",
+    sanitizeOwnedBeagle(undefined).join(",") === "bagel" &&
+      sanitizeOwnedEnemy(undefined).join(",") === "ghost" &&
+      sanitizeOwnedTheme(undefined).join(",") === "garden",
   );
 
   // Garbage (non-array) owned value -> defaults.
   check("garbage owned value (string) -> defaults", sanitizeOwnedBeagle("not-an-array").join(",") === "bagel");
   check("garbage owned value (number) -> defaults", sanitizeOwnedBeagle(42).join(",") === "bagel");
   check("garbage owned value (object) -> defaults", sanitizeOwnedBeagle({ foo: "bar" }).join(",") === "bagel");
+  check("garbage theme owned value (string) -> defaults", sanitizeOwnedTheme("not-an-array").join(",") === "garden");
+  check("garbage theme owned value (number) -> defaults", sanitizeOwnedTheme(42).join(",") === "garden");
+  check("garbage theme owned value (object) -> defaults", sanitizeOwnedTheme({ foo: "bar" }).join(",") === "garden");
 
   // Owned array with an unknown id -> filtered out, default still present.
   check(
@@ -425,6 +543,14 @@ console.log("\n=== profileStore.ts loadProfile defensive ownership sanitizing ==
     "owned array with a known non-default id keeps it plus the default",
     sanitizeOwnedBeagle(["cookie", "bogus"]).sort().join(",") === "bagel,cookie",
   );
+  check(
+    "theme owned array with unknown id is filtered out, default kept",
+    sanitizeOwnedTheme(["garden", "not-a-real-theme"]).sort().join(",") === "garden",
+  );
+  check(
+    "theme owned array with a known non-default id keeps it plus the default",
+    sanitizeOwnedTheme(["classic", "bogus"]).sort().join(",") === "classic,garden",
+  );
 
   // Owned array missing the default entirely -> default force-included.
   check(
@@ -434,6 +560,10 @@ console.log("\n=== profileStore.ts loadProfile defensive ownership sanitizing ==
   check(
     "enemy owned array missing the default -> default force-included",
     sanitizeOwnedEnemy(["beetle"]).sort().join(",") === "beetle,ghost",
+  );
+  check(
+    "theme owned array missing the default -> default force-included",
+    sanitizeOwnedTheme(["classic", "forest"]).sort().join(",") === "classic,forest,garden",
   );
 }
 
@@ -464,18 +594,26 @@ console.log("\n=== profileStore.ts buy operations (Node, no window/localStorage)
   check("buyEnemySkin('beetle') with 0 coins -> insufficient-coins", enemyResult.ok === false && enemyResult.reason === "insufficient-coins");
   check("failed enemy buy leaves ownership unchanged", isEnemySkinOwned("beetle") === false);
 
+  const themeResult = buyMazeTheme("classic");
+  check("buyMazeTheme('classic') with 0 coins -> insufficient-coins", themeResult.ok === false && themeResult.reason === "insufficient-coins");
+  check("failed theme buy leaves ownership unchanged", isMazeThemeOwned("classic") === false);
+
   // Buying the already-owned default is refused (never double-charges),
   // regardless of wallet balance.
   const alreadyOwned = buyBeagleSkin("bagel");
   check("buyBeagleSkin('bagel') (already owned) -> already-owned, no charge", alreadyOwned.ok === false && alreadyOwned.reason === "already-owned");
   const alreadyOwnedEnemy = buyEnemySkin("ghost");
   check("buyEnemySkin('ghost') (already owned) -> already-owned, no charge", alreadyOwnedEnemy.ok === false && alreadyOwnedEnemy.reason === "already-owned");
+  const alreadyOwnedTheme = buyMazeTheme("garden");
+  check("buyMazeTheme('garden') (already owned) -> already-owned, no charge", alreadyOwnedTheme.ok === false && alreadyOwnedTheme.reason === "already-owned");
 
   // Unknown ids are refused before any coin/ownership check.
   const unknownBuy = buyBeagleSkin("not-a-real-skin");
   check("buyBeagleSkin(unknown id) -> unknown", unknownBuy.ok === false && unknownBuy.reason === "unknown");
   const unknownEnemyBuy = buyEnemySkin("not-a-real-skin");
   check("buyEnemySkin(unknown id) -> unknown", unknownEnemyBuy.ok === false && unknownEnemyBuy.reason === "unknown");
+  const unknownThemeBuy = buyMazeTheme("not-a-real-theme");
+  check("buyMazeTheme(unknown id) -> unknown", unknownThemeBuy.ok === false && unknownThemeBuy.reason === "unknown");
 }
 
 console.log("\n=== profileStore.ts buy success + atomicity (pure, in-process profile objects) ===");
@@ -499,6 +637,8 @@ console.log("\n=== profileStore.ts buy success + atomicity (pure, in-process pro
     ownedBeagleSkinIds: ["bagel"],
     ownedEnemySkinIds: ["ghost"],
     challengeProgress: 0,
+    equippedMazeThemeId: DEFAULT_MAZE_THEME_ID,
+    ownedMazeThemeIds: [DEFAULT_MAZE_THEME_ID],
   };
 
   const price = getBeagleSkinPrice("cookie");
@@ -519,6 +659,12 @@ console.log("\n=== profileStore.ts buy success + atomicity (pure, in-process pro
     afterBuy.ownedEnemySkinIds.length === 1 && afterBuy.ownedEnemySkinIds[0] === "ghost",
   );
   check("buy preserves equipped skins untouched", afterBuy.equippedBeagleSkinId === "bagel" && afterBuy.equippedEnemySkinId === "ghost");
+  check(
+    "buy preserves the theme owned list/equipped id untouched (a beagle-skin buy doesn't touch themes)",
+    afterBuy.ownedMazeThemeIds.length === 1 &&
+      afterBuy.ownedMazeThemeIds[0] === DEFAULT_MAZE_THEME_ID &&
+      afterBuy.equippedMazeThemeId === DEFAULT_MAZE_THEME_ID,
+  );
 
   // Insufficient-funds path never mutates anything (no partial charge / no
   // partial ownership add) — the null sentinel from trySpend is the guard
@@ -526,6 +672,36 @@ console.log("\n=== profileStore.ts buy success + atomicity (pure, in-process pro
   const poorProfile: StoredProfile = { ...profile, coins: 2 };
   const insufficient = trySpend(poorProfile.coins, price);
   check("2 coins cannot afford a 5-coin skin -> trySpend returns null", insufficient === null);
+
+  // IDEA-026: the same trySpend + read-modify-write atomicity, mirrored for a
+  // maze theme purchase — proves buyMazeTheme's internal shape (identical to
+  // buyBeagleSkin/buyEnemySkin's) also lands the coin-deduct and owned-add
+  // together, and leaves the beagle/enemy fields untouched.
+  const themePrice = getMazeThemePrice("classic");
+  check("classic theme price is 5 for this scenario", themePrice === 5);
+
+  const themeNewCoins = trySpend(profile.coins, themePrice);
+  check("12 coins can afford a 5-coin theme", themeNewCoins === 7);
+
+  const afterThemeBuy: StoredProfile = {
+    ...profile,
+    coins: themeNewCoins as number,
+    ownedMazeThemeIds: [...profile.ownedMazeThemeIds, "classic"],
+  };
+  check("theme buy atomicity: coins reduced by price", afterThemeBuy.coins === profile.coins - themePrice);
+  check("theme buy atomicity: id now owned in the SAME resulting object", afterThemeBuy.ownedMazeThemeIds.includes("classic"));
+  check(
+    "theme buy preserves the beagle/enemy owned lists untouched",
+    afterThemeBuy.ownedBeagleSkinIds.length === 1 &&
+      afterThemeBuy.ownedBeagleSkinIds[0] === "bagel" &&
+      afterThemeBuy.ownedEnemySkinIds.length === 1 &&
+      afterThemeBuy.ownedEnemySkinIds[0] === "ghost",
+  );
+  check("theme buy preserves equipped theme id untouched", afterThemeBuy.equippedMazeThemeId === DEFAULT_MAZE_THEME_ID);
+
+  const poorProfileTheme: StoredProfile = { ...profile, coins: 2 };
+  const insufficientTheme = trySpend(poorProfileTheme.coins, themePrice);
+  check("2 coins cannot afford a 5-coin theme -> trySpend returns null", insufficientTheme === null);
 }
 
 console.log("\n=== profileStore.ts equip gating (Node, no window/localStorage) ===");
@@ -550,6 +726,15 @@ console.log("\n=== profileStore.ts equip gating (Node, no window/localStorage) =
   const allowedEnemyDefault = equipEnemySkin("ghost");
   check("equipEnemySkin(owned default 'ghost') succeeds (returns true)", allowedEnemyDefault === true);
 
+  // IDEA-026: mirrors the beagle/enemy gating above exactly, for maze themes.
+  const refusedTheme = equipMazeTheme("classic");
+  check("equipMazeTheme(unowned 'classic') is refused (returns false)", refusedTheme === false);
+  check("equipMazeTheme(unowned) does not change the equipped id", getEquippedMazeThemeId() === DEFAULT_MAZE_THEME_ID);
+
+  const allowedThemeDefault = equipMazeTheme("garden");
+  check("equipMazeTheme(owned default 'garden') succeeds (returns true)", allowedThemeDefault === true);
+  check("equipMazeTheme(default) leaves equipped id as the default", getEquippedMazeThemeId() === DEFAULT_MAZE_THEME_ID);
+
   let threw = false;
   try {
     equipBeagleSkin("totally-bogus");
@@ -558,10 +743,19 @@ console.log("\n=== profileStore.ts equip gating (Node, no window/localStorage) =
   }
   check("equipBeagleSkin(unknown id) never throws", !threw);
 
+  let themeThrew = false;
+  try {
+    equipMazeTheme("totally-bogus");
+  } catch {
+    themeThrew = true;
+  }
+  check("equipMazeTheme(unknown id) never throws", !themeThrew);
+
   // restore in-memory equipped state to the default for any later test in
   // this process (mirrors the existing restore-default pattern above).
   setEquippedBeagleSkinId(DEFAULT_BEAGLE_SKIN_ID);
   setEquippedEnemySkinId(DEFAULT_ENEMY_SKIN_ID);
+  setEquippedMazeThemeId(DEFAULT_MAZE_THEME_ID);
 }
 
 console.log("\n=== challenges.ts (IDEA-013 Challenge Mode) ===");
@@ -783,6 +977,8 @@ console.log("\n=== profileStore.ts challengeProgress: pure read-modify-write sem
     ownedBeagleSkinIds: ["bagel", "cookie"],
     ownedEnemySkinIds: ["ghost", "beetle"],
     challengeProgress: 1,
+    equippedMazeThemeId: DEFAULT_MAZE_THEME_ID,
+    ownedMazeThemeIds: [DEFAULT_MAZE_THEME_ID],
   };
   const mergedProgressOnly: StoredProfile = { ...existing, challengeProgress: 4 };
   check("read-modify-write preserves skin/owned/coins fields when only challengeProgress changes", (

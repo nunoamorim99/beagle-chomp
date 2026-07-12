@@ -27,6 +27,13 @@ import {
   getEnemySkinPrice,
 } from "./cosmetics";
 import { CHALLENGE_LEVEL_COUNT } from "./challenges";
+import {
+  MAZE_THEMES,
+  DEFAULT_MAZE_THEME_ID,
+  getEquippedMazeThemeId,
+  setEquippedMazeThemeId,
+  getMazeThemePrice,
+} from "./themes";
 
 const PROFILE_STORAGE_KEY = "beagle-chomp:profile";
 
@@ -54,7 +61,13 @@ const PROFILE_STORAGE_KEY = "beagle-chomp:profile";
  *  CHALLENGE_LEVEL_COUNT-1 (the last level's own index) so "cleared the
  *  finale" is distinguishable from "unlocked but haven't cleared the
  *  finale yet"; see advanceChallengeProgress/getChallengeProgress below for
- *  how this value is read/written. */
+ *  how this value is read/written.
+ *  `equippedMazeThemeId`/`ownedMazeThemeIds` (IDEA-026 maze themes) were
+ *  added later still, mirroring `equippedBeagleSkinId`/`ownedBeagleSkinIds`
+ *  exactly (same "old blobs without the keys default to owning/equipping
+ *  just the default" fallback) — see the Maze themes section below for the
+ *  full get/buy/equip API, which is a byte-for-byte parallel of the
+ *  beagle-skin one just above it. */
 export interface StoredProfile {
   equippedBeagleSkinId: string;
   equippedEnemySkinId: string;
@@ -62,6 +75,8 @@ export interface StoredProfile {
   ownedBeagleSkinIds: string[];
   ownedEnemySkinIds: string[];
   challengeProgress: number;
+  equippedMazeThemeId: string;
+  ownedMazeThemeIds: string[];
 }
 
 function defaultProfile(): StoredProfile {
@@ -72,6 +87,8 @@ function defaultProfile(): StoredProfile {
     ownedBeagleSkinIds: [DEFAULT_BEAGLE_SKIN_ID],
     ownedEnemySkinIds: [DEFAULT_ENEMY_SKIN_ID],
     challengeProgress: 0,
+    equippedMazeThemeId: DEFAULT_MAZE_THEME_ID,
+    ownedMazeThemeIds: [DEFAULT_MAZE_THEME_ID],
   };
 }
 
@@ -110,6 +127,12 @@ function isKnownEnemySkinId(id: unknown): id is string {
   return typeof id === "string" && ENEMY_SKINS.some((s) => s.id === id);
 }
 
+/** Mirrors isKnownSkinId/isKnownEnemySkinId exactly, for maze theme ids
+ *  (IDEA-026). */
+function isKnownMazeThemeId(id: unknown): id is string {
+  return typeof id === "string" && MAZE_THEMES.some((t) => t.id === id);
+}
+
 /** Sanitizes a persisted "owned beagle skin ids" value (IDEA-012): anything
  *  that isn't an array degrades to just the default owned; array entries
  *  that aren't a known skin id are filtered out; and the default id is
@@ -125,6 +148,12 @@ function sanitizeOwnedBeagleSkinIds(value: unknown): string[] {
 function sanitizeOwnedEnemySkinIds(value: unknown): string[] {
   const known = Array.isArray(value) ? value.filter(isKnownEnemySkinId) : [];
   return Array.from(new Set([DEFAULT_ENEMY_SKIN_ID, ...known]));
+}
+
+/** Mirrors sanitizeOwnedBeagleSkinIds exactly, for maze themes (IDEA-026). */
+function sanitizeOwnedMazeThemeIds(value: unknown): string[] {
+  const known = Array.isArray(value) ? value.filter(isKnownMazeThemeId) : [];
+  return Array.from(new Set([DEFAULT_MAZE_THEME_ID, ...known]));
 }
 
 /**
@@ -146,6 +175,7 @@ export function loadProfile(): StoredProfile {
     const record = parsed as Record<string, unknown>;
     const candidate = record.equippedBeagleSkinId;
     const enemyCandidate = record.equippedEnemySkinId;
+    const themeCandidate = record.equippedMazeThemeId;
     return {
       ...defaultProfile(),
       equippedBeagleSkinId: isKnownSkinId(candidate) ? candidate : DEFAULT_BEAGLE_SKIN_ID,
@@ -154,6 +184,8 @@ export function loadProfile(): StoredProfile {
       ownedBeagleSkinIds: sanitizeOwnedBeagleSkinIds(record.ownedBeagleSkinIds),
       ownedEnemySkinIds: sanitizeOwnedEnemySkinIds(record.ownedEnemySkinIds),
       challengeProgress: sanitizeChallengeProgress(record.challengeProgress),
+      equippedMazeThemeId: isKnownMazeThemeId(themeCandidate) ? themeCandidate : DEFAULT_MAZE_THEME_ID,
+      ownedMazeThemeIds: sanitizeOwnedMazeThemeIds(record.ownedMazeThemeIds),
     };
   } catch {
     // Covers `window`/`localStorage` being unavailable, JSON.parse throwing
@@ -194,6 +226,23 @@ export function saveEquippedEnemySkinId(id: string): void {
   } catch {
     /* storage unavailable/throwing — keep the pick in memory for this
        session only (cosmetics.ts's equipped-id state already reflects it);
+       nothing else to do, and this must never throw upward */
+  }
+}
+
+/**
+ * Persists just the equipped-maze-theme field, via read-modify-write so every
+ * other field already in the stored blob survives untouched. Mirrors
+ * saveEquippedBeagleSkinId/saveEquippedEnemySkinId exactly (IDEA-026).
+ */
+export function saveEquippedMazeThemeId(id: string): void {
+  try {
+    const current = loadProfile();
+    const next: StoredProfile = { ...current, equippedMazeThemeId: id };
+    window.localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(next));
+  } catch {
+    /* storage unavailable/throwing — keep the pick in memory for this
+       session only (themes.ts's equipped-id state already reflects it);
        nothing else to do, and this must never throw upward */
   }
 }
@@ -407,6 +456,57 @@ export function buyEnemySkin(id: string): BuyResult {
   return { ok: true };
 }
 
+// ---------------------------------------------------------------------------
+// IDEA-026: maze theme ownership + the shop buy operation. Byte-for-byte
+// parallel of the beagle/enemy skin section just above — same owned-ids-array
+// storage shape (in the same StoredProfile blob, see loadProfile's sanitize
+// step above), same isOwned/BuyResult/trySpend/persistProfile plumbing, no
+// new storage key or separate persistence path.
+
+/** Reads the persisted set of owned maze theme ids. Always includes the
+ *  default id (loadProfile's sanitize step guarantees this) — degrades to
+ *  `[DEFAULT_MAZE_THEME_ID]` on any storage failure via loadProfile. Mirrors
+ *  getOwnedBeagleSkinIds exactly. */
+export function getOwnedMazeThemeIds(): string[] {
+  return loadProfile().ownedMazeThemeIds;
+}
+
+/** Whether a given maze theme id is owned. The default theme is always owned
+ *  (loadProfile's sanitize step guarantees it's always present in the owned
+ *  array), so this is true for it even before loadProfile ever runs. Unknown
+ *  ids are never "owned". Mirrors isBeagleSkinOwned exactly. */
+export function isMazeThemeOwned(id: string): boolean {
+  if (id === DEFAULT_MAZE_THEME_ID) return true;
+  return getOwnedMazeThemeIds().includes(id);
+}
+
+/**
+ * Guarded shop purchase for a maze theme. Never throws. On success, deducts
+ * the theme's price from coins AND adds the id to the owned list in ONE
+ * read-modify-write of the profile blob (see trySpend), so a purchase can
+ * never be observed half-applied (coins gone but theme not owned, or vice
+ * versa). Already-owned ids and unknown ids are both refused before any coins
+ * are touched. Mirrors buyBeagleSkin/buyEnemySkin exactly.
+ */
+export function buyMazeTheme(id: string): BuyResult {
+  if (!isKnownMazeThemeId(id)) return { ok: false, reason: "unknown" };
+
+  const profile = loadProfile();
+  if (profile.ownedMazeThemeIds.includes(id)) return { ok: false, reason: "already-owned" };
+
+  const price = getMazeThemePrice(id);
+  const newCoins = trySpend(profile, price);
+  if (newCoins === null) return { ok: false, reason: "insufficient-coins" };
+
+  const next: StoredProfile = {
+    ...profile,
+    coins: newCoins,
+    ownedMazeThemeIds: [...profile.ownedMazeThemeIds, id],
+  };
+  persistProfile(next);
+  return { ok: true };
+}
+
 /**
  * Writes a full StoredProfile snapshot in one shot (used by the buy
  * operations above so the coin-deduct and owned-add land in the exact same
@@ -440,7 +540,8 @@ function persistProfile(profile: StoredProfile): void {
  *  Safety net (IDEA-012): if the persisted equipped id somehow isn't owned
  *  (shouldn't happen via normal equip/buy flow, but guards a hand-edited or
  *  pre-shop blob where an equipped skin was never actually purchased), falls
- *  back to the default id instead of equipping an unowned skin. */
+ *  back to the default id instead of equipping an unowned skin. The same
+ *  safety net applies to the equipped maze theme (IDEA-026). */
 export function initProfileFromStorage(): void {
   const profile = loadProfile();
   setEquippedBeagleSkinId(
@@ -452,6 +553,11 @@ export function initProfileFromStorage(): void {
     profile.ownedEnemySkinIds.includes(profile.equippedEnemySkinId)
       ? profile.equippedEnemySkinId
       : DEFAULT_ENEMY_SKIN_ID,
+  );
+  setEquippedMazeThemeId(
+    profile.ownedMazeThemeIds.includes(profile.equippedMazeThemeId)
+      ? profile.equippedMazeThemeId
+      : DEFAULT_MAZE_THEME_ID,
   );
 }
 
@@ -476,5 +582,17 @@ export function equipEnemySkin(id: string): boolean {
   if (!isEnemySkinOwned(id)) return false;
   setEquippedEnemySkinId(id);
   saveEquippedEnemySkinId(getEquippedEnemySkinId());
+  return true;
+}
+
+/** Equips a maze theme AND persists the choice, mirroring equipBeagleSkin/
+ *  equipEnemySkin exactly (including the ownership gate and boolean return) —
+ *  IDEA-026. Sets themes.ts's in-memory equipped state via
+ *  setEquippedMazeThemeId, then persists via saveEquippedMazeThemeId, same
+ *  two-step shape as the skin equip functions. */
+export function equipMazeTheme(id: string): boolean {
+  if (!isMazeThemeOwned(id)) return false;
+  setEquippedMazeThemeId(id);
+  saveEquippedMazeThemeId(getEquippedMazeThemeId());
   return true;
 }
