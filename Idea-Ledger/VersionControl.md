@@ -15,28 +15,30 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
 > Every `/ship` drops a line here so nothing shipped goes uncounted. When a release is cut, **all**
 > lines here roll up into the numbered version below and this section is cleared (hold a line back
 > only if you explicitly choose to).
-- (2026-07-11) IDEA-015 v1 — classic mode maze rotation gets real variety: pool grown 2 → 5 with The Courtyard (open plaza), The Warren (tight lattice) and The Crossroads (long arteries), all validator+sim green. First feature of v3.0 "New Tricks".
-- (2026-07-11) IDEA-018 v1 — bonus lives (cap 5): golden-bone maze pickup, 5,000-point milestone, and perfect-fright reward, with a 1-UP jingle. Second feature of v3.0 "New Tricks".
-- (2026-07-11) IDEA-017 v3 + IDEA-003 v2 — fix: pickup spawn thresholds could refire after collection, letting players farm coins (and fruit points, latent since v1.0). Once-per-level threshold pointers close the exploit for coins, fruit and the new life pickup.
-- (2026-07-11) IDEA-013 v1 — challenge mode: 8 levels of per-level twists (speed tiers, packs of 4-5 ghosts, short fright) over the classic engine, from Warm-Up Walkies to Top Dog; 🏆 menu entry, completion panels, persisted progress. Third feature of v3.0 "New Tricks".
-- (2026-07-12) IDEA-014 v1 — garden path level map: the Challenge button opens a winding-trail level select (paw-stamped cleared stones, pulsing current, locked stones), with per-level blurbs/twists and replay. Includes the playtest fix for the hidden HUD/menu after map-launched runs. Fourth and final feature of v3.0 "New Tricks".
+_(nothing yet — all shipped work is captured in the versions below)_
 
 ## 📌 Planned
 > Forward-looking targets from `/plan-version`. Each is a checklist of IDEAs intended for a
 > future numbered release. Items move to Unreleased as they ship.
 
-### v3.0 — New Tricks [planned]
-The gameplay pillar: more game to play. Classic mode stops repeating itself, lives become
-earnable, and a whole new challenge mode with per-level twists arrives with its own level map.
-- [x] IDEA-015 — Classic mode: change the maze each level — shipped 2026-07-11
-- [x] IDEA-018 — Bonus lives: pickups & milestones — shipped 2026-07-11
-- [x] IDEA-013 — Challenge mode: per-level twists — shipped 2026-07-11
-- [x] IDEA-014 — Level map / level select for challenge mode — shipped 2026-07-12
-> Build order: 015 first (the maze pool it creates also feeds 013's variety), 018 as the quick
-> economy win, then the big one — 013 — and finally 014, which depends on 013 and gives the mode
-> its front door from the main menu ([[IDEA-021]]).
+_(nothing planned yet — v3.0 "New Tricks" was fulfilled and cut on 2026-07-12)_
 
 ## Version history
+
+### v3.0 — New Tricks (2026-07-12)
+The gameplay pillar: more game to play. Classic mode stopped repeating itself, lives became
+earnable, and a whole new challenge mode arrived with its own garden-path level map. Fulfilled
+the planned v3.0 in full — plus a farming-exploit fix the new work uncovered.
+- **IDEA-015** — maze pool 2 → 5: The Courtyard (open plaza), The Warren (tight lattice) and The
+  Crossroads (long arteries) join the rotation, all validator + sim green.
+- **IDEA-018** — bonus lives (cap 5): a golden-bone maze pickup, a 5,000-point milestone, and a
+  perfect-fright reward — with a 1-UP jingle.
+- **IDEA-017 v3 + IDEA-003 v2** — fix: pickup spawn thresholds could refire after collection,
+  letting players farm coins (and fruit points, latent since v1.0). Closed for every pickup.
+- **IDEA-013** — challenge mode: 8 levels of twists (speed tiers, packs of 4-5 ghosts, short
+  fright) from Warm-Up Walkies to Top Dog, with completion panels and persisted progress.
+- **IDEA-014** — the garden path level map: paw-stamped cleared stones, a pulsing current level,
+  locked stones ahead — pick, replay, and climb. Includes the post-playtest HUD/menu chrome fix.
 
 ### v2.1 — Groomed (2026-07-11)
 The polish pass on v2.0: the beagle became a character worth showing off, and the shop became the
