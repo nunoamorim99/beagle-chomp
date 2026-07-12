@@ -15,7 +15,7 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
 > Every `/ship` drops a line here so nothing shipped goes uncounted. When a release is cut, **all**
 > lines here roll up into the numbered version below and this section is cleared (hold a line back
 > only if you explicitly choose to).
-- (2026-07-12) IDEA-002 v2 — fix: ghosts "flicked/teleported" up to a full tile whenever they reversed mid-tile (every bone eaten, every scatter/chase flip) — the reversal now swaps the movement segment for perfect positional continuity.
+_(nothing yet — all shipped work is captured in the versions below)_
 
 ## 📌 Planned
 > Forward-looking targets from `/plan-version`. Each is a checklist of IDEAs intended for a
@@ -24,6 +24,13 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
 _(nothing planned yet — v3.0 "New Tricks" was fulfilled and cut on 2026-07-12)_
 
 ## Version history
+
+### v3.1 — Smooth Moves (2026-07-12)
+A single targeted fix from playtesting: no more ghost teleports.
+- **IDEA-002 v2** — ghosts "flicked/teleported" up to a full tile whenever they reversed mid-tile
+  (every bone eaten, every scatter/chase flip). Reversals now swap the movement segment
+  (A→B at p becomes B→A at 1−p, tunnel-wrap aware) for perfect positional continuity — verified
+  to zero delta live and guarded by 27 regression assertions.
 
 ### v3.0 — New Tricks (2026-07-12)
 The gameplay pillar: more game to play. Classic mode stopped repeating itself, lives became
