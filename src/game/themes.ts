@@ -62,6 +62,37 @@ export interface ThemePalette {
   speckChance: number;
 }
 
+/** The prop shapes the render layer knows how to build (src/render/board.ts
+ *  owns the mesh factories — this module only DESCRIBES which props a theme
+ *  plants and how). Adding a kind here without a matching factory is a
+ *  compile-time error at the render layer's exhaustive switch. */
+export type ThemePropKind =
+  | "shrub"
+  | "tree"
+  | "pine"
+  | "palm"
+  | "building"
+  | "streetlight"
+  | "umbrella";
+
+/** One prop population in a theme: which shape, how densely it fills the
+ *  apron ring (the walkable-free 1-tile border of floor around the maze —
+ *  props NEVER stand on play tiles), its accent colors (kind-specific:
+ *  foliage greens, umbrella canopies, building facade hues, lamp glow), and
+ *  its scale variance band. Placement itself is deterministic (positional
+ *  hash, like the hedge blooms) so a theme's props don't shuffle between
+ *  rebuilds, and the render layer additionally caps prop HEIGHT per board
+ *  side so a tall prop can never stand between the camera and the play area
+ *  (tall kinds go behind/beside the board, only low kinds in front). */
+export interface ThemeProp {
+  kind: ThemePropKind;
+  /** Fraction of apron spots this population tries to claim (0..1). */
+  density: number;
+  colors: readonly number[];
+  minScale: number;
+  maxScale: number;
+}
+
 export interface MazeTheme {
   id: string;
   name: string;
@@ -69,6 +100,11 @@ export interface MazeTheme {
    *  purchasable" — true only for the default garden theme. */
   price: number;
   palette: ThemePalette;
+  /** IDEA-026/027 follow-up (Nuno: "shrubs in the garden, lighting stations
+   *  in the night city, beach umbrellas... buildings"): the decorative prop
+   *  populations that dress the board's surroundings per theme. Empty array
+   *  = a clean board (classic keeps its pure retro look). */
+  props: readonly ThemeProp[];
 }
 
 export const MAZE_THEMES: readonly MazeTheme[] = [
@@ -111,6 +147,12 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
       speckEmissive: 0x1c3a18,
       speckChance: 0.35,
     },
+    props: [
+      // Nuno's ask: "on the garden add some shrubs" — leafy rounded bushes
+      // ringing the lawn, plus the occasional young tree.
+      { kind: "shrub", density: 0.3, colors: [0x4e9a3e, 0x3f8f3a, 0x5fae4d], minScale: 0.8, maxScale: 1.25 },
+      { kind: "tree", density: 0.08, colors: [0x4e9a3e], minScale: 0.9, maxScale: 1.15 },
+    ],
   },
   {
     id: "classic",
@@ -147,7 +189,9 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
       speckColor: 0x8fd15c,
       speckEmissive: 0x1c3a18,
       speckChance: 0,
-    },
+    },    // Deliberately propless: the v1.0 throwback is a clean neon board in a
+    // black void — anything planted around it would break the retro read.
+    props: [],
   },
   {
     id: "forest",
@@ -183,6 +227,11 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
       speckEmissive: 0x16300f,
       speckChance: 0.5,
     },
+    props: [
+      // A dense pine ring: the maze reads as a clearing INSIDE the forest.
+      { kind: "pine", density: 0.5, colors: [0x2e6b34, 0x24552a, 0x3a7a40], minScale: 0.9, maxScale: 1.55 },
+      { kind: "shrub", density: 0.2, colors: [0x2e6b34, 0x3a7a40], minScale: 0.7, maxScale: 1.1 },
+    ],
   },
   {
     id: "beach",
@@ -218,6 +267,12 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
       speckEmissive: 0x2a3a14,
       speckChance: 0.3,
     },
+    props: [
+      // Nuno's ask: "on the beach some beach umbrella" — bright canopies
+      // planted in the sand, with palms swaying behind the board.
+      { kind: "umbrella", density: 0.16, colors: [0xf29a8a, 0x5fc8c0, 0xf2d43a, 0xf4efe6], minScale: 0.9, maxScale: 1.2 },
+      { kind: "palm", density: 0.14, colors: [0x5fae4d, 0x4e9a3e], minScale: 0.9, maxScale: 1.35 },
+    ],
   },
   {
     id: "park",
@@ -253,6 +308,13 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
       speckEmissive: 0x1c3a18,
       speckChance: 0.4,
     },
+    props: [
+      // The manicured cousin: proper trees, trimmed shrubs, and the odd
+      // park lamp along the path.
+      { kind: "tree", density: 0.22, colors: [0x4e9a3e, 0x5fae4d], minScale: 0.9, maxScale: 1.3 },
+      { kind: "shrub", density: 0.18, colors: [0x4e9a3e, 0x5aa348], minScale: 0.75, maxScale: 1.15 },
+      { kind: "streetlight", density: 0.12, colors: [0xf4d060], minScale: 0.95, maxScale: 1.1 },
+    ],
   },
   {
     id: "city",
@@ -295,6 +357,14 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
       speckEmissive: 0x3a3a4a,
       speckChance: 0.15,
     },
+    props: [
+      // Nuno's ask: "some buildings... some lighting stations" — a varied-
+      // height skyline rises behind and beside the board (never in front —
+      // the render layer's per-side height caps keep the play area clear),
+      // with warm streetlights dotted around the block.
+      { kind: "building", density: 0.38, colors: [0x5a5a68, 0x6d6a78, 0x4a4a58, 0x7a7480], minScale: 0.85, maxScale: 1.6 },
+      { kind: "streetlight", density: 0.18, colors: [0xf4d060], minScale: 0.95, maxScale: 1.15 },
+    ],
   },
 ] as const;
 

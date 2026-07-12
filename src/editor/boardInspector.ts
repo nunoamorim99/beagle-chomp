@@ -2,8 +2,8 @@
 // The lil-gui control pane for BOARD mode: a base-theme picker (loads a deep
 // working COPY of one of the 6 MAZE_THEMES — never mutates the registry
 // object itself, see main.ts's loadBaseTheme) plus one folder per logical
-// palette slot (Atmosphere / Walls / Floor / Biscuits / Blooms / Specks) —
-// this is the "board slots" the tree pane (boardTree.ts) lists, and
+// palette slot (Atmosphere / Walls / Floor / Biscuits / Blooms / Specks /
+// Props) — this is the "board slots" the tree pane (boardTree.ts) lists, and
 // selecting a tree row opens/scrolls to the matching folder here (see
 // focusSlot). Color fields follow inspector.ts's established `{ color:
 // "#hexstring" }` proxy pattern (lil-gui's addColor also accepts a bare
@@ -15,16 +15,32 @@
 //   - Walls/Floor/Biscuits/Atmosphere: mutate the shared materials/lights
 //     directly (via `ctx.materials`/`ctx.lights`, handles main.ts hands us
 //     off the live board/atmosphere) — cheap, no decor rebuild.
-//   - Blooms/Specks: these change the SET of decorated tiles (not just a
-//     color), so every change calls `ctx.onDecorChange()`, which re-runs
-//     applyBoardTheme with the current working theme (rebuilds hedgeDecor).
+//   - Blooms/Specks/Props: these change the SET of decorated tiles/planted
+//     objects (not just a color), so every change calls `ctx.onDecorChange()`,
+//     which re-runs applyBoardTheme with the current working theme (rebuilds
+//     hedgeDecor AND — once the parallel render-side work lands — board.props;
+//     see main.ts's rebuildBoardFromWorkingTheme, the one shared live-apply
+//     path both decor kinds already go through).
+//
+// IDEA-027 props follow-up (Nuno: "create/add components like this in the
+// editor too" — shrubs/trees/buildings/streetlights/umbrellas per theme):
+// the Props folder holds ONE SUBFOLDER PER theme.props ENTRY (a lil-gui
+// folder is just a nested GUI — addFolder returns one you can keep adding
+// controllers to), titled "prop N · kind" so re-ordering/scanning is
+// obvious at a glance. Structural changes (add/remove/kind swap) rebuild the
+// WHOLE Props folder — same "destroy this one folder, rebuild it" shape as
+// buildBloomsFolder below uses for its color-count changes — because lil-gui
+// has no primitive for inserting/removing a single subfolder or its
+// controllers in place.
 //
 // Same lil-gui gotchas this codebase has already hit apply here too:
 //   - No explicit `step` on any control whose range is symmetric around a
 //     value that isn't the range MIN (lil-gui anchors its step grid at the
 //     range min) — none of our sliders need a step tighter than the
 //     default, so this is avoidance-by-omission, but documented here so a
-//     future intensity/chance slider addition remembers the trap.
+//     future intensity/chance slider addition remembers the trap. The Props
+//     folder's density/minScale/maxScale sliders follow the same rule (their
+//     ranges all start at a real usable minimum, not an offset zero).
 //   - lil-gui swallows keydown on a focused widget (text/slider) — Ctrl+Z
 //     while a color picker or number field has focus needs a blur first;
 //     board mode has no undo (see main.ts's note), so this doesn't bite
@@ -33,11 +49,33 @@
 import GUI from "lil-gui";
 import * as THREE from "three";
 import { type BoardSlotId } from "./boardTree";
-import { type WorkingTheme } from "./boardCodegen";
-import { MAZE_THEMES } from "../game/themes";
+import { defaultThemeProp, type WorkingTheme } from "./boardCodegen";
+import { MAZE_THEMES, type ThemePropKind } from "../game/themes";
 
 const MAX_BLOOM_COLORS = 4;
 const DEFAULT_NEW_BLOOM_COLOR = 0xffffff;
+
+// Props colors: 1..4 (unlike blooms' 0..4 — an empty-color prop population
+// would render invisibly-tinted geometry, which is never useful; a theme
+// that wants NO props of a kind simply doesn't have that population at all,
+// see the "remove this prop" button below).
+const MIN_PROP_COLORS = 1;
+const MAX_PROP_COLORS = 4;
+const DEFAULT_NEW_PROP_COLOR = 0xffffff;
+
+/** All 7 kinds the render layer (src/render/board.ts) knows how to build —
+ *  see themes.ts's ThemePropKind. Listed here (not derived) since lil-gui's
+ *  dropdown needs a label->value map, and these ARE the labels — matching
+ *  the exact string literals so "Copy theme code" round-trips losslessly. */
+const PROP_KIND_OPTIONS: Record<string, ThemePropKind> = {
+  shrub: "shrub",
+  tree: "tree",
+  pine: "pine",
+  palm: "palm",
+  building: "building",
+  streetlight: "streetlight",
+  umbrella: "umbrella",
+};
 
 export interface BoardMaterialHandles {
   wall: THREE.MeshStandardMaterial;
@@ -59,8 +97,9 @@ export interface BoardInspectorCallbacks {
    *  background color (no material handle for these two; boardStage owns
    *  them). */
   onAtmosphereBg(): void;
-  /** Any bloom/speck field changed (color, add/remove, emissive, chance) —
-   *  triggers applyBoardTheme (decor rebuild). */
+  /** Any bloom/speck/PROP field changed (color, add/remove, emissive,
+   *  chance, density, scale, kind) — triggers applyBoardTheme (decor +
+   *  props rebuild). */
   onDecorChange(): void;
   /** id/name/price text/number fields changed — no live visual effect, just
    *  keeps the "Copy theme code" output in sync (codegen reads the working
@@ -357,6 +396,108 @@ export function createBoardInspector(
       .onChange(() => cb.onDecorChange());
   }
 
+  /** Builds one prop population's SUBfolder (kind dropdown, density/scale
+   *  sliders, its own color list, "remove this prop") inside the parent
+   *  "Props" folder — `index` is only used for the title/label ("prop 1 ·
+   *  shrub"), never as a stored identity (props are looked up by ARRAY
+   *  INDEX at click-time inside the closures below, which is safe because
+   *  every structural change rebuilds the whole Props folder immediately
+   *  afterward, so no closure ever outlives the index it captured). */
+  function buildPropSubfolder(parent: GUI, theme: WorkingTheme, index: number): void {
+    const prop = theme.props[index];
+    const sub = parent.addFolder(`prop ${index + 1} · ${prop.kind}`);
+
+    sub
+      .add(prop, "kind", PROP_KIND_OPTIONS)
+      .name("kind")
+      .onChange(() => {
+        // Kind swap is structural (the subfolder's own TITLE embeds the
+        // kind), so rebuild the whole Props folder rather than trying to
+        // rename this one subfolder in place — same "destroy and rebuild"
+        // call buildPropsFolder already makes for add/remove below.
+        buildPropsFolder(theme);
+        cb.onDecorChange();
+      });
+
+    sub
+      .add(prop, "density", 0, 0.6, 0.01)
+      .name("density")
+      .onChange(() => cb.onDecorChange());
+    sub
+      .add(prop, "minScale", 0.5, 2, 0.01)
+      .name("min scale")
+      .onChange(() => cb.onDecorChange());
+    sub
+      .add(prop, "maxScale", 0.5, 2, 0.01)
+      .name("max scale")
+      .onChange(() => cb.onDecorChange());
+
+    const colors = prop.colors; // WorkingThemeProp's colors is genuinely mutable (see boardCodegen.ts)
+    colors.forEach((_, i) => {
+      sub
+        .addColor(
+          hexProxy(
+            () => colors[i],
+            (v) => { colors[i] = v; },
+          ),
+          "color",
+        )
+        .name(`color ${i + 1}`)
+        .onChange(() => cb.onDecorChange());
+    });
+
+    if (colors.length < MAX_PROP_COLORS) {
+      sub
+        .add({ add: () => {
+          colors.push(DEFAULT_NEW_PROP_COLOR);
+          buildPropsFolder(theme);
+          cb.onDecorChange();
+        } }, "add")
+        .name(`add color (${colors.length}/${MAX_PROP_COLORS}) ➕`);
+    }
+    if (colors.length > MIN_PROP_COLORS) {
+      sub
+        .add({ remove: () => {
+          colors.pop();
+          buildPropsFolder(theme);
+          cb.onDecorChange();
+        } }, "remove")
+        .name("remove last color ➖");
+    }
+
+    sub
+      .add({ removeProp: () => {
+        theme.props.splice(index, 1);
+        buildPropsFolder(theme);
+        cb.onDecorChange();
+      } }, "removeProp")
+      .name("remove this prop 🗑");
+  }
+
+  /** Rebuilds the whole "Props" folder from `theme.props` — one subfolder per
+   *  population plus a trailing "add prop" button. Same destroy-and-rebuild-
+   *  this-one-folder shape buildBloomsFolder uses for its color-count
+   *  changes: lil-gui has no primitive for inserting/removing a single
+   *  subfolder in place, so any structural edit (add/remove/kind change)
+   *  just rebuilds the entire folder from the current `theme.props` array —
+   *  cheap (a handful of DOM nodes) and impossible to get out of sync with
+   *  the data, unlike trying to patch individual subfolders in place. */
+  function buildPropsFolder(theme: WorkingTheme): void {
+    folders.props?.destroy();
+    const folder = gui.addFolder("Props");
+    folders.props = folder;
+
+    theme.props.forEach((_, i) => buildPropSubfolder(folder, theme, i));
+
+    folder
+      .add({ addProp: () => {
+        theme.props.push(defaultThemeProp());
+        buildPropsFolder(theme);
+        cb.onDecorChange();
+      } }, "addProp")
+      .name("add prop ✚");
+  }
+
   return {
     setTheme(
       theme: WorkingTheme,
@@ -393,6 +534,7 @@ export function createBoardInspector(
       buildBiscuitsFolder(theme, materials.biscuit);
       buildBloomsFolder(theme);
       buildSpecksFolder(theme);
+      buildPropsFolder(theme);
     },
     focusSlot(id: BoardSlotId): void {
       const folder = folders[id];

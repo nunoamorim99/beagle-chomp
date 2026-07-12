@@ -1,13 +1,20 @@
 // OWNER: board & themes editor (IDEA-027, dev-only).
 // The left tree pane in board mode: a flat list of the logical palette
-// SLOTS (Atmosphere / Walls / Floor / Biscuits / Blooms / Specks) instead of
-// character.ts's per-mesh part tree — the board is generated per-tile from
-// instanced meshes (render/board.ts), so there is no per-mesh picking story
-// for v1 (per the brief: "no per-mesh picking needed"). Selecting a row
-// opens/focuses the matching lil-gui folder in boardInspector.ts. Reuses
-// partTree.ts's `.tree-row`/`.tree-icon`/`.tree-name`/`.selected` CSS classes
-// so board mode's tree reads as the same visual language, with no new CSS.
-export type BoardSlotId = "atmosphere" | "walls" | "floor" | "biscuits" | "blooms" | "specks";
+// SLOTS (Atmosphere / Walls / Floor / Biscuits / Blooms / Specks / Props)
+// instead of character.ts's per-mesh part tree — the board is generated
+// per-tile from instanced meshes (render/board.ts), so there is no per-mesh
+// picking story for v1 (per the brief: "no per-mesh picking needed").
+// Selecting a row opens/focuses the matching lil-gui folder in
+// boardInspector.ts. Reuses partTree.ts's `.tree-row`/`.tree-icon`/
+// `.tree-name`/`.selected` CSS classes so board mode's tree reads as the same
+// visual language, with no new CSS.
+//
+// IDEA-027 props follow-up: "Props" is one row here even though the
+// inspector folder it opens contains N per-population SUBfolders (one per
+// theme.props entry) — the tree stays a flat slot list, same as every other
+// row; drilling into individual prop populations happens in the inspector
+// pane itself (see boardInspector.ts's buildPropsFolder), not the tree.
+export type BoardSlotId = "atmosphere" | "walls" | "floor" | "biscuits" | "blooms" | "specks" | "props";
 
 export interface BoardSlotRow {
   id: BoardSlotId;
@@ -21,6 +28,7 @@ export const BOARD_SLOTS: readonly BoardSlotRow[] = [
   { id: "biscuits", label: "Biscuits" },
   { id: "blooms", label: "Blooms" },
   { id: "specks", label: "Specks" },
+  { id: "props", label: "Props" },
 ];
 
 export interface BoardTreeView {

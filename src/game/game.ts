@@ -36,6 +36,7 @@ import { createEffects, type Effects } from "../render/effects";
 import {
   buildBoard,
   applyBoardTheme,
+  disposePropGroup,
   eatPellet,
   spawnFruit,
   clearFruit,
@@ -617,7 +618,7 @@ export class Game {
     };
   }
 
-  /** Removes every mesh owned by the previous level's board from the scene (walls, floor, remaining pellets, fruit, coin, bonus life, hedge decor) so buildLevel's replacement never leaks. */
+  /** Removes every mesh owned by the previous level's board from the scene (walls, floor, remaining pellets, fruit, coin, bonus life, hedge decor, theme props) so buildLevel's replacement never leaks. */
   private disposeLevel(level: LevelAssets): void {
     this.rig.scene.remove(level.board.walls, level.board.floor);
     level.board.pelletMeshes.forEach((p) => p.mesh.removeFromParent());
@@ -625,6 +626,12 @@ export class Game {
     if (level.board.coin) this.rig.scene.remove(level.board.coin);
     if (level.board.life) this.rig.scene.remove(level.board.life);
     level.board.hedgeDecor.forEach((m) => this.rig.scene.remove(m));
+    // IDEA-026 props: one container group per board (see Board.props).
+    // Unlike the walls/pellets above (whose geometries/materials are shared
+    // module-level and must NOT be disposed here), every prop owns its own
+    // geometry+materials — disposePropGroup is board.ts's canonical
+    // teardown for them, so a level change never leaks prop GPU resources.
+    if (level.board.props) disposePropGroup(this.rig.scene, level.board.props);
   }
 
   start(): void {

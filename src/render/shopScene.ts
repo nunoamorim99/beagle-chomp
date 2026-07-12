@@ -27,8 +27,9 @@
 import * as THREE from "three";
 import { COLORS } from "../game/config";
 import { type BeagleSkin } from "../game/cosmetics";
-import { getMazeTheme, type ThemePalette } from "../game/themes";
+import { getMazeTheme, type MazeTheme, type ThemePropKind } from "../game/themes";
 import { makeBeagle, makeEnemy, applyBeagleSkin, type BeagleParts } from "./characters";
+import { makeThemeProp } from "./board";
 
 // Same cheap inward-facing skydome technique as menuScene.ts's own
 // makeBackdrop (itself a copy of scene.ts's) — kept as a third small copy
@@ -206,6 +207,88 @@ const DIORAMA_SPECK_SPOTS: ReadonlyArray<{ tile: [number, number]; jx: number; j
   { tile: [0, 2], jx: 0.12, jz: -0.1 },
 ];
 
+// IDEA-026 follow-up (theme props): 1-2 SIGNATURE props per theme, so the
+// diorama SELLS the decoration a purchase actually plants around the real
+// board, not just the wall/floor/biscuit palette — Nuno's literal per-theme
+// ask, verbatim: "on the garden add some shrubs, on the night city some
+// lighting stations, on the beach some beach umbrella... On the night city we
+// could add some buildings too." Reuses board.ts's exact factories
+// (makeThemeProp) rather than any diorama-local reimplementation, so a
+// preview is always honest — same shapes/materials as the real board.
+//
+// Hand-placed, EXPLICITLY per theme id (same "planted, not derived"
+// philosophy as DIORAMA_WALL_TILES/DIORAMA_BISCUIT_TILES/DIORAMA_BLOOM_SPOTS
+// above, all hand-authored literals rather than generically computed from
+// `theme.props`): the brief specifies an exact kind (and count — 0, 1, or 2)
+// per theme, e.g. "garden -> one shrub" (NOT shrub+tree, even though garden's
+// `props` array also has a tree population — that population dresses the
+// real board's apron, but the diorama's job is to sell garden's SIGNATURE
+// look, which is shrubs) and "park -> one tree + lamp" (specifically
+// streetlight, not park's other population, shrub). A per-kind-priority
+// derivation was auditioned and dropped: it kept either showing an
+// off-brief population (tree+shrub for park, contradicting "tree + lamp") or
+// needed a second hand-tuned override table anyway — at 6 themes, a direct
+// id->kinds table is both simpler and unambiguously matches the brief.
+// `colors`/`minScale`/`maxScale` are still read live from `theme.props` (via
+// findSignatureProp below) so a future palette/scale retune in themes.ts
+// stays reflected here automatically — only WHICH kind(s) show is hardcoded.
+const DIORAMA_SIGNATURE_KINDS: Readonly<Record<string, readonly ThemePropKind[]>> = {
+  garden: ["shrub"],
+  classic: [],
+  forest: ["pine"],
+  beach: ["umbrella"],
+  park: ["tree", "streetlight"],
+  city: ["building", "streetlight"],
+};
+
+// Two open pockets of the 5.0x4.6 slab that sit clear of BOTH the L-shaped
+// wall run and the biscuit-trail/bone diagonal, with comfortable margin
+// inside the slab edges (>=0.4 units, well past the ~0.3-margin discipline
+// the trail sizing note above already established): a "BEHIND" spot past the
+// short back arm (tile [3.2, 0.55], local ~(2.10, -0.50) — a tall/skyline-
+// scale prop reads naturally sitting past the corner) and a "BESIDE" spot
+// past the long side arm (tile [-0.9, 2.3], local ~(-2.00, 1.25) — a
+// ground-level prop reads naturally flanking the run at eye level).
+//
+// Slot assignment is simply DIORAMA_SIGNATURE_KINDS' own array order — index
+// 0 -> BEHIND, index 1 -> BESIDE — rather than a generic per-kind preference
+// table: every two-kind entry above was deliberately AUTHORED taller/
+// farther-reading kind first (city: building then streetlight; park: tree
+// then streetlight), so array order already encodes the right slot without a
+// second lookup that could collide (a per-kind table sends both of park's
+// kinds — tree AND streetlight are both "ground-level" — to the same
+// preferred slot, which was the bug this simpler scheme replaces). A theme
+// with only one signature kind (garden/forest/beach) always lands on index 0
+// (BEHIND) since it's the only entry in its list.
+const DIORAMA_SIGNATURE_SLOTS: ReadonlyArray<{ tile: [number, number]; rotY: number; hashSeed: number }> = [
+  { tile: [3.2, 0.55], rotY: 0.5, hashSeed: 0.62 }, // BEHIND — index 0
+  { tile: [-0.9, 2.3], rotY: -0.35, hashSeed: 0.3 }, // BESIDE — index 1
+];
+// Verified against the EXISTING diorama camera rig (DIORAMA_CAM_*/
+// applyCameraFraming below — untouched, per the brief's "don't move the
+// camera") through a full 360deg turntable spin at every real device aspect:
+// city (the largest signature prop, building at mid-band scale — real
+// measured AABB radius 0.73/height 2.64 from its own local origin) stays
+// safely inside the frame at landscape (worst NDC ~0.83, ~17% margin), 4:3
+// (~0.83, ~17% margin), and square (~0.93, ~7% margin) — every other
+// theme's signature prop(s) are smaller and land well inside those same
+// margins. Portrait (aspect <~0.55) is UNCHANGED from its pre-existing
+// framing (the baseline board — walls/trail/bone alone, no props at all —
+// already exceeds NDC 1 there before this change; fixing that would require
+// moving the camera, out of scope here).
+
+
+/** Finds `kind`'s population within `theme.props` (so the diorama reads its
+ *  real colors/scale band live rather than duplicating them) — every kind
+ *  listed in DIORAMA_SIGNATURE_KINDS for a given theme id is guaranteed to
+ *  exist in that theme's `props` array (both tables are hand-authored from
+ *  the same themes.ts source), so this only returns `undefined` if the two
+ *  tables ever drift out of sync — handled defensively by simply skipping
+ *  that slot rather than throwing (see the placement loop below). */
+function findSignatureProp(theme: MazeTheme, kind: ThemePropKind) {
+  return theme.props.find((p) => p.kind === kind);
+}
+
 /** Converts a diorama tile coord to a local position, centered under
  *  DIORAMA_FLOOR_CENTER so the whole staging sits roughly on the vignette
  *  origin the camera rig is tuned for. */
@@ -215,14 +298,17 @@ function dioramaPos(tx: number, tz: number): [number, number] {
 
 /**
  * Builds a maze-theme diorama: a small floor slab, an L-shaped run of wall
- * blocks, a short biscuit trail + one bone, and a few theme-appropriate
- * blooms/specks on the wall tops — all skinned from `palette` using the same
- * material recipe board.ts uses for the real board (so a city theme's
- * glowing "windows" and a classic theme's clean unplanted walls both read
- * exactly as they would in the actual maze). The bone keeps its FIXED
- * off-white identity color, matching board.ts's pellet bones in every theme.
+ * blocks, a short biscuit trail + one bone, a few theme-appropriate
+ * blooms/specks on the wall tops, and (IDEA-026 follow-up) 1-2 signature
+ * theme PROPS in the open pockets beside the run — all skinned from
+ * `theme.palette` using the same material recipe board.ts uses for the real
+ * board (so a city theme's glowing "windows" and a classic theme's clean
+ * unplanted walls both read exactly as they would in the actual maze). The
+ * bone keeps its FIXED off-white identity color, matching board.ts's pellet
+ * bones in every theme.
  */
-function makeThemeDiorama(palette: ThemePalette): THREE.Group {
+function makeThemeDiorama(theme: MazeTheme): THREE.Group {
+  const palette = theme.palette;
   const g = new THREE.Group();
 
   // Floor — same roughness/emissive treatment as board.ts's matFloor.
@@ -346,6 +432,33 @@ function makeThemeDiorama(palette: ThemePalette): THREE.Group {
       });
     }
   }
+
+  // IDEA-026 follow-up: 1-2 signature theme props, per DIORAMA_SIGNATURE_
+  // KINDS' exact per-theme-id list above — array index IS the slot index
+  // (see DIORAMA_SIGNATURE_SLOTS' doc comment for why). classic's empty list
+  // naturally plants nothing.
+  const signatureKinds = DIORAMA_SIGNATURE_KINDS[theme.id] ?? [];
+  signatureKinds.forEach((kind, slotIdx) => {
+    const pop = findSignatureProp(theme, kind);
+    if (!pop) return; // defensive: tables drifted out of sync with themes.ts
+    if (slotIdx >= DIORAMA_SIGNATURE_SLOTS.length) return; // defensive: never more kinds than slots
+
+    const slot = DIORAMA_SIGNATURE_SLOTS[slotIdx];
+    const [x, z] = dioramaPos(slot.tile[0], slot.tile[1]);
+    // Mid-band scale (not the population's full minScale..maxScale roll) —
+    // a diorama sample should read as a representative, well-composed
+    // instance, not risk the population's largest/smallest extreme in a
+    // hand-placed spot with fixed clearance.
+    const scale = THREE.MathUtils.lerp(pop.minScale, pop.maxScale, 0.5);
+    const prop = makeThemeProp(kind, pop.colors, slot.hashSeed);
+    prop.position.set(x, 0, z);
+    prop.rotation.y = slot.rotY;
+    prop.scale.setScalar(scale);
+    prop.traverse((o) => {
+      o.castShadow = true;
+    });
+    g.add(prop);
+  });
 
   return g;
 }
@@ -670,7 +783,7 @@ export function createShopScene(): ShopScene {
     },
     showTheme(themeId: string): void {
       const theme = getMazeTheme(themeId); // never throws — degrades to the default theme on an unknown id
-      const next = makeThemeDiorama(theme.palette);
+      const next = makeThemeDiorama(theme);
       setHero(next, "theme");
       tintAtmosphere(theme.palette.bg, theme.palette.hemiSky, theme.palette.hemiGround);
     },

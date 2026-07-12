@@ -780,10 +780,13 @@ function rebuildBoardFromWorkingTheme(): void {
       biscuit: (biscuitEntry.mesh as THREE.Mesh).material as THREE.MeshStandardMaterial,
     };
   }
-  // applyBoardTheme only reads `theme.palette` (see board.ts) — id/name/price
-  // are irrelevant to it, so passing `workingTheme` directly (a WorkingTheme,
-  // structurally a MazeTheme since WorkingPalette satisfies ThemePalette) is
-  // safe without constructing a throwaway object.
+  // applyBoardTheme reads `theme.palette` AND `theme.props` (see board.ts) —
+  // id/name/price are irrelevant to it, so passing `workingTheme` directly (a
+  // WorkingTheme, structurally a MazeTheme since WorkingPalette satisfies
+  // ThemePalette and WorkingThemeProp satisfies ThemeProp) is safe without
+  // constructing a throwaway object. This is also the ONE live-apply path the
+  // Props folder's every control (add/remove/kind/density/scale/color) routes
+  // through via `onDecorChange` — see boardInspector.ts's header note.
   applyBoardTheme(board, boardStage.boardRoot, boardGrid, workingTheme);
   boardStage.applyPalette(workingTheme.palette);
   boardStage.setSky(workingTheme.palette.bg, workingTheme.palette.backdropTop);
@@ -861,19 +864,25 @@ modeBoardBtn.addEventListener("click", () => setMode("board"));
 
 // TEST-SUPPORT ONLY: a minimal, explicitly-typed read hook for
 // scripts/test-editor-board.ts's Playwright suite — the numbers the brief
-// asks it to assert on (wall INSTANCE count, hedge-decor mesh count) have no
-// DOM surface of their own (unlike the character suite's tree rows/lil-gui
-// labels, which test-editor.ts reads exactly as a person would), and
-// test-editor.ts's own established style is "no internal handle, assert on
-// what a person sees" — this hook exists ONLY where that's genuinely not
-// possible without reimplementing pixel-counting. Dev-only by the same
-// construction as the whole /editor/ page (never a rollup input — see
-// vite.config.ts's note — so this line never reaches dist/ either).
+// asks it to assert on (wall INSTANCE count, hedge-decor mesh count, prop
+// GROUP CHILD count) have no DOM surface of their own (unlike the character
+// suite's tree rows/lil-gui labels, which test-editor.ts reads exactly as a
+// person would), and test-editor.ts's own established style is "no internal
+// handle, assert on what a person sees" — this hook exists ONLY where that's
+// genuinely not possible without reimplementing pixel-counting. Dev-only by
+// the same construction as the whole /editor/ page (never a rollup input —
+// see vite.config.ts's note — so this line never reaches dist/ either).
 declare global {
   interface Window {
     __boardTestHook?: {
       wallCount(): number;
       hedgeDecorMeshCount(): number;
+      /** Total mesh COUNT across every planted prop (board.props' Group
+       *  child count — 0 for both "no props folder rebuild happened yet" and
+       *  a genuinely propless theme, e.g. classic; a live edit's before/after
+       *  DELTA is what the suite asserts on, not the absolute number, so
+       *  that ambiguity is harmless — see test-editor-board.ts). */
+      propMeshCount(): number;
       mode(): Mode;
       workingThemeId(): string;
     };
@@ -882,6 +891,7 @@ declare global {
 window.__boardTestHook = {
   wallCount: () => board?.walls.count ?? 0,
   hedgeDecorMeshCount: () => board?.hedgeDecor.length ?? 0,
+  propMeshCount: () => board?.props?.children.length ?? 0,
   mode: () => mode,
   workingThemeId: () => workingTheme.id,
 };
