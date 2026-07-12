@@ -146,7 +146,7 @@ function selectionContext() {
       // The wireframe overlay shares the mesh's geometry — refresh it.
       if (selected === node) highlighter.set(state.highlight ? node : null);
     },
-    onDelete: deletePart,
+    onDelete: deleteNode,
     onTransformCommitted: pushTransformHistory,
     onVisibleCommitted: (node: PartNode, before: boolean, after: boolean) => {
       const apply = (value: boolean) => (): void => {
@@ -229,6 +229,24 @@ function buildCharacter(): void {
 }
 
 // --- add / delete parts ---
+
+/** Inserts `object` into `parent.children` at a specific index instead of
+ *  three.js's own `add()`, which only ever appends. Mirrors add()'s own
+ *  bookkeeping (removeFromParent() first, parent pointer, added/child-added
+ *  events) so nothing downstream (raycasting, matrix updates) can tell the
+ *  difference — this is how undo restores an original part's sibling
+ *  position instead of moving it to the end of the list. `index` is clamped
+ *  to the current child count so a stale index (e.g. an earlier sibling was
+ *  ALSO deleted and not yet restored) degrades to append rather than throw. */
+function insertChildAt(parent: THREE.Object3D, object: THREE.Object3D, index: number): void {
+  object.removeFromParent();
+  object.parent = parent;
+  const at = Math.max(0, Math.min(index, parent.children.length));
+  parent.children.splice(at, 0, object);
+  object.dispatchEvent({ type: "added" });
+  parent.dispatchEvent({ type: "childadded", child: object });
+}
+
 function sanitizeName(raw: string, kind: PrimKind): string {
   let name = raw.replace(/[^a-zA-Z0-9_]/g, "");
   if (!/^[a-zA-Z_]/.test(name)) name = kind;
@@ -304,6 +322,84 @@ function deletePart(node: PartNode): void {
     redo: () => detachAdded(record),
     onDiscard: discardAdded(record),
   });
+}
+
+/** What deleteOriginalPart needs to reverse itself — captured once at delete
+ *  time so undo/redo never re-derive it from a PartNode that may no longer
+ *  exist (refreshParts() rebuilds the node list on every scene change). */
+interface OriginalDeleteRecord {
+  object: THREE.Object3D;
+  parent: THREE.Object3D;
+  path: string;
+  varName: string;
+  isAutoNamed: boolean;
+  /** Sibling index at the moment of THIS delete — see deleteOriginalPart. */
+  index: number;
+}
+
+/** (Re)attach an ORIGINAL part at its recorded sibling index — shared by
+ *  delete's undo and redo-of-delete. Unlike attachAdded, this does NOT touch
+ *  the EditLog's added-parts bookkeeping; it clears the deleted-original
+ *  mark instead (see EditLog.unmarkOriginalDeleted) so codegen stops
+ *  emitting removeFromParent() for it. No disposal concern either way: the
+ *  geometry/material are owned by the character build (registry.ts's
+ *  disposeGroup reclaims them on character switch), never by the editor. */
+function attachOriginalAt(rec: OriginalDeleteRecord): void {
+  insertChildAt(rec.parent, rec.object, rec.index);
+  log.unmarkOriginalDeleted(rec.path);
+  refreshParts();
+  updateGenerated();
+  const node = nodeByObject.get(rec.object);
+  if (node) select(node); // land back on the restored part, like a fresh pick
+}
+
+/** Detach an ORIGINAL part WITHOUT disposing anything (see attachOriginalAt).
+ *  `removeFromParent()` also drops the whole subtree for a group — that's
+ *  the deliberate "delete a group deletes its children too" behavior the
+ *  inspector's confirm-free copy warns about before the click. */
+function detachOriginal(rec: OriginalDeleteRecord): void {
+  if (selected?.object === rec.object) select(null);
+  // Locator captured BEFORE removeFromParent(): local position is unaffected
+  // by reparenting, but reading it off a still-attached object is simplest.
+  log.markOriginalDeleted(rec);
+  rec.object.removeFromParent();
+  refreshParts();
+  updateGenerated();
+}
+
+function deleteOriginalPart(node: PartNode): void {
+  if (node.path === "") return; // the character root is never deletable
+  const parent = node.object.parent;
+  if (!parent) return;
+  const rec: OriginalDeleteRecord = {
+    object: node.object,
+    parent,
+    path: node.path,
+    varName: node.varName,
+    isAutoNamed: node.isAutoNamed,
+    // Sibling index BEFORE detaching — indexOf reads parent.children's
+    // CURRENT live layout, so this stays correct even if an earlier sibling
+    // is also mid-delete; insertChildAt clamps defensively on the way back.
+    index: parent.children.indexOf(node.object),
+  };
+  detachOriginal(rec);
+  history.push({
+    undo: () => attachOriginalAt(rec),
+    redo: () => detachOriginal(rec),
+    // No onDiscard: nothing to dispose. If the redo stack is wiped (a new
+    // action after undo) the part simply stays in the scene, un-deleted —
+    // exactly as if the delete had never happened, which is correct: the
+    // object is owned by the character build, not this history entry.
+  });
+}
+
+/** Single delete entry point (the Delete key AND the inspector's 🗑 button
+ *  both call this) — routes to the added-part path or the original-part path
+ *  depending on what's selected, mirroring the root guard both underlying
+ *  functions already enforce on their own. */
+function deleteNode(node: PartNode): void {
+  if (log.findAddedPart(node.object)) deletePart(node);
+  else deleteOriginalPart(node);
 }
 
 // --- inspector (right pane) ---
@@ -394,7 +490,7 @@ copyFileBtn.addEventListener("click", () => {
     .then(() => flash(copyFileBtn, "Copied ✓ paste over characters.ts", true));
 });
 
-// --- keyboard: Ctrl+Z / Ctrl+Y, arrow nudging, Escape ---
+// --- keyboard: Ctrl+Z / Ctrl+Y, arrow nudging, Escape, Delete ---
 const NUDGE_STEP = 0.01;
 const NUDGE_COARSE = 0.1; // Shift
 const NUDGE_FINE = 0.001; // Alt
@@ -481,6 +577,17 @@ window.addEventListener(
 
     if (e.key === "Escape") {
       select(null);
+      return;
+    }
+    // Delete removes the current selection — same dispatch as the
+    // inspector's 🗑 button. Root is excluded (path === "") so this can never
+    // wipe the whole character; deleteNode's own guards no-op safely anyway,
+    // but checking here avoids preventDefault() on an inert keypress. (Not
+    // Backspace: that's the browser's "navigate back" key outside a text
+    // field, and it wasn't part of the spec — Delete only.)
+    if (selected && selected.path !== "" && e.key === "Delete") {
+      e.preventDefault();
+      deleteNode(selected);
       return;
     }
     if (selected && (e.key === "ArrowUp" || e.key === "ArrowDown" || e.key === "ArrowLeft" || e.key === "ArrowRight")) {

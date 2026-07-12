@@ -11,6 +11,7 @@ import {
   type EditLog,
   type TransformEditRecord,
   type AddedPartRecord,
+  type DeletedOriginalRecord,
   type PrimKind,
   type Vec3Tuple,
 } from "./editLog";
@@ -59,6 +60,36 @@ function transformEditLines(record: TransformEditRecord): string[] {
   if (record.scale) lines.push(vec3Call(record.varName, "scale", record.scale));
   if (record.visible !== undefined) lines.push(`${record.varName}.visible = ${record.visible};`);
   return lines;
+}
+
+/** An ORIGINAL model part (mesh or group) the user deleted in the editor —
+ *  emits the same `removeFromParent()` call the editor itself performed, so
+ *  pasting this line reproduces "try the character without this part". A
+ *  part deleted then restored by undo never reaches this function (see
+ *  EditLog.unmarkOriginalDeleted). */
+function deletedOriginalLines(record: DeletedOriginalRecord): string[] {
+  const lines: string[] = [];
+  if (record.isAutoNamed) {
+    lines.push(
+      `// NOTE: "${record.varName}" has no variable name in the source yet — it is the`,
+      `// ${record.locator}. Give it a local const in the builder first, then use that name:`,
+    );
+  }
+  lines.push(`${record.varName}.removeFromParent();`);
+  return lines;
+}
+
+/** Tree order = path order (paths are index-based, so a numeric-aware sort
+ *  of the split segments reproduces DFS order). Shared by every block that's
+ *  keyed on a part's tree path (transform edits, deleted originals). */
+function byTreePath<T extends { path: string }>(a: T, b: T): number {
+  const as = a.path === "" ? [] : a.path.split("/").map(Number);
+  const bs = b.path === "" ? [] : b.path.split("/").map(Number);
+  for (let i = 0; i < Math.max(as.length, bs.length); i++) {
+    const d = (as[i] ?? -1) - (bs[i] ?? -1);
+    if (d !== 0) return d;
+  }
+  return 0;
 }
 
 const GEOMETRY_CTORS: Record<PrimKind, (p: Record<string, number>) => string> = {
@@ -129,20 +160,18 @@ function addedPartLines(part: AddedPartRecord): string[] {
 export function collectEditBlocks(log: EditLog, builderName: string): string[][] {
   const blocks: string[][] = [];
 
-  // Tree order = path order (paths are index-based, so a numeric-aware sort
-  // of the split segments reproduces DFS order).
-  const transformRecords = [...log.transformEdits.values()].sort((a, b) => {
-    const as = a.path === "" ? [] : a.path.split("/").map(Number);
-    const bs = b.path === "" ? [] : b.path.split("/").map(Number);
-    for (let i = 0; i < Math.max(as.length, bs.length); i++) {
-      const d = (as[i] ?? -1) - (bs[i] ?? -1);
-      if (d !== 0) return d;
-    }
-    return 0;
-  });
+  const transformRecords = [...log.transformEdits.values()].sort(byTreePath);
   for (const record of transformRecords) {
     const lines = transformEditLines(record);
     if (lines.length > 0) blocks.push(lines);
+  }
+
+  // Deleted ORIGINAL parts — tree order, same as transform edits (both are
+  // keyed by path). A part deleted then undone never appears here; see
+  // EditLog.unmarkOriginalDeleted.
+  const deletedRecords = [...log.deletedOriginals.values()].sort(byTreePath);
+  for (const record of deletedRecords) {
+    blocks.push(deletedOriginalLines(record));
   }
 
   for (const record of log.materialEdits.values()) {

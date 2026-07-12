@@ -13,6 +13,7 @@
     "validate": "tsx scripts/validate-maze.ts",
     "sim": "tsx scripts/sim-logic.ts",
     "test:cosmetics": "tsx scripts/test-cosmetics.ts",
+    "test:editor": "tsx scripts/test-editor.ts",
     "test": "npm run validate && npm run sim && npm run test:cosmetics"
   },
   "dependencies": {

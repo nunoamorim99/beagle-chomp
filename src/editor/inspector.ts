@@ -2,9 +2,14 @@
 // The lil-gui control pane: global controls (character / skin / team color /
 // turntable / idle / grid + Add part) plus a per-selection folder rebuilt on
 // every select — transform channels, visibility, the (possibly shared)
-// material, and, for editor-added parts, geometry params + Delete. Every
+// material, geometry params for editor-added parts, and Delete. Every
 // onChange writes the live object AND records the touched channel in the
 // EditLog (the explicit dirty-map that keeps idle animation out of codegen).
+// Delete (IDEA-025 v2) works on ANY part except the character root — both
+// editor-added primitives and ORIGINAL mesh/group parts from the builder;
+// main.ts's onDelete dispatches to the right removal path (see its
+// deletePart/deleteOriginalPart) so this file stays agnostic to which kind
+// it's deleting.
 import GUI from "lil-gui";
 import * as THREE from "three";
 import { type PartNode } from "./partTree";
@@ -78,6 +83,20 @@ export interface Inspector {
 
 const POS_RANGE = 2.5;
 const SCALE_MAX = 3;
+
+/** Total number of REAL descendants under `object` (not counting itself, and
+ *  skipping the editor's own wireframe/BoxHelper overlay — same
+ *  userData.editorOverlay filter partTree.ts's buildPartList uses) — used
+ *  only to warn "delete part + N inside" on a group before the click, since
+ *  deleting a group takes its whole subtree with it and there is no confirm
+ *  dialog. Cheap; only computed for the currently selected part. */
+function countDescendants(object: THREE.Object3D): number {
+  let count = 0;
+  object.traverse((o) => {
+    if (o !== object && !o.userData.editorOverlay) count++;
+  });
+  return count;
+}
 
 export function createInspector(
   container: HTMLElement,
@@ -231,8 +250,8 @@ export function createInspector(
       }
     }
 
-    // Editor-added parts: live geometry params + delete. Original parts are
-    // never deletable in v1 (toggle `visible` instead — that IS a code edit).
+    // Editor-added parts get live geometry params on top of the transform/
+    // material controls every part already has above.
     const added = ctx.addedRecord;
     if (added) {
       const geo = folder.addFolder("geometry");
@@ -253,7 +272,19 @@ export function createInspector(
             }
           });
       }
-      folder.add({ del: () => ctx.onDelete(node) }, "del").name("delete part 🗑");
+    }
+
+    // Delete: available for ANY selected part — an editor-added primitive,
+    // or an ORIGINAL mesh/group straight from the character builder — except
+    // the character ROOT itself, which would leave nothing selected/editable
+    // and has no "parent" to remove it from. Deleting a GROUP removes its
+    // whole subtree (three.js's own removeFromParent() semantics); no
+    // confirm dialog, so the label says so up front instead.
+    if (node.path !== "") {
+      const subtreeCount = countDescendants(o);
+      const label =
+        subtreeCount > 0 ? `delete part + ${subtreeCount} inside 🗑` : "delete part 🗑";
+      folder.add({ del: () => ctx.onDelete(node) }, "del").name(label);
     }
   }
 
