@@ -16,13 +16,10 @@ Living backlog of ideas. Two purposes:
 ## 📥 Inbox (raw captures — untriaged)
 > `/idea` appends raw notes here with a date. `/idea-triage` turns them into registered ideas
 > below, then clears them from here. Don't assign IDs in the Inbox.
-- (2026-07-12) add to the shop a maze skins to, allow to have a themes for the maze to personalize the maze. The default is the garden, but we can have the classic one black and blue. Then we ca add a few variations like garden, forest, beach, park, city etc...
-- (2026-07-12) the editor allows to edit the maze to, this way we can add some personal touch for each theme and turn the maze more relatable to the theme and upgrade the visuals
-- (2026-07-12) the editor should allow to delete a component or a selected part.
-- (2026-07-11) challenge-mode twist deferred from IDEA-013 v1: maze changes mid-level / walls move around after a few seconds — needs live grid mutation with connectivity guarantees (validator-grade), so it ships as its own idea later
+_(empty — nothing to triage)_
 
 ## Backlog (open ideas)
-> New registered ideas go here. Next free ID: IDEA-026
+> New registered ideas go here. Next free ID: IDEA-029
 
 ### IDEA-019 — Player login & cross-device account recovery 💡
 - **Priority:** 🟡
@@ -39,6 +36,49 @@ Living backlog of ideas. Two purposes:
 - **Description:** a scoreboard shared between players to create some healthy competitiveness.
 - **Notes:** needs identity to attribute scores ([[IDEA-019]]) and a home in the menu ([[IDEA-021]]).
 - **Dependencies:** [[IDEA-019]]
+
+### IDEA-026 — Maze themes in the shop (garden · classic · forest · beach · park · city) 💡
+- **Priority:** 🟡
+- **Area:** theme
+- **Registered:** 2026-07-12
+- **Description:** add maze skins to the shop too — themes for the maze so the player can
+  personalize it. The default is the garden, but we can have the classic one in black and blue,
+  then add a few variations: forest, beach, park, city, etc.
+- **Notes:** the future scope that [[IDEA-012]] and [[IDEA-023]] explicitly deferred ("map themes
+  need a theme-swap system first"). The groundwork anticipated it: the palette lives centrally in
+  `config.ts` COLORS ([[IDEA-008]]) and the hedge-top detailing was built as a per-theme hook
+  ([[IDEA-011]]) — a theme = palette + wall/floor materials + decor set (+ sky/lighting). Sold and
+  equipped through the shop like skins (profile blob gains equipped/owned themes; shop gets the
+  themes tab [[IDEA-023]] reserved). "Classic black and blue" honors the pre-garden v1.0 look.
+  Per-theme decor detailing pairs with the maze editor idea ([[IDEA-027]]).
+- **Dependencies:** — (shop [[IDEA-012]] already delivered)
+
+### IDEA-027 — Editor: edit the maze too (theme-aware board editing) 💡
+- **Priority:** 🟢
+- **Area:** tooling
+- **Registered:** 2026-07-12
+- **Description:** the editor should allow editing the maze too — this way we can add a personal
+  touch for each theme, make the maze more relatable to its theme, and upgrade the visuals.
+- **Notes:** grows the character editor ([[IDEA-025]]) a second workbench: the BOARD. A different
+  problem than characters — the board is generated per-tile from grid data as instanced meshes
+  (`render/board.ts`), not a hand-built group — so this likely means editing the theme RECIPE live
+  (wall/floor/rim materials, decor placement, flower palette) and exporting the recipe code,
+  rather than dragging individual meshes. Purpose-built for theme detailing ([[IDEA-026]]): pick a
+  theme, tweak its look, copy the code.
+- **Dependencies:** [[IDEA-026]] (soft — could prototype on the garden theme alone)
+
+### IDEA-028 — Challenge twist: moving walls / maze changes mid-level 💡
+- **Priority:** 🟢
+- **Area:** modes
+- **Registered:** 2026-07-12
+- **Description:** a challenge level where the maze changes after a few seconds or the walls move
+  around mid-level — the twist from the original challenge-mode vision that got deferred.
+- **Notes:** deferred from [[IDEA-013]] v1 (captured 2026-07-11). The hard part: LIVE grid
+  mutation with validator-grade guarantees ([[IDEA-001]]) — connectivity, pellet reachability, pen
+  exit, and never crushing/trapping an entity mid-move; the render layer needs walls that animate
+  in/out. Would slot into `challenges.ts` as a new modifier level (a C9, or replacing a mid-ladder
+  level) and appear on the level map ([[IDEA-014]]).
+- **Dependencies:** —
 
 ## In progress 🔨
 _(nothing yet)_
@@ -158,6 +198,10 @@ _(nothing yet)_
   come back to character editing" note on [[IDEA-024]]; pairs with the shop 3D gallery
   ([[IDEA-023]]). Future: enemy idle animations, auto-write-to-source, ghost frightened/eaten
   preview, the generic any-project editor.
+  **Queued v2 scope (triaged 2026-07-12):** allow deleting ANY selected component/part — today the
+  🗑 delete button exists only for editor-added parts (original model parts are protected, see
+  `inspector.ts`); Nuno wants to delete a component or a selected part of the original model too
+  (e.g. to try a character without a marking). Small, ships as the next vN on this idea.
 - **Dependencies:** —
 - **History:**
   - **v1** (2026-07-11) — the learning workbench: `/editor/` dev-only page (`npm run editor`) with a 3-pane layout — part tree (real source names via a 59-name `.name` pass in `characters.ts`, the only game-code change, non-visual) | live 3D viewport (menuScene's daylight rig, orbit camera, idle animation with auto-pause on select, click-to-pick raycast, wireframe/BoxHelper highlight with a show/hide toggle) | lil-gui inspector (transform/material/visibility per part, character + skin + team-color pickers, add/delete primitive parts). Bottom panel: Generated code (tree-ordered, real variable names, edits wiggled back to baseline drop out) ⇄ Real source (`?raw`, brace-count extraction, selecting a part marks the line that creates it), with **Copy edits** + **Copy full file** (edit block injected before the builder's `return g;` — round-trip verified: exported file builds, tests pass, edits appear in the real game). Full undo/redo (gesture-level; nudge runs coalesce into one Ctrl+Z) + keyboard nudging (arrows = move, S = scale, R = rotate; Shift/Alt/Ctrl step modifiers). Dev-only by construction: not a rollup input → dist/ has zero editor code (verified, incl. lil-gui + OrbitControls). 65 automated Playwright checks across 4 suites; build/tests green. Gotchas for next time: lil-gui step grids anchor at the range MIN (never step an irrational min like -π); lil-gui swallows keydown on focused widgets (global shortcuts need a capture-phase listener). `editor/index.html`, `src/editor/*` (12 modules), `characters.ts` (names only), `CLAUDE.md`, `docs/ARCHITECTURE.md`, `vite.config.ts` (comment only), `package.json`. _(7970749)_
