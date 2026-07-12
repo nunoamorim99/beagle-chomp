@@ -46,7 +46,9 @@ import {
   CHALLENGE_LEVEL_COUNT,
   getChallengeLevel,
 } from "../src/game/challenges";
-import { MAZE_COUNT } from "../src/game/mazes";
+import { MAZE_COUNT, MAZES } from "../src/game/mazes";
+import { Grid, COLS } from "../src/game/grid";
+import { makeEntity, stepEntity, entityWorld, reverseEntity } from "../src/game/movement";
 
 let failures = 0;
 function check(label: string, cond: boolean): void {
@@ -797,4 +799,199 @@ console.log("\n=== profileStore.ts challengeProgress: pure read-modify-write sem
 }
 
 console.log(`\ncosmetics/profileStore checks: ${failures === 0 ? "ALL OK" : `${failures} FAILED`}`);
+
+// ============================================================================
+// reverseEntity (movement.ts) — ghost-reversal teleport-fix regression tests.
+//
+// Bug: Game.reverseGhost used to do a naive `dir = -dir` on a ghost's Entity
+// whenever it reversed (bone eaten -> fright, or the scatter/chase schedule
+// flip). entityWorld interpolates position as tile(tx,ty) + dir*progress, so
+// flipping `dir` while `progress` is mid-tile (0 < progress < 1) instantly
+// re-points that same interpolation *backwards past the origin tile* without
+// moving tx/ty/progress — a discontinuous jump of up to a full tile, visible
+// as ghosts flicking/teleporting (worst when several ghosts reverse at once
+// mid-corridor, e.g. every scatter/chase flip). reverseEntity (src/game/
+// movement.ts) fixes this by fast-forwarding tx/ty to the tile the entity was
+// already heading into (with the same tunnel-wrap arithmetic stepEntity's own
+// arrival step uses) before flipping dir and remapping progress -> 1-progress,
+// so the interpolated world position is unchanged. See reverseEntity's own
+// doc comment for the full writeup.
+console.log("\n=== movement.ts (reverseEntity — ghost-reversal teleport fix) ===");
+{
+  const grid = new Grid(MAZES[0]);
+  // `speed` never affects reverseEntity's output (it only reads/writes
+  // tx/ty/dir/queued/progress/facing) — an arbitrary constant is fine
+  // wherever makeEntity needs one just to build a well-typed Entity.
+  const SPEEDS_TEST_SPEED = 4;
+
+  // ---- 1. Continuity: reversing mid-corridor must not move the beagle/ghost
+  // on screen at all — entityWorld before and after must match exactly. ----
+  {
+    // A plain interior corridor tile, well away from any tunnel row, moving
+    // rightward (+x) — tile (2,1) -> (3,1) is open floor in MAZES[0] (row 1 is
+    // "#........#........#", all '.' from x=1..8).
+    const e = makeEntity(2, 1, SPEEDS_TEST_SPEED);
+    e.dir = { x: 1, y: 0 };
+    e.queued = { x: 1, y: 0 };
+    e.progress = 0.4;
+
+    const before = entityWorld(e);
+    reverseEntity(e, grid);
+    const after = entityWorld(e);
+
+    check(
+      "mid-tile reversal: entityWorld.x unchanged (within 1e-9)",
+      Math.abs(after.x - before.x) < 1e-9,
+    );
+    check(
+      "mid-tile reversal: entityWorld.z unchanged (within 1e-9)",
+      Math.abs(after.z - before.z) < 1e-9,
+    );
+    check("mid-tile reversal: dir flipped to {-1,0}", e.dir.x === -1 && e.dir.y === 0);
+    check("mid-tile reversal: queued matches the new dir", e.queued.x === e.dir.x && e.queued.y === e.dir.y);
+    check("mid-tile reversal: progress remapped to 1-0.4 = 0.6 (within 1e-9)", Math.abs(e.progress - 0.6) < 1e-9);
+    check("mid-tile reversal: facing updated to the new dir", e.facing.x === -1 && e.facing.y === 0);
+    console.log(`    before entityWorld = (${before.x.toFixed(6)}, ${before.z.toFixed(6)})`);
+    console.log(`    after  entityWorld = (${after.x.toFixed(6)}, ${after.z.toFixed(6)})`);
+  }
+
+  // ---- 2. Centre case: reversing exactly at a tile centre (progress===0) is
+  // a pure direction flip — no tile/progress change, no continuity issue. ----
+  {
+    const e = makeEntity(4, 1, SPEEDS_TEST_SPEED);
+    e.dir = { x: 0, y: 1 };
+    e.queued = { x: 0, y: 1 };
+    e.progress = 0;
+
+    const before = entityWorld(e);
+    reverseEntity(e, grid);
+    const after = entityWorld(e);
+
+    check("centre reversal: entityWorld.x unchanged", Math.abs(after.x - before.x) < 1e-9);
+    check("centre reversal: entityWorld.z unchanged", Math.abs(after.z - before.z) < 1e-9);
+    check("centre reversal: tx/ty unchanged", e.tx === 4 && e.ty === 1);
+    check("centre reversal: dir flipped to {0,-1}", e.dir.x === 0 && e.dir.y === -1);
+    check("centre reversal: progress stays 0", e.progress === 0);
+    check("centre reversal: queued matches the new dir", e.queued.x === e.dir.x && e.queued.y === e.dir.y);
+  }
+
+  // ---- 2b. Stopped entity (dir zero): flipping {0,0} is a numeric no-op on
+  // dir, but queued must still be synced to it (per reverseEntity's contract). ----
+  {
+    const e = makeEntity(5, 5, SPEEDS_TEST_SPEED);
+    e.dir = { x: 0, y: 0 };
+    e.queued = { x: 1, y: 0 }; // stale queued from before the entity stopped
+    e.progress = 0;
+
+    reverseEntity(e, grid);
+
+    check("stopped entity: dir stays {0,0}", e.dir.x === 0 && e.dir.y === 0);
+    check("stopped entity: queued synced to {0,0} (not left stale)", e.queued.x === 0 && e.queued.y === 0);
+  }
+
+  // ---- 3. Tunnel wrap: an entity mid-transit across the tunnel edge must
+  // still reverse continuously — the wrap arithmetic in reverseEntity's
+  // mid-tile branch must land tx on exactly the tile stepEntity's OWN proven
+  // wrap logic would land on. Cross-checked against the real stepEntity
+  // (not a re-derivation), so this exercises the actual shared code path. ----
+  {
+    // Row 9 of MAZES[0] is "T......#=G=#......T" — a tunnel row (grid.tunnelRows
+    // has 9), with 'T' (walkable) at both tx=0 and tx=COLS-1=18.
+    const TUNNEL_ROW = 9;
+    check("sanity: row 9 is a registered tunnel row", grid.tunnelRows.has(TUNNEL_ROW));
+    check("sanity: (0,9) is walkable", grid.walkable(0, TUNNEL_ROW, true));
+    check("sanity: (COLS-1,9) is walkable", grid.walkable(COLS - 1, TUNNEL_ROW, true));
+
+    // Ground truth: a FRESH entity at the same start tile/dir, stepped forward
+    // via the real stepEntity for exactly the remaining distance to reach the
+    // tile centre it's heading into (i.e. arrives with progress reset to 0,
+    // tx/ty wrapped by stepEntity's own proven arrival logic).
+    const speed = 2; // tiles/sec — arbitrary but shared by both entities below
+    const startProgress = 0.3;
+    const ground = makeEntity(0, TUNNEL_ROW, speed);
+    ground.dir = { x: -1, y: 0 };
+    ground.queued = { x: -1, y: 0 };
+    ground.progress = startProgress;
+    // dt chosen so progress advances by exactly (1 - startProgress), landing
+    // it precisely on the centre in one step (stepEntity's `while` guard
+    // handles any float slop the same way it always does in real play).
+    const dtToCentre = (1 - startProgress) / speed;
+    stepEntity(ground, dtToCentre, grid, true, () => {});
+
+    check(
+      "tunnel wrap ground-truth: stepEntity landed exactly on a centre (progress≈0)",
+      Math.abs(ground.progress) < 1e-9,
+    );
+    check(
+      `tunnel wrap ground-truth: stepEntity wrapped tx to COLS-1=${COLS - 1}`,
+      ground.tx === COLS - 1,
+    );
+
+    // reverseEntity, called mid-transit at the SAME starting state, should
+    // land on that identical wrapped tile via its own mid-tile branch.
+    const e = makeEntity(0, TUNNEL_ROW, speed);
+    e.dir = { x: -1, y: 0 };
+    e.queued = { x: -1, y: 0 };
+    e.progress = startProgress;
+
+    reverseEntity(e, grid);
+
+    check(
+      `tunnel wrap: reverseEntity lands tx on the same wrapped tile (COLS-1=${COLS - 1})`,
+      e.tx === COLS - 1,
+    );
+    check("tunnel wrap: reverseEntity ty unchanged (still the tunnel row)", e.ty === TUNNEL_ROW);
+    check("tunnel wrap: reverseEntity matches stepEntity's own wrap landing tx", e.tx === ground.tx);
+    check("tunnel wrap: dir flipped to {1,0} (heading back the way it came)", e.dir.x === 1 && e.dir.y === 0);
+    check(
+      `tunnel wrap: progress remapped to 1-${startProgress} = ${(1 - startProgress).toFixed(2)}`,
+      Math.abs(e.progress - (1 - startProgress)) < 1e-9,
+    );
+
+    // The world position AT the shared landing tile (a true tile centre) is
+    // identical for both — this is the actual "continuity through the wrap"
+    // guarantee: reverseEntity's mid-tile branch reaches the exact same
+    // logical tile stepEntity's own proven wrap arithmetic would reach, so a
+    // reversal that straddles the tunnel edge is just as continuous (relative
+    // to the entity's own tile-stepping model) as one that doesn't. Note this
+    // is deliberately NOT a raw entityWorld(before) === entityWorld(after)
+    // check like test 1 — crossing the tunnel edge is itself a pre-existing,
+    // by-design world-space jump (the tunnel is a portal to the opposite side
+    // of the map; see stepEntity's own wrap branch), separate from the
+    // mid-tile-reversal bug this suite targets.
+    const groundCentreWorld = entityWorld({ ...ground, dir: { x: 0, y: 0 }, progress: 0 });
+    const reversedAtLandingWorld = entityWorld({ ...e, progress: 0 });
+    check(
+      "tunnel wrap: world position at the landed tile matches stepEntity's own wrapped-tile position",
+      Math.abs(reversedAtLandingWorld.x - groundCentreWorld.x) < 1e-9 &&
+        Math.abs(reversedAtLandingWorld.z - groundCentreWorld.z) < 1e-9,
+    );
+  }
+
+  // ---- 4. Old-bug demonstration guard: the naive `dir = -dir` (no tile/
+  // progress remap) does NOT preserve entityWorld for a mid-tile entity —
+  // documents why this suite (and reverseEntity) exists, and would have
+  // caught the original bug had it run against the old implementation. ----
+  {
+    const e = makeEntity(2, 1, SPEEDS_TEST_SPEED);
+    e.dir = { x: 1, y: 0 };
+    e.queued = { x: 1, y: 0 };
+    e.progress = 0.4;
+
+    const before = entityWorld(e);
+    // The OLD (buggy) Game.reverseGhost behaviour, inlined here on purpose —
+    // not calling reverseEntity.
+    e.dir = { x: -e.dir.x, y: -e.dir.y };
+    e.queued = { ...e.dir };
+    const naiveAfter = entityWorld(e);
+
+    const naiveJump = Math.hypot(naiveAfter.x - before.x, naiveAfter.z - before.z);
+    check(
+      "meta: the naive dir-only flip DOES move entityWorld mid-tile (this is the bug — reverseEntity must NOT do this)",
+      naiveJump > 0.5, // for progress=0.4 the naive jump is 2*0.4 = 0.8 tiles
+    );
+    console.log(`    naive flip jump distance = ${naiveJump.toFixed(6)} tiles (bug, for comparison only)`);
+  }
+}
+
 if (failures > 0) process.exit(1);

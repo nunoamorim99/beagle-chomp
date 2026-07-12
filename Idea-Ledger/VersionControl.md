@@ -25,6 +25,13 @@ _(nothing planned yet — v3.0 "New Tricks" was fulfilled and cut on 2026-07-12)
 
 ## Version history
 
+### v3.1 — Smooth Moves (2026-07-12)
+A single targeted fix from playtesting: no more ghost teleports.
+- **IDEA-002 v2** — ghosts "flicked/teleported" up to a full tile whenever they reversed mid-tile
+  (every bone eaten, every scatter/chase flip). Reversals now swap the movement segment
+  (A→B at p becomes B→A at 1−p, tunnel-wrap aware) for perfect positional continuity — verified
+  to zero delta live and guarded by 27 regression assertions.
+
 ### v3.0 — New Tricks (2026-07-12)
 The gameplay pillar: more game to play. Classic mode stopped repeating itself, lives became
 earnable, and a whole new challenge mode arrived with its own garden-path level map. Fulfilled

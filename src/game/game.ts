@@ -25,7 +25,7 @@ import {
   getChallengeLevel,
   type ChallengeModifiers,
 } from "./challenges";
-import { makeEntity, stepEntity, entityWorld, type Entity } from "./movement";
+import { makeEntity, stepEntity, entityWorld, reverseEntity, type Entity } from "./movement";
 import { chooseGhostDir, type Ghost, type GlobalMode } from "./ghostAI";
 import { attachKeyboard } from "../input/keyboard";
 import { attachTouch } from "../input/touch";
@@ -1132,16 +1132,23 @@ export class Game {
     this.ghosts.forEach(({ gh }) => {
       if (gh.state !== "eaten") {
         gh.state = "frightened";
-        Game.reverseGhost(gh);
+        this.reverseGhost(gh);
       }
     });
     this.effects.frightStarted();
     this.sound.frightStart();
   }
 
-  private static reverseGhost(gh: Ghost): void {
-    gh.e.dir = { x: -gh.e.dir.x, y: -gh.e.dir.y };
-    gh.e.queued = { ...gh.e.dir };
+  /**
+   * Reverses a ghost's heading in place (bone-eaten fright trigger, and the
+   * scatter/chase schedule flip below) via `reverseEntity` — an INSTANCE
+   * method (not static, unlike the old naive `dir = -dir` version) because
+   * the continuity-preserving reversal needs `this.level.grid` for its
+   * tunnel-wrap arithmetic. See reverseEntity's doc comment in movement.ts
+   * for why a plain `dir = -dir` is a visible-teleport bug mid-tile.
+   */
+  private reverseGhost(gh: Ghost): void {
+    reverseEntity(gh.e, this.level.grid);
   }
 
   // ---- fruit (prototype maybeSpawnFruit, line 491) ----
@@ -1185,7 +1192,7 @@ export class Game {
         this.ghosts.forEach(({ gh }) => {
           if (gh.state === "scatter" || gh.state === "chase") {
             gh.state = this.globalMode;
-            Game.reverseGhost(gh);
+            this.reverseGhost(gh);
           }
         });
       }

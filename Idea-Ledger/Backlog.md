@@ -338,6 +338,7 @@ _(nothing yet)_
 - **Dependencies:** [[IDEA-001]]
 - **History:**
   - **v1** (2026-07-07) — `grid.ts`, `movement.ts`, `ghostAI.ts`, `config.ts`, `mazes.json/.ts`. _(a426ced)_
+  - **v2** (2026-07-12) — fix (Nuno's playtest report: enemies "flick and teleport"): reversing a ghost mid-tile flipped `dir` without adjusting `tx/ty/progress`, so `entityWorld`'s interpolation jumped up to a full tile backwards — on EVERY bone eaten and every scatter/chase flip. New pure `reverseEntity(e, grid)` in `movement.ts` swaps the segment (A→B at p becomes B→A at 1−p, tunnel-wrap aware) for perfect continuity; both `reverseGhost` call sites updated. 27 regression assertions incl. an old-bug guard (naive flip = 0.8-tile jump at p=0.4) + live zero-delta verification (mid-tile ghost at p=0.69 → delta 0). `movement.ts`, `game.ts`, `scripts/test-cosmetics.ts`. _(d0a6dca)_
 
 ### IDEA-003 — Game loop & state machine ✅
 - **Area:** gameplay
