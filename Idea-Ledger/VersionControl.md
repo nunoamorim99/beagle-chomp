@@ -21,7 +21,20 @@ _(nothing yet — all shipped work is captured in the versions below)_
 > Forward-looking targets from `/plan-version`. Each is a checklist of IDEAs intended for a
 > future numbered release. Items move to Unreleased as they ship.
 
-_(nothing planned yet — v3.0 "New Tricks" was fulfilled and cut on 2026-07-12)_
+### 📌 v4.0 — "New Territory" (working name) — planned 2026-07-12
+The themes pillar: personalize the world itself. The maze gets swappable themes sold through the
+shop (completing the vision [[IDEA-012]] set out), and the editor grows into the tool that makes
+theme detailing hands-on. Build order: IDEA-026 first — IDEA-027 soft-depends on the theme
+system existing; the IDEA-025 v2 scope is small and pairs naturally with the editor work.
+- [ ] **IDEA-026** — maze themes in the shop 🟡: theme-swap system (palette + materials + decor
+      set + sky/lighting) with the garden as default; classic black & blue honoring v1.0; then
+      forest, beach, park, city. Shop gains the themes tab reserved since [[IDEA-023]];
+      equipped/owned themes join the profile blob.
+- [ ] **IDEA-027** — editor: edit the maze too 🟢 (soft dep: [[IDEA-026]]): a board workbench in
+      /editor/ — tweak a theme's recipe (wall/floor/rim materials, decor placement, flowers) live
+      and export the code, so each theme gets its personal touch.
+- [ ] **IDEA-025 v2** — editor: delete ANY selected part (today only editor-added parts are
+      deletable) — small tooling increment, ships as a vN on the delivered idea.
 
 ## Version history
 
