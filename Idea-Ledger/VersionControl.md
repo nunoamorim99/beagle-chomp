@@ -15,7 +15,8 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
 > Every `/ship` drops a line here so nothing shipped goes uncounted. When a release is cut, **all**
 > lines here roll up into the numbered version below and this section is cleared (hold a line back
 > only if you explicitly choose to).
-_(nothing yet — all shipped work is captured in the versions below)_
+- (2026-07-12) IDEA-014 v2 — level-map desktop rework: full-width bar, right side panel with rich level details, page-level scroll; plus the hill-bleed clamp and the circular node ring/pulse fix (no more black square).
+- (2026-07-12) IDEA-021 v3 — fix: the home-screen showcase now boots with the player's EQUIPPED beagle (profile loads before the menu scene builds).
 
 ## 📌 Planned
 > Forward-looking targets from `/plan-version`. Each is a checklist of IDEAs intended for a

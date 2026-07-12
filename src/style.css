@@ -339,7 +339,19 @@ body.map-open #mainMenu{display:none}
    relying on hiding what's underneath). Colors echo COLORS.bg (0x9ecbe8) at
    the top fading toward the hedge-green hill silhouette pinned to the bottom
    of the body region, matching the game's daytime-garden identity used
-   everywhere else (menuScene/shopScene's own hedge+bloom dressing). */
+   everywhere else (menuScene/shopScene's own hedge+bloom dressing).
+
+   IDEA-014 desktop rework (owner review of v3.0/v3.1): mobile (≤820px, this
+   base ruleset) is BYTE-IDENTICAL in behavior to the shipped version — a
+   fixed-viewport flex column with the header pinned top, a scrollable
+   `.map-body` trail in the middle (`overflow-y:auto` lives THERE), and the
+   info block pinned to the bottom as a footer bar. On desktop (>820px, see
+   the `min-width:821px` query far below, matching the shop's own
+   breakpoint), the whole PAGE becomes the scroll container instead
+   (`#levelMap{overflow-y:auto}`), the header goes sticky + full width, and
+   the info block moves into a right side panel — see that query for the
+   full desktop-only override; every ruleset up here is the shared/mobile
+   baseline, unchanged from before this pass. */
 #levelMap{position:fixed;inset:0;z-index:20;display:flex;flex-direction:column;
   pointer-events:none;
   background:linear-gradient(180deg,#bfe0f2 0%,#9ecbe8 45%,#7fb9dd 100%);
@@ -347,6 +359,13 @@ body.map-open #mainMenu{display:none}
     calc(14px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left));}
 .map-page{flex:1 1 auto;display:flex;flex-direction:column;min-height:0;gap:12px;
   max-width:560px;width:100%;margin:0 auto}
+
+/* .map-stage wraps the trail body + the shared info block (renderPanelInfo,
+   `.map-panel-info`) — on mobile a plain column (`.map-body` then the footer
+   bar, exactly the shipped stacked order), on desktop a flex ROW with the
+   trail centered in the space left of a fixed-width side panel. Mirrors
+   shop.ts's `.shop-stage` structure/naming intentionally. */
+.map-stage{flex:1 1 auto;display:flex;flex-direction:column;min-height:0;gap:12px}
 
 .map-header{pointer-events:auto;display:flex;align-items:center;gap:12px;
   padding:10px 14px;border-radius:14px;flex:0 0 auto;
@@ -372,7 +391,10 @@ body.map-open #mainMenu{display:none}
    mirroring #shop), so this region needs to explicitly re-enable pointer
    events for BOTH its own vertical scroll gesture AND the node taps inside it
    (.map-node below) — without this, clicks on a node fall straight through to
-   the canvas rendered behind the page. */
+   the canvas rendered behind the page. `overflow-y:auto` here is the MOBILE
+   scroll container; the desktop query below switches this to
+   `overflow:visible` (scroll then lives on #levelMap itself instead — see
+   that query's own comment for why). */
 .map-body{position:relative;flex:1 1 auto;min-height:0;overflow-y:auto;
   overflow-x:hidden;border-radius:14px;-webkit-overflow-scrolling:touch;
   pointer-events:auto;touch-action:pan-y}
@@ -404,14 +426,46 @@ body.map-open #mainMenu{display:none}
 /* Stepping-stone nodes. `.map-node` is the shared shape; state modifiers
    (`-cleared`/`-current`/`-locked`) recolor the stone + number, and
    `-selected` adds a bright ring so the currently footer-bound node is
-   obvious at a glance even among several cleared/locked stones. */
-.map-node{cursor:pointer;pointer-events:auto}
+   obvious at a glance even among several cleared/locked stones.
+
+   Owner bug report: clicking a node (esp. the CURRENT/selected one) showed a
+   hard BLACK RECTANGULAR outline around the circular stone, with the pulse
+   reading as an "unnatural boxy flicker". Root-caused live (not guessed):
+   `.map-node` is an SVG <g role="button"> — SVG groups have no
+   border-radius concept, so the browser's OWN native focus outline
+   (`outline-style:auto`, UA default) renders as a plain rectangle around the
+   <g>'s bounding box, no matter what CSS the circle/stroke rules below do.
+   The PREVIOUS fix attempt only suppressed this on `:focus-visible`
+   (`.map-node:focus-visible{outline:none}`) — but a mouse/touch CLICK
+   focuses the element WITHOUT matching `:focus-visible` in Chromium/most
+   engines (verified live: after clicking a node, `matches(':focus')` is
+   true but `matches(':focus-visible')` is false), so that suppression rule
+   never fired for exactly the "tap a node" case the bug report describes,
+   and the UA's unconditional `:focus` outline showed straight through.
+   Fix: suppress the native outline UNCONDITIONALLY (not gated by
+   :focus-visible), and provide a DELIBERATE circular ring only for real
+   keyboard focus via :focus-visible (browser-verified to correctly exclude
+   mouse/touch clicks, so no extra blur()-after-click workaround is needed).
+
+   Both the selected ring AND the keyboard-focus ring use an SVG `stroke` on
+   `.map-node-stone` (the actual <circle>), NOT `box-shadow` — box-shadow is
+   computed but does NOT PAINT on bare SVG shape elements like <circle> in
+   Chromium/Firefox (verified live: a box-shadow declaration on an SVG
+   <circle> returns a real value from getComputedStyle but renders nothing
+   at all), so it would be an invisible/broken ring for this SVG-based node
+   implementation. `stroke` is guaranteed circular (it traces the circle's
+   own geometry) and universally supported — the correct SVG-native
+   equivalent of the "circular box-shadow ring" technique. */
+.map-node{cursor:pointer;pointer-events:auto;outline:none}
 .map-node-locked{cursor:default}
 .map-node-stone{stroke:rgba(0,0,0,.18);stroke-width:2;
-  transition:transform .12s ease,filter .12s ease}
+  transition:transform .12s ease,filter .12s ease,stroke .12s ease,stroke-width .12s ease}
 .map-node:not(.map-node-locked):hover .map-node-stone{transform:scale(1.06)}
-.map-node:focus-visible{outline:none}
-.map-node:focus-visible .map-node-stone{stroke:#fff;stroke-width:3}
+/* Real keyboard focus only (Tab navigation) — a deliberate circular ring,
+   distinct in color from the white selected ring below so the two never
+   read as the same indicator when a keyboard user tabs onto the already-
+   selected node (both rings CAN legitimately show at once in that case). */
+.map-node:focus-visible .map-node-stone{stroke:var(--accent);stroke-width:4}
 
 .map-node-cleared .map-node-stone{fill:#3f8f3a}
 .map-node-current .map-node-stone{fill:var(--accent)}
@@ -423,26 +477,59 @@ body.map-open #mainMenu{display:none}
 .map-node-glyph{font-size:16px}
 
 /* Soft pulse/glow ring behind the CURRENT node — pure CSS animation, no JS
-   re-render needed to keep it alive. */
-.map-node-glow{fill:none;stroke:var(--accent);stroke-width:3;opacity:.55;
-  animation:map-pulse 1.8s ease-out infinite}
+   re-render needed to keep it alive. Owner called the previous version
+   "unnatural"/boxy: it used `ease-out` (fast start, hard decelerate) and
+   held at 0 opacity for the last 30% of the loop before SNAPPING back to
+   60% opacity at the next cycle's 0% — an abrupt, visible jump-cut rather
+   than a breathing glow (this is what read as a "flicker", separate from
+   the rectangular-outline bug above, which was a genuinely different
+   element (.map-node's own outline, not .map-node-glow's animation) — both
+   were contributing to the same "looks like a bug" impression). Rewritten
+   as a full ease-in-out breathing loop: fades smoothly IN, expands, fades
+   smoothly back OUT, with no keyframe holding flat and no instant snap
+   anywhere in the cycle — every step interpolates continuously. Kept as a
+   pure circular <circle r> animation (r-scaling a circle is circular at
+   every frame, by construction) rather than switching to a transform:scale
+   / box-shadow variant, since a plain r-radius animation is simplest, has
+   no SVG-specific paint caveats (unlike box-shadow, see above), and was
+   never actually the rectangular part of the reported bug. */
+.map-node-glow{fill:none;stroke:var(--accent);stroke-width:3;opacity:0;
+  animation:map-pulse 1.8s ease-in-out infinite}
 @keyframes map-pulse{
-  0%{r:22;opacity:.6}
-  70%{r:34;opacity:0}
-  100%{r:34;opacity:0}
+  0%{r:21;opacity:0}
+  50%{r:29;opacity:.45}
+  100%{r:21;opacity:0}
 }
 
 .map-node-selected .map-node-stone{stroke:#fff;stroke-width:3}
 
-.map-footer{pointer-events:auto;flex:0 0 auto;display:flex;align-items:center;
+/* .map-panel-info: the shared info-block markup (renderPanelInfo) — on
+   mobile this IS the footer bar (renamed from .map-footer 1:1, same
+   layout/look, zero behavior change), on desktop it becomes the right side
+   panel content (see the min-width:821px query far below for the desktop
+   override, which restyles this same selector rather than introducing a
+   parallel ruleset). */
+.map-panel-info{pointer-events:auto;flex:0 0 auto;display:flex;align-items:center;
   gap:14px;padding:14px 16px;border-radius:14px;
   background:rgba(16,16,30,.62);border:1px solid rgba(255,255,255,.12);
   backdrop-filter:blur(6px)}
-.map-footer-info{flex:1 1 auto;min-width:0}
+.map-panel-info-body{flex:1 1 auto;min-width:0}
 .map-footer-title{font-weight:800;font-size:15px;margin-bottom:2px}
 .map-footer-blurb{color:var(--muted);font-size:12px;line-height:1.5}
 .map-footer-twist{font-family:ui-monospace,"SF Mono",monospace;font-size:11px;
   color:var(--accent);margin-top:4px}
+/* .map-panel-extra: the richer desktop-only content (full twist LIST, maze
+   name, explicit state label) — hidden on mobile by default (no room in the
+   compact footer bar for it; the compact .map-footer-twist line above covers
+   the same "twists" info there), shown only inside the desktop side panel
+   (see the min-width:821px query, which also hides .map-footer-twist there
+   so the two representations of the same data are never both visible at
+   once). */
+.map-panel-extra{display:none}
+.map-panel-twist-line{font-family:ui-monospace,"SF Mono",monospace;font-size:12px;
+  color:var(--accent);line-height:1.6}
+.map-panel-maze{font-size:12px;color:var(--muted);margin-top:8px}
+.map-panel-state{font-size:12px;font-weight:700;margin-top:2px}
 .map-play-btn{pointer-events:auto;flex:0 0 auto;font:inherit;font-weight:700;font-size:14px;
   color:#1a1206;background:var(--accent);border:none;border-radius:999px;
   padding:13px 22px;min-height:44px;cursor:pointer;white-space:nowrap;
@@ -458,7 +545,69 @@ body.map-open #mainMenu{display:none}
   .map-page{gap:8px}
   .map-title{font-size:16px}
   .map-header-spacer{width:60px}
-  .map-footer{padding:12px 14px;gap:10px}
+  .map-panel-info{padding:12px 14px;gap:10px}
   .map-footer-title{font-size:14px}
   .map-play-btn{padding:12px 18px;font-size:13px}
+}
+
+/* Desktop / wide (>820px) — IDEA-014 rework (owner review of v3.0/v3.1),
+   mirroring the shop's own desktop pattern (see its min-width:821px query
+   above) in THREE ways:
+     1. FULL-WIDTH TOP BAR: .map-page's max-width clamp is lifted, so
+        .map-header (a direct child of .map-page, a sibling of .map-stage —
+        see levelMap.ts's render()) spans the full page width instead of the
+        narrow mobile column. Made STICKY to the top of the new page-level
+        scroll container (#levelMap itself, see point 3) so it stays pinned
+        while the trail scrolls underneath it.
+     2. RIGHT SIDE PANEL: .map-panel-info (the shared footer/panel markup)
+        leaves the mobile column flow and becomes a fixed-width (340px,
+        matching .shop-panel exactly), translucent-chrome, STICKY column
+        alongside the trail — richer content shown via .map-panel-extra
+        (display:block override below), the compact mobile-only
+        .map-footer-twist line hidden instead. .map-stage switches to a flex
+        ROW so the trail (.map-body) and the panel sit side by side, with the
+        trail's own max-width keeping it CENTERED in the leftover space
+        rather than stretching edge-to-edge.
+     3. PAGE-LEVEL SCROLL: #levelMap itself becomes the scroll container
+        (overflow-y:auto — position:fixed;inset:0 is unchanged, so the
+        scrollbar naturally sits at the window edge) instead of .map-body;
+        .map-body switches to overflow:visible so it's no longer a COMPETING
+        inner scroll container (only one element should own the scroll at a
+        time). scrollIntoView() in levelMap.ts's render() needs no code
+        change for this — it already walks up to whichever ancestor is
+        actually scrollable, mobile or desktop, automatically. */
+@media (min-width:821px){
+  #levelMap{overflow-y:auto;overflow-x:hidden}
+  .map-page{max-width:none;gap:16px}
+  /* Belt two against the summit-hill-behind-header bug (belt one is the
+     floorY clamp in levelMap.ts's buildSummitHill/buildGroundHill — see
+     those doc comments): even with the geometry now correctly clamped to
+     never cross the SVG's own y=0/svgHeight() edges, a sticky header with
+     the base ruleset's translucent rgba(16,16,30,.55) background would
+     still let anything painted behind it show through blurred (that's the
+     whole point of a translucent+backdrop-blur chrome panel) — so on
+     DESKTOP specifically (mobile's header never sits over scrolling SVG
+     content the way the sticky desktop one does, so it keeps the lighter
+     mobile-appropriate translucency), raise the background to a much more
+     opaque .92 and bump z-index well above the trail's own (unpositioned,
+     stacking-order-only) SVG content, so nothing can ever show through the
+     header regardless of what geometry does. */
+  .map-header{position:sticky;top:0;z-index:5;background:rgba(16,16,30,.92)}
+  .map-stage{flex-direction:row;align-items:flex-start;gap:16px}
+  .map-body{overflow:visible;flex:1 1 auto;min-width:0;display:flex;justify-content:center}
+  .map-path-scroll{max-width:520px;width:100%}
+  .map-panel-info{flex:0 0 340px;position:sticky;top:calc(64px + env(safe-area-inset-top));
+    align-self:flex-start;flex-direction:column;align-items:stretch;gap:14px;
+    padding:20px calc(18px + env(safe-area-inset-right)) 18px 18px;
+    background:rgba(16,16,30,.55);border-radius:16px;backdrop-filter:blur(8px)}
+  .map-panel-info-body{flex:0 0 auto}
+  .map-footer-title{font-size:19px}
+  .map-footer-blurb{font-size:13px}
+  /* The compact "·"-joined line is a mobile-footer affordance only — the
+     desktop panel shows the same data as a real one-line-per-modifier list
+     instead (.map-panel-extra below), so this would otherwise be a
+     duplicate. */
+  .map-footer-twist{display:none}
+  .map-panel-extra{display:block;padding-top:10px;border-top:1px solid rgba(255,255,255,.1)}
+  .map-play-btn{width:100%;padding:15px 22px;font-size:15px}
 }

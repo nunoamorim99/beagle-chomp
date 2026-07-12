@@ -275,6 +275,14 @@ export class Game {
   private livesAwardedFromScore = 0;
 
   constructor(canvas: HTMLCanvasElement) {
+    // Load the persisted profile FIRST — before ANYTHING that builds a
+    // beagle. createMenuScene() below bakes the showcase dog from
+    // getEquippedBeagleSkin() at construction time, so if the profile loads
+    // after it (as it originally did, further down next to makeBeagle), a
+    // fresh page load showed the DEFAULT beagle on the home screen even
+    // though the player had bought + equipped another skin (Nuno's report —
+    // the shop's live setBeagleSkin masked this until the next reload).
+    initProfileFromStorage();
     this.rig = createScene(canvas);
     this.menuScene = createMenuScene();
     this.shopScene = createShopScene();
@@ -308,13 +316,9 @@ export class Game {
     this.level = this.buildLevel(0);
     this.effects = createEffects(this.rig.scene, this.rig.camera, canvas);
 
-    // Load the persisted equipped-skin id (IDEA-010) BEFORE makeBeagle() so
-    // the beagle boots already wearing whatever the player last picked —
-    // makeBeagle()'s default param reads getEquippedBeagleSkin(), which this
-    // populates from localStorage (falling back to the default "bagel" skin,
-    // a byte-for-byte match of the original fixed palette, if nothing was
-    // ever saved).
-    initProfileFromStorage();
+    // The profile was already loaded at the very top of the constructor
+    // (before createMenuScene — see the comment there), so makeBeagle()'s
+    // default param reads the player's real equipped skin here.
     this.beagleMesh = makeBeagle();
     this.rig.scene.add(this.beagleMesh);
     // IDEA-013: scaled by activeModifiers.speedMult (1 at boot, since

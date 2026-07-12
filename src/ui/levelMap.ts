@@ -24,7 +24,13 @@
 // (cleared/current/locked), computed fresh every open() from
 // getChallengeProgress() — this module holds no state of its own across opens
 // besides which node is currently *selected* within one open session.
-import { CHALLENGE_LEVELS, CHALLENGE_LEVEL_COUNT, CLASSIC_MODIFIERS, type ChallengeLevel } from "../game/challenges";
+import {
+  CHALLENGE_LEVELS,
+  CHALLENGE_LEVEL_COUNT,
+  CLASSIC_MODIFIERS,
+  MAZE_NAMES,
+  type ChallengeLevel,
+} from "../game/challenges";
 import { getChallengeProgress } from "../game/profileStore";
 
 export type LevelNodeState = "cleared" | "current" | "locked";
@@ -85,18 +91,35 @@ export function levelNodeState(idx: number, progress: number): LevelNodeState {
   return "locked";
 }
 
-/** Builds the compact "twist summary" shown in the footer for a level's
- *  modifiers — e.g. "×1.5 speed · 4 ghosts · 3s fright" — omitting any dial
- *  that's at its CLASSIC_MODIFIERS baseline value (a level that doesn't touch
- *  a given dial shouldn't clutter the summary restating the default). Returns
- *  an empty string for a level that matches CLASSIC_MODIFIERS on every field
- *  (L1, "Warm-Up Walkies" — literally the classic baseline; see
- *  challenges.ts's own comment on it), so callers can fall back to a plain
- *  "classic pace" label instead of an empty bullet list. `speedMult` and
- *  `ghostSpeedMult` are always equal in every CHALLENGE_LEVELS entry (see
- *  ChallengeModifiers' own doc comment on why), so this reports them as ONE
- *  "×N speed" bullet rather than two separate near-duplicate ones. */
-export function twistSummary(level: ChallengeLevel): string {
+/** IDEA-014 (desktop side panel): a short player-facing label for a node
+ *  state — "Cleared 🐾" / "Up next" / "Locked 🔒" — shown on the panel above
+ *  the Play button, alongside the richer name/blurb/twist-list/maze-name
+ *  info. Deliberately its own small helper (not reused for the mobile
+ *  footer, which has no room/need for this extra line) rather than baked
+ *  into renderPanelInfo directly, so the three-state copy lives in one place. */
+function stateLabel(state: LevelNodeState): string {
+  if (state === "cleared") return "Cleared \u{1F43E}";
+  if (state === "locked") return "Locked \u{1F512}";
+  return "Up next";
+}
+
+/** Builds the list of non-baseline modifier bullets for a level — e.g.
+ *  `["×1.5 speed", "4 ghosts", "3s fright"]` — omitting any dial that's at
+ *  its CLASSIC_MODIFIERS baseline value (a level that doesn't touch a given
+ *  dial shouldn't clutter the list restating the default). Returns an empty
+ *  array for a level that matches CLASSIC_MODIFIERS on every field (L1,
+ *  "Warm-Up Walkies" — literally the classic baseline; see challenges.ts's
+ *  own comment on it), so callers fall back to a plain "classic pace" label
+ *  instead of an empty bullet list. `speedMult` and `ghostSpeedMult` are
+ *  always equal in every CHALLENGE_LEVELS entry (see ChallengeModifiers' own
+ *  doc comment on why), so this reports them as ONE "×N speed" bullet rather
+ *  than two separate near-duplicate ones.
+ *
+ *  Shared by BOTH twistSummary() (mobile footer's compact "·"-joined line)
+ *  and the IDEA-014 desktop side panel's own "one line per modifier" list —
+ *  one source of truth for which dials count as "non-baseline", so the two
+ *  presentations can never silently disagree about what counts as a twist. */
+export function twistParts(level: ChallengeLevel): string[] {
   const { speedMult, ghostSpeedMult, ghostCount, frightSeconds } = level.modifiers;
   const parts: string[] = [];
 
@@ -113,7 +136,15 @@ export function twistSummary(level: ChallengeLevel): string {
   if (frightSeconds !== CLASSIC_MODIFIERS.frightSeconds) {
     parts.push(`${trimTrailingZero(frightSeconds)}s fright`);
   }
-  return parts.join(" · ");
+  return parts;
+}
+
+/** The compact "·"-joined twist summary used by the mobile footer — e.g.
+ *  "×1.5 speed · 4 ghosts · 3s fright". Returns an empty string for a level
+ *  with no non-baseline modifiers (see twistParts), so callers fall back to
+ *  a plain "classic pace" label instead of an empty string. */
+export function twistSummary(level: ChallengeLevel): string {
+  return twistParts(level).join(" · ");
 }
 
 /** Formats a multiplier/duration without a pointless trailing ".0" (1.3 stays
@@ -215,11 +246,35 @@ function buildTrailPath(): string {
  *  visible regardless of how far the bleed extends.
  *
  *  `crestY` is the topmost point of the silhouette's central rise (where it
- *  very nearly touches its anchor node); `humpHeight` is how far the
- *  waypoints undulate up/down from `crestY`; `floorY` is the bottom edge the
- *  silhouette drops to (off the visible SVG entirely, so no bottom seam is
- *  ever visible while scrolling). */
-function buildHillPath(crestY: number, humpHeight: number, floorY: number): string {
+ *  very nearly touches its anchor node). `dipY` and `floorY` are the OTHER
+ *  two y-levels the silhouette extends to (below the crest for the ground
+ *  hill, above it for the summit hill — see buildGroundHill/buildSummitHill):
+ *  `dipY` is the shoulder level flanking the crest (where the two `L`
+ *  segments at the far left/right of the undulating top edge sit) and
+ *  `floorY` is the final straight edge past that. BOTH are taken as EXPLICIT
+ *  parameters (not derived internally from crestY+humpHeight the way an
+ *  earlier version derived dipY) specifically so callers can clamp EVERY
+ *  y-coordinate the shape visits to the SVG's own logical box
+ *  (`0`..`svgHeight()`) — clamping only `floorY` while leaving `dipY`
+ *  internally derived was a real bug this function itself introduced: the
+ *  shape's actual bounding box is governed by whichever of dipY/floorY is
+ *  more extreme, so a caller could believe it had fully clamped a hill by
+ *  only capping floorY while dipY silently still poked past the boundary
+ *  (this is exactly how the ground hill's bottom-bleed follow-up check
+ *  caught a residual escape after the summit hill's floorY-only clamp had
+ *  already fixed the originally-reported header bug). Both current callers
+ *  clamp dipY and floorY to the SAME bound (svgHeight() for the ground hill,
+ *  0 for the summit hill) via a shared clampDipAndFloor() helper, so the
+ *  entire shape — not just one of its two extremes — is guaranteed to never
+ *  cross the SVG's own box. This matters because `.map-path-svg` needs
+ *  `overflow:visible` for the hill's horizontal bleed (see above) to fill
+ *  the desktop trail column's full width, and on desktop nothing else clips
+ *  the SVG's vertical overflow either (unlike mobile, where
+ *  `.map-body{overflow-y:auto}` clips it) — any uncapped y-coordinate there
+ *  paints hill pixels outside the SVG's own box and into whatever chrome
+ *  happens to sit there (the actual reported bug: the summit hill's old
+ *  unclamped extremes bled up behind the sticky header). */
+function buildHillPath(crestY: number, dipY: number, floorY: number): string {
   const bleed = SVG_WIDTH * 0.6;
   const left = -bleed;
   const right = SVG_WIDTH + bleed;
@@ -229,7 +284,6 @@ function buildHillPath(crestY: number, humpHeight: number, floorY: number): stri
   // crest sits dead-center and the two dips sit comfortably inboard of the
   // edges (not so close to 0/SVG_WIDTH that the bleed's straight drop-off
   // reads as an abrupt corner right next to a curve).
-  const dipY = crestY + humpHeight;
   const w1x = SVG_WIDTH * 0.16;
   const w2x = SVG_WIDTH * 0.5;
   const w3x = SVG_WIDTH * 0.84;
@@ -246,6 +300,28 @@ function buildHillPath(crestY: number, humpHeight: number, floorY: number): stri
   );
 }
 
+/** Clamps BOTH the shoulder level (`dipY = crestY + humpHeight`, signed by
+ *  `direction`) and the final floor edge to the same SVG-box bound, so a
+ *  hill's entire shape — not just its floorY endpoint — stays within
+ *  `[0, svgHeight()]` (see buildHillPath's own doc comment for why clamping
+ *  only floorY was an incomplete fix). `direction` is `1` for a
+ *  downward-bleeding hill (the ground hill: dipY/floorY both clamp to an
+ *  UPPER bound, i.e. Math.min against `bound`) or `-1` for an
+ *  upward-bleeding hill (the summit hill: both clamp to a LOWER bound, i.e.
+ *  Math.max against `bound`). */
+function clampDipAndFloor(
+  crestY: number,
+  humpHeight: number,
+  floorMargin: number,
+  bound: number,
+  direction: 1 | -1,
+): { dipY: number; floorY: number } {
+  const rawDipY = crestY + direction * humpHeight;
+  const rawFloorY = rawDipY + direction * floorMargin;
+  const clamp = direction === 1 ? Math.min : Math.max;
+  return { dipY: clamp(rawDipY, bound), floorY: clamp(rawFloorY, bound) };
+}
+
 /** The ground hill: a soft rounded hedge-green silhouette hugging the very
  *  BOTTOM of the SVG's own coordinate space, directly behind C1 (idx 0 — the
  *  start of the journey, y === svgHeight() - SVG_BOTTOM_MARGIN). Drawn IN the
@@ -253,22 +329,26 @@ function buildHillPath(crestY: number, humpHeight: number, floorY: number): stri
  *  scrolls WITH the trail content and can never end up floating mid-air over
  *  some other node once the page is scrolled — coordinator review flagged
  *  exactly that bug in the previous absolutely-positioned-over-the-viewport
- *  version. */
+ *  version.
+ *
+ *  Both the shoulder level AND the floor edge are clamped to svgHeight()
+ *  (the SVG's own logical bottom edge) via clampDipAndFloor — see that
+ *  function's own doc comment for why BOTH y-levels need clamping, not just
+ *  floorY (an earlier version clamped only floorY here, which left the
+ *  shoulder waypoints — the shape's actual deepest points — still poking 26
+ *  units past svgHeight(); caught by the coordinator's explicit follow-up
+ *  ask to double-check this hill for the same class of bug the summit hill
+ *  had). There's no sticky footer chrome at the page bottom on desktop
+ *  today, so this couldn't visibly bleed into chrome the way the summit
+ *  hill did, but it's fixed on the same "never cross the SVG's own logical
+ *  box" principle regardless. */
 function buildGroundHill(): string {
   const startAnchor = nodeAnchor(0); // C1
   const crestY = startAnchor.y + 32; // the hill's highest point, just below C1's stone
-  const humpHeight = 40;
-  // floorY MUST land safely past crestY+humpHeight (buildHillPath's own
-  // "dip" waypoints), never merely near it — derived directly from that same
-  // dip level (+40 extra) rather than independently from svgHeight(), so the
-  // ordering can never invert regardless of how crestY/humpHeight are tuned
-  // (an earlier version computed floorY from svgHeight() alone, which
-  // happened to land ABOVE the dip level for these particular numbers,
-  // collapsing the hill down to an invisible 6-unit sliver).
-  const floorY = crestY + humpHeight + 40;
+  const { dipY, floorY } = clampDipAndFloor(crestY, 40, 40, svgHeight(), 1);
   return (
     '<g class="map-ground-hill" aria-hidden="true">' +
-    `<path d="${buildHillPath(crestY, humpHeight, floorY)}"></path>` +
+    `<path d="${buildHillPath(crestY, dipY, floorY)}"></path>` +
     "</g>"
   );
 }
@@ -281,22 +361,35 @@ function buildGroundHill(): string {
  *  (a paler, more desaturated green than the ground hill — see style.css) and
  *  short (a shallower hump height than the ground hill, and floors out just
  *  above C8 rather than reaching all the way to the SVG's own top edge) so it
- *  never risks being mistaken for another full floating band. */
+ *  never risks being mistaken for another full floating band.
+ *
+ *  Both the shoulder level AND the floor edge are clamped to 0 (the SVG's
+ *  own logical top edge) via clampDipAndFloor — THIS is the fix for the
+ *  reported "pale-green band bleeds up behind the sticky header" bug: an
+ *  earlier version's floorY (`crestY-humpHeight-40`, well ABOVE y=0) sat ~38
+ *  SVG units above the SVG's own box, and its INTERNALLY-derived dipY
+ *  (`crestY-humpHeight`, before this fix moved dipY to an explicit clamped
+ *  parameter) sat ~18 units above y=0 too. On mobile that was invisible
+ *  (`.map-body{overflow-y:auto}` clipped anything above the SVG), but the
+ *  desktop rework's page-level scroll requires `.map-body{overflow:visible}`
+ *  (so it stops competing with #levelMap as a second scroll container — see
+ *  style.css's own comment on that), which also means nothing clips the
+ *  SVG's vertical overflow anymore on desktop — so that pale hill fill
+ *  painted straight up into the sticky header's own screen region whenever
+ *  the page was scrolled near the top. clampDipAndFloor's Math.max(...,0)
+ *  guarantees BOTH the summit hill's shoulder AND floor never cross y=0
+ *  regardless of crestY/humpHeight tuning, so it can never repeat this
+ *  failure mode even if those numbers change later. Paired with a
+ *  z-index/opaque-background belt on the header itself (see style.css's
+ *  .map-header rules) as a second line of defence, per the coordinator's
+ *  "prefer BOTH belts" guidance. */
 function buildSummitHill(): string {
   const summitAnchor = nodeAnchor(CHALLENGE_LEVEL_COUNT - 1); // C8
   const crestY = summitAnchor.y - 24; // the hill's highest point, just above C8's stone
-  const humpHeight = 20;
-  // Mirrors buildGroundHill's floorY derivation, just in the opposite
-  // direction: the summit bleeds UP off the SVG's top edge (smaller y), so
-  // its "floor" must land safely BEFORE (i.e. numerically less than)
-  // crestY - humpHeight (buildHillPath's dip level here is ABOVE the crest,
-  // since dipY = crestY + humpHeight is only "below crestY" in the ground
-  // hill's downward-bleeding sense — for this upward silhouette the dip
-  // waypoints and the crest both still need floorY comfortably past them).
-  const floorY = crestY - humpHeight - 40;
+  const { dipY, floorY } = clampDipAndFloor(crestY, 20, 40, 0, -1);
   return (
     '<g class="map-summit-hill" aria-hidden="true">' +
-    `<path d="${buildHillPath(crestY, humpHeight, floorY)}"></path>` +
+    `<path d="${buildHillPath(crestY, dipY, floorY)}"></path>` +
     "</g>"
   );
 }
@@ -463,19 +556,50 @@ export function attachLevelMap(root: ParentNode, callbacks: LevelMapCallbacks = 
     );
   }
 
-  function renderFooter(): string {
+  /**
+   * IDEA-014 (desktop rework): the shared "about the selected level" info
+   * block — ONE markup styled TWO ways by CSS, exactly mirroring shop.ts's
+   * `.shop-panel{display:contents}` + `order` trick (see that module's own
+   * render() doc comment): on mobile (≤820px) this renders as the pinned
+   * FOOTER BAR at the bottom of the page (unchanged from the shipped mobile
+   * layout — name/blurb/compact twist-summary/Play), and on desktop
+   * (>820px) the exact same DOM becomes a translucent-chrome RIGHT SIDE
+   * PANEL with richer content: the full non-baseline twist LIST (one line
+   * per modifier, via twistParts — not the compact "·"-joined
+   * twistSummary string mobile uses), which maze it's played on
+   * (MAZE_NAMES[level.mazeIdx]), and an explicit state line (stateLabel) —
+   * all things the cramped mobile footer bar has no room for, but the
+   * desktop panel does. One render path, one source of truth for the
+   * content; CSS alone decides which subset/layout shows where (see
+   * style.css's `.map-panel-info`/`.map-panel-extra` rules and the
+   * `min-width:821px` media query, matching the shop's own breakpoint). */
+  function renderPanelInfo(): string {
     const level = CHALLENGE_LEVELS[selectedIdx];
     const state = levelNodeState(selectedIdx, progress);
     const summary = twistSummary(level);
-    const twistLine = summary || "Classic pace — no twists";
+    const compactTwistLine = summary || "Classic pace — no twists";
+    const parts = twistParts(level);
+    const twistListHtml = parts.length
+      ? parts.map((p) => `<div class="map-panel-twist-line">${p}</div>`).join("")
+      : '<div class="map-panel-twist-line">Classic pace — no twists</div>';
     const disabled = state === "locked" ? "disabled" : "";
     const playLabel = state === "cleared" ? "▶ Replay" : "▶ Play";
+    const mazeName = MAZE_NAMES[level.mazeIdx] ?? MAZE_NAMES[0];
     return (
-      '<div class="map-footer">' +
-      '<div class="map-footer-info">' +
+      '<div class="map-panel-info">' +
+      '<div class="map-panel-info-body">' +
       `<div class="map-footer-title">C${selectedIdx + 1} · ${level.name}</div>` +
       `<div class="map-footer-blurb">${level.blurb}</div>` +
-      `<div class="map-footer-twist">${twistLine}</div>` +
+      // Mobile-only compact line (hidden on desktop via CSS, where the full
+      // twistListHtml below is shown instead).
+      `<div class="map-footer-twist">${compactTwistLine}</div>` +
+      // Desktop-only richer block (hidden on mobile via CSS): full twist
+      // list, maze name, explicit state label — see the function doc comment.
+      '<div class="map-panel-extra">' +
+      `<div class="map-panel-twist-list">${twistListHtml}</div>` +
+      `<div class="map-panel-maze">on ${mazeName}</div>` +
+      `<div class="map-panel-state">${stateLabel(state)}</div>` +
+      "</div>" +
       "</div>" +
       `<button type="button" class="map-play-btn" id="mapPlayBtn" ${disabled}>${playLabel}</button>` +
       "</div>"
@@ -490,13 +614,26 @@ export function attachLevelMap(root: ParentNode, callbacks: LevelMapCallbacks = 
     // C1/C8 respectively rather than floating over the .map-body VIEWPORT at
     // whatever the current scroll position happens to be (the bug the
     // previous position:absolute;bottom:0 version had).
+    //
+    // IDEA-014 (desktop rework): .map-header is now a DIRECT sibling of
+    // .map-stage (not nested inside a narrow max-width column together with
+    // it) so CSS can make the header span the FULL page width on desktop
+    // while .map-stage's own trail-column + side-panel content stays
+    // constrained/centered — mirrors the task brief's "full-width top bar,
+    // like the shop's". .map-stage wraps the trail body + the shared
+    // panel/footer info block (renderPanelInfo) — on mobile a plain column
+    // (unchanged), on desktop a flex ROW with the trail centered in the
+    // space left of the fixed-width side panel (mirrors shop.ts's
+    // .shop-stage exactly).
     mapRoot.innerHTML =
       '<div class="map-page">' +
       renderHeader() +
+      '<div class="map-stage">' +
       '<div class="map-body">' +
       renderPath() +
       "</div>" +
-      renderFooter() +
+      renderPanelInfo() +
+      "</div>" +
       "</div>";
 
     const backBtn = mapRoot.querySelector<HTMLButtonElement>("#mapBackBtn");

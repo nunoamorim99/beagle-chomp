@@ -168,3 +168,25 @@ export function getChallengeLevel(idx: number): ChallengeLevel {
   const clamped = Math.max(0, Math.min(safe, CHALLENGE_LEVEL_COUNT - 1));
   return CHALLENGE_LEVELS[clamped];
 }
+
+/**
+ * IDEA-014 (Challenge Level Map desktop rework): player-facing display names
+ * for the maze pool, indexed to match MAZES/mazeIdx exactly (mazes.ts) — so
+ * `MAZE_NAMES[level.mazeIdx]` is always the right name for a given
+ * ChallengeLevel. Pure data, no import of mazes.ts itself (this module
+ * already has no dependency on mazes.ts/grid.ts, and doesn't need one just to
+ * label indices — MAZE_COUNT staying in sync with this array's length is
+ * enforced by level-designer's maze-authoring process, not by a runtime
+ * import here). Names per the release ledger (Idea-Ledger/VersionControl.md,
+ * IDEA-015): mazes index 2/3/4 are "The Courtyard" (open plaza), "The Warren"
+ * (tight lattice), and "The Crossroads" (long arteries); the original two
+ * (index 0/1) predate that naming pass and get simple placeholder names.
+ * Three-free, like every other export in this module.
+ */
+export const MAZE_NAMES: readonly string[] = [
+  "Classic Garden",
+  "Garden Two",
+  "The Courtyard",
+  "The Warren",
+  "The Crossroads",
+];
