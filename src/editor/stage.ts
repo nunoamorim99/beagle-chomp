@@ -56,9 +56,15 @@ function makeBackdrop(): THREE.Mesh {
 
 // Character-scale camera, identical to menuScene's landscape rig (FOV 42,
 // near dog eye-level) — the portrait dolly is dropped; this is a desktop tool.
-const CAM_FOV = 42;
-const CAM_POS = new THREE.Vector3(0, 1.15, 3.2);
-const CAM_LOOK = new THREE.Vector3(0, 0.5, 0);
+// IDEA-027: exported so main.ts's board-mode camera framing can restore
+// these EXACT defaults (position/target/fov/orbit distance limits) when
+// switching back to character mode, instead of re-declaring copies that
+// could silently drift from the real ones over time.
+export const CAM_FOV = 42;
+export const CAM_POS = new THREE.Vector3(0, 1.15, 3.2);
+export const CAM_LOOK = new THREE.Vector3(0, 0.5, 0);
+export const CAM_MIN_DISTANCE = 1.2;
+export const CAM_MAX_DISTANCE = 12;
 
 const TURNTABLE_SPEED = 0.18; // rad/s, same feel as the menu showcase
 
@@ -67,8 +73,21 @@ export interface Stage {
   camera: THREE.PerspectiveCamera;
   /** Parent for the character group — the turntable rotates THIS. */
   contentRoot: THREE.Group;
+  /** IDEA-027: exposed directly (not wrapped in setters) so board mode
+   *  (main.ts) can re-target/re-range the SAME OrbitControls instance for
+   *  the much larger 19x21 maze, then restore the character defaults on the
+   *  way back — see main.ts's setCharacterCameraFraming/setBoardCameraFraming.
+   *  Character-mode code (this file's own resize/turntable, picking.ts) never
+   *  needed anything beyond orbit.update() internally, so exposing the whole
+   *  instance costs nothing today and avoids stage.ts having to anticipate
+   *  every future framing need with bespoke setters. */
+  orbit: OrbitControls;
   setTurntable(on: boolean): void;
   setGrid(on: boolean): void;
+  /** IDEA-027: the neutral ground disc reads wrong under a 19x21 maze floor
+   *  (board.ts's own floor plane already covers that job) — board mode hides
+   *  it; character mode always wants it back. */
+  setGroundVisible(on: boolean): void;
   /** Registers the per-frame callback (idle animation, highlight update). */
   onFrame(cb: (dt: number, t: number) => void): void;
   resize(): void;
@@ -139,8 +158,8 @@ export function createStage(canvas: HTMLCanvasElement): Stage {
   orbit.target.copy(CAM_LOOK);
   orbit.enableDamping = true;
   orbit.dampingFactor = 0.08;
-  orbit.minDistance = 1.2;
-  orbit.maxDistance = 12;
+  orbit.minDistance = CAM_MIN_DISTANCE;
+  orbit.maxDistance = CAM_MAX_DISTANCE;
   orbit.maxPolarAngle = Math.PI * 0.55; // don't dive below the ground disc
   orbit.update();
 
@@ -173,11 +192,15 @@ export function createStage(canvas: HTMLCanvasElement): Stage {
     scene,
     camera,
     contentRoot,
+    orbit,
     setTurntable(on: boolean): void {
       turntableOn = on;
     },
     setGrid(on: boolean): void {
       grid.visible = on;
+    },
+    setGroundVisible(on: boolean): void {
+      ground.visible = on;
     },
     onFrame(cb: (dt: number, t: number) => void): void {
       frameCb = cb;

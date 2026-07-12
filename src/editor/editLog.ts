@@ -65,6 +65,19 @@ export interface AddedPartRecord {
   params: Record<string, number>;
 }
 
+/** An ORIGINAL model part (mesh or group the character builder itself
+ *  constructs) the user deleted in the editor. Unlike AddedPartRecord, there
+ *  is no geometry/material to own or dispose — those belong to the character
+ *  build (see registry.ts's disposeGroup, which reclaims them on character
+ *  switch) — this record exists purely so codegen can emit a
+ *  `<varName>.removeFromParent();` line while the part is gone. */
+export interface DeletedOriginalRecord {
+  path: string;
+  varName: string;
+  isAutoNamed: boolean;
+  locator: string;
+}
+
 function tuple(v: { x: number; y: number; z: number }): Vec3Tuple {
   return [v.x, v.y, v.z];
 }
@@ -94,6 +107,11 @@ export class EditLog {
   readonly transformEdits = new Map<string, TransformEditRecord>();
   readonly materialEdits = new Map<string, MaterialEditRecord>();
   readonly addedParts: AddedPartRecord[] = [];
+  /** Keyed by path (the same stable identity transformEdits uses) — an
+   *  original part currently deleted from the scene. Undo removes its entry
+   *  again (no removeFromParent() line once restored); a part re-deleted via
+   *  redo re-adds it with the same path. */
+  readonly deletedOriginals = new Map<string, DeletedOriginalRecord>();
 
   /** Snapshot the authored pose of every part + material. Call once per build. */
   snapshot(nodes: PartNode[], materials: MaterialInfo[]): void {
@@ -102,6 +120,7 @@ export class EditLog {
     this.transformEdits.clear();
     this.materialEdits.clear();
     this.addedParts.length = 0;
+    this.deletedOriginals.clear();
     for (const node of nodes) {
       this.baselines.set(node.path, {
         position: tuple(node.object.position),
@@ -205,11 +224,36 @@ export class EditLog {
     return this.addedParts.find((p) => p.object === object);
   }
 
+  /** Record that an ORIGINAL part was deleted — varName/locator are captured
+   *  NOW (accepts the same identifying fields a PartNode carries, but not a
+   *  full PartNode: main.ts's undo/redo closures keep their own small record
+   *  rather than one that can go stale when refreshParts() rebuilds the tree)
+   *  so they still read correctly even after the object leaves the graph. */
+  markOriginalDeleted(part: { path: string; varName: string; isAutoNamed: boolean; object: THREE.Object3D }): void {
+    this.deletedOriginals.set(part.path, {
+      path: part.path,
+      varName: part.varName,
+      isAutoNamed: part.isAutoNamed,
+      locator: describeLocator(part.object),
+    });
+  }
+
+  /** Undo of that delete — the part is back, so codegen must stop emitting
+   *  removeFromParent() for it. */
+  unmarkOriginalDeleted(path: string): void {
+    this.deletedOriginals.delete(path);
+  }
+
+  isOriginalDeleted(path: string): boolean {
+    return this.deletedOriginals.has(path);
+  }
+
   get isEmpty(): boolean {
     return (
       this.transformEdits.size === 0 &&
       this.materialEdits.size === 0 &&
-      this.addedParts.length === 0
+      this.addedParts.length === 0 &&
+      this.deletedOriginals.size === 0
     );
   }
 

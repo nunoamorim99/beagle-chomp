@@ -13,8 +13,13 @@
   </head>
   <body>
     <div id="editorApp">
+      <div id="modeBar">
+        <span class="mode-bar-label">Workbench</span>
+        <button id="modeCharacterBtn" class="mode-btn active" data-mode="character">Character</button>
+        <button id="modeBoardBtn" class="mode-btn" data-mode="board">Board &amp; Themes</button>
+      </div>
       <aside id="treePane">
-        <h2 class="pane-title">Parts</h2>
+        <h2 class="pane-title" id="treePaneTitle">Parts</h2>
         <div id="partTree"></div>
       </aside>
       <main id="viewportPane">
@@ -25,7 +30,10 @@
           Ctrl = depth/roll) · Ctrl+Z undo · Esc deselect
         </div>
       </main>
-      <aside id="guiPane"></aside>
+      <aside id="guiPane">
+        <div id="charGuiHost"></div>
+        <div id="boardGuiHost" hidden></div>
+      </aside>
       <section id="codePane">
         <div id="codeTabs">
           <button class="code-tab active" data-tab="generated">Generated code</button>

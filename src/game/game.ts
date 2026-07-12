@@ -35,6 +35,8 @@ import { createShopScene, type ShopScene } from "../render/shopScene";
 import { createEffects, type Effects } from "../render/effects";
 import {
   buildBoard,
+  applyBoardTheme,
+  disposePropGroup,
   eatPellet,
   spawnFruit,
   clearFruit,
@@ -380,10 +382,25 @@ export class Game {
       // IDEA-023: drives the shop page's own live 3D hero preview — fired on
       // open, on every tab switch, and on every card tap (never after
       // equipping the already-selected card, since the same model is already
-      // shown — see shop.ts's onPreview doc comment).
+      // shown — see shop.ts's onPreview doc comment). IDEA-026 adds the third
+      // kind: theme cards stage a maze-corner diorama built from the theme's
+      // own palette.
       onPreview: (kind, id) => {
         if (kind === "beagle") this.shopScene.showBeagle(getBeagleSkin(id));
-        else this.shopScene.showEnemy(id);
+        else if (kind === "enemy") this.shopScene.showEnemy(id);
+        else this.shopScene.showTheme(id);
+      },
+      // IDEA-026: a theme was equipped in the shop — re-theme the LIVE world
+      // immediately. applySceneTheme mutates atmosphere (background, fog,
+      // backdrop dome, lights); applyBoardTheme mutates the shared board
+      // materials in place and rebuilds only the hedge decor, so a paused
+      // mid-run board re-themes with every eaten pellet, entity position and
+      // pickup exactly where it was (nothing is rebuilt from the grid). The
+      // menu showcase (menuScene) deliberately stays garden — it's the
+      // game's welcome-mat branding, not part of the themed world.
+      onThemeChanged: (theme) => {
+        this.rig.applySceneTheme(theme);
+        applyBoardTheme(this.level.board, this.rig.scene, this.level.grid, theme);
       },
     });
 
@@ -601,7 +618,7 @@ export class Game {
     };
   }
 
-  /** Removes every mesh owned by the previous level's board from the scene (walls, floor, remaining pellets, fruit, coin, bonus life, hedge decor) so buildLevel's replacement never leaks. */
+  /** Removes every mesh owned by the previous level's board from the scene (walls, floor, remaining pellets, fruit, coin, bonus life, hedge decor, theme props) so buildLevel's replacement never leaks. */
   private disposeLevel(level: LevelAssets): void {
     this.rig.scene.remove(level.board.walls, level.board.floor);
     level.board.pelletMeshes.forEach((p) => p.mesh.removeFromParent());
@@ -609,6 +626,12 @@ export class Game {
     if (level.board.coin) this.rig.scene.remove(level.board.coin);
     if (level.board.life) this.rig.scene.remove(level.board.life);
     level.board.hedgeDecor.forEach((m) => this.rig.scene.remove(m));
+    // IDEA-026 props: one container group per board (see Board.props).
+    // Unlike the walls/pellets above (whose geometries/materials are shared
+    // module-level and must NOT be disposed here), every prop owns its own
+    // geometry+materials — disposePropGroup is board.ts's canonical
+    // teardown for them, so a level change never leaks prop GPU resources.
+    if (level.board.props) disposePropGroup(this.rig.scene, level.board.props);
   }
 
   start(): void {

@@ -20,11 +20,64 @@ body {
 #editorApp {
   display: grid;
   grid-template-columns: 230px 1fr 300px;
-  grid-template-rows: 1fr 250px;
+  grid-template-rows: auto 1fr 250px;
   grid-template-areas:
+    "modebar modebar modebar"
     "tree viewport gui"
     "code code code";
   height: 100vh;
+}
+
+/* Board mode drops the bottom code panel entirely (characters.ts snippets
+   don't apply to a theme recipe — see main.ts's setMode) — the grid falls
+   back to a two-row layout via this modifier class on #editorApp. */
+#editorApp.mode-board {
+  grid-template-rows: auto 1fr;
+  grid-template-areas:
+    "modebar modebar modebar"
+    "tree viewport gui";
+}
+
+/* ---- mode bar (top) ---- */
+#modeBar {
+  grid-area: modebar;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid #262a31;
+  background: #1b1e23;
+}
+
+.mode-bar-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #8b919c;
+  margin-right: 4px;
+}
+
+.mode-btn {
+  background: #23272e;
+  border: 1px solid #2f343c;
+  border-radius: 4px;
+  color: #aeb4bd;
+  font: inherit;
+  font-size: 12px;
+  padding: 5px 14px;
+  cursor: pointer;
+}
+
+.mode-btn:hover {
+  background: #2b3038;
+  color: #d7dae0;
+}
+
+.mode-btn.active {
+  background: #3a2b40;
+  border-color: #ff37a6;
+  color: #ffffff;
 }
 
 .pane-title {
