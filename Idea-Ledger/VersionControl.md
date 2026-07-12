@@ -25,6 +25,15 @@ _(nothing planned yet — v3.0 "New Tricks" was fulfilled and cut on 2026-07-12)
 
 ## Version history
 
+### v3.2 — Trail Polish (2026-07-12)
+Two playtest-driven touches: the challenge map earns a proper desktop layout, and the home
+screen greets you with the dog you actually equipped.
+- **IDEA-014 v2** — level-map desktop rework: full-width top bar, a right side panel with rich
+  level details (blurb, twists, maze name, state), page-level scrolling; plus the hill-bleed
+  clamp and circular node rings/pulse (no more black square around the current level).
+- **IDEA-021 v3** — fix: the home-screen 3D showcase now boots with the player's equipped
+  beagle — the profile loads before the menu scene builds its dog.
+
 ### v3.1 — Smooth Moves (2026-07-12)
 A single targeted fix from playtesting: no more ghost teleports.
 - **IDEA-002 v2** — ghosts "flicked/teleported" up to a full tile whenever they reversed mid-tile
