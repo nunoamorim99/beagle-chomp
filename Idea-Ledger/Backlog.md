@@ -16,6 +16,7 @@ Living backlog of ideas. Two purposes:
 ## 📥 Inbox (raw captures — untriaged)
 > `/idea` appends raw notes here with a date. `/idea-triage` turns them into registered ideas
 > below, then clears them from here. Don't assign IDs in the Inbox.
+- (2026-07-13) props overhaul: (1) editor gets a dedicated PROPS tab to edit prop structure/definitions (reusable across themes); (2) Board & Themes selects props from that library instead of inline populations; (3) EXPLICIT placement — pick a spot on the apron, choose a prop, adjust position, save (fix positions, not random); (4) wall-top decor becomes selectable component slots too (blooms OR lamps/transit-signals/simple things), choose per wall tile where to place. Follow-up to IDEA-026/027.
 _(empty — nothing to triage)_
 
 ## Backlog (open ideas)
