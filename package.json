@@ -15,7 +15,8 @@
     "test:cosmetics": "tsx scripts/test-cosmetics.ts",
     "test:editor:character": "tsx scripts/test-editor.ts",
     "test:editor:board": "tsx scripts/test-editor-board.ts",
-    "test:editor": "npm run test:editor:character && npm run test:editor:board",
+    "test:editor:props": "tsx scripts/test-editor-props.ts",
+    "test:editor": "npm run test:editor:character && npm run test:editor:board && npm run test:editor:props",
     "test": "npm run validate && npm run sim && npm run test:cosmetics"
   },
   "dependencies": {

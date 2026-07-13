@@ -62,35 +62,38 @@ export interface ThemePalette {
   speckChance: number;
 }
 
-/** The prop shapes the render layer knows how to build (src/render/board.ts
- *  owns the mesh factories — this module only DESCRIBES which props a theme
- *  plants and how). Adding a kind here without a matching factory is a
- *  compile-time error at the render layer's exhaustive switch. */
-export type ThemePropKind =
-  | "shrub"
-  | "tree"
-  | "pine"
-  | "palm"
-  | "building"
-  | "streetlight"
-  | "umbrella";
+/** IDEA-030: one explicit prop placement on the board's apron ring. Replaces
+ *  IDEA-026's density-scatter — every prop now sits at a HAND-CHOSEN spot the
+ *  editor lets you place, move, and save (Nuno: "select the place, choose the
+ *  props, adjust the position and save"). `propId` references a reusable
+ *  definition in the prop library (src/game/props.ts); `tile` is an apron
+ *  tile coord (worldX/worldZ map it), `offset` is a fine ±tile nudge within
+ *  it, `rotationY` in radians, `scale` a per-placement multiplier on top of
+ *  the def's own height/width. Props stay OUTSIDE the maze (apron only — the
+ *  editor only offers apron tiles), and the render layer still applies the
+ *  per-side height cap so a placement can't tower between the camera and the
+ *  play area. */
+export interface PropPlacement {
+  propId: string;
+  tile: readonly [number, number];
+  offset: readonly [number, number];
+  rotationY: number;
+  scale: number;
+}
 
-/** One prop population in a theme: which shape, how densely it fills the
- *  apron ring (the walkable-free 1-tile border of floor around the maze —
- *  props NEVER stand on play tiles), its accent colors (kind-specific:
- *  foliage greens, umbrella canopies, building facade hues, lamp glow), and
- *  its scale variance band. Placement itself is deterministic (positional
- *  hash, like the hedge blooms) so a theme's props don't shuffle between
- *  rebuilds, and the render layer additionally caps prop HEIGHT per board
- *  side so a tall prop can never stand between the camera and the play area
- *  (tall kinds go behind/beside the board, only low kinds in front). */
-export interface ThemeProp {
-  kind: ThemePropKind;
-  /** Fraction of apron spots this population tries to claim (0..1). */
-  density: number;
-  colors: readonly number[];
-  minScale: number;
-  maxScale: number;
+/** IDEA-031: one wall-top component placement. Same shape as PropPlacement
+ *  (references a library prop by id — blooms, lamps, transit signals…) but
+ *  sits on a WALL tile's top rather than an apron floor tile: `tile` is a
+ *  wall ('#') tile coord, and the render layer seats the component at wall
+ *  height. Supersedes IDEA-011's density blooms with explicit per-tile
+ *  choice — the editor lets you pick which walls carry what (Nuno: "add
+ *  components in the place of the blooms... choose on the maze wall where to
+ *  place it"). */
+export interface WallDecorPlacement {
+  propId: string;
+  tile: readonly [number, number];
+  rotationY: number;
+  scale: number;
 }
 
 export interface MazeTheme {
@@ -100,11 +103,16 @@ export interface MazeTheme {
    *  purchasable" — true only for the default garden theme. */
   price: number;
   palette: ThemePalette;
-  /** IDEA-026/027 follow-up (Nuno: "shrubs in the garden, lighting stations
-   *  in the night city, beach umbrellas... buildings"): the decorative prop
-   *  populations that dress the board's surroundings per theme. Empty array
-   *  = a clean board (classic keeps its pure retro look). */
-  props: readonly ThemeProp[];
+  /** IDEA-030: explicit apron prop placements (was IDEA-026's `props`
+   *  density populations). Empty = a bare apron (classic). Each references a
+   *  library prop ([[props.ts]]) by id. */
+  placements: readonly PropPlacement[];
+  /** IDEA-031: explicit wall-top component placements (generalizes IDEA-011's
+   *  density blooms — the palette still carries bloom COLORS as a fallback for
+   *  themes that keep the classic scattered garden look via bloomChance, but a
+   *  theme may instead hand-place lamps/signals/blooms per wall tile here).
+   *  Empty = fall back to the palette's density blooms. */
+  wallDecor: readonly WallDecorPlacement[];
 }
 
 export const MAZE_THEMES: readonly MazeTheme[] = [
@@ -147,12 +155,38 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
       speckEmissive: 0x1c3a18,
       speckChance: 0.35,
     },
-    props: [
-      // Nuno's ask: "on the garden add some shrubs" — leafy rounded bushes
-      // ringing the lawn, plus the occasional young tree.
-      { kind: "shrub", density: 0.3, colors: [0x4e9a3e, 0x3f8f3a, 0x5fae4d], minScale: 0.8, maxScale: 1.25 },
-      { kind: "tree", density: 0.08, colors: [0x4e9a3e], minScale: 0.9, maxScale: 1.15 },
+    placements: [
+      { propId: "shrub", tile: [19, 4], offset: [-0.24, -0.162], rotationY: 5.691, scale: 0.949 },
+      { propId: "shrub", tile: [7, -1], offset: [0.184, -0.163], rotationY: 6.188, scale: 1.074 },
+      { propId: "shrub", tile: [0, -1], offset: [-0.22, -0.111], rotationY: 1.294, scale: 0.962 },
+      { propId: "shrub", tile: [14, 21], offset: [0.143, 0.131], rotationY: 2.155, scale: 1.132 },
+      { propId: "shrub", tile: [15, 21], offset: [-0.176, 0.148], rotationY: 3.487, scale: 1.163 },
+      { propId: "shrub", tile: [5, -1], offset: [0.217, 0.075], rotationY: 5.538, scale: 0.911 },
+      { propId: "shrub", tile: [19, 6], offset: [-0.007, -0.091], rotationY: 2.731, scale: 0.81 },
+      { propId: "shrub", tile: [11, -1], offset: [-0.037, -0.143], rotationY: 6.276, scale: 1.021 },
+      { propId: "shrub", tile: [4, -1], offset: [-0.065, 0.152], rotationY: 5.757, scale: 1.083 },
+      { propId: "shrub", tile: [8, -1], offset: [0.144, -0.125], rotationY: 4.636, scale: 1.206 },
+      { propId: "shrub", tile: [10, -1], offset: [-0.17, 0.032], rotationY: 3.87, scale: 1.111 },
+      { propId: "shrub", tile: [9, -1], offset: [-0.236, -0.048], rotationY: 3.852, scale: 1.068 },
+      { propId: "shrub", tile: [-1, -1], offset: [-0.152, 0.121], rotationY: 0.948, scale: 1.004 },
+      { propId: "shrub", tile: [1, -1], offset: [-0.038, -0.119], rotationY: 0.911, scale: 1.128 },
+      { propId: "shrub", tile: [-1, 15], offset: [-0.182, 0.25], rotationY: 5.075, scale: 0.931 },
+      { propId: "shrub", tile: [11, 21], offset: [0.107, -0.13], rotationY: 3.967, scale: 1.124 },
+      { propId: "shrub", tile: [19, 5], offset: [-0.242, 0.123], rotationY: 0.269, scale: 0.975 },
+      { propId: "shrub", tile: [19, 11], offset: [0.132, 0.154], rotationY: 3.038, scale: 1.132 },
+      { propId: "shrub", tile: [-1, 16], offset: [0.121, -0.157], rotationY: 2.239, scale: 0.855 },
+      { propId: "shrub", tile: [17, -1], offset: [-0.035, 0.01], rotationY: 2.977, scale: 1.164 },
+      { propId: "shrub", tile: [18, -1], offset: [-0.185, 0.249], rotationY: 5.882, scale: 0.928 },
+      { propId: "shrub", tile: [19, 7], offset: [0.026, -0.144], rotationY: 0.013, scale: 1.069 },
+      { propId: "shrub", tile: [19, 16], offset: [-0.036, -0.164], rotationY: 4.991, scale: 0.906 },
+      { propId: "oak", tile: [-1, 17], offset: [-0.114, -0.047], rotationY: 4.742, scale: 1.149 },
+      { propId: "oak", tile: [19, 1], offset: [-0.066, 0.227], rotationY: 3.638, scale: 0.981 },
+      { propId: "oak", tile: [-1, 2], offset: [-0.218, 0.056], rotationY: 2.902, scale: 1.056 },
+      { propId: "oak", tile: [19, 2], offset: [0.178, -0.196], rotationY: 4.689, scale: 1.092 },
+      { propId: "oak", tile: [-1, 3], offset: [-0.001, 0.245], rotationY: 1.083, scale: 1.068 },
+      { propId: "oak", tile: [19, 3], offset: [-0.131, 0.085], rotationY: 4.418, scale: 1.097 },
     ],
+    wallDecor: [],
   },
   {
     id: "classic",
@@ -191,7 +225,8 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
       speckChance: 0,
     },    // Deliberately propless: the v1.0 throwback is a clean neon board in a
     // black void — anything planted around it would break the retro read.
-    props: [],
+    placements: [],
+    wallDecor: [],
   },
   {
     id: "forest",
@@ -227,11 +262,49 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
       speckEmissive: 0x16300f,
       speckChance: 0.5,
     },
-    props: [
-      // A dense pine ring: the maze reads as a clearing INSIDE the forest.
-      { kind: "pine", density: 0.5, colors: [0x2e6b34, 0x24552a, 0x3a7a40], minScale: 0.9, maxScale: 1.55 },
-      { kind: "shrub", density: 0.2, colors: [0x2e6b34, 0x3a7a40], minScale: 0.7, maxScale: 1.1 },
+    placements: [
+      { propId: "pine", tile: [19, 4], offset: [-0.24, -0.162], rotationY: 5.691, scale: 1 },
+      { propId: "pine", tile: [7, -1], offset: [0.184, -0.163], rotationY: 6.188, scale: 1.296 },
+      { propId: "pine", tile: [0, -1], offset: [-0.22, -0.111], rotationY: 1.294, scale: 1.133 },
+      { propId: "pine", tile: [5, -1], offset: [0.217, 0.075], rotationY: 5.538, scale: 1.06 },
+      { propId: "pine", tile: [19, 6], offset: [-0.007, -0.091], rotationY: 2.731, scale: 0.914 },
+      { propId: "pine", tile: [11, -1], offset: [-0.037, -0.143], rotationY: 6.276, scale: 1.219 },
+      { propId: "pine", tile: [4, -1], offset: [-0.065, 0.152], rotationY: 5.757, scale: 1.309 },
+      { propId: "pine", tile: [8, -1], offset: [0.144, -0.125], rotationY: 4.636, scale: 1.487 },
+      { propId: "pine", tile: [10, -1], offset: [-0.17, 0.032], rotationY: 3.87, scale: 1.349 },
+      { propId: "pine", tile: [9, -1], offset: [-0.236, -0.048], rotationY: 3.852, scale: 1.287 },
+      { propId: "pine", tile: [-1, -1], offset: [-0.152, 0.121], rotationY: 0.948, scale: 1.195 },
+      { propId: "pine", tile: [1, -1], offset: [-0.038, -0.119], rotationY: 0.911, scale: 1.374 },
+      { propId: "pine", tile: [-1, 15], offset: [-0.182, 0.25], rotationY: 5.075, scale: 1 },
+      { propId: "pine", tile: [19, 5], offset: [-0.242, 0.123], rotationY: 0.269, scale: 1 },
+      { propId: "pine", tile: [19, 11], offset: [0.132, 0.154], rotationY: 3.038, scale: 1 },
+      { propId: "pine", tile: [-1, 16], offset: [0.121, -0.157], rotationY: 2.239, scale: 0.98 },
+      { propId: "pine", tile: [17, -1], offset: [-0.035, 0.01], rotationY: 2.977, scale: 1.426 },
+      { propId: "pine", tile: [18, -1], offset: [-0.185, 0.249], rotationY: 5.882, scale: 1.085 },
+      { propId: "pine", tile: [19, 7], offset: [0.026, -0.144], rotationY: 0.013, scale: 1 },
+      { propId: "pine", tile: [19, 16], offset: [-0.036, -0.164], rotationY: 4.991, scale: 1 },
+      { propId: "pine", tile: [-1, 17], offset: [-0.114, -0.047], rotationY: 4.742, scale: 1 },
+      { propId: "pine", tile: [19, 1], offset: [-0.066, 0.227], rotationY: 3.638, scale: 1 },
+      { propId: "pine", tile: [-1, 2], offset: [-0.218, 0.056], rotationY: 2.902, scale: 1 },
+      { propId: "pine", tile: [19, 2], offset: [0.178, -0.196], rotationY: 4.689, scale: 1 },
+      { propId: "pine", tile: [-1, 3], offset: [-0.001, 0.245], rotationY: 1.083, scale: 1 },
+      { propId: "pine", tile: [19, 3], offset: [-0.131, 0.085], rotationY: 4.418, scale: 1 },
+      { propId: "pine", tile: [3, -1], offset: [0.198, 0.017], rotationY: 4.434, scale: 1.07 },
+      { propId: "pine", tile: [19, 15], offset: [-0.17, -0.128], rotationY: 5.99, scale: 1 },
+      { propId: "pine", tile: [14, -1], offset: [0.063, -0.094], rotationY: 5.201, scale: 1.518 },
+      { propId: "pine", tile: [-1, 5], offset: [0.095, 0.224], rotationY: 2.701, scale: 1 },
+      { propId: "pine", tile: [2, -1], offset: [-0.073, -0.126], rotationY: 2.816, scale: 0.96 },
+      { propId: "pine", tile: [19, -1], offset: [-0.227, 0.089], rotationY: 1.579, scale: 1.166 },
+      { propId: "pine", tile: [-1, 7], offset: [0.197, -0.04], rotationY: 2.341, scale: 1 },
+      { propId: "pine", tile: [15, -1], offset: [0.029, 0.202], rotationY: 3.5, scale: 1.286 },
+      { propId: "pine", tile: [19, 14], offset: [0.017, -0.132], rotationY: 4.627, scale: 1 },
+      { propId: "pine", tile: [-1, 11], offset: [-0.183, 0.008], rotationY: 0.287, scale: 1 },
+      { propId: "pine", tile: [-1, 12], offset: [0.02, -0.024], rotationY: 1.648, scale: 1 },
+      { propId: "pine", tile: [-1, 1], offset: [0.088, -0.241], rotationY: 0.581, scale: 1 },
+      { propId: "pine", tile: [-1, 13], offset: [-0.186, -0.206], rotationY: 6.08, scale: 1 },
+      { propId: "shrub", tile: [19, 12], offset: [-0.134, 0.002], rotationY: 1.942, scale: 0.977 },
     ],
+    wallDecor: [],
   },
   {
     id: "beach",
@@ -267,12 +340,32 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
       speckEmissive: 0x2a3a14,
       speckChance: 0.3,
     },
-    props: [
-      // Nuno's ask: "on the beach some beach umbrella" — bright canopies
-      // planted in the sand, with palms swaying behind the board.
-      { kind: "umbrella", density: 0.16, colors: [0xf29a8a, 0x5fc8c0, 0xf2d43a, 0xf4efe6], minScale: 0.9, maxScale: 1.2 },
-      { kind: "palm", density: 0.14, colors: [0x5fae4d, 0x4e9a3e], minScale: 0.9, maxScale: 1.35 },
+    placements: [
+      { propId: "umbrella", tile: [19, 4], offset: [-0.24, -0.162], rotationY: 5.691, scale: 1 },
+      { propId: "umbrella", tile: [7, -1], offset: [0.184, -0.163], rotationY: 6.188, scale: 1.083 },
+      { propId: "umbrella", tile: [0, -1], offset: [-0.22, -0.111], rotationY: 1.294, scale: 1.008 },
+      { propId: "umbrella", tile: [5, -1], offset: [0.217, 0.075], rotationY: 5.538, scale: 0.974 },
+      { propId: "umbrella", tile: [19, 6], offset: [-0.007, -0.091], rotationY: 2.731, scale: 0.906 },
+      { propId: "umbrella", tile: [11, -1], offset: [-0.037, -0.143], rotationY: 6.276, scale: 1.047 },
+      { propId: "umbrella", tile: [4, -1], offset: [-0.065, 0.152], rotationY: 5.757, scale: 1.089 },
+      { propId: "umbrella", tile: [8, -1], offset: [0.144, -0.125], rotationY: 4.636, scale: 1.171 },
+      { propId: "umbrella", tile: [10, -1], offset: [-0.17, 0.032], rotationY: 3.87, scale: 1.107 },
+      { propId: "umbrella", tile: [9, -1], offset: [-0.236, -0.048], rotationY: 3.852, scale: 1.079 },
+      { propId: "umbrella", tile: [-1, -1], offset: [-0.152, 0.121], rotationY: 0.948, scale: 1.036 },
+      { propId: "umbrella", tile: [1, -1], offset: [-0.038, -0.119], rotationY: 0.911, scale: 1.119 },
+      { propId: "palm", tile: [-1, 15], offset: [-0.182, 0.25], rotationY: 5.075, scale: 1 },
+      { propId: "palm", tile: [19, 5], offset: [-0.242, 0.123], rotationY: 0.269, scale: 1 },
+      { propId: "palm", tile: [19, 11], offset: [0.132, 0.154], rotationY: 3.038, scale: 1 },
+      { propId: "palm", tile: [-1, 16], offset: [0.121, -0.157], rotationY: 2.239, scale: 0.955 },
+      { propId: "palm", tile: [17, -1], offset: [-0.035, 0.01], rotationY: 2.977, scale: 1.264 },
+      { propId: "palm", tile: [18, -1], offset: [-0.185, 0.249], rotationY: 5.882, scale: 1.028 },
+      { propId: "palm", tile: [19, 7], offset: [0.026, -0.144], rotationY: 0.013, scale: 1 },
+      { propId: "palm", tile: [19, 16], offset: [-0.036, -0.164], rotationY: 4.991, scale: 1 },
+      { propId: "palm", tile: [-1, 17], offset: [-0.114, -0.047], rotationY: 4.742, scale: 1 },
+      { propId: "palm", tile: [19, 1], offset: [-0.066, 0.227], rotationY: 3.638, scale: 1 },
+      { propId: "palm", tile: [-1, 2], offset: [-0.218, 0.056], rotationY: 2.902, scale: 1 },
     ],
+    wallDecor: [],
   },
   {
     id: "park",
@@ -308,13 +401,49 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
       speckEmissive: 0x1c3a18,
       speckChance: 0.4,
     },
-    props: [
-      // The manicured cousin: proper trees, trimmed shrubs, and the odd
-      // park lamp along the path.
-      { kind: "tree", density: 0.22, colors: [0x4e9a3e, 0x5fae4d], minScale: 0.9, maxScale: 1.3 },
-      { kind: "shrub", density: 0.18, colors: [0x4e9a3e, 0x5aa348], minScale: 0.75, maxScale: 1.15 },
-      { kind: "streetlight", density: 0.12, colors: [0xf4d060], minScale: 0.95, maxScale: 1.1 },
+    placements: [
+      { propId: "oak", tile: [19, 4], offset: [-0.24, -0.162], rotationY: 5.691, scale: 1.033 },
+      { propId: "oak", tile: [7, -1], offset: [0.184, -0.163], rotationY: 6.188, scale: 1.143 },
+      { propId: "oak", tile: [0, -1], offset: [-0.22, -0.111], rotationY: 1.294, scale: 1.044 },
+      { propId: "oak", tile: [5, -1], offset: [0.217, 0.075], rotationY: 5.538, scale: 0.999 },
+      { propId: "oak", tile: [19, 6], offset: [-0.007, -0.091], rotationY: 2.731, scale: 0.908 },
+      { propId: "oak", tile: [11, -1], offset: [-0.037, -0.143], rotationY: 6.276, scale: 1.096 },
+      { propId: "oak", tile: [4, -1], offset: [-0.065, 0.152], rotationY: 5.757, scale: 1.152 },
+      { propId: "oak", tile: [8, -1], offset: [0.144, -0.125], rotationY: 4.636, scale: 1.261 },
+      { propId: "oak", tile: [10, -1], offset: [-0.17, 0.032], rotationY: 3.87, scale: 1.176 },
+      { propId: "oak", tile: [9, -1], offset: [-0.236, -0.048], rotationY: 3.852, scale: 1.138 },
+      { propId: "oak", tile: [-1, -1], offset: [-0.152, 0.121], rotationY: 0.948, scale: 1.081 },
+      { propId: "oak", tile: [1, -1], offset: [-0.038, -0.119], rotationY: 0.911, scale: 1.192 },
+      { propId: "oak", tile: [-1, 15], offset: [-0.182, 0.25], rotationY: 5.075, scale: 1.017 },
+      { propId: "oak", tile: [19, 5], offset: [-0.242, 0.123], rotationY: 0.269, scale: 1.055 },
+      { propId: "oak", tile: [19, 11], offset: [0.132, 0.154], rotationY: 3.038, scale: 1.195 },
+      { propId: "oak", tile: [-1, 16], offset: [0.121, -0.157], rotationY: 2.239, scale: 0.949 },
+      { propId: "oak", tile: [17, -1], offset: [-0.035, 0.01], rotationY: 2.977, scale: 1.224 },
+      { propId: "shrub", tile: [18, -1], offset: [-0.185, 0.249], rotationY: 5.882, scale: 0.864 },
+      { propId: "shrub", tile: [19, 7], offset: [0.026, -0.144], rotationY: 0.013, scale: 0.989 },
+      { propId: "shrub", tile: [19, 16], offset: [-0.036, -0.164], rotationY: 4.991, scale: 0.844 },
+      { propId: "shrub", tile: [-1, 17], offset: [-0.114, -0.047], rotationY: 4.742, scale: 1.148 },
+      { propId: "shrub", tile: [18, 21], offset: [0.051, -0.062], rotationY: 0.902, scale: 1.092 },
+      { propId: "shrub", tile: [19, 1], offset: [-0.066, 0.227], rotationY: 3.638, scale: 0.879 },
+      { propId: "shrub", tile: [-1, 2], offset: [-0.218, 0.056], rotationY: 2.902, scale: 1 },
+      { propId: "shrub", tile: [19, 2], offset: [0.178, -0.196], rotationY: 4.689, scale: 1.057 },
+      { propId: "shrub", tile: [-1, 3], offset: [-0.001, 0.245], rotationY: 1.083, scale: 1.018 },
+      { propId: "shrub", tile: [19, 3], offset: [-0.131, 0.085], rotationY: 4.418, scale: 1.065 },
+      { propId: "shrub", tile: [3, -1], offset: [0.198, 0.017], rotationY: 4.434, scale: 0.854 },
+      { propId: "shrub", tile: [19, 15], offset: [-0.17, -0.128], rotationY: 5.99, scale: 0.962 },
+      { propId: "shrub", tile: [14, -1], offset: [0.063, -0.094], rotationY: 5.201, scale: 1.13 },
+      { propId: "shrub", tile: [-1, 5], offset: [0.095, 0.224], rotationY: 2.701, scale: 0.834 },
+      { propId: "streetlight", tile: [2, -1], offset: [-0.073, -0.126], rotationY: 2.816, scale: 0.964 },
+      { propId: "streetlight", tile: [19, -1], offset: [-0.227, 0.089], rotationY: 1.579, scale: 1.011 },
+      { propId: "streetlight", tile: [-1, 7], offset: [0.197, -0.04], rotationY: 2.341, scale: 1.076 },
+      { propId: "streetlight", tile: [15, -1], offset: [0.029, 0.202], rotationY: 3.5, scale: 1.039 },
+      { propId: "streetlight", tile: [19, 14], offset: [0.017, -0.132], rotationY: 4.627, scale: 1.028 },
+      { propId: "streetlight", tile: [-1, 11], offset: [-0.183, 0.008], rotationY: 0.287, scale: 1.049 },
+      { propId: "streetlight", tile: [-1, 12], offset: [0.02, -0.024], rotationY: 1.648, scale: 1.043 },
+      { propId: "streetlight", tile: [-1, 1], offset: [0.088, -0.241], rotationY: 0.581, scale: 1.09 },
+      { propId: "streetlight", tile: [-1, 13], offset: [-0.186, -0.206], rotationY: 6.08, scale: 1.062 },
     ],
+    wallDecor: [],
   },
   {
     id: "city",
@@ -357,13 +486,54 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
       speckEmissive: 0x3a3a4a,
       speckChance: 0.15,
     },
-    props: [
-      // Nuno's ask: "some buildings... some lighting stations" — a varied-
-      // height skyline rises behind and beside the board (never in front —
-      // the render layer's per-side height caps keep the play area clear),
-      // with warm streetlights dotted around the block.
-      { kind: "building", density: 0.38, colors: [0x5a5a68, 0x6d6a78, 0x4a4a58, 0x7a7480], minScale: 0.85, maxScale: 1.6 },
-      { kind: "streetlight", density: 0.18, colors: [0xf4d060], minScale: 0.95, maxScale: 1.15 },
+    placements: [
+      { propId: "tower", tile: [19, 4], offset: [-0.24, -0.162], rotationY: 5.691, scale: 1 },
+      { propId: "tower", tile: [7, -1], offset: [0.184, -0.163], rotationY: 6.188, scale: 1.307 },
+      { propId: "tower", tile: [0, -1], offset: [-0.22, -0.111], rotationY: 1.294, scale: 1.119 },
+      { propId: "tower", tile: [5, -1], offset: [0.217, 0.075], rotationY: 5.538, scale: 1.035 },
+      { propId: "tower", tile: [19, 6], offset: [-0.007, -0.091], rotationY: 2.731, scale: 0.866 },
+      { propId: "tower", tile: [11, -1], offset: [-0.037, -0.143], rotationY: 6.276, scale: 1.218 },
+      { propId: "tower", tile: [4, -1], offset: [-0.065, 0.152], rotationY: 5.757, scale: 1.322 },
+      { propId: "tower", tile: [8, -1], offset: [0.144, -0.125], rotationY: 4.636, scale: 1.527 },
+      { propId: "tower", tile: [10, -1], offset: [-0.17, 0.032], rotationY: 3.87, scale: 1.368 },
+      { propId: "tower", tile: [9, -1], offset: [-0.236, -0.048], rotationY: 3.852, scale: 1.296 },
+      { propId: "tower", tile: [-1, -1], offset: [-0.152, 0.121], rotationY: 0.948, scale: 1.19 },
+      { propId: "tower", tile: [1, -1], offset: [-0.038, -0.119], rotationY: 0.911, scale: 1.397 },
+      { propId: "tower", tile: [-1, 15], offset: [-0.182, 0.25], rotationY: 5.075, scale: 1 },
+      { propId: "tower", tile: [19, 5], offset: [-0.242, 0.123], rotationY: 0.269, scale: 1 },
+      { propId: "tower", tile: [19, 11], offset: [0.132, 0.154], rotationY: 3.038, scale: 1 },
+      { propId: "tower", tile: [-1, 16], offset: [0.121, -0.157], rotationY: 2.239, scale: 0.942 },
+      { propId: "tower", tile: [17, -1], offset: [-0.035, 0.01], rotationY: 2.977, scale: 1.457 },
+      { propId: "tower", tile: [18, -1], offset: [-0.185, 0.249], rotationY: 5.882, scale: 1.064 },
+      { propId: "tower", tile: [19, 7], offset: [0.026, -0.144], rotationY: 0.013, scale: 1 },
+      { propId: "tower", tile: [19, 16], offset: [-0.036, -0.164], rotationY: 4.991, scale: 1 },
+      { propId: "tower", tile: [-1, 17], offset: [-0.114, -0.047], rotationY: 4.742, scale: 1 },
+      { propId: "tower", tile: [19, 1], offset: [-0.066, 0.227], rotationY: 3.638, scale: 1 },
+      { propId: "tower", tile: [-1, 2], offset: [-0.218, 0.056], rotationY: 2.902, scale: 1 },
+      { propId: "tower", tile: [19, 2], offset: [0.178, -0.196], rotationY: 4.689, scale: 1 },
+      { propId: "tower", tile: [-1, 3], offset: [-0.001, 0.245], rotationY: 1.083, scale: 1 },
+      { propId: "tower", tile: [19, 3], offset: [-0.131, 0.085], rotationY: 4.418, scale: 1 },
+      { propId: "tower", tile: [3, -1], offset: [0.198, 0.017], rotationY: 4.434, scale: 1.046 },
+      { propId: "tower", tile: [19, 15], offset: [-0.17, -0.128], rotationY: 5.99, scale: 1 },
+      { propId: "tower", tile: [14, -1], offset: [0.063, -0.094], rotationY: 5.201, scale: 1.563 },
+      { propId: "tower", tile: [-1, 5], offset: [0.095, 0.224], rotationY: 2.701, scale: 1 },
+      { propId: "streetlight", tile: [2, -1], offset: [-0.073, -0.126], rotationY: 2.816, scale: 0.969 },
+      { propId: "streetlight", tile: [19, -1], offset: [-0.227, 0.089], rotationY: 1.579, scale: 1.032 },
+      { propId: "streetlight", tile: [-1, 7], offset: [0.197, -0.04], rotationY: 2.341, scale: 1.118 },
+      { propId: "streetlight", tile: [15, -1], offset: [0.029, 0.202], rotationY: 3.5, scale: 1.069 },
+      { propId: "streetlight", tile: [19, 14], offset: [0.017, -0.132], rotationY: 4.627, scale: 1.054 },
+      { propId: "streetlight", tile: [-1, 11], offset: [-0.183, 0.008], rotationY: 0.287, scale: 1.082 },
+      { propId: "streetlight", tile: [-1, 12], offset: [0.02, -0.024], rotationY: 1.648, scale: 1.074 },
+      { propId: "streetlight", tile: [-1, 1], offset: [0.088, -0.241], rotationY: 0.581, scale: 1.137 },
+      { propId: "streetlight", tile: [-1, 13], offset: [-0.186, -0.206], rotationY: 6.08, scale: 1.1 },
+      { propId: "streetlight", tile: [19, 12], offset: [-0.134, 0.002], rotationY: 1.942, scale: 1.089 },
+    ],
+    wallDecor: [
+      { propId: "lamp-post", tile: [3, 3], rotationY: 0, scale: 1 },
+      { propId: "transit-sign", tile: [15, 3], rotationY: 1.571, scale: 1 },
+      { propId: "lamp-post", tile: [9, 9], rotationY: 0, scale: 1 },
+      { propId: "transit-sign", tile: [3, 15], rotationY: 0, scale: 1 },
+      { propId: "lamp-post", tile: [15, 15], rotationY: 0, scale: 1 },
     ],
   },
 ] as const;

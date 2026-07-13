@@ -28,10 +28,12 @@ body {
   height: 100vh;
 }
 
-/* Board mode drops the bottom code panel entirely (characters.ts snippets
-   don't apply to a theme recipe — see main.ts's setMode) — the grid falls
-   back to a two-row layout via this modifier class on #editorApp. */
-#editorApp.mode-board {
+/* Board mode AND Props mode both drop the bottom code panel entirely
+   (characters.ts snippets don't apply to a theme recipe or a prop-library
+   recipe — see main.ts's setMode) — the grid falls back to a two-row layout
+   via this modifier class on #editorApp, shared by both modes. */
+#editorApp.mode-board,
+#editorApp.mode-props {
   grid-template-rows: auto 1fr;
   grid-template-areas:
     "modebar modebar modebar"
@@ -126,6 +128,19 @@ body {
   text-align: center;
 }
 
+/* Props mode's "used by N placements" badge (propsTree.ts) — a small pill
+   after the name, distinct enough to notice while scanning the list without
+   competing with the selected-row highlight. */
+.tree-used-badge {
+  margin-left: auto;
+  padding: 0 6px;
+  border-radius: 8px;
+  background: #3a2b40;
+  color: #e0a8d0;
+  font-size: 10px;
+  line-height: 16px;
+}
+
 .tree-row.is-mesh .tree-icon {
   color: #6fb3e0;
 }
@@ -169,6 +184,13 @@ body {
   overflow-y: auto;
   border-left: 1px solid #262a31;
   background: #1b1e23;
+}
+
+/* Props mode's "used by N placements" note (propsInspector.ts) — a disabled
+   lil-gui text controller repurposed as an inline warning; the text stands
+   out amber even though the controller itself is inert (no input to edit). */
+.props-used-by-note .lil-name {
+  color: #e0b060 !important;
 }
 
 /* lil-gui 0.21 uses lil- prefixed classes (root = .lil-root); older versions

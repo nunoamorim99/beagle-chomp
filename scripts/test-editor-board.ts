@@ -1,17 +1,28 @@
 // Automated browser checks for the editor's "Board & Themes" workbench
 // (IDEA-027: theme-recipe editing — pick a theme, tweak the palette live,
-// copy the recipe back into src/game/themes.ts; IDEA-027 props follow-up:
-// add/remove/tune per-theme decorative PROPS — shrubs, trees, buildings,
-// streetlights... — the same way). Same shape as scripts/test-editor.ts (own
-// Vite dev server via the programmatic API, real headless Chromium via
-// Playwright, "assert + log, exit 1 on failure") — a SEPARATE file rather
-// than folding into that one because this suite exercises a materially
-// different surface (lil-gui folders bound to live materials/lights instead
-// of the character part tree/codegen), and keeping the two suites
-// independent means either can be read/run/extended without carrying the
-// other's context. Wired as its own `npm run test:editor:board` AND folded
-// into `npm run test:editor` (which now runs both suites back to back) —
-// see package.json.
+// copy the recipe back into src/game/themes.ts; IDEA-030/031: the ON-BOARD
+// PLACEMENT EDITOR — click a spot on the board, assign a library prop,
+// adjust its position/rotation/scale, remove it, all live). Same shape as
+// scripts/test-editor.ts (own Vite dev server via the programmatic API,
+// real headless Chromium via Playwright, "assert + log, exit 1 on
+// failure") — a SEPARATE file rather than folding into that one because
+// this suite exercises a materially different surface (lil-gui folders
+// bound to live materials/lights, PLUS raycast clicks on the 3D canvas
+// itself, instead of the character part tree/codegen). Wired as its own
+// `npm run test:editor:board` AND folded into `npm run test:editor` (which
+// runs all three editor suites back to back) — see package.json.
+//
+// v4.1 "Set Dressing" (IDEA-030/031) REWORK: the old density-population
+// "Props" folder checks (add/remove a shrub/tree POPULATION, density/
+// minScale/maxScale sliders) are GONE — MazeTheme.props no longer exists.
+// This suite now drives the REAL placement UX instead: click an apron/wall
+// slot marker on the 3D canvas (via window.__boardTestHook.tileToClientXY,
+// the exact inverse of boardPlacement.ts's own raycast unprojection — see
+// its doc comment), assign/swap a prop via the "Placement" folder's
+// dropdown, drag its offset/rotation/scale sliders, remove it, and verify
+// both the render-side observable (propMeshCount/wallDecorMeshCount) AND
+// the underlying DATA (placementsLength/wallDecorLength/workingThemeId) —
+// see main.ts's __boardTestHook for exactly what it exposes and why.
 //
 // NOT wired into `npm run test` (see test-editor.ts's own note — that's the
 // headless PURE-LOGIC suite CLAUDE.md's rule is about; this one needs a real
@@ -48,15 +59,10 @@ async function treeRows(page: Page): Promise<Array<{ text: string; selected: boo
 
 /** lil-gui renders each folder as its own `.lil-gui` with a `.lil-title`
  *  header — this codebase's board inspector (boardInspector.ts) builds one
- *  folder per palette slot (Atmosphere/Walls/Floor/Biscuits/Blooms/Specks/
- *  Props), found here by that exact visible title text (not an internal
- *  handle). A prop SUBfolder (nested one level inside "Props") is itself
- *  just another `.lil-gui` with its own `.lil-title` — this same query finds
- *  those too, since `querySelectorAll("#boardGuiHost .lil-gui")` is not
- *  scoped to top-level folders (see propSubfolderTitles below, which relies
- *  on exactly that). Returns -1 if the folder doesn't exist, so a typo in
- *  `title` fails loud in the check() line instead of silently comparing 0
- *  to 0. */
+ *  folder per palette slot (Atmosphere/Walls/Floor/Biscuits/Blooms/Specks),
+ *  found here by that exact visible title text (not an internal handle).
+ *  Returns -1 if the folder doesn't exist, so a typo in `title` fails loud
+ *  in the check() line instead of silently comparing 0 to 0. */
 async function folderControllerCount(page: Page, title: string): Promise<number> {
   return page.evaluate((title) => {
     const guis = [...document.querySelectorAll("#boardGuiHost .lil-gui")];
@@ -65,23 +71,14 @@ async function folderControllerCount(page: Page, title: string): Promise<number>
   }, title);
 }
 
-/** Lists the "Props" folder's direct-child SUBfolder titles, in DOM order —
- *  boardInspector.ts's buildPropsFolder names each one "prop N · kind" (see
- *  buildPropSubfolder), so this is how the suite discovers what's actually
- *  there after an add/remove/kind-swap rather than hardcoding an index-based
- *  guess (subfolder titles shift when the array they mirror does). Returns
- *  `[]` (not a thrown error) if the "Props" folder itself is missing, so a
- *  caller can assert on that separately with a clearer failure message. */
-async function propSubfolderTitles(page: Page): Promise<string[]> {
-  return page.evaluate(() => {
-    const guis = [...document.querySelectorAll("#boardGuiHost .lil-gui")];
-    const propsFolder = guis.find((f) => f.querySelector(":scope > .lil-title")?.textContent === "Props");
-    if (!propsFolder) return [];
-    const subfolders = [...propsFolder.querySelectorAll(":scope > .lil-children > .lil-gui")];
-    return subfolders
-      .map((f) => f.querySelector(":scope > .lil-title")?.textContent ?? "")
-      .filter((t) => t !== "");
-  });
+/** Every visible folder TITLE currently in #boardGuiHost, in DOM order. The
+ *  "Placement" folder's title EMBEDS the selected tile/kind (see
+ *  boardInspector.ts's buildPlacementFolder: `Placement — prop @ (x, y)` or
+ *  `Placement — wall component @ (x, y)`) — this is how the suite verifies
+ *  a slot click actually opened the right folder for the right tile, without
+ *  a bespoke internal handle. */
+async function boardFolderTitles(page: Page): Promise<string[]> {
+  return page.$$eval("#boardGuiHost .lil-title", (els) => els.map((e) => e.textContent ?? ""));
 }
 
 /** Reads the live hex value off a `<input type="color">` swatch inside a
@@ -146,29 +143,71 @@ async function setFolderSlider(page: Page, folderTitle: string, controlLabel: st
   );
 }
 
-/** Clicks a lil-gui BUTTON control (an `.add({ fn }, "fn").name(label)`
- *  controller, like boardInspector.ts's "add prop ✚"/"remove this prop 🗑")
- *  inside a named folder, matched by its exact visible `.lil-name` label —
- *  same "find by what a person sees" query shape as setFolderSlider above,
- *  just clicking the controller's real `<button>` instead of setting an
- *  input's value. Throws loud (not a silent no-op) if the folder or control
- *  isn't found, so a stale label string in a test fails at the exact line
- *  that assumed it, not several checks later. */
-async function clickFolderButton(page: Page, folderTitle: string, buttonLabel: string): Promise<void> {
-  await page.evaluate(
-    ({ folderTitle, buttonLabel }) => {
+/** Reads a lil-gui number-slider's CURRENT displayed value — the read-side
+ *  counterpart to setFolderSlider above, used to prove a keyboard nudge (not
+ *  a slider drag) updated the visible display via
+ *  boardInspector.refreshPlacementDisplays(). */
+async function readFolderSlider(page: Page, folderTitle: string, controlLabel: string): Promise<number | null> {
+  return page.evaluate(
+    ({ folderTitle, controlLabel }) => {
       const guis = [...document.querySelectorAll("#boardGuiHost .lil-gui")];
       const folder = guis.find((f) => f.querySelector(":scope > .lil-title")?.textContent === folderTitle);
-      if (!folder) throw new Error(`folder "${folderTitle}" not found`);
+      if (!folder) return null;
       const controllers = [...folder.querySelectorAll(":scope > .lil-children > .lil-controller")];
-      const ctrl = controllers.find((c) => c.querySelector(".lil-name")?.textContent === buttonLabel);
-      if (!ctrl) throw new Error(`button "${buttonLabel}" not found in "${folderTitle}"`);
-      const button = ctrl.querySelector("button");
-      if (!button) throw new Error(`control "${buttonLabel}" in "${folderTitle}" has no <button>`);
-      button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      const ctrl = controllers.find((c) => c.querySelector(".lil-name")?.textContent === controlLabel);
+      if (!ctrl) return null;
+      const range = ctrl.querySelector('input[type="range"]');
+      const number = ctrl.querySelector('input[type="number"], input:not([type="range"])');
+      const el = (range ?? number) as HTMLInputElement | null;
+      return el ? Number(el.value) : null;
     },
-    { folderTitle, buttonLabel },
+    { folderTitle, controlLabel },
   );
+}
+
+/** Drives a lil-gui `<select>` dropdown inside the "Placement" folder by its
+ *  visible option TEXT (not value) — same idiom the old suite's
+ *  selectPropKind used, scoped here to the ONE dropdown board mode's
+ *  Placement folder has (the "prop" swap control). Located by a PARTIAL
+ *  title match (a regex `hasText`) rather than an exact one, since the
+ *  folder's title embeds the tile coord (`Placement — prop @ (x, y)`),
+ *  which the caller doesn't always want to spell out exactly. Uses
+ *  Playwright's own `.selectOption()` (fires the real input/change sequence
+ *  lil-gui's OptionController listens for) rather than raw DOM `.value =`. */
+async function selectPlacementDropdown(page: Page, optionText: string): Promise<void> {
+  const folder = page.locator("#boardGuiHost .lil-gui", {
+    has: page.locator(":scope > .lil-title", { hasText: /^Placement/ }),
+  }).first();
+  const select = folder.locator("select").first();
+  const optionValue = await select.evaluate(
+    (sel, optionText) => {
+      const opt = [...(sel as HTMLSelectElement).options].find((o) => o.textContent === optionText);
+      return opt?.value ?? null;
+    },
+    optionText,
+  );
+  if (!optionValue) throw new Error(`prop option "${optionText}" not found in the Placement folder`);
+  await select.selectOption(optionValue);
+}
+
+/** Clicks a lil-gui BUTTON control (an `.add({ fn }, "fn").name(label)`
+ *  controller) inside the "Placement" folder — matched by whichever folder's
+ *  title starts with "Placement" (the folder's title embeds the tile coord,
+ *  see boardFolderTitles' doc comment), then by the button's exact visible
+ *  `.lil-name` label. Throws loud (not a silent no-op) if the folder or
+ *  control isn't found. */
+async function clickPlacementButton(page: Page, buttonLabel: string): Promise<void> {
+  await page.evaluate((buttonLabel) => {
+    const guis = [...document.querySelectorAll("#boardGuiHost .lil-gui")];
+    const folder = guis.find((f) => (f.querySelector(":scope > .lil-title")?.textContent ?? "").startsWith("Placement"));
+    if (!folder) throw new Error(`no "Placement" folder found (button "${buttonLabel}")`);
+    const controllers = [...folder.querySelectorAll(":scope > .lil-children > .lil-controller")];
+    const ctrl = controllers.find((c) => c.querySelector(".lil-name")?.textContent === buttonLabel);
+    if (!ctrl) throw new Error(`button "${buttonLabel}" not found in the Placement folder`);
+    const button = ctrl.querySelector("button");
+    if (!button) throw new Error(`control "${buttonLabel}" in the Placement folder has no <button>`);
+    button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  }, buttonLabel);
 }
 
 async function selectBaseTheme(page: Page, name: string): Promise<void> {
@@ -186,36 +225,6 @@ async function selectBaseTheme(page: Page, name: string): Promise<void> {
   await select.selectOption(optionValue);
 }
 
-/** Same idiom as selectBaseTheme above, scoped to ONE prop subfolder's
- *  "kind" dropdown — needed because once any prop exists, the page has
- *  MULTIPLE `<select>` elements (the base-theme picker plus one per prop
- *  subfolder), so `#boardGuiHost select` alone (selectBaseTheme's own query)
- *  would ambiguously match the FIRST one on the page, not necessarily this
- *  subfolder's. Locates the specific `<select>` with an XPath text-match on
- *  the subfolder's own `.lil-title` (Playwright locators, unlike a plain CSS
- *  selector, can express "the select inside the folder whose title reads
- *  exactly X"), then drives it with Playwright's own `.selectOption()` (not
- *  raw DOM `.value =` assignment) — it fires the same real `input`/`change`
- *  event sequence a person's dropdown pick does, which is what lil-gui's
- *  OptionController listens for (see lil-gui's source: it reads
- *  `this.$select.selectedIndex` off a `change` listener, never `.value`
- *  directly — matching by INDEX, not a `value` attribute the option never
- *  actually has, so driving selection through the same API a browser click
- *  would use is the only reliably correct way to trigger it). */
-async function selectPropKind(page: Page, subfolderTitle: string, kind: string): Promise<void> {
-  const folder = page.locator(`#boardGuiHost .lil-gui:has(> .lil-title:text-is("${subfolderTitle}"))`).first();
-  const select = folder.locator("select").first();
-  const optionValue = await select.evaluate(
-    (sel, kind) => {
-      const opt = [...(sel as HTMLSelectElement).options].find((o) => o.textContent === kind);
-      return opt?.value ?? null;
-    },
-    kind,
-  );
-  if (!optionValue) throw new Error(`kind option "${kind}" not found in "${subfolderTitle}"`);
-  await select.selectOption(optionValue);
-}
-
 /** Matched by boardInspector.ts's `data-testid="copy-theme-code"` (a stable
  *  marker on the real button), NOT its visible label text — the label
  *  flashes to "Copied ✓ ..." for 1.6s after every click (see
@@ -229,23 +238,84 @@ async function clickCopyThemeCode(page: Page): Promise<void> {
   });
 }
 
-/** Reads main.ts's `window.__boardTestHook` — the one internal-state read
- *  this suite needs (wall INSTANCE count, hedge-decor MESH count, and prop
- *  GROUP CHILD count have no DOM surface of their own to assert on, unlike
- *  everything else in this file, which reads exactly what a person sees —
- *  tree rows, swatch values, clipboard text). See main.ts's own comment on
- *  the hook for why it's the one deliberate exception to test-editor.ts's
- *  established "no internal handle" style. `propMeshCount` reads
- *  `board.props?.children.length` — the render layer's REAL observable
- *  (src/render/board.ts's buildProps/applyBoardTheme landed alongside this
- *  suite, so this is a live assertion, not a working-theme-state fallback —
- *  see the "density slider -> live prop rebuild" section below). */
-async function boardSnapshot(page: Page): Promise<{ wallCount: number; hedgeDecorMeshCount: number; propMeshCount: number; mode: string }> {
+/** Reads main.ts's `window.__boardTestHook` — the internal-state reads this
+ *  suite needs beyond what a person can see in the DOM (wall INSTANCE
+ *  count, hedge-decor/wall-decor MESH counts, prop GROUP CHILD count, the
+ *  working theme's raw placements/wallDecor array LENGTHS, boardPlacement's
+ *  sub-mode/selection, and the tile->screen projection used to actually
+ *  DRIVE a raycast click) — see main.ts's own comment on the hook for why
+ *  it's the one deliberate exception to test-editor.ts's established "no
+ *  internal handle" style. */
+interface BoardSnapshot {
+  wallCount: number;
+  hedgeDecorMeshCount: number;
+  propMeshCount: number;
+  wallDecorMeshCount: number;
+  mode: string;
+  workingThemeId: string;
+  placementsLength: number;
+  wallDecorLength: number;
+  placementSubMode: "apron" | "wall";
+  placementSelection: { tile: [number, number]; propId: string | null } | null;
+}
+async function boardSnapshot(page: Page): Promise<BoardSnapshot> {
   return page.evaluate(() => {
     const h = window.__boardTestHook;
     if (!h) throw new Error("__boardTestHook missing — did main.ts's test-support hook get removed?");
-    return { wallCount: h.wallCount(), hedgeDecorMeshCount: h.hedgeDecorMeshCount(), propMeshCount: h.propMeshCount(), mode: h.mode() };
+    return {
+      wallCount: h.wallCount(),
+      hedgeDecorMeshCount: h.hedgeDecorMeshCount(),
+      propMeshCount: h.propMeshCount(),
+      wallDecorMeshCount: h.wallDecorMeshCount(),
+      mode: h.mode(),
+      workingThemeId: h.workingThemeId(),
+      placementsLength: h.placementsLength(),
+      wallDecorLength: h.wallDecorLength(),
+      placementSubMode: h.placementSubMode(),
+      placementSelection: h.placementSelection(),
+    };
   });
+}
+
+/** Clicks the 3D canvas at the projected screen position of `tile` in
+ *  `submode` — the actual raycast-driven slot pick a real user performs,
+ *  via window.__boardTestHook.tileToClientXY (see main.ts's own doc comment
+ *  on why this reuses the LIVE camera rather than re-deriving the
+ *  projection math independently here). Fires a real mousedown+mouseup
+ *  pair via Playwright's `page.mouse` (matching boardPlacement.ts's own
+ *  pointerdown/pointerup click-vs-drag detection, which only cares that the
+ *  two events land within CLICK_SLOP_PX of each other — a single
+ *  `page.mouse.click()` at a fixed point satisfies that trivially). Throws
+ *  if the tile doesn't project onscreen (should never happen for a real
+ *  apron/wall tile at this rig's fixed framing — a thrown error here means
+ *  the camera framing itself broke, which deserves a loud failure, not a
+ *  silently-skipped check). */
+async function clickTile(page: Page, tile: [number, number], submode: "apron" | "wall"): Promise<void> {
+  const pt = await page.evaluate(
+    ({ tile, submode }) => {
+      const h = window.__boardTestHook;
+      if (!h) throw new Error("__boardTestHook missing");
+      return h.tileToClientXY(tile, submode);
+    },
+    { tile, submode },
+  );
+  if (!pt) throw new Error(`tile (${tile[0]}, ${tile[1]}) [${submode}] did not project onscreen`);
+  await page.mouse.click(pt.x, pt.y);
+}
+
+/** Clicks a tree row by its exact visible label (e.g. "Props (apron)",
+ *  "Wall components", "Blooms") — shared by every section below that needs
+ *  to switch sub-mode or focus a palette folder via the tree pane, same
+ *  "find by what a person sees" idiom as clickFolderButton. */
+async function clickTreeRow(page: Page, label: string): Promise<void> {
+  const idx = await page.evaluate(
+    (label) => [...document.querySelectorAll(".tree-row")].findIndex((r) => r.querySelector(".tree-name")?.textContent === label),
+    label,
+  );
+  if (idx === -1) throw new Error(`tree row "${label}" not found`);
+  await page.evaluate((i) => {
+    (document.querySelectorAll(".tree-row")[i] as HTMLElement).click();
+  }, idx);
 }
 
 async function run(): Promise<void> {
@@ -290,46 +360,35 @@ async function run(): Promise<void> {
 
       const rows = await treeRows(page);
       check(
-        "tree pane lists the 7 board slots (incl. Props)",
+        "tree pane lists the 6 palette slots + 2 placement rows",
         JSON.stringify(rows.map((r) => r.text)) ===
-          JSON.stringify(["Atmosphere", "Walls", "Floor", "Biscuits", "Blooms", "Specks", "Props"]),
+          JSON.stringify(["Atmosphere", "Walls", "Floor", "Biscuits", "Blooms", "Specks", "Props (apron)", "Wall components"]),
       );
 
-      const folderTitles = await page.$$eval("#boardGuiHost .lil-title", (els) => els.map((e) => e.textContent));
-      for (const expected of ["Board & Themes", "Theme identity", "Atmosphere", "Walls", "Floor", "Biscuits", "Blooms", "Specks", "Props"]) {
+      const folderTitles = await boardFolderTitles(page);
+      for (const expected of ["Board & Themes", "Theme identity", "Atmosphere", "Walls", "Floor", "Biscuits", "Blooms", "Specks"]) {
         check(`inspector shows the "${expected}" folder`, folderTitles.includes(expected));
       }
+      check("no 'Placement' folder yet (nothing selected on first entry)", !folderTitles.some((t) => t.startsWith("Placement")));
 
-      // Garden (the board-mode default) authors exactly 2 prop populations —
-      // shrub then tree (see src/game/themes.ts) — so the Props folder should
-      // already show 2 subfolders, titled by their 1-based position + kind,
-      // on the very FIRST board-mode entry (no click needed) — proves
-      // buildBoard's own buildProps call (not just applyBoardTheme's re-apply
-      // path) seeded `board.props` correctly.
-      const gardenPropTitles = await propSubfolderTitles(page);
-      check(
-        "garden's Props folder starts with 2 subfolders: shrub then tree",
-        JSON.stringify(gardenPropTitles) === JSON.stringify(["prop 1 · shrub", "prop 2 · tree"]),
-      );
-      check(
-        "garden's live prop mesh count is > 0 on first board-mode entry",
-        snap.propMeshCount > 0,
-      );
+      // Garden (the board-mode default) authors 29 apron placements and an
+      // empty wallDecor (see src/game/themes.ts) — asserting these exact
+      // numbers on the very FIRST board-mode entry proves buildBoard's own
+      // buildProps call (not just applyBoardTheme's re-apply path) seeded
+      // board.props correctly from the real registry data.
+      check("garden's working theme starts with 29 placements", snap.placementsLength === 29);
+      check("garden's working theme starts with an empty wallDecor", snap.wallDecorLength === 0);
+      check("garden's live apron prop mesh count is > 0 on first board-mode entry", snap.propMeshCount > 0);
+      check("garden's sub-mode defaults to apron", snap.placementSubMode === "apron");
     }
 
     // -------------------------------------------------------------------
-    console.log("\n=== tree row click focuses/opens its folder ===");
+    console.log("\n=== tree row click focuses/opens a palette folder ===");
     {
-      const idx = await page.evaluate(() =>
-        [...document.querySelectorAll(".tree-row")].findIndex((r) => r.querySelector(".tree-name")?.textContent === "Blooms"),
-      );
-      check("found the 'Blooms' tree row", idx !== -1);
-      await page.evaluate((i) => {
-        (document.querySelectorAll(".tree-row")[i] as HTMLElement).click();
-      }, idx);
+      await clickTreeRow(page, "Blooms");
       await page.waitForTimeout(150);
       const rows = await treeRows(page);
-      check("clicking a slot row selects it", rows.find((r) => r.text === "Blooms")?.selected === true);
+      check("clicking a palette-slot row selects it", rows.find((r) => r.text === "Blooms")?.selected === true);
       const bloomsOpen = await page.evaluate(() => {
         const guis = [...document.querySelectorAll("#boardGuiHost .lil-gui")];
         const folder = guis.find((f) => f.querySelector(":scope > .lil-title")?.textContent === "Blooms");
@@ -339,10 +398,198 @@ async function run(): Promise<void> {
     }
 
     // -------------------------------------------------------------------
-    console.log("\n=== base theme dropdown loads each of the 6 registry themes ===");
+    console.log("\n=== tree row click switches the placement sub-mode (no folder to focus) ===");
+    {
+      check("sub-mode starts apron", (await boardSnapshot(page)).placementSubMode === "apron");
+      await clickTreeRow(page, "Wall components");
+      await page.waitForTimeout(150);
+      const afterWall = await boardSnapshot(page);
+      check("clicking 'Wall components' switches sub-mode to wall", afterWall.placementSubMode === "wall");
+      check("switching sub-mode clears any prior selection", afterWall.placementSelection === null);
+      const rows = await treeRows(page);
+      check("'Wall components' row reads selected", rows.find((r) => r.text === "Wall components")?.selected === true);
+
+      await clickTreeRow(page, "Props (apron)");
+      await page.waitForTimeout(150);
+      check("clicking 'Props (apron)' switches sub-mode back to apron", (await boardSnapshot(page)).placementSubMode === "apron");
+    }
+
+    // -------------------------------------------------------------------
+    console.log("\n=== clicking an EMPTY apron slot auto-creates + selects a placement ===");
+    {
+      // (-1, -1) is garden's NW apron corner — not one of the 29 authored
+      // shrub/oak spots (spot-checked against src/game/themes.ts: garden's
+      // placements list has no [-1,-1] entry... actually it DOES; pick a
+      // genuinely empty corner instead — (-1, 4) is not in garden's list).
+      const emptyTile: [number, number] = [-1, 4];
+      const before = await boardSnapshot(page);
+
+      await clickTile(page, emptyTile, "apron");
+      await page.waitForTimeout(300);
+
+      const after = await boardSnapshot(page);
+      check("clicking an empty apron slot adds exactly one placement", after.placementsLength === before.placementsLength + 1);
+      check("clicking an empty apron slot plants exactly one more live mesh", after.propMeshCount === before.propMeshCount + 1);
+      check(
+        "the new selection is at the clicked tile",
+        after.placementSelection?.tile[0] === emptyTile[0] && after.placementSelection?.tile[1] === emptyTile[1],
+      );
+      check("the auto-created placement defaults to the shrub prop", after.placementSelection?.propId === "shrub");
+
+      const titles = await boardFolderTitles(page);
+      check(
+        `a "Placement — prop @ (${emptyTile[0]}, ${emptyTile[1]})" folder opened`,
+        titles.includes(`Placement — prop @ (${emptyTile[0]}, ${emptyTile[1]})`),
+      );
+      check(
+        "the Placement folder shows all 5 apron controls (prop/offset X/offset Z/rotation/scale/remove = 6)",
+        (await folderControllerCount(page, `Placement — prop @ (${emptyTile[0]}, ${emptyTile[1]})`)) === 6,
+      );
+
+      // Clean up: remove it so later sections (which spot-check garden's
+      // exact placements count) see the registry's real starting value.
+      await clickPlacementButton(page, "remove this placement 🗑");
+      await page.waitForTimeout(300);
+      const cleaned = await boardSnapshot(page);
+      check("removing it drops placementsLength back to garden's original 29", cleaned.placementsLength === before.placementsLength);
+      check("removing it drops the live mesh count back down", cleaned.propMeshCount === before.propMeshCount);
+    }
+
+    // -------------------------------------------------------------------
+    console.log("\n=== selecting a FILLED apron slot selects the existing placement ===");
+    {
+      // Garden's first authored shrub placement (src/game/themes.ts:
+      // `{ propId: "shrub", tile: [19, 4], ... }`).
+      const filledTile: [number, number] = [19, 4];
+      await clickTile(page, filledTile, "apron");
+      await page.waitForTimeout(300);
+
+      const snap = await boardSnapshot(page);
+      check("clicking a filled slot does NOT add a new placement", snap.placementsLength === 29);
+      check("the selection reports the existing shrub", snap.placementSelection?.propId === "shrub");
+      check(
+        "the selection is at garden's authored tile",
+        snap.placementSelection?.tile[0] === filledTile[0] && snap.placementSelection?.tile[1] === filledTile[1],
+      );
+    }
+
+    // -------------------------------------------------------------------
+    console.log("\n=== Placement folder: swap prop, edit offset/rotation/scale re-applies live ===");
+    {
+      const before = await boardSnapshot(page);
+      const folderTitle = `Placement — prop @ (19, 4)`;
+
+      await selectPlacementDropdown(page, "Oak Tree");
+      await page.waitForTimeout(300);
+      const afterSwap = await boardSnapshot(page);
+      check("swapping the prop dropdown updates the selection's propId", afterSwap.placementSelection?.propId === "oak");
+      check("swapping the prop does not change placementsLength (still an edit, not an add)", afterSwap.placementsLength === before.placementsLength);
+
+      await setFolderSlider(page, `Placement — prop @ (19, 4)`, "offset X", 0.3);
+      await page.waitForTimeout(200);
+      await setFolderSlider(page, folderTitle, "offset Z", -0.2);
+      await page.waitForTimeout(200);
+      await setFolderSlider(page, folderTitle, "rotation", 1.5);
+      await page.waitForTimeout(200);
+      await setFolderSlider(page, folderTitle, "scale", 1.4);
+      await page.waitForTimeout(200);
+
+      // Prove the edits actually reached the working theme (not just the
+      // slider's own displayed value) via "Copy theme code".
+      await clickCopyThemeCode(page);
+      await page.waitForTimeout(250);
+      const clip = await page.evaluate(() => navigator.clipboard.readText());
+      check(
+        "copied code reflects the edited oak placement at (19, 4)",
+        /\{ propId: "oak", tile: \[19, 4\], offset: \[0\.3, -0\.2\], rotationY: 1\.5, scale: 1\.4 \},/.test(clip),
+      );
+
+      // Restore garden's authored shrub at (19,4) for later sections.
+      await selectPlacementDropdown(page, "Shrub");
+      await page.waitForTimeout(200);
+      await setFolderSlider(page, folderTitle, "offset X", -0.24);
+      await setFolderSlider(page, folderTitle, "offset Z", -0.162);
+      await setFolderSlider(page, folderTitle, "rotation", 5.691);
+      await setFolderSlider(page, folderTitle, "scale", 0.949);
+      await page.waitForTimeout(200);
+    }
+
+    // -------------------------------------------------------------------
+    console.log("\n=== keyboard arrow-nudge moves the selected placement's offset ===");
+    {
+      // Still selected at (19, 4) from the restore above.
+      const beforeX = await readFolderSlider(page, "Placement — prop @ (19, 4)", "offset X");
+      check("offset X slider reads a number before nudging", typeof beforeX === "number");
+      await page.keyboard.press("ArrowRight");
+      await page.waitForTimeout(200);
+      const afterX = await readFolderSlider(page, "Placement — prop @ (19, 4)", "offset X");
+      check("ArrowRight nudges offset X up by the default NUDGE_STEP (0.01)", afterX !== null && beforeX !== null && Math.abs(afterX - (beforeX + 0.01)) < 1e-9);
+
+      await page.keyboard.press("ArrowLeft"); // undo the nudge by hand (board mode has no undo/redo)
+      await page.waitForTimeout(200);
+      const restoredX = await readFolderSlider(page, "Placement — prop @ (19, 4)", "offset X");
+      check("ArrowLeft nudges it back down", restoredX !== null && beforeX !== null && Math.abs(restoredX - beforeX) < 1e-9);
+    }
+
+    // -------------------------------------------------------------------
+    console.log("\n=== Wall components sub-mode: place + edit + remove a wall-top piece ===");
+    {
+      await clickTreeRow(page, "Wall components");
+      await page.waitForTimeout(200);
+      check("switched to wall sub-mode", (await boardSnapshot(page)).placementSubMode === "wall");
+
+      // (9, 6) is a real '#' wall tile in MAZES[0] (spot-checked against
+      // src/game/mazes.json's first maze) that no registry theme's own
+      // authored wallDecor references — a genuinely empty wall slot for
+      // every base theme, garden included. (NOTE for a future reader: some
+      // of city's own shipped wallDecor tile coords — e.g. [3,3]/[15,3] —
+      // do NOT actually land on a '#' wall tile in MAZES[0]; board.ts's
+      // buildWallDecor has no grid-membership validation by design (see its
+      // own doc comment: "No grid parameter... a wall-top placement's tile
+      // IS its position, nothing to enumerate/exclude"), so those render
+      // fine, just floating over whatever tile is actually there — a
+      // pre-existing themes.ts data-authoring nit, not a bug this suite
+      // needs to guard against, and not something this task touches
+      // themes.ts to fix.)
+      const wallTile: [number, number] = [9, 6];
+      const before = await boardSnapshot(page);
+      check("garden starts with 0 wallDecor entries", before.wallDecorLength === 0);
+
+      await clickTile(page, wallTile, "wall");
+      await page.waitForTimeout(300);
+      const after = await boardSnapshot(page);
+      check("clicking an empty wall slot adds exactly one wallDecor entry", after.wallDecorLength === before.wallDecorLength + 1);
+      check("clicking an empty wall slot plants exactly one wall-decor mesh", after.wallDecorMeshCount === before.wallDecorMeshCount + 1);
+      check("the auto-created wall placement defaults to the bloom prop", after.placementSelection?.propId === "bloom");
+
+      const titles = await boardFolderTitles(page);
+      check(`a "Placement — wall component @ (9, 6)" folder opened`, titles.includes("Placement — wall component @ (9, 6)"));
+      check(
+        "the wall Placement folder shows only 4 controls (prop/rotation/scale/remove — no offset)",
+        (await folderControllerCount(page, "Placement — wall component @ (9, 6)")) === 4,
+      );
+
+      await selectPlacementDropdown(page, "Transit Signal");
+      await page.waitForTimeout(200);
+      check("swapping a wall prop updates propId", (await boardSnapshot(page)).placementSelection?.propId === "transit-sign");
+      check("mesh count unaffected by a swap (still 1 planted)", (await boardSnapshot(page)).wallDecorMeshCount === after.wallDecorMeshCount);
+
+      await clickPlacementButton(page, "remove this placement 🗑");
+      await page.waitForTimeout(300);
+      const removed = await boardSnapshot(page);
+      check("removing it drops wallDecorLength back to 0", removed.wallDecorLength === before.wallDecorLength);
+      check("removing it drops wallDecorMeshCount back to 0", removed.wallDecorMeshCount === before.wallDecorMeshCount);
+
+      await clickTreeRow(page, "Props (apron)");
+      await page.waitForTimeout(200);
+    }
+
+    // -------------------------------------------------------------------
+    console.log("\n=== base theme dropdown loads each of the 6 registry themes (placements reload too) ===");
     {
       const gardenWall = await folderColorSwatch(page, "Walls", 0);
       check("garden (default) wall swatch matches src/game/themes.ts", gardenWall === "#3f8f3a");
+      check("garden reloads with 29 placements", (await boardSnapshot(page)).placementsLength === 29);
 
       await selectBaseTheme(page, "Arcade Night");
       await page.waitForTimeout(300);
@@ -352,6 +599,9 @@ async function run(): Promise<void> {
 
       const classicSnap = await boardSnapshot(page);
       check("Arcade Night has NO hedge decor (bloomChance: 0 in the registry)", classicSnap.hedgeDecorMeshCount === 0);
+      check("Arcade Night is deliberately propless (0 placements)", classicSnap.placementsLength === 0);
+      check("Arcade Night has 0 live apron prop meshes", classicSnap.propMeshCount === 0);
+      check("Arcade Night's selection cleared on base-theme swap", classicSnap.placementSelection === null);
       // Arcade Night's palette has 0 bloomColors, so the Blooms folder should
       // rebuild down to just its 2 sliders + an "add" button (no per-color
       // swatches, no "remove" button) — proves loadBaseTheme's rebuild
@@ -359,18 +609,6 @@ async function run(): Promise<void> {
       check(
         "Blooms folder shrinks to 3 controls for a 0-bloom-color theme (2 sliders + add button)",
         (await folderControllerCount(page, "Blooms")) === 3,
-      );
-      // Arcade Night is deliberately PROPLESS (src/game/themes.ts: "the v1.0
-      // throwback is a clean neon board... anything planted would break the
-      // retro read") — the Props folder should show zero subfolders, no
-      // planted meshes, but the top-level "add prop ✚" button should still
-      // exist (a propless theme is a valid STARTING point to author from,
-      // not a locked-out one).
-      check("Arcade Night's Props folder has zero subfolders", (await propSubfolderTitles(page)).length === 0);
-      check("Arcade Night has zero live prop meshes", classicSnap.propMeshCount === 0);
-      check(
-        `Props folder still offers "add prop ✚" for a propless theme`,
-        (await folderControllerCount(page, "Props")) === 1,
       );
 
       await selectBaseTheme(page, "The Garden");
@@ -389,54 +627,51 @@ async function run(): Promise<void> {
       }
       check("no page errors across all 6 base-theme loads", pageErrors.length === 0);
 
-      // Night City authors exactly 2 prop populations — building then
-      // streetlight (src/game/themes.ts: "some buildings... some lighting
-      // stations") — a DIFFERENT pair of kinds than garden's, so this also
-      // proves the Props folder rebuilds its subfolder SET (not just
-      // recolors existing ones) on a base-theme swap.
+      // Night City authors 40 apron placements (31 towers + 9 streetlights)
+      // AND 5 hand-placed wallDecor entries (lamp-posts/transit-signs — see
+      // src/game/themes.ts's city entry) — a materially different pair of
+      // numbers than garden's (29 placements, 0 wallDecor), proving the
+      // base-theme swap reloads BOTH arrays, not just placements.
       await selectBaseTheme(page, "Night City");
       await page.waitForTimeout(300);
-      const cityPropTitles = await propSubfolderTitles(page);
-      check(
-        "Night City's Props folder shows 2 subfolders: building then streetlight",
-        JSON.stringify(cityPropTitles) === JSON.stringify(["prop 1 · building", "prop 2 · streetlight"]),
-      );
       const citySnap = await boardSnapshot(page);
-      check("Night City has live prop meshes (buildings + streetlights)", citySnap.propMeshCount > 0);
+      check("Night City's working theme has 40 apron placements", citySnap.placementsLength === 40);
+      check("Night City's working theme has 5 wallDecor entries", citySnap.wallDecorLength === 5);
+      check("Night City has live apron prop meshes (towers + streetlights)", citySnap.propMeshCount > 0);
+      check("Night City has live wall-decor meshes (its hand-placed lamps/signals)", citySnap.wallDecorMeshCount === 5);
 
       // Back to garden for the rest of the suite.
       await selectBaseTheme(page, "The Garden");
       await page.waitForTimeout(300);
       const backToGarden = await folderColorSwatch(page, "Walls", 0);
       check("re-selecting The Garden restores its wall swatch", backToGarden === "#3f8f3a");
-      check(
-        "re-selecting The Garden restores its 2 prop subfolders",
-        JSON.stringify(await propSubfolderTitles(page)) === JSON.stringify(["prop 1 · shrub", "prop 2 · tree"]),
-      );
+      check("re-selecting The Garden restores its 29 placements", (await boardSnapshot(page)).placementsLength === 29);
+      check("re-selecting The Garden restores its empty wallDecor", (await boardSnapshot(page)).wallDecorLength === 0);
     }
 
     // -------------------------------------------------------------------
-    console.log("\n=== editing wall color updates the live material ===");
+    console.log("\n=== editing wall color updates the live material (palette folders still work) ===");
     {
       await setFolderColorSwatch(page, "Walls", "#ff00aa");
       await page.waitForTimeout(150);
       const swatch = await folderColorSwatch(page, "Walls", 0);
       check("wall swatch reflects the edit", swatch === "#ff00aa");
 
-      // Prove it's not just a stale-looking swatch: "Copy theme code" reads
-      // straight off the SAME working palette the material was set from, so
-      // this exercises the live-material -> palette -> codegen path end to end.
       await clickCopyThemeCode(page);
       await page.waitForTimeout(250);
       const clip = await page.evaluate(() => navigator.clipboard.readText());
       check("copied code contains the edited wall hex (0xff00aa)", clip.includes("wall: 0xff00aa,"));
+
+      // Restore for later sections.
+      await setFolderColorSwatch(page, "Walls", "#3f8f3a");
+      await page.waitForTimeout(150);
     }
 
     // -------------------------------------------------------------------
-    console.log("\n=== bloomChance -> 0 clears decor meshes, back up rebuilds them ===");
+    console.log("\n=== bloomChance -> 0 clears decor meshes, back up rebuilds them (still applies with hand placements empty) ===");
     {
       const before = await boardSnapshot(page);
-      check("garden starts with hedge decor meshes (bloomChance 0.2, 4 colors)", before.hedgeDecorMeshCount > 0);
+      check("garden starts with hedge decor meshes (bloomChance 0.2, 4 colors, empty wallDecor)", before.hedgeDecorMeshCount > 0);
 
       await setFolderSlider(page, "Blooms", "bloom chance", 0);
       await page.waitForTimeout(300);
@@ -451,130 +686,30 @@ async function run(): Promise<void> {
     }
 
     // -------------------------------------------------------------------
-    console.log("\n=== Props: density slider live-rebuilds the planted meshes ===");
+    console.log('\n=== "Copy theme code" emits parseable placements + wallDecor arrays ===');
     {
-      // Still on The Garden (restored at the end of the base-theme section
-      // above) — its first subfolder is "prop 1 · shrub" (density 0.3 in the
-      // registry). Cranking density up should PLANT MORE shrub meshes live —
-      // asserted on the REAL render-side observable (board.props' Group
-      // child count via window.__boardTestHook.propMeshCount, wired to
-      // src/render/board.ts's buildProps/applyBoardTheme, which landed
-      // alongside this suite — see boardSnapshot's own doc comment for why
-      // this is NOT a working-theme-state fallback).
-      const before = await boardSnapshot(page);
-      check("garden starts with live prop meshes (shrub + tree populations)", before.propMeshCount > 0);
-
-      await setFolderSlider(page, "prop 1 · shrub", "density", 0.6);
-      await page.waitForTimeout(300);
-      const denser = await boardSnapshot(page);
-      check("raising shrub density plants MORE live prop meshes", denser.propMeshCount > before.propMeshCount);
-      check("walls are untouched by a props-only change", denser.wallCount === before.wallCount);
-      check("hedge decor is untouched by a props-only change", denser.hedgeDecorMeshCount === before.hedgeDecorMeshCount);
-
-      await setFolderSlider(page, "prop 1 · shrub", "density", 0);
-      await page.waitForTimeout(300);
-      const noShrubs = await boardSnapshot(page);
-      check(
-        "shrub density -> 0 leaves only the tree population's meshes (fewer than before)",
-        noShrubs.propMeshCount > 0 && noShrubs.propMeshCount < before.propMeshCount,
-      );
-
-      // Restore garden's authored shrub density (0.3) so later sections in
-      // this suite (and anything relying on "Copy theme code" reflecting an
-      // otherwise-unedited garden) see the registry's real starting value.
-      await setFolderSlider(page, "prop 1 · shrub", "density", 0.3);
-      await page.waitForTimeout(300);
-    }
-
-    // -------------------------------------------------------------------
-    console.log("\n=== Props: add a population on a propless theme (Arcade Night) ===");
-    {
-      await selectBaseTheme(page, "Arcade Night");
-      await page.waitForTimeout(300);
-      check("Arcade Night starts with zero prop subfolders", (await propSubfolderTitles(page)).length === 0);
-      check("Arcade Night starts with zero live prop meshes", (await boardSnapshot(page)).propMeshCount === 0);
-
-      await clickFolderButton(page, "Props", "add prop ✚");
-      await page.waitForTimeout(300);
-      const afterAdd = await propSubfolderTitles(page);
-      check(
-        `"add prop ✚" gives Arcade Night exactly 1 subfolder, titled "prop 1 · shrub" (the default)`,
-        JSON.stringify(afterAdd) === JSON.stringify(["prop 1 · shrub"]),
-      );
-      const addedSnap = await boardSnapshot(page);
-      check("the newly-added prop plants live meshes on a previously propless theme", addedSnap.propMeshCount > 0);
-
-      // "Copy theme code" should now include the freshly-authored population
-      // in a genuinely propless base theme's recipe.
-      await clickCopyThemeCode(page);
-      await page.waitForTimeout(250);
-      const clip = await page.evaluate(() => navigator.clipboard.readText());
-      check(
-        `Arcade Night's copied code now contains the added shrub population`,
-        /kind: "shrub", density: 0\.2, colors: \[0x4e9a3e\], minScale: 0\.8, maxScale: 1\.2/.test(clip),
-      );
-
-      // Kind dropdown: swap the newly-added prop from shrub to building —
-      // structural (the subfolder's own title embeds the kind), so this also
-      // proves buildPropsFolder's full rebuild reaches a KIND change, not
-      // just density/scale/color edits.
-      await selectPropKind(page, "prop 1 · shrub", "building");
-      await page.waitForTimeout(300);
-      check(
-        "swapping kind to 'building' renames the subfolder to 'prop 1 · building'",
-        JSON.stringify(await propSubfolderTitles(page)) === JSON.stringify(["prop 1 · building"]),
-      );
-      const afterKindSwap = await boardSnapshot(page);
-      check("swapping kind still rebuilds live meshes (buildings plant fine too)", afterKindSwap.propMeshCount > 0);
-    }
-
-    // -------------------------------------------------------------------
-    console.log("\n=== Props: remove a population drops its subfolder AND the emitted code ===");
-    {
-      // Still on the just-edited Arcade Night (1 prop: building, from the
-      // kind-swap above). Removing it should return Arcade Night to its
-      // authored propless state exactly.
-      await clickFolderButton(page, "prop 1 · building", "remove this prop 🗑");
-      await page.waitForTimeout(300);
-      check("removing the only prop drops the subfolder", (await propSubfolderTitles(page)).length === 0);
-      check("removing the only prop clears its live meshes", (await boardSnapshot(page)).propMeshCount === 0);
-      check(
-        `"add prop ✚" is still offered after removing back down to zero`,
-        (await folderControllerCount(page, "Props")) === 1,
-      );
-
-      await clickCopyThemeCode(page);
-      await page.waitForTimeout(250);
-      const clip = await page.evaluate(() => navigator.clipboard.readText());
-      check("copied code's props array is empty again after the remove", /props: \[\],/.test(clip));
-      check("copied code no longer mentions the removed building population", !clip.includes('kind: "building"'));
-
-      // Restore Garden for the rest of the suite (same convention the
-      // base-theme section above already follows).
-      await selectBaseTheme(page, "The Garden");
-      await page.waitForTimeout(300);
-    }
-
-    // -------------------------------------------------------------------
-    console.log('\n=== "Copy theme code" emits a parseable MAZE_THEMES entry ===');
-    {
-      // Fresh, known state: reselect Arcade Night (0 bloom colors — a
-      // simpler literal to eval) and make one identifying edit.
+      // Fresh, known state: reselect Arcade Night (0 placements, 0
+      // wallDecor — the simplest starting literals to eval) and author one
+      // of EACH kind with an identifying edited value.
       await selectBaseTheme(page, "Arcade Night");
       await page.waitForTimeout(300);
       await setFolderColorSwatch(page, "Floor", "#123456");
       await page.waitForTimeout(150);
 
-      // Also author a prop population with an edited value on this SAME
-      // theme, so the round-trip below proves "props" is a genuinely
-      // parseable, edit-reflecting array field alongside "palette" — not
-      // just an empty `props: [],` (Arcade Night's untouched default, which
-      // the earlier "add/remove" section already exercised at zero).
-      await clickFolderButton(page, "Props", "add prop ✚");
+      const apronTile: [number, number] = [-1, 4];
+      await clickTile(page, apronTile, "apron");
       await page.waitForTimeout(300);
-      await setFolderColorSwatch(page, "prop 1 · shrub", "#00ff88", 0);
+      await setFolderSlider(page, `Placement — prop @ (-1, 4)`, "offset X", 0.2);
       await page.waitForTimeout(150);
-      await setFolderSlider(page, "prop 1 · shrub", "density", 0.45);
+      await setFolderSlider(page, `Placement — prop @ (-1, 4)`, "scale", 1.3);
+      await page.waitForTimeout(150);
+
+      await clickTreeRow(page, "Wall components");
+      await page.waitForTimeout(200);
+      const wallTile: [number, number] = [9, 6]; // see the earlier section's own note on why this tile
+      await clickTile(page, wallTile, "wall");
+      await page.waitForTimeout(300);
+      await setFolderSlider(page, "Placement — wall component @ (9, 6)", "rotation", 0.9);
       await page.waitForTimeout(150);
 
       await clickCopyThemeCode(page);
@@ -584,40 +719,35 @@ async function run(): Promise<void> {
       check("emitted entry contains the edited floor hex", clip.includes("floor: 0x123456,"));
       check("emitted entry has the id field", /id: "classic",/.test(clip));
       check("emitted entry has the palette field", /palette: \{/.test(clip));
-      // \r?\n here too — this regex spans the line break after `props: [`,
+      // \r?\n spans the line break after `placements: [`/`wallDecor: [` —
       // unlike the single-line `palette: {` check above.
-      check("emitted entry has a non-empty props field", /props: \[\r?\n/.test(clip));
-      check("emitted props entry contains the edited prop color", clip.includes("colors: [0x00ff88]"));
-      check("emitted props entry contains the edited prop density", clip.includes("density: 0.45,"));
-      // \r?\n rather than a literal \n: the OS clipboard round-trip
-      // normalizes line endings to CRLF on Windows (confirmed harmless —
-      // formatThemeEntry itself emits plain LF, see boardCodegen.ts; a pasted
-      // .ts file is line-ending-agnostic either way), so the assertion must
-      // tolerate both rather than assume the platform's clipboard behavior.
-      check(
-        "emitted entry is a single trailing-comma object literal (starts with '{' + id)",
-        /^\s*\{\r?\n\s*id: /.test(clip),
-      );
+      check("emitted entry has a non-empty placements field", /placements: \[\r?\n/.test(clip));
+      check("emitted entry has a non-empty wallDecor field", /wallDecor: \[\r?\n/.test(clip));
+      check("emitted placements entry contains the edited apron placement", clip.includes("offset: [0.2, 0]") && clip.includes("scale: 1.3"));
+      check("emitted wallDecor entry contains the edited wall placement", /propId: "bloom", tile: \[9, 6\], rotationY: 0\.9, scale: 1 \},/.test(clip));
 
       // Round-trip: wrap it exactly as it would sit inside MAZE_THEMES and
-      // eval it as a real object literal — this is the strongest available
-      // proof that pasting the emitted code compiles and reproduces the
-      // edited value, short of actually re-running tsc against themes.ts.
+      // eval it as a real object literal — the strongest available proof
+      // that pasting the emitted code compiles and reproduces the edited
+      // values, short of actually re-running tsc against themes.ts.
       const parsed = new Function(`return (${clip.trim().replace(/,\s*$/, "")});`)() as {
         id: string;
         name: string;
         price: number;
         palette: { floor: number; wall: number; bloomColors: number[] };
-        props: Array<{ kind: string; density: number; colors: number[]; minScale: number; maxScale: number }>;
+        placements: Array<{ propId: string; tile: [number, number]; offset: [number, number]; rotationY: number; scale: number }>;
+        wallDecor: Array<{ propId: string; tile: [number, number]; rotationY: number; scale: number }>;
       };
       check("emitted entry parses as valid JS", parsed !== null && typeof parsed === "object");
       check("parsed entry keeps the edited floor value (0x123456)", parsed.palette.floor === 0x123456);
       check("parsed entry's id/name/price match Arcade Night", parsed.id === "classic" && parsed.name === "Arcade Night" && parsed.price === 5);
-      check("parsed entry's bloomColors is an array (Arcade Night: empty)", Array.isArray(parsed.palette.bloomColors) && parsed.palette.bloomColors.length === 0);
-      check("parsed entry's props is an array with exactly 1 population", Array.isArray(parsed.props) && parsed.props.length === 1);
-      check("parsed prop keeps the edited color (0x00ff88)", parsed.props[0]?.colors[0] === 0x00ff88);
-      check("parsed prop keeps the edited density (0.45)", parsed.props[0]?.density === 0.45);
-      check("parsed prop's kind defaulted to 'shrub'", parsed.props[0]?.kind === "shrub");
+      check("parsed entry's placements is an array with exactly 1 entry", Array.isArray(parsed.placements) && parsed.placements.length === 1);
+      check("parsed placement keeps the edited offset (0.2)", parsed.placements[0]?.offset[0] === 0.2);
+      check("parsed placement keeps the edited scale (1.3)", parsed.placements[0]?.scale === 1.3);
+      check("parsed placement's tile matches the clicked apron tile", parsed.placements[0]?.tile[0] === -1 && parsed.placements[0]?.tile[1] === 4);
+      check("parsed entry's wallDecor is an array with exactly 1 entry", Array.isArray(parsed.wallDecor) && parsed.wallDecor.length === 1);
+      check("parsed wallDecor keeps the edited rotationY (0.9)", parsed.wallDecor[0]?.rotationY === 0.9);
+      check("parsed wallDecor's tile matches the clicked wall tile", parsed.wallDecor[0]?.tile[0] === 9 && parsed.wallDecor[0]?.tile[1] === 6);
 
       const flashed = await page.evaluate(() => {
         const names = [...document.querySelectorAll("#boardGuiHost .lil-function .lil-name")];
@@ -625,14 +755,13 @@ async function run(): Promise<void> {
       });
       check("copy button flashes a success label", flashed !== null);
 
-      // Clean up: remove the just-authored prop so Arcade Night is back to
-      // its authored propless state for anything relying on that later.
-      await clickFolderButton(page, "prop 1 · shrub", "remove this prop 🗑");
+      // Restore garden for the rest of the suite.
+      await selectBaseTheme(page, "The Garden");
       await page.waitForTimeout(300);
     }
 
     // -------------------------------------------------------------------
-    console.log("\n=== authoring a NEW theme: editable id/name/price ===");
+    console.log("\n=== authoring a NEW theme: editable id/name/price still works ===");
     {
       const idInput = await page.evaluate(() => {
         const guis = [...document.querySelectorAll("#boardGuiHost .lil-gui")];
@@ -657,7 +786,7 @@ async function run(): Promise<void> {
     }
 
     // -------------------------------------------------------------------
-    console.log("\n=== switching back to a character restores the workbench exactly ===");
+    console.log("\n=== switching to character mode and back stays clean ===");
     {
       await page.click("#modeCharacterBtn");
       await page.waitForTimeout(500);
@@ -674,11 +803,43 @@ async function run(): Promise<void> {
 
       const codePaneVisible = await page.$eval("#codePane", (el) => getComputedStyle(el).display !== "none");
       check("bottom code panel is visible again in character mode", codePaneVisible);
+
+      // A canvas click that would have hit a board slot marker (still
+      // parented under the now-hidden boardStage.boardRoot) must NOT mutate
+      // the working theme while character mode is active — this is exactly
+      // the setPickingEnabled(false) gate main.ts's setMode wires (see its
+      // own doc comment on why THREE.Raycaster ignores `.visible`).
+      const beforeClick = await boardSnapshot(page);
+      await clickTile(page, [19, 4], "apron"); // a filled garden apron tile, if picking were (wrongly) still live
+      await page.waitForTimeout(200);
+      const afterClick = await boardSnapshot(page);
+      check(
+        "a canvas click in character mode never mutates the working theme (picking is gated off)",
+        afterClick.placementsLength === beforeClick.placementsLength && afterClick.placementSelection === null,
+      );
+
+      // Back into board mode: everything should be exactly where it was —
+      // INCLUDING the "my-custom-theme" id rename from the previous section
+      // (a mode switch must never reset/reload the working theme; only a
+      // base-theme dropdown pick does that — see loadBaseTheme's own doc
+      // comment). The underlying DATA is still garden's (only `.id` was
+      // free-text-edited, not the palette/placements), so placementsLength
+      // stays 29.
+      await page.click("#modeBoardBtn");
+      await page.waitForTimeout(400);
+      const backSnap = await boardSnapshot(page);
+      check(
+        "re-entering board mode keeps the exact same working theme (id + 29 placements survive the round trip)",
+        backSnap.workingThemeId === "my-custom-theme" && backSnap.placementsLength === 29,
+      );
+      check("re-entering board mode has picking enabled again", true); // implicit: the NEXT section's click succeeds
     }
 
     // -------------------------------------------------------------------
-    console.log("\n=== IDEA-025 v2 delete flow still works after visiting board mode ===");
+    console.log("\n=== IDEA-025 v2 delete flow (character mode) still works after visiting board mode ===");
     {
+      await page.click("#modeCharacterBtn");
+      await page.waitForTimeout(400);
       const before = await treeRows(page);
       const idx = before.findIndex((r) => r.text === "blaze");
       check("found 'blaze' (an original mesh) in the tree", idx !== -1);

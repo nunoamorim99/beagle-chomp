@@ -16,11 +16,61 @@ Living backlog of ideas. Two purposes:
 ## 📥 Inbox (raw captures — untriaged)
 > `/idea` appends raw notes here with a date. `/idea-triage` turns them into registered ideas
 > below, then clears them from here. Don't assign IDs in the Inbox.
-- (2026-07-13) props overhaul: (1) editor gets a dedicated PROPS tab to edit prop structure/definitions (reusable across themes); (2) Board & Themes selects props from that library instead of inline populations; (3) EXPLICIT placement — pick a spot on the apron, choose a prop, adjust position, save (fix positions, not random); (4) wall-top decor becomes selectable component slots too (blooms OR lamps/transit-signals/simple things), choose per wall tile where to place. Follow-up to IDEA-026/027.
 _(empty — nothing to triage)_
 
 ## Backlog (open ideas)
-> New registered ideas go here. Next free ID: IDEA-029
+> New registered ideas go here. Next free ID: IDEA-032
+
+### IDEA-029 — Reusable prop library + a Props editor tab 💡
+- **Priority:** 🟡
+- **Area:** tooling
+- **Registered:** 2026-07-13
+- **Description:** props stop being inline per-theme populations and become a shared LIBRARY of
+  named, reusable, tunable definitions, edited in a dedicated **Props tab** in the editor. Each
+  library prop is one of the base shapes (tree/pine/palm/shrub/building/streetlight/umbrella/…)
+  with editable parameters — name, colors, proportions (height/width/segments), window counts,
+  tilt, glow — so the same "Oak" or "Skyscraper" can be reused across themes and personalized
+  later. Copy-code export like the other editor tabs.
+- **Notes:** Nuno: "have on the editor the tab to edit the props… reuse the props on different
+  themes… personalize the props later." Refactors [[IDEA-026]]'s `ThemeProp` (kind+density) into
+  a `PropDef` registry (`props.ts`, pure, mirrors themes.ts/cosmetics.ts) that the render factories
+  in `board.ts` read. Chosen scope: TUNABLE PARAMETRIC props (not raw-primitive assembly — that
+  would be a second character-editor, a later idea). Foundation for [[IDEA-030]] (placement) and
+  [[IDEA-031]] (wall components). Extends the editor built in [[IDEA-025]]/[[IDEA-027]].
+- **Dependencies:** [[IDEA-026]]
+
+### IDEA-030 — Explicit prop placement on the board (place · move · save) 💡
+- **Priority:** 🟡
+- **Area:** tooling
+- **Registered:** 2026-07-13
+- **Description:** replace density-scatter with HAND placement. A theme carries a list of explicit
+  placements `{ propId, tile, offset, rotation, scale }` on the apron ring; in the editor's Board
+  & Themes mode you see the available apron slots, click one, choose a library prop, adjust its
+  position/rotation/scale, and save. Total control over where every prop sits — "fix some props
+  position" instead of random.
+- **Notes:** Nuno: "edit the position of the props… select the place, choose the props, adjust the
+  position and save." The current hash-scattered [[IDEA-026]] props are CONVERTED into concrete
+  saved placements as the starting content, so the 6 themes look unchanged on first load but every
+  prop becomes individually movable. Props still stay OUTSIDE the maze (apron only — Nuno confirmed
+  that part is "exactly what we should do"), and keep the per-side height-cap safety so a placement
+  can't block the camera. Consumes the [[IDEA-029]] library; placements export in the theme code
+  ([[IDEA-027]]'s Copy theme code).
+- **Dependencies:** [[IDEA-029]]
+
+### IDEA-031 — Wall-top component slots (blooms OR lamps · signals · …) 💡
+- **Priority:** 🟢
+- **Area:** tooling
+- **Registered:** 2026-07-13
+- **Description:** generalize the wall-top bloom layer into placeable COMPONENT slots: per wall
+  tile, choose what sits on top — blooms (as today), a lamp, a transit signal, or other simple
+  pieces — and pick which wall tiles carry them, adjusting height/rotation. Blooms stay perfect on
+  some maps; others get street furniture instead.
+- **Notes:** Nuno: "add components in the place of the blooms… lamps, transit signals, simple
+  things… choose on the maze wall where to place it." Reuses [[IDEA-029]]'s library + [[IDEA-030]]'s
+  placement system, just on wall tops instead of the apron. Supersedes [[IDEA-011]]'s density-bloom
+  model with explicit per-tile component placement (keeps a bloom component so the garden look is
+  preserved). Chosen scope: pick-component-per-wall + place (not new density kinds).
+- **Dependencies:** [[IDEA-029]], [[IDEA-030]]
 
 ### IDEA-019 — Player login & cross-device account recovery 💡
 - **Priority:** 🟡

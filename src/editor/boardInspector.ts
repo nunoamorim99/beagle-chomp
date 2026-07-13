@@ -1,9 +1,9 @@
-// OWNER: board & themes editor (IDEA-027, dev-only).
+// OWNER: board & themes editor (IDEA-027/030/031, dev-only).
 // The lil-gui control pane for BOARD mode: a base-theme picker (loads a deep
 // working COPY of one of the 6 MAZE_THEMES — never mutates the registry
 // object itself, see main.ts's loadBaseTheme) plus one folder per logical
-// palette slot (Atmosphere / Walls / Floor / Biscuits / Blooms / Specks /
-// Props) — this is the "board slots" the tree pane (boardTree.ts) lists, and
+// palette slot (Atmosphere / Walls / Floor / Biscuits / Blooms / Specks) —
+// this is the "board slots" the tree pane (boardTree.ts) lists, and
 // selecting a tree row opens/scrolls to the matching folder here (see
 // focusSlot). Color fields follow inspector.ts's established `{ color:
 // "#hexstring" }` proxy pattern (lil-gui's addColor also accepts a bare
@@ -15,32 +15,37 @@
 //   - Walls/Floor/Biscuits/Atmosphere: mutate the shared materials/lights
 //     directly (via `ctx.materials`/`ctx.lights`, handles main.ts hands us
 //     off the live board/atmosphere) — cheap, no decor rebuild.
-//   - Blooms/Specks/Props: these change the SET of decorated tiles/planted
-//     objects (not just a color), so every change calls `ctx.onDecorChange()`,
-//     which re-runs applyBoardTheme with the current working theme (rebuilds
-//     hedgeDecor AND — once the parallel render-side work lands — board.props;
-//     see main.ts's rebuildBoardFromWorkingTheme, the one shared live-apply
-//     path both decor kinds already go through).
+//   - Blooms/Specks: these change the SET of decorated wall tiles (not just
+//     a color), so every change calls `cb.onDecorChange()`, which re-runs
+//     applyBoardTheme with the current working theme.
+//   - Placement folder: its own `onFieldEdited` callback (passed per-call to
+//     setPlacementSelection, NOT part of the `cb` bundle above — see that
+//     method's doc comment) routes to the exact same
+//     rebuildBoardFromWorkingTheme main.ts wires onDecorChange to, so the
+//     live-apply MECHANISM is identical even though the wiring path differs.
 //
-// IDEA-027 props follow-up (Nuno: "create/add components like this in the
-// editor too" — shrubs/trees/buildings/streetlights/umbrellas per theme):
-// the Props folder holds ONE SUBFOLDER PER theme.props ENTRY (a lil-gui
-// folder is just a nested GUI — addFolder returns one you can keep adding
-// controllers to), titled "prop N · kind" so re-ordering/scanning is
-// obvious at a glance. Structural changes (add/remove/kind swap) rebuild the
-// WHOLE Props folder — same "destroy this one folder, rebuild it" shape as
-// buildBloomsFolder below uses for its color-count changes — because lil-gui
-// has no primitive for inserting/removing a single subfolder or its
-// controllers in place.
+// v4.1 "Set Dressing" (IDEA-030/031) REWORK: the old density-population
+// "Props" folder (one subfolder per theme.props entry, each a kind/density/
+// scale/colors bundle) is GONE — MazeTheme.props no longer exists in
+// themes.ts. In its place: a single "Placement" folder that shows controls
+// for WHATEVER SLOT IS CURRENTLY SELECTED on the board (see
+// boardPlacement.ts — the 3D raycast/slot-marker module main.ts wires this
+// folder to via setPlacementSelection below). This is a materially
+// different UI shape than every other folder here: Atmosphere/Walls/Floor/
+// Biscuits/Blooms/Specks are always-present, theme-level controls; the
+// Placement folder's very EXISTENCE depends on whether a slot is currently
+// selected in the 3D view — no slot selected, no folder at all (there is
+// nothing to edit). This mirrors inspector.ts's own "selection drives what
+// the pane shows" pattern (character mode's part inspector is empty until
+// you click a mesh) more than it mirrors the old Props folder's "always
+// present, structurally rebuilt on every array change" shape.
 //
 // Same lil-gui gotchas this codebase has already hit apply here too:
 //   - No explicit `step` on any control whose range is symmetric around a
 //     value that isn't the range MIN (lil-gui anchors its step grid at the
 //     range min) — none of our sliders need a step tighter than the
 //     default, so this is avoidance-by-omission, but documented here so a
-//     future intensity/chance slider addition remembers the trap. The Props
-//     folder's density/minScale/maxScale sliders follow the same rule (their
-//     ranges all start at a real usable minimum, not an offset zero).
+//     future intensity/chance slider addition remembers the trap.
 //   - lil-gui swallows keydown on a focused widget (text/slider) — Ctrl+Z
 //     while a color picker or number field has focus needs a blur first;
 //     board mode has no undo (see main.ts's note), so this doesn't bite
@@ -49,33 +54,22 @@
 import GUI from "lil-gui";
 import * as THREE from "three";
 import { type BoardSlotId } from "./boardTree";
-import { defaultThemeProp, type WorkingTheme } from "./boardCodegen";
-import { MAZE_THEMES, type ThemePropKind } from "../game/themes";
+import type { WorkingTheme, WorkingPropPlacement, WorkingWallDecorPlacement } from "./boardCodegen";
+import { propOptionsFor, type PlacementSelection } from "./boardPlacement";
+import { MAZE_THEMES } from "../game/themes";
 
 const MAX_BLOOM_COLORS = 4;
 const DEFAULT_NEW_BLOOM_COLOR = 0xffffff;
 
-// Props colors: 1..4 (unlike blooms' 0..4 — an empty-color prop population
-// would render invisibly-tinted geometry, which is never useful; a theme
-// that wants NO props of a kind simply doesn't have that population at all,
-// see the "remove this prop" button below).
-const MIN_PROP_COLORS = 1;
-const MAX_PROP_COLORS = 4;
-const DEFAULT_NEW_PROP_COLOR = 0xffffff;
-
-/** All 7 kinds the render layer (src/render/board.ts) knows how to build —
- *  see themes.ts's ThemePropKind. Listed here (not derived) since lil-gui's
- *  dropdown needs a label->value map, and these ARE the labels — matching
- *  the exact string literals so "Copy theme code" round-trips losslessly. */
-const PROP_KIND_OPTIONS: Record<string, ThemePropKind> = {
-  shrub: "shrub",
-  tree: "tree",
-  pine: "pine",
-  palm: "palm",
-  building: "building",
-  streetlight: "streetlight",
-  umbrella: "umbrella",
-};
+const OFFSET_MIN = -0.5;
+const OFFSET_MAX = 0.5;
+const OFFSET_STEP = 0.005;
+const SCALE_MIN = 0.4;
+const SCALE_MAX = 2;
+const SCALE_STEP = 0.01;
+const ROTATION_MIN = 0;
+const ROTATION_MAX = Math.PI * 2;
+const ROTATION_STEP = 0.01;
 
 export interface BoardMaterialHandles {
   wall: THREE.MeshStandardMaterial;
@@ -97,9 +91,13 @@ export interface BoardInspectorCallbacks {
    *  background color (no material handle for these two; boardStage owns
    *  them). */
   onAtmosphereBg(): void;
-  /** Any bloom/speck/PROP field changed (color, add/remove, emissive,
-   *  chance, density, scale, kind) — triggers applyBoardTheme (decor +
-   *  props rebuild). */
+  /** Any bloom/speck field changed (color, add/remove, emissive, chance) —
+   *  triggers applyBoardTheme (hedge-decor rebuild). Placement-folder edits
+   *  (prop swap/offset/rotation/scale/remove) do NOT go through this bundle
+   *  at all — setPlacementSelection takes its own `onFieldEdited` callback
+   *  instead (main.ts passes rebuildBoardFromWorkingTheme there too), since
+   *  the Placement folder is rebuilt per-SELECTION rather than being one of
+   *  the always-present palette folders every other `cb.on*` here serves. */
   onDecorChange(): void;
   /** id/name/price text/number fields changed — no live visual effect, just
    *  keeps the "Copy theme code" output in sync (codegen reads the working
@@ -110,6 +108,20 @@ export interface BoardInspectorCallbacks {
    *  copyFileBtn flash() pattern, scoped here to a lil-gui Controller's own
    *  .name() instead of a plain <button> element). */
   onCopyCode(): Promise<void>;
+}
+
+/** The two boardPlacement.ts operations the "Placement" folder's controls
+ *  invoke — a small, stable bundle of closures over the ONE
+ *  BoardPlacementController instance main.ts owns for board mode's whole
+ *  lifetime, passed once via bindPlacementActions (below) rather than
+ *  re-threaded through every setPlacementSelection call. Kept as an
+ *  explicit named interface (not inlined) so main.ts's call site reads as
+ *  "here are the two things this folder is allowed to do to the placement
+ *  model", matching the same narrow-surface spirit as
+ *  BoardInspectorCallbacks above. */
+export interface PlacementActions {
+  assignProp(propId: string): WorkingPropPlacement | WorkingWallDecorPlacement;
+  removeSelected(): void;
 }
 
 export interface BoardInspector {
@@ -126,8 +138,40 @@ export interface BoardInspector {
     materials: BoardMaterialHandles,
     lights: BoardLightHandles,
   ): void;
-  /** Opens (and scrolls to) the folder for a tree-pane slot selection. */
+  /** Opens (and scrolls to) the folder for a tree-pane slot selection —
+   *  Atmosphere/Walls/Floor/Biscuits/Blooms/Specks only; boardTree.ts's two
+   *  placement rows ("Props (apron)"/"Wall components") don't focus a
+   *  static folder here at all — selecting them switches boardPlacement's
+   *  active sub-mode instead (see main.ts's onTreeSelect), and the
+   *  "Placement" folder that opens as a RESULT of then clicking a 3D slot
+   *  is driven by setPlacementSelection below, not this method. */
   focusSlot(id: BoardSlotId): void;
+  /** ONE-TIME wiring (call immediately after construction, alongside
+   *  creating the matching BoardPlacementController) — stores `actions` so
+   *  every subsequent setPlacementSelection call can build a fully
+   *  functional "Placement" folder without main.ts having to re-pass the
+   *  same two closures on every selection change. */
+  bindPlacementActions(actions: PlacementActions): void;
+  /** Rebuilds the "Placement" folder for the current 3D selection — `null`
+   *  removes the folder entirely (nothing selected). Called by main.ts every
+   *  time boardPlacement's onSelectionChange fires (a slot was picked,
+   *  deselected, or a sub-mode switch cleared the prior selection).
+   *  `onFieldEdited` is called after every control edit (prop swap/offset/
+   *  rotation/scale/remove) — main.ts passes its own
+   *  rebuildBoardFromWorkingTheme so the live board re-applies instantly,
+   *  same "mutate then re-apply" shape as onDecorChange. */
+  setPlacementSelection(selection: PlacementSelection | null, onFieldEdited: () => void): void;
+  /** Refreshes the Placement folder's offset X/Z (and rotation/scale)
+   *  controller DISPLAYS without rebuilding the folder — for a caller that
+   *  just mutated the selected placement's fields through some path OTHER
+   *  than this folder's own sliders (specifically: main.ts's arrow-key
+   *  offset nudge, which calls boardPlacement.nudgeSelectedOffset directly
+   *  rather than dragging a slider) and needs the visible slider position to
+   *  catch up. No-op if no Placement folder currently exists. Mirrors
+   *  inspector.ts's own `refreshDisplays()` (called after its own arrow-key
+   *  position/scale/rotation nudges) — same "updateDisplay, don't rebuild"
+   *  idiom, scoped to this one folder. */
+  refreshPlacementDisplays(): void;
   destroy(): void;
 }
 
@@ -328,13 +372,25 @@ export function createBoardInspector(
    *  color is added/removed (the CONTROL COUNT changes, which lil-gui has no
    *  "insert one more addColor" primitive for, so the simplest correct
    *  approach is destroy-and-rebuild-this-one-folder, same shape as
-   *  inspector.ts's whole-folder rebuild-per-selection). */
+   *  inspector.ts's whole-folder rebuild-per-selection).
+   *
+   *  v4.1 note: hand-placed `theme.wallDecor` OVERRIDES this palette-driven
+   *  scatter entirely (see board.ts's buildWallTopDecor dispatch — a theme
+   *  gets one or the other, never both), so these sliders only matter for a
+   *  theme with an EMPTY wallDecor (garden/forest/beach/park still ship this
+   *  way) — the folder stays present regardless (an author might clear all
+   *  hand-placed wall components and fall back to the classic scatter), but
+   *  its label makes that override relationship explicit. */
   function buildBloomsFolder(theme: WorkingTheme): void {
     folders.blooms?.destroy();
     const folder = gui.addFolder("Blooms");
     folders.blooms = folder;
     const p = theme.palette;
     const colors = p.bloomColors; // WorkingPalette's bloomColors is genuinely mutable (see boardCodegen.ts)
+
+    if (theme.wallDecor.length > 0) {
+      folder.add({ note: "overridden by hand-placed Wall components" }, "note").disable().name("note");
+    }
 
     colors.forEach((_, i) => {
       folder
@@ -396,106 +452,115 @@ export function createBoardInspector(
       .onChange(() => cb.onDecorChange());
   }
 
-  /** Builds one prop population's SUBfolder (kind dropdown, density/scale
-   *  sliders, its own color list, "remove this prop") inside the parent
-   *  "Props" folder — `index` is only used for the title/label ("prop 1 ·
-   *  shrub"), never as a stored identity (props are looked up by ARRAY
-   *  INDEX at click-time inside the closures below, which is safe because
-   *  every structural change rebuilds the whole Props folder immediately
-   *  afterward, so no closure ever outlives the index it captured). */
-  function buildPropSubfolder(parent: GUI, theme: WorkingTheme, index: number): void {
-    const prop = theme.props[index];
-    const sub = parent.addFolder(`prop ${index + 1} · ${prop.kind}`);
+  // -------------------------------------------------------------------
+  // "Placement" folder (IDEA-030/031): shows controls for whatever slot is
+  // CURRENTLY SELECTED on the board (via boardPlacement.ts's raycast
+  // picking) — main.ts calls setPlacementSelection every time that
+  // selection changes. Unlike every folder above (always present, one per
+  // theme-level palette slot), this folder is built ONLY when something is
+  // selected, and destroyed the instant nothing is (see setPlacementSelection
+  // below) — unlike Blooms' rebuild-on-color-count-change, which rebuilds
+  // the SAME folder in place, this one is closer to inspector.ts's own
+  // "selection drives the whole pane" shape.
+  let placementFolder: GUI | null = null;
 
-    sub
-      .add(prop, "kind", PROP_KIND_OPTIONS)
-      .name("kind")
-      .onChange(() => {
-        // Kind swap is structural (the subfolder's own TITLE embeds the
-        // kind), so rebuild the whole Props folder rather than trying to
-        // rename this one subfolder in place — same "destroy and rebuild"
-        // call buildPropsFolder already makes for add/remove below.
-        buildPropsFolder(theme);
-        cb.onDecorChange();
-      });
-
-    sub
-      .add(prop, "density", 0, 0.6, 0.01)
-      .name("density")
-      .onChange(() => cb.onDecorChange());
-    sub
-      .add(prop, "minScale", 0.5, 2, 0.01)
-      .name("min scale")
-      .onChange(() => cb.onDecorChange());
-    sub
-      .add(prop, "maxScale", 0.5, 2, 0.01)
-      .name("max scale")
-      .onChange(() => cb.onDecorChange());
-
-    const colors = prop.colors; // WorkingThemeProp's colors is genuinely mutable (see boardCodegen.ts)
-    colors.forEach((_, i) => {
-      sub
-        .addColor(
-          hexProxy(
-            () => colors[i],
-            (v) => { colors[i] = v; },
-          ),
-          "color",
-        )
-        .name(`color ${i + 1}`)
-        .onChange(() => cb.onDecorChange());
-    });
-
-    if (colors.length < MAX_PROP_COLORS) {
-      sub
-        .add({ add: () => {
-          colors.push(DEFAULT_NEW_PROP_COLOR);
-          buildPropsFolder(theme);
-          cb.onDecorChange();
-        } }, "add")
-        .name(`add color (${colors.length}/${MAX_PROP_COLORS}) ➕`);
-    }
-    if (colors.length > MIN_PROP_COLORS) {
-      sub
-        .add({ remove: () => {
-          colors.pop();
-          buildPropsFolder(theme);
-          cb.onDecorChange();
-        } }, "remove")
-        .name("remove last color ➖");
-    }
-
-    sub
-      .add({ removeProp: () => {
-        theme.props.splice(index, 1);
-        buildPropsFolder(theme);
-        cb.onDecorChange();
-      } }, "removeProp")
-      .name("remove this prop 🗑");
+  function destroyPlacementFolder(): void {
+    placementFolder?.destroy();
+    placementFolder = null;
   }
 
-  /** Rebuilds the whole "Props" folder from `theme.props` — one subfolder per
-   *  population plus a trailing "add prop" button. Same destroy-and-rebuild-
-   *  this-one-folder shape buildBloomsFolder uses for its color-count
-   *  changes: lil-gui has no primitive for inserting/removing a single
-   *  subfolder in place, so any structural edit (add/remove/kind change)
-   *  just rebuilds the entire folder from the current `theme.props` array —
-   *  cheap (a handful of DOM nodes) and impossible to get out of sync with
-   *  the data, unlike trying to patch individual subfolders in place. */
-  function buildPropsFolder(theme: WorkingTheme): void {
-    folders.props?.destroy();
-    const folder = gui.addFolder("Props");
-    folders.props = folder;
+  // The one PlacementActions bundle bindPlacementActions receives — a
+  // stable pair of closures over main.ts's single BoardPlacementController
+  // instance, set ONCE right after construction (see bindPlacementActions
+  // below) and read by every subsequent buildPlacementFolder call, so
+  // setPlacementSelection's own signature only needs the fast-changing bit
+  // (the selection + a per-call onFieldEdited) rather than re-threading the
+  // whole action bundle through every selection change.
+  let placementActions: PlacementActions | null = null;
 
-    theme.props.forEach((_, i) => buildPropSubfolder(folder, theme, i));
+  /** Builds the "Placement" folder for `selection` — a prop dropdown (swap
+   *  which library prop this slot uses; ALSO the "plant something here"
+   *  affordance for the rare moment `selection.existing` is null, see
+   *  PlacementSelection's own doc comment for when that happens), offset X/Z
+   *  sliders (apron only — wall placements have no offset field),
+   *  rotationY, scale, and a "remove" button.
+   *
+   *  TWO DIFFERENT live-apply paths inside this ONE folder, deliberately:
+   *   - The prop dropdown and "remove" button call INTO boardPlacement
+   *     (`actions.assignProp`/`actions.removeSelected`) and then do
+   *     NOTHING else — those two methods already call boardPlacement's own
+   *     `setSelection` internally, which fires main.ts's onSelectionChange,
+   *     which calls THIS module's own setPlacementSelection, which calls
+   *     buildPlacementFolder again (rebuilding this whole folder from the
+   *     new selection state) AND (via the onFieldEdited closure main.ts
+   *     passes through that same call) re-applies the live board. Calling
+   *     onFieldEdited a SECOND time here, or rebuilding the folder a SECOND
+   *     time here, would just redo both of those for no benefit — the
+   *     selection-change callback chain already does it exactly once.
+   *   - The offset/rotationY/scale sliders instead write DIRECTLY into
+   *     `selection.existing`'s fields via lil-gui's own object/property
+   *     binding (`.add(placement, "rotationY", ...)`) — bypassing
+   *     boardPlacement entirely, so nothing else re-applies the live board
+   *     unless THIS handler calls `onFieldEdited` itself. That's why only
+   *     these three controls call it explicitly. */
+  function buildPlacementFolder(selection: PlacementSelection, onFieldEdited: () => void): void {
+    if (!placementActions) throw new Error("boardInspector: bindPlacementActions must be called before any selection");
+    const actions = placementActions;
+
+    destroyPlacementFolder();
+    const folder = gui.addFolder(`Placement — ${selection.subMode === "apron" ? "prop" : "wall component"} @ (${selection.tile[0]}, ${selection.tile[1]})`);
+    placementFolder = folder;
+
+    const options: Record<string, string> = {};
+    for (const opt of propOptionsFor(selection.subMode)) options[opt.name] = opt.id;
+
+    const propState = { propId: selection.existing?.propId ?? "" };
+    folder
+      .add(propState, "propId", options)
+      .name(selection.existing ? "prop" : "prop (click to plant)")
+      .onChange((propId: string) => {
+        // assignProp's own setSelection call drives the whole re-render
+        // (folder rebuild + live board re-apply) via main.ts's
+        // onSelectionChange -> setPlacementSelection chain — see this
+        // function's own doc comment above for why nothing further is
+        // needed here.
+        actions.assignProp(propId);
+      });
+
+    if (!selection.existing) return; // nothing further to show until a prop is planted
+
+    const placement = selection.existing;
+
+    if (selection.subMode === "apron") {
+      const apronPlacement = placement as WorkingPropPlacement;
+      folder
+        .add({ get x() { return apronPlacement.offset[0]; }, set x(v: number) { apronPlacement.offset[0] = v; } }, "x", OFFSET_MIN, OFFSET_MAX, OFFSET_STEP)
+        .name("offset X")
+        .onChange(() => onFieldEdited());
+      folder
+        .add({ get z() { return apronPlacement.offset[1]; }, set z(v: number) { apronPlacement.offset[1] = v; } }, "z", OFFSET_MIN, OFFSET_MAX, OFFSET_STEP)
+        .name("offset Z")
+        .onChange(() => onFieldEdited());
+    }
 
     folder
-      .add({ addProp: () => {
-        theme.props.push(defaultThemeProp());
-        buildPropsFolder(theme);
-        cb.onDecorChange();
-      } }, "addProp")
-      .name("add prop ✚");
+      .add(placement, "rotationY", ROTATION_MIN, ROTATION_MAX, ROTATION_STEP)
+      .name("rotation")
+      .onChange(() => onFieldEdited());
+    folder
+      .add(placement, "scale", SCALE_MIN, SCALE_MAX, SCALE_STEP)
+      .name("scale")
+      .onChange(() => onFieldEdited());
+
+    folder
+      .add({ remove: () => {
+        // removeSelected's own setSelection call drives the re-render
+        // (folder destroy + live board re-apply) via the SAME
+        // onSelectionChange chain the prop dropdown uses above — see this
+        // function's own doc comment.
+        actions.removeSelected();
+      } }, "remove")
+      .name("remove this placement 🗑");
   }
 
   return {
@@ -528,19 +593,32 @@ export function createBoardInspector(
       priceCtrl.updateDisplay();
 
       clearSlotFolders();
+      destroyPlacementFolder();
       buildAtmosphereFolder(theme, lights);
       buildWallsFolder(theme, materials.wall);
       buildFloorFolder(theme, materials.floor);
       buildBiscuitsFolder(theme, materials.biscuit);
       buildBloomsFolder(theme);
       buildSpecksFolder(theme);
-      buildPropsFolder(theme);
     },
     focusSlot(id: BoardSlotId): void {
       const folder = folders[id];
       if (!folder) return;
       folder.open();
       folder.domElement.scrollIntoView({ block: "nearest" });
+    },
+    bindPlacementActions(actions: PlacementActions): void {
+      placementActions = actions;
+    },
+    setPlacementSelection(selection: PlacementSelection | null, onFieldEdited: () => void): void {
+      if (!selection) {
+        destroyPlacementFolder();
+        return;
+      }
+      buildPlacementFolder(selection, onFieldEdited);
+    },
+    refreshPlacementDisplays(): void {
+      placementFolder?.controllers.forEach((c) => c.updateDisplay());
     },
     destroy(): void {
       gui.destroy();
