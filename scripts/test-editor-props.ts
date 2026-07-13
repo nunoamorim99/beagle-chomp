@@ -17,6 +17,9 @@
 // (`npx playwright install chromium`).
 import { createServer, type ViteDevServer } from "vite";
 import { chromium, type Browser, type Page } from "playwright";
+import { readFileSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 let failures = 0;
 function check(label: string, cond: boolean): void {
@@ -30,18 +33,47 @@ function check(label: string, cond: boolean): void {
 
 // --- small DOM helpers -----------------------------------------------------
 
-/** Tree rows in current DOM order — the SAME #partTree element every editor
- *  mode's tree/list view renders into (character parts, board slots, or —
- *  here — the prop library list); one view owns it at a time (see
- *  main.ts's setMode). Reused verbatim from test-editor-board.ts's own
- *  treeRows() so all three suites read the SAME real DOM surface a person
- *  sees, whichever workbench currently owns it. */
+/** Tree rows in current DOM order, SCOPED to #partTree specifically (not a
+ *  bare ".tree-row" document-wide query) — the SAME #partTree element every
+ *  editor mode's PRIMARY tree/list view renders into (character parts,
+ *  board slots, or — here — the prop library list); one view owns it at a
+ *  time (see main.ts's setMode). Was a document-wide ".tree-row" query
+ *  before IDEA-033 (matching test-editor-board.ts's own treeRows()
+ *  verbatim), which worked fine when #partTree was the ONLY tree on screen —
+ *  IDEA-033 adds a SECOND tree (#propsPartTree, the selected prop's own
+ *  component list — see componentTreeRows below), which reuses the exact
+ *  same ".tree-row"/".tree-name"/".selected" CSS classes for visual
+ *  consistency, so a document-wide query now double-counts: scoping to
+ *  `#partTree .tree-row` restores "exactly the prop library list" as this
+ *  helper's contract. */
 async function treeRows(page: Page): Promise<Array<{ text: string; selected: boolean; usedBy: string | null }>> {
-  return page.$$eval(".tree-row", (els) =>
+  return page.$$eval("#partTree .tree-row", (els) =>
     els.map((e) => ({
       text: e.querySelector(".tree-name")?.textContent ?? "",
       selected: e.className.includes("selected"),
       usedBy: e.querySelector(".tree-used-badge")?.textContent ?? null,
+    })),
+  );
+}
+
+/** IDEA-033: rows in the SEPARATE "Components" tree (#propsPartTree) — the
+ *  selected prop's own base parts + any editor-added primitives, built by
+ *  partTree.ts's buildPartList exactly like the character workbench's own
+ *  #partTree rows (see test-editor.ts's treeRows, which this mirrors: same
+ *  ".tree-name"/".is-mesh"/".is-added"/".selected" classes, since
+ *  propsPartInspector.ts and main.ts's refreshPropParts reuse
+ *  partTree.ts/createPartTreeView UNCHANGED — the same generic module the
+ *  character tree uses, just pointed at a prop's own group instead of a
+ *  character's). */
+async function componentTreeRows(
+  page: Page,
+): Promise<Array<{ text: string; isMesh: boolean; isAdded: boolean; selected: boolean }>> {
+  return page.$$eval("#propsPartTree .tree-row", (els) =>
+    els.map((e) => ({
+      text: e.querySelector(".tree-name")?.textContent ?? "",
+      isMesh: e.className.includes("is-mesh"),
+      isAdded: e.className.includes("is-added"),
+      selected: e.className.includes("selected"),
     })),
   );
 }
@@ -224,13 +256,126 @@ async function clickCopyLibraryCode(page: Page): Promise<void> {
 /** Reads main.ts's `window.__propsTestHook` — the one internal-state read
  *  this suite needs (the live PREVIEW mesh's child count has no DOM surface
  *  of its own), mirroring test-editor-board.ts's own boardSnapshot rationale
- *  exactly. */
-async function propsSnapshot(page: Page): Promise<{ previewMeshCount: number; libraryLength: number; selectedPropId: string | null }> {
+ *  exactly. IDEA-033: extended with the part-editing fields — see
+ *  __propsTestHook's own doc comment in main.ts for why each one earns its
+ *  keep over a pure DOM read. */
+async function propsSnapshot(page: Page): Promise<{
+  previewMeshCount: number;
+  libraryLength: number;
+  selectedPropId: string | null;
+  selectedPartPath: string | null;
+  componentCount: number;
+  selectedDefHasParts: boolean;
+  livePartEditCount: number;
+}> {
   return page.evaluate(() => {
     const h = window.__propsTestHook;
     if (!h) throw new Error("__propsTestHook missing — did main.ts's test-support hook get removed?");
-    return { previewMeshCount: h.previewMeshCount(), libraryLength: h.libraryLength(), selectedPropId: h.selectedPropId() };
+    return {
+      previewMeshCount: h.previewMeshCount(),
+      libraryLength: h.libraryLength(),
+      selectedPropId: h.selectedPropId(),
+      selectedPartPath: h.selectedPartPath(),
+      componentCount: h.componentCount(),
+      selectedDefHasParts: h.selectedDefHasParts(),
+      livePartEditCount: h.livePartEditCount(),
+    };
   });
+}
+
+// --- IDEA-033: part-editing DOM helpers ------------------------------------
+// The per-part folder (propsPartInspector.ts's "Part: <name>") and the
+// persistent "Add part" folder both live in the SAME #propsGuiHost lil-gui
+// host propsInspector.ts's own folders do — these helpers are the
+// setFolderSlider/setFolderColorSwatch/clickFolderButton family above,
+// applied to those NEW folder titles, not new idioms.
+
+/** Clicks a row in the SEPARATE Components tree (#propsPartTree), matched by
+ *  its exact visible name — the part-editing analogue of clickTreeRowByText
+ *  above, scoped to the new tree so it can never accidentally click a
+ *  PROP-LIBRARY row of the same text (e.g. selecting the "trunk" component
+ *  vs. a hypothetical library def named "trunk"). */
+async function clickComponentRowByText(page: Page, text: string): Promise<void> {
+  const idx = await page.evaluate(
+    (text) => [...document.querySelectorAll("#propsPartTree .tree-row")].findIndex(
+      (r) => r.querySelector(".tree-name")?.textContent === text,
+    ),
+    text,
+  );
+  if (idx === -1) throw new Error(`component row "${text}" not found`);
+  await page.evaluate(
+    (i) => (document.querySelectorAll("#propsPartTree .tree-row")[i] as HTMLElement).click(),
+    idx,
+  );
+  await page.waitForTimeout(150);
+}
+
+/** Sets one axis of the selected part's position/rotation/scale — the
+ *  "Part: <name>" folder nests position/rotation/scale as their OWN
+ *  sub-folders (propsPartInspector.ts mirrors inspector.ts's exact
+ *  buildSelectionFolder shape: `folder.addFolder("position")` etc., each
+ *  with x/y/z controllers labeled by their bare axis letter) — so this
+ *  drills one level deeper than setFolderSlider's flat folder->control
+ *  lookup, matching that nesting. */
+async function setPartTransformAxis(
+  page: Page,
+  partFolderTitle: string,
+  channel: "position" | "rotation" | "scale",
+  axis: "x" | "y" | "z",
+  value: number,
+): Promise<void> {
+  await page.evaluate(
+    ({ partFolderTitle, channel, axis, value }) => {
+      const guis = [...document.querySelectorAll("#propsGuiHost .lil-gui")];
+      const partFolder = guis.find((f) => f.querySelector(":scope > .lil-title")?.textContent === partFolderTitle);
+      if (!partFolder) throw new Error(`part folder "${partFolderTitle}" not found`);
+      const subFolders = [...partFolder.querySelectorAll(":scope .lil-gui")];
+      const channelFolder = subFolders.find((f) => f.querySelector(":scope > .lil-title")?.textContent === channel);
+      if (!channelFolder) throw new Error(`"${channel}" sub-folder not found in "${partFolderTitle}"`);
+      const controllers = [...channelFolder.querySelectorAll(":scope > .lil-children > .lil-controller")];
+      const ctrl = controllers.find((c) => c.querySelector(".lil-name")?.textContent === axis);
+      if (!ctrl) throw new Error(`axis "${axis}" not found in "${channel}"`);
+      // Same range-or-plain-input fallback as setFolderSlider above — this
+      // lil-gui version renders a number controller's editable field as a
+      // plain `<input type="text">` alongside a separate `.lil-slider` fill
+      // bar (NOT a real `<input type="range">`), so `input[type="range"]`
+      // alone never matches; `input:not([type="range"])` picks up that text
+      // input in either case.
+      const range = ctrl.querySelector('input[type="range"]');
+      const number = ctrl.querySelector('input[type="number"], input:not([type="range"])');
+      const el = (range ?? number) as HTMLInputElement | null;
+      if (!el) throw new Error(`no input widget for axis "${axis}"`);
+      el.value = String(value);
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+    },
+    { partFolderTitle, channel, axis, value },
+  );
+}
+
+/** Same idiom as setFolderText, scoped to the "Add part" folder's `name`
+ *  text field (propsPartInspector.ts's persistent folder — see its own
+ *  header). Sets the field then reads it back is unnecessary here since
+ *  addPropPart's own sanitizer only matters at CLICK time, not at typing
+ *  time — this just types the value. */
+async function setAddPartName(page: Page, value: string): Promise<void> {
+  await page.evaluate((value) => {
+    const guis = [...document.querySelectorAll("#propsGuiHost .lil-gui")];
+    const folder = guis.find((f) => f.querySelector(":scope > .lil-title")?.textContent === "Add part");
+    if (!folder) throw new Error(`"Add part" folder not found`);
+    const controllers = [...folder.querySelectorAll(":scope > .lil-children > .lil-controller")];
+    const ctrl = controllers.find((c) => c.querySelector(".lil-name")?.textContent === "name");
+    const input = ctrl?.querySelector("input");
+    if (!(input instanceof HTMLInputElement)) throw new Error(`"name" field not found in "Add part"`);
+    input.value = value;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  }, value);
+}
+
+async function selectAddPartKind(page: Page, kind: string): Promise<void> {
+  const folder = page.locator(`#propsGuiHost .lil-gui:has(> .lil-title:text-is("Add part"))`).first();
+  const select = folder.locator("select").first();
+  await select.selectOption(kind);
 }
 
 async function run(): Promise<void> {
@@ -613,6 +758,201 @@ async function run(): Promise<void> {
       check("copy button flashes a success label", flashed?.includes("Copied") === true);
     }
 
+    // =====================================================================
+    // IDEA-033 "Props as editable part-assemblies" — selecting a component,
+    // editing its transform/material, adding/deleting a primitive, undo, and
+    // both export surfaces (Copy library code / Save to props.ts) emitting
+    // the new `parts` field. Uses "Palm" (untouched by every earlier
+    // section above) so these assertions can't collide with the bloom/oak/
+    // shrub edits already made in this session.
+    // -------------------------------------------------------------------
+    console.log("\n=== selecting a prop shows its Components tree + picking a component ===");
+    {
+      await clickTreeRowByText(page, "Palm");
+      await page.waitForTimeout(200);
+      const snap = await propsSnapshot(page);
+      check("selecting Palm sets selectedPropId to 'palm'", snap.selectedPropId === "palm");
+      check("Palm has no part edits yet (fresh def)", snap.selectedDefHasParts === false);
+
+      // Palm's base parts (board.ts's makePalm): root + trunkLower +
+      // trunkUpper + frond0..N (4-5) + coconut0-1 — componentCount is root-
+      // inclusive, so > 5 proves the Components tree actually reflects
+      // Palm's real child count, not a stale/empty list.
+      check("Components tree has Palm's base parts (root + trunk + fronds + coconuts)", snap.componentCount > 5);
+
+      const compRows = await componentTreeRows(page);
+      check("Components tree shows 'trunkLower' (board.ts's own part name)", compRows.some((r) => r.text === "trunkLower"));
+      check("Components tree shows 'trunkUpper'", compRows.some((r) => r.text === "trunkUpper"));
+      check("Components tree shows at least one 'frond0'", compRows.some((r) => r.text === "frond0"));
+      check("Components tree root shows 'Palm (g)' (rootLabel wired to the def's own name)", compRows.some((r) => r.text === "Palm (g)"));
+
+      await clickComponentRowByText(page, "trunkLower");
+      await page.waitForTimeout(200);
+      const afterPick = await propsSnapshot(page);
+      check("clicking 'trunkLower' selects it (selectedPartPath === '0')", afterPick.selectedPartPath === "0");
+
+      const titles = await propsFolderTitles(page);
+      check(`inspector shows "Part: trunkLower"`, titles.includes("Part: trunkLower"));
+      check(`base-shape folder "Selected: Palm" is STILL present alongside it`, titles.includes("Selected: Palm"));
+
+      const labels = await folderControlLabels(page, "Part: trunkLower");
+      check(
+        "Part folder shows visible + material — the transform sub-folders are their OWN folders, not flat labels here",
+        labels.includes("visible (unchecked = delete this base part)"),
+      );
+    }
+
+    // -------------------------------------------------------------------
+    console.log("\n=== editing a selected part's transform + material ===");
+    {
+      // trunkLower is still selected from the previous section.
+      await setPartTransformAxis(page, "Part: trunkLower", "position", "y", 0.4);
+      await page.waitForTimeout(200);
+      const afterMove = await propsSnapshot(page);
+      // livePartEditCount (NOT selectedDefHasParts) is the right signal here
+      // — the move hasn't been FLUSHED onto workingLibrary's palm entry yet
+      // (that only happens on a mode switch / copy / save — see
+      // syncPartsIntoWorkingDef's own doc comment), but propPartLog itself
+      // already carries the pending delta the instant the slider fires.
+      check("moving trunkLower is tracked live (unflushed) in propPartLog", afterMove.livePartEditCount > 0);
+
+      await setFolderColorSwatch(page, "Part: trunkLower", "#ff8800", 0);
+      await page.waitForTimeout(200);
+
+      // "Copy library code" flushes (see copyLibraryBtn's own click handler)
+      // before formatting, so selectedDefHasParts becomes true immediately
+      // after this click — asserted alongside the clipboard content below.
+      await clickCopyLibraryCode(page);
+      await page.waitForTimeout(300);
+      const afterFlush = await propsSnapshot(page);
+      check("after the flush, selectedDefHasParts reads true from workingLibrary itself", afterFlush.selectedDefHasParts === true);
+      const clip = await page.evaluate(() => navigator.clipboard.readText());
+      check(`emitted code contains "palm"'s new parts.edits array`, /id: "palm",[\s\S]{0,400}parts: \{/.test(clip));
+      check("emitted parts.edits targets path '0' (trunkLower's tree path)", clip.includes(`path: "0"`));
+      check("emitted parts.edits carries the moved Y position (0.4)", /position: \[0, 0\.4, 0\]/.test(clip));
+      check("emitted parts.edits carries the recolored trunk (0xff8800)", clip.includes("color: 0xff8800"));
+
+      // Round-trip the palm entry specifically through a real eval, same
+      // strength of proof as the earlier bloom round-trip section.
+      const arrayBody = clip
+        .replace(/^export const PROP_LIBRARY: readonly PropDef\[\] = /, "")
+        .replace(/\s*as const;\s*$/, "");
+      const parsed = new Function(`return (${arrayBody});`)() as Array<{
+        id: string;
+        parts?: { edits: Array<{ path: string; position?: number[]; color?: number }>; added: unknown[] };
+      }>;
+      const parsedPalm = parsed.find((p) => p.id === "palm");
+      check("parsed 'palm' entry has a parts.edits array", Array.isArray(parsedPalm?.parts?.edits));
+      const trunkEdit = parsedPalm?.parts?.edits.find((e) => e.path === "0");
+      check("parsed palm's path-'0' edit carries the moved position", trunkEdit?.position?.[1] === 0.4);
+      check("parsed palm's path-'0' edit carries the recolor", trunkEdit?.color === 0xff8800);
+    }
+
+    // -------------------------------------------------------------------
+    console.log("\n=== add part: bolts a new primitive onto the selected component ===");
+    {
+      const before = await propsSnapshot(page);
+      await selectAddPartKind(page, "sphere");
+      await setAddPartName(page, "coconutExtra");
+      await clickFolderButton(page, "Add part", "add to selected part ➕");
+      await page.waitForTimeout(250);
+
+      const afterAdd = await propsSnapshot(page);
+      // componentCount (buildPartList's own recursive DFS walk) is the
+      // depth-agnostic signal here — previewMeshCount is a SHALLOW
+      // top-level-children-only count (see main.ts's own doc comment on
+      // it), and this add attaches under "trunkLower" (still selected from
+      // the previous section), one level BELOW the preview root, so the
+      // root's own direct child count never changes even though a real
+      // mesh was added deeper in the tree. componentCount catches that;
+      // previewMeshCount would only move for an add targeting the ROOT
+      // itself (see propPartSelectionContext's "no selection -> root"
+      // fallback in main.ts's addPropPart).
+      check("adding a part grows the Components tree by 1", afterAdd.componentCount === before.componentCount + 1);
+      check("the newly-added part is auto-selected", afterAdd.selectedPartPath !== null && afterAdd.selectedPartPath !== before.selectedPartPath);
+
+      const compRows = await componentTreeRows(page);
+      const addedRow = compRows.find((r) => r.text === "coconutExtra");
+      check("Components tree shows the new 'coconutExtra' row", addedRow !== undefined);
+      check("the new row is flagged is-added (green, per editor.css's .is-added rule)", addedRow?.isAdded === true);
+      check("the new row is flagged is-mesh (it's a real Mesh, not a Group)", addedRow?.isMesh === true);
+
+      const titles = await propsFolderTitles(page);
+      check(`inspector shows "Part: coconutExtra"`, titles.includes("Part: coconutExtra"));
+      // Added parts get a live "geometry" sub-folder (radius etc.) — a base
+      // part (trunkLower, tested above) never has one.
+      const addedLabels = await folderControlLabels(page, "Part: coconutExtra");
+      check(
+        "added part's folder has NO 'visible (delete)' checkbox — added parts are TRULY removed instead (see deletePropPartNode)",
+        !addedLabels.includes("visible (unchecked = delete this base part)"),
+      );
+    }
+
+    // -------------------------------------------------------------------
+    console.log("\n=== delete an ADDED part, then undo restores it ===");
+    {
+      const before = await propsSnapshot(page);
+      // coconutExtra is still selected from the previous section.
+      await clickFolderButton(page, "Part: coconutExtra", "delete part 🗑");
+      await page.waitForTimeout(200);
+      const afterDelete = await propsSnapshot(page);
+      // componentCount only — see the "add part" section's own note on why
+      // previewMeshCount (root's shallow child count) doesn't move for an
+      // edit nested under "trunkLower".
+      check("deleting the added part shrinks the Components tree by 1", afterDelete.componentCount === before.componentCount - 1);
+      let compRows = await componentTreeRows(page);
+      check("'coconutExtra' is gone from the Components tree", !compRows.some((r) => r.text === "coconutExtra"));
+
+      // Ctrl+Z — propHistory's own undo stack (independent of character
+      // mode's `history`), scoped by main.ts's own `mode !== "props"` guard.
+      await page.keyboard.press("Control+z");
+      await page.waitForTimeout(250);
+      const afterUndo = await propsSnapshot(page);
+      check("Ctrl+Z restores the deleted added part (Components tree count)", afterUndo.componentCount === before.componentCount);
+      compRows = await componentTreeRows(page);
+      check("'coconutExtra' is back in the Components tree after undo", compRows.some((r) => r.text === "coconutExtra"));
+
+      // Clean up: redo isn't needed, but re-delete it via Ctrl+Z's redo
+      // pair so later sections' component/mesh counts stay predictable —
+      // actually simplest is a fresh delete + NO undo this time, since the
+      // earlier "add part" section's whole point was proven already.
+      await clickFolderButton(page, "Part: coconutExtra", "delete part 🗑");
+      await page.waitForTimeout(200);
+    }
+
+    // -------------------------------------------------------------------
+    console.log("\n=== delete a BASE part hides it (visible=false), undo un-hides it ===");
+    {
+      await clickComponentRowByText(page, "trunkLower");
+      await page.waitForTimeout(200);
+      const before = await propsSnapshot(page);
+      check("trunkLower re-selected", before.selectedPartPath === "0");
+
+      await clickFolderButton(page, "Part: trunkLower", "delete part 🗑");
+      await page.waitForTimeout(200);
+      // A BASE part's "delete" is hide+omit, NOT structural removal — the
+      // Components tree/mesh COUNT must stay the SAME (the object is still
+      // in the scene graph, just .visible = false); this is the key
+      // difference from the added-part delete tested above.
+      const afterHide = await propsSnapshot(page);
+      check("hiding a base part does NOT shrink the Components tree (still present, just hidden)", afterHide.componentCount === before.componentCount);
+
+      await clickCopyLibraryCode(page);
+      await page.waitForTimeout(300);
+      const clipHidden = await page.evaluate(() => navigator.clipboard.readText());
+      check("emitted parts.edits records visible: false for the hidden trunkLower", /path: "0"[\s\S]{0,200}visible: false/.test(clipHidden));
+
+      await page.keyboard.press("Control+z");
+      await page.waitForTimeout(250);
+      await clickCopyLibraryCode(page);
+      await page.waitForTimeout(300);
+      const clipRestored = await page.evaluate(() => navigator.clipboard.readText());
+      check(
+        "undo removes the visible:false edit (trunkLower's edit record either drops the field or disappears)",
+        !/path: "0"[\s\S]{0,200}visible: false/.test(clipRestored),
+      );
+    }
+
     // -------------------------------------------------------------------
     console.log("\n=== switching to another mode and back is clean ===");
     {
@@ -651,6 +991,93 @@ async function run(): Promise<void> {
       await page.waitForTimeout(200);
       const bloomSwatch = await folderColorSwatch(page, "Selected: Flower Bloom", 0);
       check("Flower Bloom's edited color survived the mode round trip", bloomSwatch === "#123456");
+    }
+
+    // -------------------------------------------------------------------
+    // "Save to props.ts" — kept as the LAST section deliberately: clicking
+    // it writes to src/game/props.ts on disk, and this suite's own Vite dev
+    // server is ALSO the one serving THIS page — Vite's file watcher sees
+    // that write and pushes a full page reload to the connected client (the
+    // same reload a real developer would see editing the file by hand while
+    // /editor/ is open; this is genuine Vite dev-server behavior, not a bug
+    // introduced by this feature, and it's shared by characters.ts's own
+    // "Save to characters.ts" button via the identical saveEditorFile/
+    // /__save-file plumbing — see saveFile.ts). The reload wipes ALL
+    // in-page session state (workingLibrary, every edit made in this run),
+    // so nothing AFTER this section can depend on prior state — hence its
+    // placement at the very end, after the mode-round-trip section (which
+    // DOES depend on prior state) has already run and asserted.
+    console.log('\n=== "Save to props.ts" writes the real file, and round-trips cleanly ===');
+    {
+      // Captures the file's ORIGINAL bytes first and restores them
+      // immediately after asserting, so this test run never leaves
+      // src/game/props.ts modified on disk (mirrors the "never mutate the
+      // registry" discipline this whole editor already follows for its
+      // in-memory working copies, just extended to the actual file this one
+      // save operation targets).
+      const propsFilePath = resolve(process.cwd(), "src/game/props.ts");
+      const originalContents = readFileSync(propsFilePath, "utf-8");
+      try {
+        // Race the flash-label read against the reload it triggers: the
+        // button's ✓ label appears essentially the instant the fetch
+        // resolves (well under 100ms locally), while Vite's own reload
+        // follows shortly after once its file watcher notices the write —
+        // reading with NO artificial delay (a single microtask-queue drain
+        // via a 0ms timeout) reliably wins that race; waiting even 150ms
+        // risks losing it, which is exactly what an earlier version of this
+        // assertion did (the flash read back `null` because the reload had
+        // already begun tearing down the DOM).
+        await page.evaluate(() => {
+          document.querySelector<HTMLButtonElement>("#savePropsFileBtn")?.click();
+        });
+        const flashed = await page.evaluate(
+          () => new Promise<string | null>((res) => {
+            requestAnimationFrame(() => res(document.querySelector("#savePropsFileBtn")?.textContent ?? null));
+          }),
+        );
+        check("save button flashes a success label", flashed?.includes("Saved") === true);
+
+        // Now let Vite's reload actually happen and settle — proves the
+        // editor boots cleanly again immediately after saving over its own
+        // running module graph, which is the realistic end-to-end scenario
+        // (not just "the file changed on disk").
+        await page.waitForLoadState("load");
+        await page.waitForSelector(".tree-row");
+        await page.waitForTimeout(300);
+
+        const written = readFileSync(propsFilePath, "utf-8");
+        check("props.ts on disk changed (a real write happened)", written !== originalContents);
+        check("written file still starts with the module's own header comment", written.startsWith("// OWNER: gameplay-engineer"));
+        check("written file's PROP_LIBRARY contains palm's parts.edits", /id: "palm",[\s\S]{0,400}parts: \{/.test(written));
+        check("written file still exports PROP_SHAPE_FIELDS untouched (only PROP_LIBRARY was replaced)", written.includes("export const PROP_SHAPE_FIELDS"));
+
+        // Compile-check: the written file must still be valid TypeScript
+        // fed back through the same module the game/tests import — dynamic
+        // ESM import of the file we just overwrote (via tsx's own loader,
+        // which this whole script already runs under) is the strongest
+        // "did this actually stay syntactically/type valid" signal short of
+        // a full tsc invocation. pathToFileURL is required on Windows —
+        // Node's ESM loader rejects a bare "C:\..." absolute path (it looks
+        // like an unsupported URL scheme, "c:"), so a raw template-literal
+        // path (which worked fine for readFileSync/writeFileSync above,
+        // both plain fs calls) crashes here specifically; a real file://
+        // URL is the portable fix on every OS.
+        const importUrl = `${pathToFileURL(propsFilePath).href}?t=${Date.now()}`;
+        const freshModule = (await import(importUrl)) as { PROP_LIBRARY: unknown[] };
+        check("the written props.ts re-imports cleanly and PROP_LIBRARY is an array", Array.isArray(freshModule.PROP_LIBRARY));
+
+        // After Vite's forced reload, the app re-booted from a truly FRESH
+        // module load — proves the reload itself didn't leave the page in a
+        // broken state (blank canvas, missing tree, etc.).
+        await page.click("#modePropsBtn");
+        await page.waitForTimeout(500);
+        const rowsAfterReload = await treeRows(page);
+        check("editor re-boots cleanly after the save-triggered reload (Props tree renders again)", rowsAfterReload.length > 0);
+      } finally {
+        writeFileSync(propsFilePath, originalContents, "utf-8");
+        const restored = readFileSync(propsFilePath, "utf-8");
+        check("props.ts restored to its original contents after the save-file test", restored === originalContents);
+      }
     }
 
     check("zero uncaught page errors across the whole run", pageErrors.length === 0);

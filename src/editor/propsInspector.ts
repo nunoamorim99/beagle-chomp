@@ -320,6 +320,14 @@ export function createPropsInspector(
       .add(def, "shape", shapeOptions)
       .name("shape")
       .onChange(() => {
+        // IDEA-033: a shape swap changes which FACTORY builds this def, so
+        // any saved part-edit layer's paths ("2/1", "trunk"…) addressed the
+        // OLD factory's tree and are meaningless against the new one —
+        // drop them rather than let them silently no-op forever (board.ts's
+        // applyPropPartEdit degrades a stale path to a no-op, which is
+        // correct for a TRANSIENT mismatch like segments changing a lobe
+        // count, but a permanent shape swap should just clear the slate).
+        delete def.parts;
         // Shape swap re-derives which param controls show (PROP_SHAPE_FIELDS
         // keyed by the NEW shape) — structural, full rebuild.
         cb.onChange();

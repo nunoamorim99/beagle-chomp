@@ -108,6 +108,16 @@ export interface BoardInspectorCallbacks {
    *  copyFileBtn flash() pattern, scoped here to a lil-gui Controller's own
    *  .name() instead of a plain <button> element). */
   onCopyCode(): Promise<void>;
+  /** IDEA-034: "💾 Save to themes.ts" — writes the COMPLETE, spliced
+   *  themes.ts straight to disk via the dev-only save endpoint (main.ts's
+   *  saveEditorFile, the SAME safe-save primitive characters.ts's own
+   *  IDEA-032 "Save to characters.ts" button already uses). Returns
+   *  `{ ok, error? }` (SaveResult's own shape — see saveFile.ts) rather than
+   *  a bare Promise<void> like onCopyCode, since a failed save has a
+   *  meaningful reason (endpoint unreachable / brace-matching couldn't
+   *  locate MAZE_THEMES) worth surfacing in the button's flash text, not
+   *  just a generic "failed". */
+  onSaveFile(): Promise<{ ok: boolean; error?: string }>;
 }
 
 /** The two boardPlacement.ts operations the "Placement" folder's controls
@@ -256,6 +266,36 @@ export function createBoardInspector(
   function flashCopyLabel(message: string): void {
     copyCtrl.name(message);
     window.setTimeout(() => copyCtrl.name(COPY_LABEL), 1600);
+  }
+
+  // IDEA-034: "💾 Save to themes.ts" — the SAFE path, mirroring
+  // characters.ts's own IDEA-032 saveFileBtn exactly (same emoji-prefixed
+  // label convention, same "flash success/failure, no separate confirm
+  // dialog" UX) but as a lil-gui button (this whole pane IS a lil-gui
+  // instance, unlike the character mode's plain-HTML code panel) rather than
+  // a DOM <button> — kept right next to "Copy theme code" so Copy stays the
+  // documented fallback (per the brief: "Keep 'Copy theme code' as
+  // fallback") if the dev endpoint isn't reachable for any reason.
+  const SAVE_LABEL = "💾 Save to themes.ts";
+  const saveCtrl = gui
+    .add({ save: () => {
+      void cb
+        .onSaveFile()
+        .then((r) => {
+          if (r.ok) flashSaveLabel("Saved ✓ themes.ts");
+          else flashSaveLabel(`Save failed — use Copy theme code`);
+        })
+        .catch(() => flashSaveLabel("Save failed — use Copy theme code"));
+    } }, "save")
+    .name(SAVE_LABEL);
+  // TEST-SUPPORT ONLY: same rationale as copy-theme-code's own testid above
+  // — the label flashes transiently, so a stable hook survives repeated
+  // clicks within a test run.
+  saveCtrl.domElement.dataset.testid = "save-theme-file";
+
+  function flashSaveLabel(message: string): void {
+    saveCtrl.name(message);
+    window.setTimeout(() => saveCtrl.name(SAVE_LABEL), 1600);
   }
 
   const folders: Partial<Record<BoardSlotId, GUI>> = {};

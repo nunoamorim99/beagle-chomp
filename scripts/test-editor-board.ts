@@ -24,12 +24,24 @@
 // the underlying DATA (placementsLength/wallDecorLength/workingThemeId) —
 // see main.ts's __boardTestHook for exactly what it exposes and why.
 //
+// v4.2 "on-board prop editing" (IDEA-034) ADDITIONS: strong empty-vs-filled
+// slot-marker visual distinctness (window.__boardTestHook.markerState),
+// first-class ROTATION (`[`/`]`) and SCALE (`-`/`=`) keyboard nudges (on top
+// of the existing arrow-key offset nudge), a Delete-key removal path (in
+// addition to the inspector's own button), and the "💾 Save to themes.ts"
+// button (writes the REAL src/game/themes.ts to disk via the same dev-only
+// endpoint characters.ts's own IDEA-032 save button uses — see the "Save to
+// themes.ts" section below for how this suite snapshots + restores the real
+// file so a test run never leaves the repo's working tree dirty).
+//
 // NOT wired into `npm run test` (see test-editor.ts's own note — that's the
 // headless PURE-LOGIC suite CLAUDE.md's rule is about; this one needs a real
 // browser). Requires Playwright's browser binaries to already be installed
 // (`npx playwright install chromium`).
 import { createServer, type ViteDevServer } from "vite";
 import { chromium, type Browser, type Page } from "playwright";
+import { readFileSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 let failures = 0;
 function check(label: string, cond: boolean): void {
@@ -238,6 +250,16 @@ async function clickCopyThemeCode(page: Page): Promise<void> {
   });
 }
 
+/** IDEA-034: matched by boardInspector.ts's `data-testid="save-theme-file"`
+ *  — same "stable testid survives the transient flash label" rationale as
+ *  clickCopyThemeCode above. */
+async function clickSaveThemeFile(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const button = document.querySelector('#boardGuiHost [data-testid="save-theme-file"] button');
+    button?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  });
+}
+
 /** Reads main.ts's `window.__boardTestHook` — the internal-state reads this
  *  suite needs beyond what a person can see in the DOM (wall INSTANCE
  *  count, hedge-decor/wall-decor MESH counts, prop GROUP CHILD count, the
@@ -275,6 +297,22 @@ async function boardSnapshot(page: Page): Promise<BoardSnapshot> {
       placementSelection: h.placementSelection(),
     };
   });
+}
+
+/** IDEA-034: reads back one slot marker's rendered visual state (disc
+ *  opacity/color/scale) via window.__boardTestHook.markerState — the
+ *  "empty vs filled must read differently at a glance" check's data source
+ *  (see boardPlacement.ts's getMarkerState doc comment for why this is a
+ *  test hook rather than a DOM query). */
+async function markerState(page: Page, tile: [number, number], submode: "apron" | "wall"): Promise<{ opacity: number; color: number; scale: number } | null> {
+  return page.evaluate(
+    ({ tile, submode }) => {
+      const h = window.__boardTestHook;
+      if (!h) throw new Error("__boardTestHook missing");
+      return h.markerState(tile, submode);
+    },
+    { tile, submode },
+  );
 }
 
 /** Clicks the 3D canvas at the projected screen position of `tile` in
@@ -322,7 +360,25 @@ async function run(): Promise<void> {
   let server: ViteDevServer | undefined;
   let browser: Browser | undefined;
   try {
-    server = await createServer({ server: { port: 0, strictPort: false }, logLevel: "error" });
+    // IDEA-034: `server.watch.ignored` tells Vite's underlying chokidar
+    // watcher to ignore src/game/themes.ts's own on-disk changes for THIS
+    // dedicated test server instance only (never the real `npm run dev`/
+    // `npm run editor` server a person actually uses) — the "💾 Save to
+    // themes.ts" section below deliberately WRITES then RESTORES the real
+    // file on disk to verify the save endpoint round-trips correctly; without
+    // this, Vite's own file watcher reacts to that write with an HMR full
+    // page reload (themes.ts has no HMR boundary and is deeply imported), an
+    // page reload that destroys the running page's JS execution context
+    // mid-test and crashes every check still queued behind it. Ignoring the
+    // one file this suite is KNOWN to intentionally rewrite is far simpler
+    // and more targeted than trying to survive/recover from a reload
+    // mid-suite (which would also have to re-navigate, re-wait for
+    // #boardGuiHost, re-select board mode, etc. — a page reload has no
+    // "resume where you left off" story here).
+    server = await createServer({
+      server: { port: 0, strictPort: false, watch: { ignored: ["**/src/game/themes.ts"] } },
+      logLevel: "error",
+    });
     await server.listen();
     const address = server.httpServer?.address();
     const port = typeof address === "object" && address ? address.port : null;
@@ -758,6 +814,336 @@ async function run(): Promise<void> {
       // Restore garden for the rest of the suite.
       await selectBaseTheme(page, "The Garden");
       await page.waitForTimeout(300);
+      // The previous section left sub-mode on "wall" — restore "apron" (this
+      // suite's default) so the next section's own tile picks land where it
+      // expects without an extra tree-row click of its own.
+      await clickTreeRow(page, "Props (apron)");
+      await page.waitForTimeout(150);
+    }
+
+    // -------------------------------------------------------------------
+    console.log("\n=== IDEA-034: empty vs filled slot markers read differently (strong highlighting) ===");
+    {
+      // (-1, 6) is a genuinely empty garden apron slot (not one of garden's
+      // 29 authored tiles — cross-checked against src/game/themes.ts's
+      // garden.placements list, which has no [-1,6] entry) — an EMPTY marker
+      // to contrast against a FILLED one below.
+      const emptyTile: [number, number] = [-1, 6];
+      const filledTile: [number, number] = [19, 4]; // garden's first authored shrub (see earlier section)
+
+      const emptyState = await markerState(page, emptyTile, "apron");
+      const filledState = await markerState(page, filledTile, "apron");
+      check("empty marker state is readable", emptyState !== null);
+      check("filled marker state is readable", filledState !== null);
+
+      if (emptyState && filledState) {
+        check("empty and filled markers use DIFFERENT colors", emptyState.color !== filledState.color);
+        check("filled marker is the warm-gold fill color (0xf2d43a)", filledState.color === 0xf2d43a);
+        check("empty marker is NOT the gold fill color", emptyState.color !== 0xf2d43a);
+        // IDEA-034: empty markers are SCALED UP relative to filled ones (see
+        // boardPlacement.ts's EMPTY_MARKER_SCALE/FILLED_MARKER_SCALE) — "see
+        // the places highlighted" should read as a visibly BIGGER dot, not
+        // just a different tint.
+        check("empty marker reads LARGER than a filled marker (EMPTY_MARKER_SCALE > FILLED_MARKER_SCALE)", emptyState.scale > filledState.scale);
+      }
+
+      // The empty marker's opacity must be seen to CHANGE over time (the
+      // pulse) — sample it twice, letting main.ts's real per-frame loop
+      // (stage.ts's renderer.setAnimationLoop, driving
+      // boardPlacement.updatePulse every tick) run in between. A fixed
+      // wait is used rather than reading two frames back-to-back, since
+      // Playwright's own event loop granularity is coarser than a single
+      // rAF tick anyway.
+      const sample1 = await markerState(page, emptyTile, "apron");
+      await page.waitForTimeout(700); // > half a PULSE_SPEED period (2.4 rad/s), long enough to move measurably along the sine wave
+      const sample2 = await markerState(page, emptyTile, "apron");
+      check(
+        "an empty marker's opacity visibly PULSES over time (not a static value)",
+        sample1 !== null && sample2 !== null && Math.abs(sample1.opacity - sample2.opacity) > 0.01,
+      );
+
+      // Selecting the empty tile: it becomes the SELECTED color (pink),
+      // distinct from both empty and filled — a third, unambiguous state.
+      await clickTile(page, emptyTile, "apron");
+      await page.waitForTimeout(300);
+      const selectedState = await markerState(page, emptyTile, "apron");
+      check("a SELECTED marker (just planted) is the shared selection-pink (0xff37a6)", selectedState?.color === 0xff37a6);
+      check("a selected marker's opacity is fully solid (1.0 — no pulse while selected)", selectedState?.opacity === 1);
+
+      // Clean up: remove the just-created placement so it doesn't leak into
+      // later sections' placementsLength assumptions (garden's authored 29).
+      await clickPlacementButton(page, "remove this placement 🗑");
+      await page.waitForTimeout(300);
+      check("cleanup: placementsLength back to garden's 29 after removing the test placement", (await boardSnapshot(page)).placementsLength === 29);
+    }
+
+    // -------------------------------------------------------------------
+    console.log("\n=== IDEA-034: rotation is first-class — [ / ] keys rotate the selected placement (both sub-modes) ===");
+    {
+      // Apron: garden's authored shrub at (19, 4).
+      const apronTile: [number, number] = [19, 4];
+      await clickTile(page, apronTile, "apron");
+      await page.waitForTimeout(300);
+      const beforeRot = await readFolderSlider(page, "Placement — prop @ (19, 4)", "rotation");
+      check("apron rotation slider reads a number before rotating", typeof beforeRot === "number");
+
+      await page.keyboard.press("]");
+      await page.waitForTimeout(200);
+      const afterBracket = await readFolderSlider(page, "Placement — prop @ (19, 4)", "rotation");
+      check(
+        "] rotates the selected apron placement by the default BOARD_ROTATE_STEP (0.12 rad)",
+        afterBracket !== null && beforeRot !== null && Math.abs(afterBracket - (beforeRot + 0.12)) < 1e-9,
+      );
+
+      await page.keyboard.press("[");
+      await page.waitForTimeout(200);
+      const restoredRot = await readFolderSlider(page, "Placement — prop @ (19, 4)", "rotation");
+      check("[ rotates it back down (undoing the ] nudge by hand — no undo/redo in board mode)", restoredRot !== null && beforeRot !== null && Math.abs(restoredRot - beforeRot) < 1e-9);
+
+      // Shift = coarse quarter-turn step. nudgeSelectedRotation WRAPS into
+      // [0, 2π) (matches the inspector slider's own range — see
+      // boardPlacement.ts), so the expected value must wrap too: garden's
+      // shrub is authored at rotationY ≈ 5.69, and 5.69 + π/4 ≈ 6.48 > 2π,
+      // so the result lands at ≈ 0.19, NOT the un-wrapped 6.48. Comparing
+      // modulo 2π keeps this correct regardless of the authored start angle.
+      await page.keyboard.press("Shift+]");
+      await page.waitForTimeout(200);
+      const coarse = await readFolderSlider(page, "Placement — prop @ (19, 4)", "rotation");
+      const TWO_PI = Math.PI * 2;
+      const expectedCoarse = beforeRot !== null ? (beforeRot + Math.PI / 4) % TWO_PI : NaN;
+      check(
+        "Shift+] uses the COARSE rotate step (a quarter turn, Math.PI/4, wrapped into [0, 2π))",
+        coarse !== null && beforeRot !== null && Math.abs(coarse - expectedCoarse) < 1e-6,
+      );
+      await page.keyboard.press("Shift+[");
+      await page.waitForTimeout(200);
+
+      // Wall sub-mode: place a fresh wall component and rotate IT too —
+      // proves nudgeSelectedRotation works for BOTH sub-modes (unlike the
+      // offset nudge, which is apron-only).
+      await clickTreeRow(page, "Wall components");
+      await page.waitForTimeout(200);
+      const wallTile: [number, number] = [9, 6];
+      await clickTile(page, wallTile, "wall");
+      await page.waitForTimeout(300);
+      const beforeWallRot = await readFolderSlider(page, "Placement — wall component @ (9, 6)", "rotation");
+      check("wall rotation slider reads a number before rotating", typeof beforeWallRot === "number");
+      await page.keyboard.press("]");
+      await page.waitForTimeout(200);
+      const afterWallRot = await readFolderSlider(page, "Placement — wall component @ (9, 6)", "rotation");
+      check(
+        "] also rotates a SELECTED WALL component (rotation is first-class in both sub-modes)",
+        afterWallRot !== null && beforeWallRot !== null && Math.abs(afterWallRot - (beforeWallRot + 0.12)) < 1e-9,
+      );
+
+      // Clean up the wall placement.
+      await clickPlacementButton(page, "remove this placement 🗑");
+      await page.waitForTimeout(300);
+      check("cleanup: wallDecorLength back to 0 after removing the test wall placement", (await boardSnapshot(page)).wallDecorLength === 0);
+      await clickTreeRow(page, "Props (apron)");
+      await page.waitForTimeout(150);
+    }
+
+    // -------------------------------------------------------------------
+    console.log("\n=== IDEA-034: - / = keys scale the selected placement ===");
+    {
+      const apronTile: [number, number] = [19, 4];
+      await clickTile(page, apronTile, "apron");
+      await page.waitForTimeout(300);
+      const beforeScale = await readFolderSlider(page, "Placement — prop @ (19, 4)", "scale");
+      check("scale slider reads a number before scaling", typeof beforeScale === "number");
+
+      await page.keyboard.press("=");
+      await page.waitForTimeout(200);
+      const afterEquals = await readFolderSlider(page, "Placement — prop @ (19, 4)", "scale");
+      check(
+        "= grows the selected placement's scale by the default BOARD_SCALE_STEP (0.04)",
+        afterEquals !== null && beforeScale !== null && Math.abs(afterEquals - (beforeScale + 0.04)) < 1e-9,
+      );
+
+      await page.keyboard.press("-");
+      await page.waitForTimeout(200);
+      const restoredScale = await readFolderSlider(page, "Placement — prop @ (19, 4)", "scale");
+      check("- shrinks it back down to the original value", restoredScale !== null && beforeScale !== null && Math.abs(restoredScale - beforeScale) < 1e-9);
+    }
+
+    // -------------------------------------------------------------------
+    console.log("\n=== IDEA-034: Delete key removes the selected placement (both sub-modes) ===");
+    {
+      // Apron: create a throwaway placement at an empty tile, select it
+      // (already selected right after creation), then Delete it via the
+      // KEYBOARD rather than the inspector's own button — proving the brief's
+      // "a selected placement has an obvious delete (button + Delete key)".
+      const apronEmptyTile: [number, number] = [-1, 6];
+      const before = await boardSnapshot(page);
+      await clickTile(page, apronEmptyTile, "apron");
+      await page.waitForTimeout(300);
+      const afterCreate = await boardSnapshot(page);
+      check("a throwaway apron placement was created for this check", afterCreate.placementsLength === before.placementsLength + 1);
+
+      await page.keyboard.press("Delete");
+      await page.waitForTimeout(300);
+      const afterDelete = await boardSnapshot(page);
+      check("Delete key removes the selected apron placement", afterDelete.placementsLength === before.placementsLength);
+      // removeSelected() deliberately leaves the SAME TILE selected as an
+      // "empty selection" (existing: null) rather than clearing the
+      // selection entirely — see boardPlacement.ts's PlacementSelection doc
+      // comment ("so the inspector can show 'empty — click a prop below to
+      // plant one'") — so placementSelection() still reports the tile, just
+      // with propId null, and the Placement folder stays open showing only
+      // the re-plant dropdown (1 control) rather than tearing down.
+      check(
+        "Delete key leaves the tile selected but now EMPTY (propId null) — matches the button's own removeSelected() behavior",
+        afterDelete.placementSelection !== null && afterDelete.placementSelection.propId === null && afterDelete.placementSelection.tile[0] === apronEmptyTile[0] && afterDelete.placementSelection.tile[1] === apronEmptyTile[1],
+      );
+      const titlesAfterDelete = await boardFolderTitles(page);
+      check(
+        `the Placement folder for (${apronEmptyTile[0]}, ${apronEmptyTile[1]}) is still open (re-plant dropdown), now showing "prop (click to plant)"`,
+        titlesAfterDelete.includes(`Placement — prop @ (${apronEmptyTile[0]}, ${apronEmptyTile[1]})`),
+      );
+      check(
+        "the re-opened folder shows only the 1 re-plant control (no offset/rotation/scale/remove for an empty slot)",
+        (await folderControllerCount(page, `Placement — prop @ (${apronEmptyTile[0]}, ${apronEmptyTile[1]})`)) === 1,
+      );
+
+      // Deselect, THEN press Delete with genuinely nothing selected — must be
+      // a harmless no-op (not an error, not a page crash) — mirrors
+      // removeSelected()'s own documented guard for "nothing selected at
+      // all". Escape is character-mode-only (see main.ts's own keydown
+      // guard), so deselect here by switching sub-mode and back instead —
+      // setSubMode's own contract already documents "clears selection".
+      await clickTreeRow(page, "Wall components");
+      await page.waitForTimeout(150);
+      await clickTreeRow(page, "Props (apron)");
+      await page.waitForTimeout(150);
+      check("switching sub-mode away and back cleared the selection", (await boardSnapshot(page)).placementSelection === null);
+      await page.keyboard.press("Delete");
+      await page.waitForTimeout(150);
+      check("Delete with genuinely nothing selected does not change placementsLength", (await boardSnapshot(page)).placementsLength === before.placementsLength);
+
+      // Wall sub-mode: same proof, for a wall component.
+      await clickTreeRow(page, "Wall components");
+      await page.waitForTimeout(150);
+      const wallEmptyTile: [number, number] = [9, 6];
+      const beforeWall = await boardSnapshot(page);
+      await clickTile(page, wallEmptyTile, "wall");
+      await page.waitForTimeout(300);
+      check("a throwaway wall placement was created for this check", (await boardSnapshot(page)).wallDecorLength === beforeWall.wallDecorLength + 1);
+
+      await page.keyboard.press("Delete");
+      await page.waitForTimeout(300);
+      const afterWallDelete = await boardSnapshot(page);
+      check("Delete key removes the selected WALL placement too (delete is as easy for both sub-modes)", afterWallDelete.wallDecorLength === beforeWall.wallDecorLength);
+      check(
+        "Delete key leaves the wall tile selected but now empty too (same behavior as apron)",
+        afterWallDelete.placementSelection !== null && afterWallDelete.placementSelection.propId === null,
+      );
+
+      await clickTreeRow(page, "Props (apron)");
+      await page.waitForTimeout(150);
+    }
+
+    // -------------------------------------------------------------------
+    console.log('\n=== IDEA-034: Placement folder never grows a color control (color override stays OUT of scope) ===');
+    {
+      // Re-select garden's authored shrub at (19, 4) — a FILLED apron slot —
+      // and confirm the Placement folder's control count is EXACTLY the 6
+      // documented controls (prop/offset X/offset Z/rotation/scale/remove),
+      // never a 7th "color" swatch. This is the same folderControllerCount
+      // assertion the very first "auto-creates + selects" section already
+      // makes (6 for apron, 4 for wall) — restated explicitly here, right
+      // next to the rotation/scale/delete additions, as a direct guard
+      // against a future regression accidentally bolting a per-placement
+      // color control onto this task's own additions (Nuno: "if I want a
+      // different-color umbrella I create a prop for that" — color lives in
+      // the prop LIBRARY, never the placement).
+      await clickTile(page, [19, 4], "apron");
+      await page.waitForTimeout(300);
+      check(
+        "apron Placement folder still has exactly 6 controls — no color swatch was added",
+        (await folderControllerCount(page, "Placement — prop @ (19, 4)")) === 6,
+      );
+      const apronLabels = await page.evaluate(() => {
+        const guis = [...document.querySelectorAll("#boardGuiHost .lil-gui")];
+        const folder = guis.find((f) => (f.querySelector(":scope > .lil-title")?.textContent ?? "").startsWith("Placement"));
+        const controllers = folder ? [...folder.querySelectorAll(":scope > .lil-children > .lil-controller")] : [];
+        return controllers.map((c) => c.querySelector(".lil-name")?.textContent ?? "");
+      });
+      check("no control in the apron Placement folder is named/labelled 'color'", !apronLabels.some((l) => /color/i.test(l)));
+      const apronSwatchCount = await page.evaluate(() => {
+        const guis = [...document.querySelectorAll("#boardGuiHost .lil-gui")];
+        const folder = guis.find((f) => (f.querySelector(":scope > .lil-title")?.textContent ?? "").startsWith("Placement"));
+        return folder ? folder.querySelectorAll('input[type="color"]').length : -1;
+      });
+      check("no <input type=color> swatch exists inside the Placement folder at all", apronSwatchCount === 0);
+    }
+
+    // -------------------------------------------------------------------
+    console.log('\n=== IDEA-034: "💾 Save to themes.ts" writes the REAL file, then this suite restores it ===');
+    {
+      // Snapshot the REAL src/game/themes.ts bytes before touching anything
+      // — this suite must NEVER leave the repo's working tree dirty, so the
+      // original content is restored (via a plain fs.writeFileSync, not
+      // another editor round trip) in a finally-equivalent block below no
+      // matter which assertion fails.
+      const themesPath = resolve("src/game/themes.ts");
+      const originalContents = readFileSync(themesPath, "utf-8");
+      try {
+        // A small, identifying, harmless edit: floor color. Garden's own
+        // registry floor is 0x6b4a2f (see src/game/themes.ts) — 0xabcdef is
+        // unmistakably NOT that, so its presence in the saved file is
+        // unambiguous proof the save reached disk with this session's edit.
+        await setFolderColorSwatch(page, "Floor", "#abcdef");
+        await page.waitForTimeout(200);
+
+        await clickSaveThemeFile(page);
+        await page.waitForTimeout(400); // the save is a real network round trip to the dev server's own middleware
+
+        const flashed = await page.evaluate(() => {
+          const names = [...document.querySelectorAll("#boardGuiHost .lil-function .lil-name")];
+          return names.find((n) => n.textContent?.includes("Saved"))?.textContent ?? null;
+        });
+        check("save button flashes a success label", flashed !== null);
+
+        const savedContents = readFileSync(themesPath, "utf-8");
+        check("the REAL themes.ts file changed on disk", savedContents !== originalContents);
+        check("saved file contains the edited garden floor color", savedContents.includes("floor: 0xabcdef,"));
+        check("saved file still contains garden's own id", /id: "garden",/.test(savedContents));
+        check("saved file still contains every OTHER theme's id (Arcade Night/Deep Forest/Sunny Beach/City Park/Night City)", ["classic", "forest", "beach", "park", "city"].every((id) => savedContents.includes(`id: ${JSON.stringify(id)},`)));
+        check("saved file preserves Night City's own hand-authored prose comment", savedContents.includes("Identity note (two tuning passes)"));
+        check("saved file's garden entry keeps its own 29 placements (round-trips the CURRENT working theme, not a stale one)", (savedContents.match(/propId: "(shrub|oak)"/g) ?? []).length >= 29);
+
+        // Brace/bracket balance as a structural sanity check that the splice
+        // didn't truncate or duplicate anything.
+        const openBraces = (savedContents.match(/\{/g) ?? []).length;
+        const closeBraces = (savedContents.match(/\}/g) ?? []).length;
+        check(`saved file's braces balance (${openBraces} open, ${closeBraces} close)`, openBraces === closeBraces);
+      } finally {
+        // ALWAYS restore the exact original bytes, whether every check above
+        // passed or one threw — this suite must never be the reason
+        // themes.ts shows up in `git status` after a run.
+        writeFileSync(themesPath, originalContents, "utf-8");
+        const restored = readFileSync(themesPath, "utf-8");
+        check("themes.ts was restored to its exact original bytes after the save test", restored === originalContents);
+      }
+
+      // Writing themes.ts (the save) AND restoring it (the finally) each
+      // trigger a Vite HMR reload of this editor page — so by here the page
+      // has navigated and lost its in-memory board state (working theme +
+      // mode). Recover deterministically: re-navigate, wait for the editor
+      // to boot, re-enter board mode, and load garden fresh. This makes the
+      // save test self-contained — later sections start from a known-good
+      // board-mode page rather than inheriting a mid-reload one (the source
+      // of the earlier floor-swatch / picking-gate flakiness).
+      await page.goto(base);
+      await page.waitForSelector(".tree-row");
+      await page.waitForTimeout(300);
+      await page.click("#modeBoardBtn");
+      await page.waitForTimeout(500);
+      await selectBaseTheme(page, "The Garden");
+      await page.waitForTimeout(300);
+      const floorSwatch = await folderColorSwatch(page, "Floor", 0);
+      check("re-loading garden after the save test restores its real floor swatch", floorSwatch === "#6b4a2f");
     }
 
     // -------------------------------------------------------------------

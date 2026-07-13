@@ -22,6 +22,15 @@
       <aside id="treePane">
         <h2 class="pane-title" id="treePaneTitle">Parts</h2>
         <div id="partTree"></div>
+        <!-- IDEA-033: Props mode's SECOND tree — the selected prop's own
+             component list (base parts + any added primitives), stacked
+             below the prop-library list above (#partTree doubles as that
+             library list while in Props mode — see propsTree.ts). Hidden in
+             every other mode (main.ts toggles `hidden` alongside the other
+             mode-scoped panes) so Character/Board mode's single #partTree
+             keeps the whole pane exactly as before. -->
+        <h2 class="pane-title" id="propsPartTreeTitle" hidden>Components</h2>
+        <div id="propsPartTree" hidden></div>
       </aside>
       <main id="viewportPane">
         <canvas id="viewport"></canvas>
@@ -41,8 +50,9 @@
           <button class="code-tab active" data-tab="generated">Generated code</button>
           <button class="code-tab" data-tab="source">Real source</button>
           <span id="codeTitle"></span>
-          <button id="copyBtn" class="copy-btn" title="Copy just the edit lines (paste them inside the builder yourself)">Copy edits</button>
-          <button id="copyFileBtn" class="copy-btn" title="Copy the COMPLETE characters.ts with your edits already applied — paste it over src/render/characters.ts">Copy full file</button>
+          <button id="saveFileBtn" class="save-btn" title="Write your edits straight into src/render/characters.ts (dev server only). The safe way — no copy-paste.">💾 Save to characters.ts</button>
+          <button id="copyBtn" class="copy-btn" title="Fallback: copy just the edit lines, then paste them INSIDE makeBeagle, just before 'return g;'">Copy edits</button>
+          <button id="copyFileBtn" class="copy-btn" title="Fallback: copy the COMPLETE characters.ts. Select ALL in the file (Ctrl+A) and paste to REPLACE it — never append.">Copy full file ⧉</button>
         </div>
         <div id="codeBody">
           <pre id="generatedView" class="code-view active"><code></code></pre>

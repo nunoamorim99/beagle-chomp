@@ -26,7 +26,15 @@
 import * as THREE from "three";
 import { Grid, COLS, ROWS, TILE, worldX, worldZ } from "../game/grid";
 import { getEquippedMazeTheme, type MazeTheme, type ThemePalette, type PropPlacement, type WallDecorPlacement } from "../game/themes";
-import { getPropDef, type PropDef, type PropBaseShape, type PropParams } from "../game/props";
+import {
+  getPropDef,
+  type PropDef,
+  type PropBaseShape,
+  type PropParams,
+  type PropPartEdit,
+  type AddedPropPart,
+  type PropPrimKind,
+} from "../game/props";
 
 export const WALL_H = 1;
 
@@ -646,6 +654,7 @@ function makeShrub(params: PropParams, h: number): THREE.Group {
   for (let i = 0; i < segments; i++) {
     const [x, y, z, r] = lobes[i];
     const sphere = new THREE.Mesh(new THREE.SphereGeometry(r * width, 10, 8), mat);
+    sphere.name = `lobe${i}`; // IDEA-033: addressable part name — see applyPropParts
     sphere.position.set(x * width, y, z * width);
     sphere.scale.y = 0.72; // squashed, low-and-rounded read
     sphere.castShadow = true;
@@ -673,6 +682,7 @@ function makeTree(params: PropParams, h: number): THREE.Group {
     new THREE.CylinderGeometry(0.045 * width, 0.06 * width, 0.42 * height, 8),
     makeTrunkMat(params.trunkColor),
   );
+  trunk.name = "trunk"; // IDEA-033: addressable part name — see applyPropParts
   trunk.position.y = 0.21 * height;
   trunk.castShadow = true;
   g.add(trunk);
@@ -686,6 +696,7 @@ function makeTree(params: PropParams, h: number): THREE.Group {
   for (let i = 0; i < segments; i++) {
     const r = (0.28 - i * 0.07) * width;
     const crown = new THREE.Mesh(new THREE.SphereGeometry(Math.max(r, 0.08), 12, 10), foliageMat);
+    crown.name = `crown${i}`; // IDEA-033
     crown.position.y = crownBaseY + i * crownStep;
     crown.castShadow = true;
     g.add(crown);
@@ -715,6 +726,7 @@ function makePine(params: PropParams, h: number): THREE.Group {
     new THREE.CylinderGeometry(0.05 * width, 0.07 * width, 0.5 * height, 8),
     makeTrunkMat(params.trunkColor),
   );
+  trunk.name = "trunk"; // IDEA-033: addressable part name — see applyPropParts
   trunk.position.y = 0.25 * height;
   trunk.castShadow = true;
   g.add(trunk);
@@ -730,6 +742,7 @@ function makePine(params: PropParams, h: number): THREE.Group {
     const h2 = (0.5 - i * 0.08) * height;
     const y = (0.52 + i * tierStep) * height;
     const cone = new THREE.Mesh(new THREE.ConeGeometry(Math.max(r, 0.08), Math.max(h2, 0.14), 10), foliageMat);
+    cone.name = `tier${i}`; // IDEA-033
     cone.position.y = y;
     cone.castShadow = true;
     g.add(cone);
@@ -762,6 +775,7 @@ function makePalm(params: PropParams, h: number): THREE.Group {
     new THREE.CylinderGeometry(0.05 * width, 0.07 * width, 0.4 * height, 8),
     trunkMat,
   );
+  lower.name = "trunkLower"; // IDEA-033: addressable part name — see applyPropParts
   lower.position.set(0, 0.2 * height, 0);
   lower.rotation.z = 0.08 * tiltRatio;
   lower.castShadow = true;
@@ -771,6 +785,7 @@ function makePalm(params: PropParams, h: number): THREE.Group {
     new THREE.CylinderGeometry(0.035 * width, 0.05 * width, 0.42 * height, 8),
     trunkMat,
   );
+  upper.name = "trunkUpper"; // IDEA-033
   upper.position.set(0.09 * width, 0.58 * height, 0);
   upper.rotation.z = tilt;
   upper.castShadow = true;
@@ -782,6 +797,7 @@ function makePalm(params: PropParams, h: number): THREE.Group {
   for (let i = 0; i < frondCount; i++) {
     const angle = (i / frondCount) * Math.PI * 2 + h * 1.7;
     const frond = new THREE.Mesh(new THREE.SphereGeometry(0.3 * width, 8, 6), frondMat);
+    frond.name = `frond${i}`; // IDEA-033
     frond.position.copy(crownOrigin);
     frond.position.x += Math.cos(angle) * 0.16 * width;
     frond.position.z += Math.sin(angle) * 0.16 * width;
@@ -798,6 +814,7 @@ function makePalm(params: PropParams, h: number): THREE.Group {
   const coconutMat = new THREE.MeshStandardMaterial({ color: 0x4a3524, roughness: 0.7 });
   for (let i = 0; i < 2; i++) {
     const coconut = new THREE.Mesh(new THREE.SphereGeometry(0.045 * width, 6, 6), coconutMat);
+    coconut.name = `coconut${i}`; // IDEA-033
     coconut.position.set(crownOrigin.x + (i === 0 ? -0.05 : 0.06) * width, crownOrigin.y - 0.08 * height, i === 0 ? 0.04 * width : -0.05 * width);
     coconut.castShadow = true;
     g.add(coconut);
@@ -862,6 +879,7 @@ function makeBuilding(params: PropParams, h: number): THREE.Group {
 
   const facadeMat = new THREE.MeshStandardMaterial({ color: pickColor(colors, h), roughness: 0.75 });
   const tower = new THREE.Mesh(new THREE.BoxGeometry(footprint, baseHeight, footprint), facadeMat);
+  tower.name = "base"; // IDEA-033: addressable part name — see applyPropParts
   tower.position.y = baseHeight / 2;
   tower.castShadow = true;
   g.add(tower);
@@ -873,6 +891,7 @@ function makeBuilding(params: PropParams, h: number): THREE.Group {
     const roofMat = new THREE.MeshStandardMaterial({ color: pickColor(colors, 1 - h), roughness: 0.75 });
     const roofSize = footprint * 0.48;
     const roof = new THREE.Mesh(new THREE.BoxGeometry(roofSize, baseHeight * 0.3, roofSize), roofMat);
+    roof.name = "rooftop"; // IDEA-033
     roof.position.set(footprint * 0.12, baseHeight + (baseHeight * 0.3) / 2, -footprint * 0.08);
     roof.castShadow = true;
     g.add(roof);
@@ -895,15 +914,24 @@ function makeBuilding(params: PropParams, h: number): THREE.Group {
     const winDepth = 0.012;
     const half = footprint / 2;
 
+    // IDEA-033: sequential "window0".."windowN" across BOTH facades, in the
+    // same row-major (rowFrac outer, colFrac inner) order this loop already
+    // builds them — the +X facade's mesh for a given row/col comes first,
+    // then the +Z facade's, so an edit targeting "window3" always resolves
+    // to the same physical pane across rebuilds (the loop order never
+    // changes for a fixed windowRows/windowCols).
+    let windowIndex = 0;
     windowFractions(windowRows).forEach((rowFrac) => {
       windowFractions(windowCols).forEach((colFrac) => {
         const y = rowFrac * baseHeight;
 
         const winX = new THREE.Mesh(new THREE.BoxGeometry(winDepth, winH, winW), windowMat);
+        winX.name = `window${windowIndex++}`;
         winX.position.set(half + winDepth / 2, y, (colFrac - 0.5) * footprint);
         g.add(winX);
 
         const winZ = new THREE.Mesh(new THREE.BoxGeometry(winW, winH, winDepth), windowMat);
+        winZ.name = `window${windowIndex++}`;
         winZ.position.set((colFrac - 0.5) * footprint, y, half + winDepth / 2);
         g.add(winZ);
       });
@@ -933,11 +961,13 @@ function makeStreetlight(params: PropParams, h: number): THREE.Group {
 
   const poleMat = new THREE.MeshStandardMaterial({ color: poleColor, roughness: 0.55, metalness: 0.3 });
   const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.03, 0.85 * height, 8), poleMat);
+  pole.name = "pole"; // IDEA-033: addressable part name — see applyPropParts
   pole.position.y = 0.425 * height;
   pole.castShadow = true;
   g.add(pole);
 
   const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.22, 6), poleMat);
+  arm.name = "arm"; // IDEA-033
   arm.position.set(0.09, 0.82 * height, 0);
   arm.rotation.z = Math.PI / 2;
   arm.castShadow = true;
@@ -951,6 +981,7 @@ function makeStreetlight(params: PropParams, h: number): THREE.Group {
     roughness: 0.3,
   });
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.075, 10, 8), headMat);
+  head.name = "head"; // IDEA-033
   head.position.set(0.19, 0.8 * height, 0);
   head.castShadow = true;
   g.add(head);
@@ -982,6 +1013,7 @@ function makeUmbrella(params: PropParams, h: number): THREE.Group {
 
   const poleMat = new THREE.MeshStandardMaterial({ color: poleColor, roughness: 0.5, metalness: 0.15 });
   const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.66 * height, 8), poleMat);
+  pole.name = "pole"; // IDEA-033: addressable part name — see applyPropParts
   pole.position.y = 0.33 * height;
   pole.castShadow = true;
   g.add(pole);
@@ -989,6 +1021,7 @@ function makeUmbrella(params: PropParams, h: number): THREE.Group {
   const canopyColor = pickColor(colors, h);
   const canopyMat = new THREE.MeshStandardMaterial({ color: canopyColor, roughness: 0.5 });
   const canopy = new THREE.Mesh(new THREE.ConeGeometry(0.34 * width, 0.24, 10), canopyMat);
+  canopy.name = "canopy"; // IDEA-033
   canopy.position.y = 0.68 * height;
   canopy.castShadow = true;
   g.add(canopy);
@@ -1000,6 +1033,7 @@ function makeUmbrella(params: PropParams, h: number): THREE.Group {
     const tipColor = pickColor(colors, (h + 0.5) % 1);
     const tipMat = new THREE.MeshStandardMaterial({ color: tipColor, roughness: 0.5 });
     const tip = new THREE.Mesh(new THREE.SphereGeometry(0.045 * width, 8, 6), tipMat);
+    tip.name = "tip"; // IDEA-033
     tip.position.y = 0.81 * height;
     tip.castShadow = true;
     g.add(tip);
@@ -1027,6 +1061,7 @@ function makeBloom(params: PropParams, h: number): THREE.Group {
 
   const stemMat = new THREE.MeshStandardMaterial({ color: 0x4a6a2e, roughness: 0.6 });
   const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.012 * width, 0.015 * width, 0.1 * width, 6), stemMat);
+  stem.name = "stem"; // IDEA-033: addressable part name — see applyPropParts
   stem.position.y = 0.05 * width;
   stem.castShadow = true;
   g.add(stem);
@@ -1038,6 +1073,7 @@ function makeBloom(params: PropParams, h: number): THREE.Group {
     emissiveIntensity: glowIntensity,
   });
   const bloom = new THREE.Mesh(new THREE.SphereGeometry(0.075 * width, 8, 8), bloomMat);
+  bloom.name = "bloom"; // IDEA-033
   bloom.position.y = 0.13 * width;
   // A tiny per-instance jitter on the bloom head so a row of blooms doesn't
   // look perfectly identical stamped side by side.
@@ -1073,6 +1109,7 @@ function makeSign(params: PropParams, h: number): THREE.Group {
 
   const postMat = new THREE.MeshStandardMaterial({ color: postColor, roughness: 0.55, metalness: 0.3 });
   const post = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.024, height, 8), postMat);
+  post.name = "post"; // IDEA-033: addressable part name — see applyPropParts
   post.position.y = height / 2;
   post.castShadow = true;
   g.add(post);
@@ -1089,11 +1126,13 @@ function makeSign(params: PropParams, h: number): THREE.Group {
     // the post, with a glowing face plate slightly proud of it.
     const boardMat = new THREE.MeshStandardMaterial({ color: boardColor, roughness: 0.5, metalness: 0.2 });
     const board = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.13, 0.02), boardMat);
+    board.name = "board"; // IDEA-033
     board.position.set(0, height * 0.92, 0.01);
     board.castShadow = true;
     g.add(board);
 
     const face = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.08, 0.008), glowMat);
+    face.name = "face"; // IDEA-033
     face.position.set(0, height * 0.92, 0.021);
     face.castShadow = true;
     g.add(face);
@@ -1101,12 +1140,126 @@ function makeSign(params: PropParams, h: number): THREE.Group {
     // Bare lamp-head read: a small warm glowing sphere atop the post,
     // deterministically nudged by `h` so a row of wall lamps varies slightly.
     const head = new THREE.Mesh(new THREE.SphereGeometry(0.055 + h * 0.01, 8, 8), glowMat);
+    head.name = "head"; // IDEA-033
     head.position.y = height + 0.03;
     head.castShadow = true;
     g.add(head);
   }
 
   return g;
+}
+
+// ---------------------------------------------------------------------------
+// IDEA-033 "Props as editable part-assemblies" — applies an OPTIONAL
+// def.parts layer (src/game/props.ts's PropPartLayer) on top of the base
+// shape a factory above just built. Every factory now names its own parts
+// (see the "IDEA-033" comments threaded through makeShrub..makeSign above) so
+// they're addressable by a stable path; this function builds the SAME
+// depth-first path map src/editor/partTree.ts's buildPartList uses (slash-
+// joined child indices from the root, "" = the root itself) so an edit
+// authored in the editor — which reads that exact tree — always resolves to
+// the right node here, at real render time, with zero drift between the two.
+
+/** Depth-first path -> object map for `root`, identical traversal order to
+ *  partTree.ts's buildPartList (children visited in `.children` array
+ *  order, same index-based path scheme) — kept here, not imported from
+ *  src/editor/ (a dev-only tree), since board.ts must stay usable without
+ *  ever importing the editor; the two are independently small and the
+ *  traversal itself is a five-line contract neither side is likely to
+ *  drift on silently (a mismatch would show up immediately as edits
+ *  landing on the wrong part in every playtest, not just in the editor). */
+function pathMap(root: THREE.Object3D): Map<string, THREE.Object3D> {
+  const map = new Map<string, THREE.Object3D>();
+  function visit(object: THREE.Object3D, path: string): void {
+    map.set(path, object);
+    object.children.forEach((child, i) => visit(child, path === "" ? String(i) : `${path}/${i}`));
+  }
+  visit(root, "");
+  return map;
+}
+
+/** The live counterpart of src/editor/codegen.ts's GEOMETRY_CTORS, scoped to
+ *  the 4 kinds a prop can add (see PropPrimKind — no "capsule": props are
+ *  hard-surface/foliage silhouettes, not character-scale organic shapes). */
+function buildPropPrimitiveGeometry(kind: PropPrimKind, p: Record<string, number>): THREE.BufferGeometry {
+  switch (kind) {
+    case "box":
+      return new THREE.BoxGeometry(p.width, p.height, p.depth);
+    case "sphere":
+      return new THREE.SphereGeometry(p.radius, 16, 12);
+    case "cylinder":
+      return new THREE.CylinderGeometry(p.radiusTop, p.radiusBottom, p.height, 16);
+    case "cone":
+      return new THREE.ConeGeometry(p.radius, p.height, 16);
+  }
+}
+
+/** Applies one PropPartEdit to the base part it targets — a no-op (not an
+ *  error) if `edit.path` doesn't resolve, which happens legitimately when a
+ *  def edited under one shape/params combination is later viewed after a
+ *  shape swap or a params change that changes the child COUNT (e.g.
+ *  `segments` shrinking a shrub from 3 lobes to 2 — "lobe2"'s edit simply
+ *  has nothing to apply to until segments grows back). This mirrors
+ *  applyPropParts' own "degrade gracefully, never throw" discipline (see its
+ *  header) rather than validating paths against a specific def+params combo
+ *  up front. */
+function applyPropPartEdit(map: Map<string, THREE.Object3D>, edit: PropPartEdit): void {
+  const target = map.get(edit.path);
+  if (!target) return;
+  if (edit.position) target.position.set(edit.position[0], edit.position[1], edit.position[2]);
+  if (edit.rotation) target.rotation.set(edit.rotation[0], edit.rotation[1], edit.rotation[2]);
+  if (edit.scale) target.scale.set(edit.scale[0], edit.scale[1], edit.scale[2]);
+  if (edit.visible !== undefined) target.visible = edit.visible;
+  if ((edit.color !== undefined || edit.emissive !== undefined) && target instanceof THREE.Mesh) {
+    const mat = target.material;
+    const mats = Array.isArray(mat) ? mat : [mat];
+    for (const m of mats) {
+      if (!(m instanceof THREE.MeshStandardMaterial)) continue;
+      if (edit.color !== undefined) m.color.setHex(edit.color);
+      // Emissive override only takes effect on a part the base factory
+      // already lit (emissiveIntensity > 0) — recoloring a NON-emissive
+      // part's emissive channel would silently make it glow, which is never
+      // what "recolor this part" means for e.g. a building's plain facade.
+      if (edit.emissive !== undefined && m.emissiveIntensity > 0) m.emissive.setHex(edit.emissive);
+    }
+  }
+}
+
+/** Builds + attaches one AddedPropPart under its recorded parent path —
+ *  falls back to the prop's own root ("") if the parent path doesn't
+ *  resolve (same "degrade gracefully" reasoning as applyPropPartEdit above:
+ *  an added part should never simply vanish from the built mesh just
+ *  because its intended parent isn't present under the current
+ *  shape/params). */
+function addPropPart(root: THREE.Object3D, map: Map<string, THREE.Object3D>, added: AddedPropPart): void {
+  const parent = map.get(added.parentPath) ?? root;
+  const mat = new THREE.MeshStandardMaterial({
+    color: added.color,
+    roughness: 0.6,
+    ...(added.emissive !== undefined ? { emissive: added.emissive, emissiveIntensity: 0.8 } : {}),
+  });
+  const mesh = new THREE.Mesh(buildPropPrimitiveGeometry(added.kind, added.params), mat);
+  mesh.name = added.id;
+  mesh.position.set(added.position[0], added.position[1], added.position[2]);
+  if (added.rotation) mesh.rotation.set(added.rotation[0], added.rotation[1], added.rotation[2]);
+  if (added.scale) mesh.scale.set(added.scale[0], added.scale[1], added.scale[2]);
+  mesh.castShadow = true;
+  parent.add(mesh);
+}
+
+/** Applies `def.parts` (edits then added primitives, in that order — an
+ *  added part may itself target a base part as its parent, so the base part
+ *  must already carry its own transform/material overrides by the time an
+ *  added child is attached, though in practice neither ordering would
+ *  visually differ since edits and additions touch disjoint objects) on top
+ *  of an already-built `root` — called from makePropFromDef ONLY when
+ *  `def.parts` is present, so a def with no parts (every shipped def today)
+ *  never even calls pathMap: the no-parts path is exactly the pre-IDEA-033
+ *  code, unreached and unchanged. */
+function applyPropParts(root: THREE.Object3D, parts: NonNullable<PropDef["parts"]>): void {
+  const map = pathMap(root);
+  for (const edit of parts.edits) applyPropPartEdit(map, edit);
+  for (const added of parts.added) addPropPart(root, map, added);
 }
 
 /** Builds one prop instance from a full PropDef, dispatching on its `shape`
@@ -1116,20 +1269,32 @@ function makeSign(params: PropParams, h: number): THREE.Group {
  *  micro-jitter (the same role `h` played pre-v4.1, just now paired with a
  *  full `def.params` bundle instead of a bare colors array). Exported so
  *  shopScene.ts's diorama can plant the exact same meshes it sells in the
- *  actual maze — never a re-implementation with its own drift risk. */
+ *  actual maze — never a re-implementation with its own drift risk.
+ *
+ *  IDEA-033: when `def.parts` is present, applyPropParts layers its edits/
+ *  added primitives on top of the freshly-built base shape before returning
+ *  — every shipped PROP_LIBRARY def has NO `parts` field at all, so
+ *  `if (def.parts)` never runs for them and this function's return value is
+ *  BYTE-IDENTICAL to the pre-IDEA-033 implementation for every real theme
+ *  today (see props.ts's PropPartLayer doc comment for the same guarantee
+ *  stated from the data side). */
 export function makePropFromDef(def: PropDef, instanceHash: number): THREE.Group {
   const p = def.params;
-  switch (def.shape) {
-    case "shrub": return makeShrub(p, instanceHash);
-    case "tree": return makeTree(p, instanceHash);
-    case "pine": return makePine(p, instanceHash);
-    case "palm": return makePalm(p, instanceHash);
-    case "building": return makeBuilding(p, instanceHash);
-    case "streetlight": return makeStreetlight(p, instanceHash);
-    case "umbrella": return makeUmbrella(p, instanceHash);
-    case "bloom": return makeBloom(p, instanceHash);
-    case "sign": return makeSign(p, instanceHash);
-  }
+  const g = ((): THREE.Group => {
+    switch (def.shape) {
+      case "shrub": return makeShrub(p, instanceHash);
+      case "tree": return makeTree(p, instanceHash);
+      case "pine": return makePine(p, instanceHash);
+      case "palm": return makePalm(p, instanceHash);
+      case "building": return makeBuilding(p, instanceHash);
+      case "streetlight": return makeStreetlight(p, instanceHash);
+      case "umbrella": return makeUmbrella(p, instanceHash);
+      case "bloom": return makeBloom(p, instanceHash);
+      case "sign": return makeSign(p, instanceHash);
+    }
+  })();
+  if (def.parts) applyPropParts(g, def.parts);
+  return g;
 }
 
 /** Convenience wrapper: looks up `id` in the prop library (never throws —

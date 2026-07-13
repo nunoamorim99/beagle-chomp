@@ -17,7 +17,7 @@
 // (types + clone up top, formatter functions below) just promoted to two
 // files here since propsCodegen.ts's own header already has a lot to say
 // about the formatting contract.
-import type { PropBaseShape, PropDef, PropParams } from "../game/props";
+import type { PropBaseShape, PropDef, PropParams, PropPartLayer } from "../game/props";
 import { PROP_LIBRARY } from "../game/props";
 
 /** Same shape as PropParams, but the two color-LIST fields
@@ -30,25 +30,58 @@ export interface WorkingPropParams extends Omit<PropParams, "foliageColors" | "f
   facadeColors?: number[];
 }
 
-/** Same shape as PropDef, with `params` widened to WorkingPropParams. */
+/** Same shape as PropDef, with `params` widened to WorkingPropParams.
+ *
+ *  IDEA-033: `parts` is the def's saved part-edit layer (undefined for a
+ *  never-part-edited def, exactly like PropDef.parts) — main.ts's Props-
+ *  mode wiring reads/writes it via a LIVE PropPartEditLog while a def's
+ *  preview is on screen (see propPartEditLog.ts's toPropPartLayer, which
+ *  produces exactly this shape) and only WRITES it back onto the
+ *  WorkingPropDef when the user switches away from that def or copies/saves
+ *  the library — so `parts` here is a plain data snapshot, structurally
+ *  identical to PropDef["parts"], never a live THREE-aware object itself
+ *  (this file stays free of any `three` import, same discipline as
+ *  props.ts). */
 export interface WorkingPropDef {
   id: string;
   name: string;
   shape: PropBaseShape;
   params: WorkingPropParams;
+  parts?: PropPartLayer;
+}
+
+/** IDEA-033: deep-copies a PropPartLayer (edits + added parts) so a working
+ *  copy can never alias — and therefore never accidentally mutate — the
+ *  registry's own (or another working def's) arrays/objects. Each edit/added
+ *  entry is a plain object of primitives/tuples, so a shallow-per-entry
+ *  spread is a full deep copy (no nested mutable arrays beyond the tuple
+ *  literals themselves, which are never pushed/popped in place — every
+ *  transform edit REPLACES the whole tuple). Returns undefined for an
+ *  undefined input so callers can write `parts: clonePropPartLayer(x)`
+ *  unconditionally rather than an extra `x ? … : undefined` at every call
+ *  site. */
+export function clonePropPartLayer(layer: PropPartLayer | undefined): PropPartLayer | undefined {
+  if (!layer) return undefined;
+  return {
+    edits: layer.edits.map((e) => ({ ...e })),
+    added: layer.added.map((a) => ({ ...a, params: { ...a.params } })),
+  };
 }
 
 /** Deep-copies one registry PropDef into an independent WorkingPropDef —
  *  spreads `params` MINUS its two array fields (so the spread's inferred
  *  type never carries `readonly number[]` into a `number[]`-typed slot) and
  *  clones those two array fields explicitly, so pushing/popping a color can
- *  never mutate the registry's own `readonly number[]`. */
+ *  never mutate the registry's own `readonly number[]`. IDEA-033: `parts`
+ *  (if the registry def has ever been part-edited and saved) is deep-copied
+ *  the same way via clonePropPartLayer. */
 export function cloneWorkingPropDef(def: PropDef): WorkingPropDef {
   const { foliageColors, facadeColors, ...rest } = def.params;
   const params: WorkingPropParams = { ...rest };
   if (foliageColors) params.foliageColors = [...foliageColors];
   if (facadeColors) params.facadeColors = [...facadeColors];
-  return { id: def.id, name: def.name, shape: def.shape, params };
+  const parts = clonePropPartLayer(def.parts);
+  return { id: def.id, name: def.name, shape: def.shape, params, ...(parts ? { parts } : {}) };
 }
 
 /** Deep-copies the WHOLE library into working copies, in registry order —
@@ -83,12 +116,16 @@ export function defaultWorkingPropDef(id: string): WorkingPropDef {
  *  "duplicate" bases the clone on whatever the user is CURRENTLY looking at
  *  (per the brief: "duplicate the selected def (so a user can base
  *  'Skyscraper' on 'City Tower')"), not the original unedited registry entry.
- *  `newId`/`newName` are the caller's already-uniquified choices. */
+ *  `newId`/`newName` are the caller's already-uniquified choices. IDEA-033:
+ *  carries the source's `parts` layer along too (deep-copied) — this is the
+ *  "create my own props" path Nuno asked for: duplicate a library def, then
+ *  part-edit the COPY into something new without touching the original. */
 export function duplicateWorkingPropDef(def: WorkingPropDef, newId: string, newName: string): WorkingPropDef {
   const params: WorkingPropParams = { ...def.params };
   if (def.params.foliageColors) params.foliageColors = [...def.params.foliageColors];
   if (def.params.facadeColors) params.facadeColors = [...def.params.facadeColors];
-  return { id: newId, name: newName, shape: def.shape, params };
+  const parts = clonePropPartLayer(def.parts);
+  return { id: newId, name: newName, shape: def.shape, params, ...(parts ? { parts } : {}) };
 }
 
 /** Returns `true` if `id` is used by any OTHER entry in `library` (excludes
