@@ -21,57 +21,6 @@ _(empty — nothing to triage)_
 ## Backlog (open ideas)
 > New registered ideas go here. Next free ID: IDEA-032
 
-### IDEA-029 — Reusable prop library + a Props editor tab 💡
-- **Priority:** 🟡
-- **Area:** tooling
-- **Registered:** 2026-07-13
-- **Description:** props stop being inline per-theme populations and become a shared LIBRARY of
-  named, reusable, tunable definitions, edited in a dedicated **Props tab** in the editor. Each
-  library prop is one of the base shapes (tree/pine/palm/shrub/building/streetlight/umbrella/…)
-  with editable parameters — name, colors, proportions (height/width/segments), window counts,
-  tilt, glow — so the same "Oak" or "Skyscraper" can be reused across themes and personalized
-  later. Copy-code export like the other editor tabs.
-- **Notes:** Nuno: "have on the editor the tab to edit the props… reuse the props on different
-  themes… personalize the props later." Refactors [[IDEA-026]]'s `ThemeProp` (kind+density) into
-  a `PropDef` registry (`props.ts`, pure, mirrors themes.ts/cosmetics.ts) that the render factories
-  in `board.ts` read. Chosen scope: TUNABLE PARAMETRIC props (not raw-primitive assembly — that
-  would be a second character-editor, a later idea). Foundation for [[IDEA-030]] (placement) and
-  [[IDEA-031]] (wall components). Extends the editor built in [[IDEA-025]]/[[IDEA-027]].
-- **Dependencies:** [[IDEA-026]]
-
-### IDEA-030 — Explicit prop placement on the board (place · move · save) 💡
-- **Priority:** 🟡
-- **Area:** tooling
-- **Registered:** 2026-07-13
-- **Description:** replace density-scatter with HAND placement. A theme carries a list of explicit
-  placements `{ propId, tile, offset, rotation, scale }` on the apron ring; in the editor's Board
-  & Themes mode you see the available apron slots, click one, choose a library prop, adjust its
-  position/rotation/scale, and save. Total control over where every prop sits — "fix some props
-  position" instead of random.
-- **Notes:** Nuno: "edit the position of the props… select the place, choose the props, adjust the
-  position and save." The current hash-scattered [[IDEA-026]] props are CONVERTED into concrete
-  saved placements as the starting content, so the 6 themes look unchanged on first load but every
-  prop becomes individually movable. Props still stay OUTSIDE the maze (apron only — Nuno confirmed
-  that part is "exactly what we should do"), and keep the per-side height-cap safety so a placement
-  can't block the camera. Consumes the [[IDEA-029]] library; placements export in the theme code
-  ([[IDEA-027]]'s Copy theme code).
-- **Dependencies:** [[IDEA-029]]
-
-### IDEA-031 — Wall-top component slots (blooms OR lamps · signals · …) 💡
-- **Priority:** 🟢
-- **Area:** tooling
-- **Registered:** 2026-07-13
-- **Description:** generalize the wall-top bloom layer into placeable COMPONENT slots: per wall
-  tile, choose what sits on top — blooms (as today), a lamp, a transit signal, or other simple
-  pieces — and pick which wall tiles carry them, adjusting height/rotation. Blooms stay perfect on
-  some maps; others get street furniture instead.
-- **Notes:** Nuno: "add components in the place of the blooms… lamps, transit signals, simple
-  things… choose on the maze wall where to place it." Reuses [[IDEA-029]]'s library + [[IDEA-030]]'s
-  placement system, just on wall tops instead of the apron. Supersedes [[IDEA-011]]'s density-bloom
-  model with explicit per-tile component placement (keeps a bloom component so the garden look is
-  preserved). Chosen scope: pick-component-per-wall + place (not new density kinds).
-- **Dependencies:** [[IDEA-029]], [[IDEA-030]]
-
 ### IDEA-019 — Player login & cross-device account recovery 💡
 - **Priority:** 🟡
 - **Area:** accounts
@@ -108,6 +57,64 @@ _(nothing yet)_
 
 ## Delivered ✅
 > Already in production. Do NOT delete. Each keeps its version history.
+
+### IDEA-029 — Reusable prop library + a Props editor tab ✅
+- **Priority:** 🟡
+- **Area:** tooling
+- **Registered:** 2026-07-13
+- **Description:** props stop being inline per-theme populations and become a shared LIBRARY of
+  named, reusable, tunable definitions, edited in a dedicated **Props tab** in the editor. Each
+  library prop is one of the base shapes (tree/pine/palm/shrub/building/streetlight/umbrella/…)
+  with editable parameters — name, colors, proportions (height/width/segments), window counts,
+  tilt, glow — so the same "Oak" or "Skyscraper" can be reused across themes and personalized
+  later. Copy-code export like the other editor tabs.
+- **Notes:** Nuno: "have on the editor the tab to edit the props… reuse the props on different
+  themes… personalize the props later." Refactors [[IDEA-026]]'s `ThemeProp` (kind+density) into
+  a `PropDef` registry (`props.ts`, pure, mirrors themes.ts/cosmetics.ts) that the render factories
+  in `board.ts` read. Chosen scope: TUNABLE PARAMETRIC props (not raw-primitive assembly — that
+  would be a second character-editor, a later idea). Foundation for [[IDEA-030]] (placement) and
+  [[IDEA-031]] (wall components). Extends the editor built in [[IDEA-025]]/[[IDEA-027]].
+- **Dependencies:** [[IDEA-026]]
+- **History:**
+  - **v1** (2026-07-13) — the prop LIBRARY + a Props editor tab, first item of v4.1 "Set Dressing". `props.ts` (new pure module, mirrors themes.ts/cosmetics.ts): `PropDef { id, name, shape, params }` with 10 named reusable defs (Shrub, Oak Tree, Pine, Palm, City Tower, Streetlight, Beach Umbrella + wall pieces Flower Bloom, Wall Lamp, Transit Signal). `PropParams` is an all-optional tunable bundle (height/width/segments/tilt/foliageColors/trunkColor/facadeColors/windowRows/windowCols/windowColor/windowEmissiveIntensity/rooftop/glowColor/glowIntensity/signBoardColor), each with a documented default the render factory applies; `PROP_SHAPE_FIELDS` drives which controls the editor shows per shape. board.ts's prop factories became PARAMETRIC (every field drives geometry) behind `makePropFromDef(def, hash)`/`makePropById`. Editor gains a THIRD mode "Props": a library editor with a live turntabled 3D preview per selected prop, shape-aware lil-gui controls, add/duplicate/remove, a "used by N placements" badge (scans every theme), and "Copy library code" that round-trips into props.ts. New `propsWorking/propsCodegen/propsTree/propsInspector.ts` + main.ts mode wiring; `scripts/test-editor-props.ts` (69 checks, `npm run test:editor:props`). `props.ts` (new), `board.ts`, `shopScene.ts`, `src/editor/props*.ts` (4 new), `main.ts`, `editor/index.html`, `editor.css`, `package.json`. _(c33e6d8)_
+
+### IDEA-030 — Explicit prop placement on the board (place · move · save) ✅
+- **Priority:** 🟡
+- **Area:** tooling
+- **Registered:** 2026-07-13
+- **Description:** replace density-scatter with HAND placement. A theme carries a list of explicit
+  placements `{ propId, tile, offset, rotation, scale }` on the apron ring; in the editor's Board
+  & Themes mode you see the available apron slots, click one, choose a library prop, adjust its
+  position/rotation/scale, and save. Total control over where every prop sits — "fix some props
+  position" instead of random.
+- **Notes:** Nuno: "edit the position of the props… select the place, choose the props, adjust the
+  position and save." The current hash-scattered [[IDEA-026]] props are CONVERTED into concrete
+  saved placements as the starting content, so the 6 themes look unchanged on first load but every
+  prop becomes individually movable. Props still stay OUTSIDE the maze (apron only — Nuno confirmed
+  that part is "exactly what we should do"), and keep the per-side height-cap safety so a placement
+  can't block the camera. Consumes the [[IDEA-029]] library; placements export in the theme code
+  ([[IDEA-027]]'s Copy theme code).
+- **Dependencies:** [[IDEA-029]]
+- **History:**
+  - **v1** (2026-07-13) — explicit HAND placement (Nuno: "select the place, choose the props, adjust the position and save"), second item of v4.1 "Set Dressing". `MazeTheme.props` (IDEA-026 density populations) replaced by `placements: PropPlacement[]` — `{ propId, tile, offset, rotationY, scale }`, each prop sitting at a chosen spot referencing a library def ([[IDEA-029]]). The 6 shipped themes' scattered props were CONVERTED to concrete saved placements by replaying the real v4.0 scatter algorithm against the real grid (counts identical — garden 29, forest/park/city 40, beach 23), so every board is byte-for-position unchanged but every prop is now individually movable. board.ts `buildProps` consumes placements; a render-time per-side height cap (south row clamps tall shapes, east/west caps to ≤1.0) protects hand-authored placements from blocking the camera. Editor Board & Themes mode gains on-board placement: faint SLOT MARKERS on every apron-ring candidate tile (solid circles — a real bug fixed: ring markers were unhittable by a center raycast), click to place/select, lil-gui offset/rotation/scale + prop-swap + remove, arrow-key nudge, live apply through applyBoardTheme; "Copy theme code" emits the placements. Props stay OUTSIDE the maze (apron only), as Nuno confirmed. `themes.ts`, `board.ts`, `src/editor/boardPlacement.ts` (new), `boardInspector.ts`, `boardTree.ts`, `boardCodegen.ts`, `main.ts`, `scripts/test-editor-board.ts` (96 checks). _(c33e6d8)_
+
+### IDEA-031 — Wall-top component slots (blooms OR lamps · signals · …) ✅
+- **Priority:** 🟢
+- **Area:** tooling
+- **Registered:** 2026-07-13
+- **Description:** generalize the wall-top bloom layer into placeable COMPONENT slots: per wall
+  tile, choose what sits on top — blooms (as today), a lamp, a transit signal, or other simple
+  pieces — and pick which wall tiles carry them, adjusting height/rotation. Blooms stay perfect on
+  some maps; others get street furniture instead.
+- **Notes:** Nuno: "add components in the place of the blooms… lamps, transit signals, simple
+  things… choose on the maze wall where to place it." Reuses [[IDEA-029]]'s library + [[IDEA-030]]'s
+  placement system, just on wall tops instead of the apron. Supersedes [[IDEA-011]]'s density-bloom
+  model with explicit per-tile component placement (keeps a bloom component so the garden look is
+  preserved). Chosen scope: pick-component-per-wall + place (not new density kinds).
+- **Dependencies:** [[IDEA-029]], [[IDEA-030]]
+- **History:**
+  - **v1** (2026-07-13) — wall-top COMPONENTS (Nuno: "add components in the place of the blooms... lamps, transit signals... choose on the maze wall where to place it"), third item of v4.1 "Set Dressing". `MazeTheme.wallDecor: WallDecorPlacement[]` generalizes IDEA-011's density blooms into per-wall-tile components referencing library props ([[IDEA-029]]) — bloom / wall lamp / transit sign. An EMPTY wallDecor falls back to the palette's scattered density blooms (garden/forest/beach/park unchanged); Night City ships 5 hand-placed lamp/signal wall pieces as the demo. New `bloom` + `sign` render factories (small wall-top scale); wall decor folded into `board.hedgeDecor` (widened to Object3D[]) so no game.ts teardown change was needed. Editor "Wall components" sub-mode: markers on every wall-tile top, place/adjust, exports in wallDecor. `themes.ts`, `board.ts`, `src/editor/boardPlacement.ts`, `boardInspector.ts`, `boardTree.ts`, `scripts/test-editor-board.ts`. _(c33e6d8)_
+
 
 ### IDEA-026 — Maze themes in the shop (garden · classic · forest · beach · park · city) ✅
 - **Priority:** 🟡

@@ -25,6 +25,18 @@ _(nothing planned yet — v4.0 "New Territory" was fulfilled and cut on 2026-07-
 
 ## Version history
 
+### v4.1 — Set Dressing (2026-07-13)
+An increment on v4.0's themes: props became a proper set-dressing system you author and place by
+hand. A reusable prop LIBRARY edited in the editor, explicit hand placement of every prop on the
+board, and wall-top components (lamps, signals, blooms) placed per wall tile — all exporting back
+into code. The six shipped themes look byte-for-position identical; every prop is now movable.
+- **IDEA-029** — reusable prop library + a Props editor tab: 10 named parametric prop defs
+  (shape + tunable params), a third editor mode with live preview and Copy-library-code.
+- **IDEA-030** — explicit prop placement: density-scatter replaced by hand-placed
+  `{ propId, tile, offset, rotation, scale }`; on-board slot markers to place/move/save.
+- **IDEA-031** — wall-top components: per-wall-tile bloom/lamp/transit-sign placement,
+  generalizing the old density blooms; Night City demoes hand-placed wall lamps.
+
 ### v4.0 — New Territory (2026-07-12)
 The themes pillar: the world itself became personal. Six swappable maze themes sold through the
 shop — each a full world with its own sky, lighting, materials and PROPS (a lit skyline behind
