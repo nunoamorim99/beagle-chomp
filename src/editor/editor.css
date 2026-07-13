@@ -270,6 +270,30 @@ body {
   border-color: #3f7a4c;
 }
 
+/* IDEA-032: the primary save-to-file action — visually the hero button, with
+   the copy buttons demoted to muted fallbacks beside it. Shares the copy-btn's
+   .copied flash state (main.ts's flash() toggles that class on it too). */
+.save-btn {
+  background: #2f6f43;
+  border: 1px solid #3f8f57;
+  border-radius: 4px;
+  color: #eafff0;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 14px;
+  cursor: pointer;
+}
+
+.save-btn:hover {
+  background: #37804e;
+}
+
+.save-btn.copied {
+  background: #2c5636;
+  border-color: #3f7a4c;
+}
+
 #copyBtn {
   margin-left: auto;
 }

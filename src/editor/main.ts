@@ -21,6 +21,7 @@ import {
 } from "./editLog";
 import { generateCode, buildPrimitiveGeometry, GEOMETRY_DEFAULTS } from "./codegen";
 import { generateFullFile } from "./fileExport";
+import { saveEditorFile } from "./saveFile";
 import { History } from "./history";
 import {
   createInspector,
@@ -97,6 +98,7 @@ const sourcePre = byId<HTMLPreElement>("sourceView");
 const codeTitle = byId<HTMLSpanElement>("codeTitle");
 const copyBtn = byId<HTMLButtonElement>("copyBtn");
 const copyFileBtn = byId<HTMLButtonElement>("copyFileBtn");
+const saveFileBtn = byId<HTMLButtonElement>("saveFileBtn");
 const editorApp = byId<HTMLDivElement>("editorApp");
 const modeCharacterBtn = byId<HTMLButtonElement>("modeCharacterBtn");
 const modeBoardBtn = byId<HTMLButtonElement>("modeBoardBtn");
@@ -552,6 +554,27 @@ copyFileBtn.addEventListener("click", () => {
   void navigator.clipboard
     .writeText(full)
     .then(() => flash(copyFileBtn, "Copied ✓ paste over characters.ts", true));
+});
+
+// IDEA-032: "Save to characters.ts" — the SAFE path. Writes the complete
+// generated file straight to disk via the dev-only middleware, so the user
+// never copy-pastes it into the wrong place (which stacked edit blocks and
+// shipped a broken beagle — see editor-residue-hazard). Falls back to a clear
+// "use Copy full file" message if the dev endpoint isn't reachable.
+saveFileBtn.addEventListener("click", () => {
+  if (log.isEmpty) {
+    flash(saveFileBtn, "No edits yet", false);
+    return;
+  }
+  const full = generateFullFile(log, def.builderName);
+  if (!full) {
+    flash(saveFileBtn, "Failed — use Copy edits", false);
+    return;
+  }
+  void saveEditorFile("src/render/characters.ts", full).then((r) => {
+    if (r.ok) flash(saveFileBtn, "Saved ✓ characters.ts", true);
+    else flash(saveFileBtn, "Save failed — use Copy full file", false);
+  });
 });
 
 // --- keyboard: Ctrl+Z / Ctrl+Y, arrow nudging, Escape, Delete ---
