@@ -95,6 +95,24 @@ const WALL_RING_GEO = new THREE.RingGeometry(0.11, 0.135, 20);
 
 const MARKER_Y_APRON = 0.02; // just proud of the floor plane (which sits at y=-0.01)
 const MARKER_Y_WALL = 1.02; // WALL_H (1) + a hair, so it sits visibly on the hedge top, not embedded
+
+// IDEA-034 follow-up (Nuno: "I just don't see the highlight places to add a
+// new prop on the board"): the flat floor discs above are the CLICK TARGET,
+// but from the board's steep top-down camera a disc lying flat on the ground
+// is edge-compressed to a near-invisible sliver AND gets occluded by any prop
+// standing on a neighbouring tile — so an empty slot was effectively
+// invisible. The fix is a raised BEACON: a small bright upright diamond
+// (octahedron) that HOVERS well above each EMPTY slot, standing up off the
+// floor so it reads unmistakably from above and can never be hidden behind a
+// prop. It shows only while a slot is empty (the "put something here" invite),
+// pulses + bobs, and vanishes the instant the slot is filled/selected. Purely
+// a visibility affordance — it is NOT raycastable (the flat disc under it
+// stays the click target, keeping the click math and the raycast-hole gotcha
+// fix above unchanged).
+const BEACON_GEO = new THREE.OctahedronGeometry(0.12, 0);
+const BEACON_Y_APRON = 0.62; // floats well clear of the floor + any low shrub
+const BEACON_Y_WALL = 1.62; // same clearance above the hedge top
+const BEACON_BOB = 0.09; // vertical bob amplitude (adds motion the eye catches from across the board)
 // Rings sit a hair above their disc (both markers already erase z-fighting
 // via depthWrite:false, but a tiny Y offset also keeps draw-order sane if
 // depthWrite is ever revisited).
@@ -152,6 +170,19 @@ function ringMaterial(): THREE.MeshBasicMaterial {
     opacity: RING_OPACITY_EMPTY,
     depthWrite: false,
     side: THREE.DoubleSide,
+  });
+}
+
+function beaconMaterial(): THREE.MeshBasicMaterial {
+  // Same unlit-UI rationale as markerMaterial: a themed relight must never
+  // dim the beacon. depthTest stays ON (unlike the flat markers' depthWrite:
+  // false) so a beacon is correctly hidden when it happens to pass behind a
+  // taller wall/building from some orbit angle — it's a floating object in
+  // the scene, not a screen-space overlay.
+  return new THREE.MeshBasicMaterial({
+    color: COLOR_EMPTY,
+    transparent: true,
+    opacity: OPACITY_EMPTY_MAX,
   });
 }
 
@@ -448,7 +479,7 @@ export function createBoardPlacement(
    *  `mesh.userData.ring` so paintMarker/updatePulse can reach it via the
    *  SAME per-tile mesh lookup every other state change already uses (no
    *  second Map to keep in sync). */
-  function buildMarker(geo: THREE.CircleGeometry, ringGeo: THREE.RingGeometry, ringY: number, tx: number, ty: number, subModeKind: PlacementSubMode, y: number): THREE.Mesh {
+  function buildMarker(geo: THREE.CircleGeometry, ringGeo: THREE.RingGeometry, ringY: number, tx: number, ty: number, subModeKind: PlacementSubMode, y: number, beaconY: number): THREE.Mesh {
     const mesh = new THREE.Mesh(geo, markerMaterial(COLOR_EMPTY, OPACITY_EMPTY_MIN));
     mesh.rotation.x = -Math.PI / 2;
     mesh.position.set(worldX(tx), y, worldZ(ty));
@@ -462,18 +493,30 @@ export function createBoardPlacement(
     ring.userData.editorOverlay = true;
     ring.visible = false; // mirrors the disc's own visibility exactly (see setVisibility below)
     mesh.userData.ring = ring;
+
+    // The raised empty-slot beacon (see BEACON_GEO's doc comment). A sibling
+    // of the disc (not a child) for the same compose-avoidance reasons the
+    // ring is — its own upright orientation must not inherit the disc's -90°
+    // flatten. Its resting Y is stashed so updatePulse can bob it around that
+    // baseline. Starts hidden; paintMarker shows it only for empty slots.
+    const beacon = new THREE.Mesh(BEACON_GEO, beaconMaterial());
+    beacon.position.set(worldX(tx), beaconY, worldZ(ty));
+    beacon.userData.editorOverlay = true;
+    beacon.userData.baseY = beaconY;
+    beacon.visible = false;
+    mesh.userData.beacon = beacon;
     return mesh;
   }
 
   apronTiles.forEach(([tx, ty]) => {
-    const mesh = buildMarker(APRON_MARKER_GEO, APRON_RING_GEO, MARKER_Y_APRON_RING, tx, ty, "apron", MARKER_Y_APRON);
-    markerRoot.add(mesh, mesh.userData.ring as THREE.Mesh);
+    const mesh = buildMarker(APRON_MARKER_GEO, APRON_RING_GEO, MARKER_Y_APRON_RING, tx, ty, "apron", MARKER_Y_APRON, BEACON_Y_APRON);
+    markerRoot.add(mesh, mesh.userData.ring as THREE.Mesh, mesh.userData.beacon as THREE.Mesh);
     apronMarkers.set(`${tx},${ty}`, mesh);
   });
 
   wallTiles.forEach(([tx, ty]) => {
-    const mesh = buildMarker(WALL_MARKER_GEO, WALL_RING_GEO, MARKER_Y_WALL_RING, tx, ty, "wall", MARKER_Y_WALL);
-    markerRoot.add(mesh, mesh.userData.ring as THREE.Mesh);
+    const mesh = buildMarker(WALL_MARKER_GEO, WALL_RING_GEO, MARKER_Y_WALL_RING, tx, ty, "wall", MARKER_Y_WALL, BEACON_Y_WALL);
+    markerRoot.add(mesh, mesh.userData.ring as THREE.Mesh, mesh.userData.beacon as THREE.Mesh);
     wallMarkers.set(`${tx},${ty}`, mesh);
   });
 
@@ -510,6 +553,7 @@ export function createBoardPlacement(
     const mat = mesh.material as THREE.MeshBasicMaterial;
     const ring = mesh.userData.ring as THREE.Mesh;
     const ringMat = ring.material as THREE.MeshBasicMaterial;
+    const beacon = mesh.userData.beacon as THREE.Mesh;
     const pulseKey = `${mode},${tx},${ty}`;
 
     if (isSelected) {
@@ -518,6 +562,7 @@ export function createBoardPlacement(
       ringMat.opacity = RING_OPACITY_SELECTED;
       mesh.scale.setScalar(SELECTED_MARKER_SCALE);
       ring.scale.setScalar(SELECTED_MARKER_SCALE); // ring is a SIBLING, not a child (see buildMarker's doc comment) — its scale must be set independently to stay visually matched to the disc
+      beacon.visible = false; // a selected slot is no longer "empty & inviting"
       pulsingMarkers.delete(pulseKey);
     } else if (filled) {
       mat.color.setHex(COLOR_FILLED);
@@ -525,6 +570,7 @@ export function createBoardPlacement(
       ringMat.opacity = RING_OPACITY_FILLED;
       mesh.scale.setScalar(FILLED_MARKER_SCALE);
       ring.scale.setScalar(FILLED_MARKER_SCALE);
+      beacon.visible = false; // something's planted here — no invite beacon
       pulsingMarkers.delete(pulseKey);
     } else {
       mat.color.setHex(COLOR_EMPTY);
@@ -532,6 +578,14 @@ export function createBoardPlacement(
       ringMat.opacity = RING_OPACITY_EMPTY;
       mesh.scale.setScalar(EMPTY_MARKER_SCALE);
       ring.scale.setScalar(EMPTY_MARKER_SCALE);
+      // The raised beacon is the thing that actually makes an empty slot
+      // visible from the top-down board camera — show it, but only while THIS
+      // sub-mode's markers are the ones on screen. Computed from `subMode`
+      // directly (NOT from `mesh.visible`, which may not have been flipped on
+      // yet at paint time — paintAll can run before setVisibility on a fresh
+      // theme sync), so an empty in-submode slot always gets its beacon
+      // regardless of paint/visibility call order.
+      beacon.visible = mode === subMode;
       pulsingMarkers.add(pulseKey);
     }
   }
@@ -545,10 +599,16 @@ export function createBoardPlacement(
     apronMarkers.forEach((m) => {
       m.visible = subMode === "apron";
       (m.userData.ring as THREE.Mesh).visible = m.visible; // ring is a sibling — must be toggled explicitly, not inherited
+      // The beacon's own visibility is decided by paintMarker (empty-only) —
+      // but it must ALSO be forced off whenever its disc is off (wrong
+      // sub-mode). paintAll() runs right after this in every caller, so an
+      // empty in-submode beacon gets re-shown there; here we only ever hide.
+      if (!m.visible) (m.userData.beacon as THREE.Mesh).visible = false;
     });
     wallMarkers.forEach((m) => {
       m.visible = subMode === "wall";
       (m.userData.ring as THREE.Mesh).visible = m.visible;
+      if (!m.visible) (m.userData.beacon as THREE.Mesh).visible = false;
     });
   }
 
@@ -639,6 +699,7 @@ export function createBoardPlacement(
     syncFromTheme(theme: WorkingTheme): void {
       currentTheme = theme;
       selection = null;
+      setVisibility(); // ensure discs/rings match the current sub-mode BEFORE painting (paintMarker's beacon-visibility now reads subMode directly, but keep disc visibility correct too)
       paintAll();
       onSelectionChange(null);
     },
@@ -646,6 +707,12 @@ export function createBoardPlacement(
       if (subMode === mode) return;
       subMode = mode;
       setVisibility();
+      // Repaint EVERY marker of the now-visible sub-mode so its empty-slot
+      // beacons come back on (setVisibility only ever hides beacons; the
+      // per-tile "show if empty" decision lives in paintMarker via paintAll).
+      // Must run before setSelection(null), which then only touches the one
+      // outgoing-selected tile.
+      paintAll();
       setSelection(null);
     },
     getSubMode(): PlacementSubMode {
@@ -747,11 +814,19 @@ export function createBoardPlacement(
       // thing" pulse — exactly the affordance this feature needs).
       const wave = (Math.sin(t * PULSE_SPEED) + 1) / 2; // 0..1
       const opacity = OPACITY_EMPTY_MIN + wave * (OPACITY_EMPTY_MAX - OPACITY_EMPTY_MIN);
+      // Beacon bob: a vertical offset on the same wave, so the disc's opacity
+      // pulse and the beacon's rise/fall read as one coherent breath.
+      const bob = BEACON_BOB * (wave - 0.5) * 2; // -BEACON_BOB .. +BEACON_BOB
       for (const key of pulsingMarkers) {
         const [modeStr, txStr, tyStr] = key.split(",");
         const mesh = markersFor(modeStr as PlacementSubMode).get(`${txStr},${tyStr}`);
         if (!mesh) continue;
         (mesh.material as THREE.MeshBasicMaterial).opacity = opacity;
+        const beacon = mesh.userData.beacon as THREE.Mesh;
+        if (beacon.visible) {
+          beacon.position.y = (beacon.userData.baseY as number) + bob;
+          beacon.rotation.y = t * 1.5; // slow spin — a turning diamond is unmistakably "interactive", never mistaken for scenery
+        }
       }
     },
     dispose(): void {
