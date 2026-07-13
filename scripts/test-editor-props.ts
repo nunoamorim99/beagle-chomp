@@ -762,40 +762,44 @@ async function run(): Promise<void> {
     // IDEA-033 "Props as editable part-assemblies" — selecting a component,
     // editing its transform/material, adding/deleting a primitive, undo, and
     // both export surfaces (Copy library code / Save to props.ts) emitting
-    // the new `parts` field. Uses "Palm" (untouched by every earlier
-    // section above) so these assertions can't collide with the bloom/oak/
-    // shrub edits already made in this session.
+    // the new `parts` field. Uses "Beach Umbrella" as the fixture: it must be
+    // a prop with NO authored `parts` layer (a fresh def) so "has no part
+    // edits yet" holds and the moved-position assertion isn't confounded by a
+    // pre-existing edit. (Was "Palm" until the owner hand-edited the palm's
+    // parts in the editor and saved it to props.ts — a real def can gain
+    // parts any time, so this fixture must be one that currently has none;
+    // umbrella's pole/canopy/tip is a clean multi-part shape for that.)
     // -------------------------------------------------------------------
     console.log("\n=== selecting a prop shows its Components tree + picking a component ===");
     {
-      await clickTreeRowByText(page, "Palm");
+      await clickTreeRowByText(page, "Beach Umbrella");
       await page.waitForTimeout(200);
       const snap = await propsSnapshot(page);
-      check("selecting Palm sets selectedPropId to 'palm'", snap.selectedPropId === "palm");
-      check("Palm has no part edits yet (fresh def)", snap.selectedDefHasParts === false);
+      check("selecting Beach Umbrella sets selectedPropId to 'umbrella'", snap.selectedPropId === "umbrella");
+      check("Beach Umbrella has no part edits yet (fresh def)", snap.selectedDefHasParts === false);
 
-      // Palm's base parts (board.ts's makePalm): root + trunkLower +
-      // trunkUpper + frond0..N (4-5) + coconut0-1 — componentCount is root-
-      // inclusive, so > 5 proves the Components tree actually reflects
-      // Palm's real child count, not a stale/empty list.
-      check("Components tree has Palm's base parts (root + trunk + fronds + coconuts)", snap.componentCount > 5);
+      // Umbrella's base parts (board.ts's makeUmbrella): root + pole + canopy
+      // are ALWAYS present (the accent `tip` is conditional on the instance
+      // hash, so it's a maybe — not asserted). componentCount is
+      // root-inclusive, so >= 3 proves the Components tree reflects the
+      // umbrella's real child count, not a stale/empty list.
+      check("Components tree has Umbrella's base parts (root + pole + canopy)", snap.componentCount >= 3);
 
       const compRows = await componentTreeRows(page);
-      check("Components tree shows 'trunkLower' (board.ts's own part name)", compRows.some((r) => r.text === "trunkLower"));
-      check("Components tree shows 'trunkUpper'", compRows.some((r) => r.text === "trunkUpper"));
-      check("Components tree shows at least one 'frond0'", compRows.some((r) => r.text === "frond0"));
-      check("Components tree root shows 'Palm (g)' (rootLabel wired to the def's own name)", compRows.some((r) => r.text === "Palm (g)"));
+      check("Components tree shows 'pole' (board.ts's own part name)", compRows.some((r) => r.text === "pole"));
+      check("Components tree shows 'canopy'", compRows.some((r) => r.text === "canopy"));
+      check("Components tree root shows 'Beach Umbrella (g)' (rootLabel wired to the def's own name)", compRows.some((r) => r.text === "Beach Umbrella (g)"));
 
-      await clickComponentRowByText(page, "trunkLower");
+      await clickComponentRowByText(page, "pole");
       await page.waitForTimeout(200);
       const afterPick = await propsSnapshot(page);
-      check("clicking 'trunkLower' selects it (selectedPartPath === '0')", afterPick.selectedPartPath === "0");
+      check("clicking 'pole' selects it (selectedPartPath === '0')", afterPick.selectedPartPath === "0");
 
       const titles = await propsFolderTitles(page);
-      check(`inspector shows "Part: trunkLower"`, titles.includes("Part: trunkLower"));
-      check(`base-shape folder "Selected: Palm" is STILL present alongside it`, titles.includes("Selected: Palm"));
+      check(`inspector shows "Part: pole"`, titles.includes("Part: pole"));
+      check(`base-shape folder "Selected: Beach Umbrella" is STILL present alongside it`, titles.includes("Selected: Beach Umbrella"));
 
-      const labels = await folderControlLabels(page, "Part: trunkLower");
+      const labels = await folderControlLabels(page, "Part: pole");
       check(
         "Part folder shows visible + material — the transform sub-folders are their OWN folders, not flat labels here",
         labels.includes("visible (unchecked = delete this base part)"),
@@ -805,18 +809,18 @@ async function run(): Promise<void> {
     // -------------------------------------------------------------------
     console.log("\n=== editing a selected part's transform + material ===");
     {
-      // trunkLower is still selected from the previous section.
-      await setPartTransformAxis(page, "Part: trunkLower", "position", "y", 0.4);
+      // pole is still selected from the previous section.
+      await setPartTransformAxis(page, "Part: pole", "position", "y", 0.4);
       await page.waitForTimeout(200);
       const afterMove = await propsSnapshot(page);
       // livePartEditCount (NOT selectedDefHasParts) is the right signal here
-      // — the move hasn't been FLUSHED onto workingLibrary's palm entry yet
-      // (that only happens on a mode switch / copy / save — see
+      // — the move hasn't been FLUSHED onto workingLibrary's umbrella entry
+      // yet (that only happens on a mode switch / copy / save — see
       // syncPartsIntoWorkingDef's own doc comment), but propPartLog itself
       // already carries the pending delta the instant the slider fires.
-      check("moving trunkLower is tracked live (unflushed) in propPartLog", afterMove.livePartEditCount > 0);
+      check("moving pole is tracked live (unflushed) in propPartLog", afterMove.livePartEditCount > 0);
 
-      await setFolderColorSwatch(page, "Part: trunkLower", "#ff8800", 0);
+      await setFolderColorSwatch(page, "Part: pole", "#ff8800", 0);
       await page.waitForTimeout(200);
 
       // "Copy library code" flushes (see copyLibraryBtn's own click handler)
@@ -827,12 +831,12 @@ async function run(): Promise<void> {
       const afterFlush = await propsSnapshot(page);
       check("after the flush, selectedDefHasParts reads true from workingLibrary itself", afterFlush.selectedDefHasParts === true);
       const clip = await page.evaluate(() => navigator.clipboard.readText());
-      check(`emitted code contains "palm"'s new parts.edits array`, /id: "palm",[\s\S]{0,400}parts: \{/.test(clip));
-      check("emitted parts.edits targets path '0' (trunkLower's tree path)", clip.includes(`path: "0"`));
+      check(`emitted code contains "umbrella"'s new parts.edits array`, /id: "umbrella",[\s\S]{0,400}parts: \{/.test(clip));
+      check("emitted parts.edits targets path '0' (pole's tree path)", clip.includes(`path: "0"`));
       check("emitted parts.edits carries the moved Y position (0.4)", /position: \[0, 0\.4, 0\]/.test(clip));
-      check("emitted parts.edits carries the recolored trunk (0xff8800)", clip.includes("color: 0xff8800"));
+      check("emitted parts.edits carries the recolored pole (0xff8800)", clip.includes("color: 0xff8800"));
 
-      // Round-trip the palm entry specifically through a real eval, same
+      // Round-trip the umbrella entry specifically through a real eval, same
       // strength of proof as the earlier bloom round-trip section.
       const arrayBody = clip
         .replace(/^export const PROP_LIBRARY: readonly PropDef\[\] = /, "")
@@ -841,11 +845,11 @@ async function run(): Promise<void> {
         id: string;
         parts?: { edits: Array<{ path: string; position?: number[]; color?: number }>; added: unknown[] };
       }>;
-      const parsedPalm = parsed.find((p) => p.id === "palm");
-      check("parsed 'palm' entry has a parts.edits array", Array.isArray(parsedPalm?.parts?.edits));
-      const trunkEdit = parsedPalm?.parts?.edits.find((e) => e.path === "0");
-      check("parsed palm's path-'0' edit carries the moved position", trunkEdit?.position?.[1] === 0.4);
-      check("parsed palm's path-'0' edit carries the recolor", trunkEdit?.color === 0xff8800);
+      const parsedUmbrella = parsed.find((p) => p.id === "umbrella");
+      check("parsed 'umbrella' entry has a parts.edits array", Array.isArray(parsedUmbrella?.parts?.edits));
+      const poleEdit = parsedUmbrella?.parts?.edits.find((e) => e.path === "0");
+      check("parsed umbrella's path-'0' edit carries the moved position", poleEdit?.position?.[1] === 0.4);
+      check("parsed umbrella's path-'0' edit carries the recolor", poleEdit?.color === 0xff8800);
     }
 
     // -------------------------------------------------------------------
@@ -853,7 +857,7 @@ async function run(): Promise<void> {
     {
       const before = await propsSnapshot(page);
       await selectAddPartKind(page, "sphere");
-      await setAddPartName(page, "coconutExtra");
+      await setAddPartName(page, "finialExtra");
       await clickFolderButton(page, "Add part", "add to selected part ➕");
       await page.waitForTimeout(250);
 
@@ -861,10 +865,10 @@ async function run(): Promise<void> {
       // componentCount (buildPartList's own recursive DFS walk) is the
       // depth-agnostic signal here — previewMeshCount is a SHALLOW
       // top-level-children-only count (see main.ts's own doc comment on
-      // it), and this add attaches under "trunkLower" (still selected from
-      // the previous section), one level BELOW the preview root, so the
-      // root's own direct child count never changes even though a real
-      // mesh was added deeper in the tree. componentCount catches that;
+      // it), and this add attaches under "pole" (still selected from the
+      // previous section), one level BELOW the preview root, so the root's
+      // own direct child count never changes even though a real mesh was
+      // added deeper in the tree. componentCount catches that;
       // previewMeshCount would only move for an add targeting the ROOT
       // itself (see propPartSelectionContext's "no selection -> root"
       // fallback in main.ts's addPropPart).
@@ -872,16 +876,16 @@ async function run(): Promise<void> {
       check("the newly-added part is auto-selected", afterAdd.selectedPartPath !== null && afterAdd.selectedPartPath !== before.selectedPartPath);
 
       const compRows = await componentTreeRows(page);
-      const addedRow = compRows.find((r) => r.text === "coconutExtra");
-      check("Components tree shows the new 'coconutExtra' row", addedRow !== undefined);
+      const addedRow = compRows.find((r) => r.text === "finialExtra");
+      check("Components tree shows the new 'finialExtra' row", addedRow !== undefined);
       check("the new row is flagged is-added (green, per editor.css's .is-added rule)", addedRow?.isAdded === true);
       check("the new row is flagged is-mesh (it's a real Mesh, not a Group)", addedRow?.isMesh === true);
 
       const titles = await propsFolderTitles(page);
-      check(`inspector shows "Part: coconutExtra"`, titles.includes("Part: coconutExtra"));
+      check(`inspector shows "Part: finialExtra"`, titles.includes("Part: finialExtra"));
       // Added parts get a live "geometry" sub-folder (radius etc.) — a base
-      // part (trunkLower, tested above) never has one.
-      const addedLabels = await folderControlLabels(page, "Part: coconutExtra");
+      // part (pole, tested above) never has one.
+      const addedLabels = await folderControlLabels(page, "Part: finialExtra");
       check(
         "added part's folder has NO 'visible (delete)' checkbox — added parts are TRULY removed instead (see deletePropPartNode)",
         !addedLabels.includes("visible (unchecked = delete this base part)"),
@@ -892,16 +896,16 @@ async function run(): Promise<void> {
     console.log("\n=== delete an ADDED part, then undo restores it ===");
     {
       const before = await propsSnapshot(page);
-      // coconutExtra is still selected from the previous section.
-      await clickFolderButton(page, "Part: coconutExtra", "delete part 🗑");
+      // finialExtra is still selected from the previous section.
+      await clickFolderButton(page, "Part: finialExtra", "delete part 🗑");
       await page.waitForTimeout(200);
       const afterDelete = await propsSnapshot(page);
       // componentCount only — see the "add part" section's own note on why
       // previewMeshCount (root's shallow child count) doesn't move for an
-      // edit nested under "trunkLower".
+      // edit nested under "pole".
       check("deleting the added part shrinks the Components tree by 1", afterDelete.componentCount === before.componentCount - 1);
       let compRows = await componentTreeRows(page);
-      check("'coconutExtra' is gone from the Components tree", !compRows.some((r) => r.text === "coconutExtra"));
+      check("'finialExtra' is gone from the Components tree", !compRows.some((r) => r.text === "finialExtra"));
 
       // Ctrl+Z — propHistory's own undo stack (independent of character
       // mode's `history`), scoped by main.ts's own `mode !== "props"` guard.
@@ -910,25 +914,25 @@ async function run(): Promise<void> {
       const afterUndo = await propsSnapshot(page);
       check("Ctrl+Z restores the deleted added part (Components tree count)", afterUndo.componentCount === before.componentCount);
       compRows = await componentTreeRows(page);
-      check("'coconutExtra' is back in the Components tree after undo", compRows.some((r) => r.text === "coconutExtra"));
+      check("'finialExtra' is back in the Components tree after undo", compRows.some((r) => r.text === "finialExtra"));
 
       // Clean up: redo isn't needed, but re-delete it via Ctrl+Z's redo
       // pair so later sections' component/mesh counts stay predictable —
       // actually simplest is a fresh delete + NO undo this time, since the
       // earlier "add part" section's whole point was proven already.
-      await clickFolderButton(page, "Part: coconutExtra", "delete part 🗑");
+      await clickFolderButton(page, "Part: finialExtra", "delete part 🗑");
       await page.waitForTimeout(200);
     }
 
     // -------------------------------------------------------------------
     console.log("\n=== delete a BASE part hides it (visible=false), undo un-hides it ===");
     {
-      await clickComponentRowByText(page, "trunkLower");
+      await clickComponentRowByText(page, "pole");
       await page.waitForTimeout(200);
       const before = await propsSnapshot(page);
-      check("trunkLower re-selected", before.selectedPartPath === "0");
+      check("pole re-selected", before.selectedPartPath === "0");
 
-      await clickFolderButton(page, "Part: trunkLower", "delete part 🗑");
+      await clickFolderButton(page, "Part: pole", "delete part 🗑");
       await page.waitForTimeout(200);
       // A BASE part's "delete" is hide+omit, NOT structural removal — the
       // Components tree/mesh COUNT must stay the SAME (the object is still
@@ -940,7 +944,7 @@ async function run(): Promise<void> {
       await clickCopyLibraryCode(page);
       await page.waitForTimeout(300);
       const clipHidden = await page.evaluate(() => navigator.clipboard.readText());
-      check("emitted parts.edits records visible: false for the hidden trunkLower", /path: "0"[\s\S]{0,200}visible: false/.test(clipHidden));
+      check("emitted parts.edits records visible: false for the hidden pole", /path: "0"[\s\S]{0,200}visible: false/.test(clipHidden));
 
       await page.keyboard.press("Control+z");
       await page.waitForTimeout(250);
@@ -948,7 +952,7 @@ async function run(): Promise<void> {
       await page.waitForTimeout(300);
       const clipRestored = await page.evaluate(() => navigator.clipboard.readText());
       check(
-        "undo removes the visible:false edit (trunkLower's edit record either drops the field or disappears)",
+        "undo removes the visible:false edit (pole's edit record either drops the field or disappears)",
         !/path: "0"[\s\S]{0,200}visible: false/.test(clipRestored),
       );
     }
