@@ -41,7 +41,7 @@ import { getBeagleSkin, DEFAULT_BEAGLE_SKIN_ID } from "../game/cosmetics";
 import { createBoardStage } from "./boardStage";
 import { createBoardTreeView, isPlacementRow, type BoardTreeRowId } from "./boardTree";
 import { createBoardInspector, type BoardMaterialHandles } from "./boardInspector";
-import { cloneWorkingTheme, formatThemeEntry, type WorkingTheme } from "./boardCodegen";
+import { cloneWorkingTheme, formatThemeEntry, generateFullThemesFile, type WorkingTheme } from "./boardCodegen";
 import { buildBoard, applyBoardTheme, type Board } from "../render/board";
 // IDEA-030/031 (on-board placement editor, dev-only): the raycast/slot-
 // marker/placement-CRUD module — see boardPlacement.ts's own header for the
@@ -80,6 +80,23 @@ import {
   uniquifyPropId,
   type WorkingPropDef,
 } from "./propsWorking";
+// IDEA-033 (props as editable part-assemblies, dev-only): props gain the
+// SAME per-component editing story the character workbench already has —
+// see the "--- props part editing (IDEA-033) ---" block inside the props-
+// mode section below. Reuses partTree.ts/picking.ts's GENERIC machinery
+// directly (buildPartList/createPartTreeView/attachPicking operate on any
+// THREE.Object3D root — nothing about them is character-specific); only the
+// per-part INSPECTOR folder and the edit bookkeeping are prop-specific new
+// modules (propsPartInspector.ts / propPartEditLog.ts), since
+// inspector.ts/editLog.ts are wired to characters.ts-only concepts (shared
+// coat/body materials, idle animation, skin/team-color globals) this tab has
+// no equivalent for — see propPartEditLog.ts's own header for the full
+// rationale.
+import { createPropsPartInspector } from "./propsPartInspector";
+import { PropPartEditLog, nextAddedPartId, type LiveAddedPropPart } from "./propPartEditLog";
+import { PROP_PART_GEOMETRY_DEFAULTS, buildPropPartPrimitiveGeometry } from "./propsPartCodegen";
+import { generateFullPropsFile } from "./propsFileExport";
+import { type PropPrimKind } from "../game/props";
 
 // --- DOM ---
 function byId<T extends HTMLElement>(id: string): T {
@@ -103,6 +120,12 @@ const editorApp = byId<HTMLDivElement>("editorApp");
 const modeCharacterBtn = byId<HTMLButtonElement>("modeCharacterBtn");
 const modeBoardBtn = byId<HTMLButtonElement>("modeBoardBtn");
 const modePropsBtn = byId<HTMLButtonElement>("modePropsBtn");
+const viewportHint = byId<HTMLDivElement>("viewportHint");
+// IDEA-033: Props mode's second tree pane (the selected prop's own component
+// list) — see editor/index.html's own note on why this is a SEPARATE DOM
+// node from #partTree rather than a second view fighting for the same one.
+const propsPartTreeContainer = byId<HTMLDivElement>("propsPartTree");
+const propsPartTreeTitle = byId<HTMLHeadingElement>("propsPartTreeTitle");
 
 // --- state ---
 const state: EditorState = {
@@ -501,7 +524,35 @@ attachPicking(
   (node) => select(node),
 );
 
+// IDEA-033: a SECOND attachPicking instance, scoped to Props mode's own
+// preview root — attachPicking's getRoot()/onPick callbacks are read fresh
+// on every pointerup (see picking.ts), so two independent instances sharing
+// the same canvas/camera never race: whichever one's getRoot() returns
+// non-null for the CURRENTLY active mode is the only one that ever resolves
+// a hit (the character instance above already gates itself the same way).
+// propPartNodeByObject/selectPropPart are declared further below (in the
+// "--- props part editing ---" section) — safe to reference here since
+// picking only invokes these closures on a REAL click, always after the
+// whole module (including that section) has finished initializing.
+attachPicking(
+  canvas,
+  stage.camera,
+  () => (mode === "props" ? propsPreview.currentMesh : null),
+  (object) => propPartNodeByObject.get(object),
+  (node) => selectPropPart(node),
+);
+
 // --- per-frame ---
+// IDEA-034: this callback references `boardPlacement`, a module-level const
+// declared FURTHER DOWN in this file (in the "--- board mode ---" section) —
+// safe despite that ordering because stage.ts's render loop only ever
+// invokes this closure from inside a `renderer.setAnimationLoop` tick, and
+// the very FIRST such tick can only fire after this entire module has
+// finished its synchronous top-to-bottom initialization (module-level code
+// runs to completion before any callback/event/animation-frame it registered
+// along the way can execute) — the exact same TDZ-safety argument boardTree's
+// own onSelect callback already documents for the identical "closure defined
+// before, reads a const declared after" shape.
 stage.onFrame((_dt, t) => {
   // IDEA-027: idle animation + the pink selection wireframe are both
   // character-mode-only concerns — gating on `mode` avoids animating a
@@ -512,6 +563,14 @@ stage.onFrame((_dt, t) => {
     if (group && state.idle && def.idle) def.idle(group, t);
     highlighter.update();
   }
+  // IDEA-034: the empty-slot marker PULSE (see boardPlacement.ts's
+  // updatePulse doc comment) only needs to animate while board mode is
+  // actually the visible workbench — gated the same way idle/highlighter are
+  // above, for the same reason (no point animating markers under a hidden
+  // boardStage.boardRoot). updatePulse itself is also a no-op whenever no
+  // marker is currently in the "empty" state (see its own early return), so
+  // this gate is a belt-and-braces skip, not the only thing preventing waste.
+  if (mode === "board") boardPlacement.updatePulse(t);
 });
 
 // --- code panel chrome: tabs + copy ---
@@ -707,6 +766,105 @@ window.addEventListener("blur", () => {
   rotateKeyHeld = false;
 });
 
+// IDEA-033: Props mode's OWN keyboard story — Ctrl+Z/Y undo/redo (against
+// `propHistory`, its own independent stack — see that variable's own doc
+// comment), arrow-key position/scale/rotation nudge (reusing the SAME
+// scaleKeyHeld/rotateKeyHeld modifier state the character listener above
+// sets — these are just "is S/R currently held", not mode-specific, and only
+// one mode's keydown handler ever runs its OWN branch per keypress since
+// each is gated behind its own `mode !== "…"` early return, so sharing the
+// two booleans is safe), Escape deselect, Delete hides/removes the selected
+// component (deletePropPartNode's own dispatch — see its doc comment for
+// why Delete means something slightly different per part kind here).
+// Mirrors the character listener's shape line-for-line, scoped to
+// `selectedPropPart`/`propPartLog`/`propHistory` instead of
+// `selected`/`log`/`history`.
+function nudgePropSelected(key: string, step: number, depthAxis: boolean): void {
+  if (!selectedPropPart) return;
+  const node = selectedPropPart;
+  const p = node.object.position;
+  const before: Vec3Tuple = [p.x, p.y, p.z];
+  if (key === "ArrowLeft") p.x -= step;
+  else if (key === "ArrowRight") p.x += step;
+  else if (key === "ArrowUp") depthAxis ? (p.z -= step) : (p.y += step);
+  else if (key === "ArrowDown") depthAxis ? (p.z += step) : (p.y -= step);
+  propPartLog.touchTransform(node, "position");
+  propsPartInspector.refreshDisplays();
+  pushPropTransformHistory(node, "position", before, [p.x, p.y, p.z], `propnudge:${node.path}`);
+}
+
+function nudgePropScaleSelected(key: string, step: number): void {
+  if (!selectedPropPart) return;
+  const node = selectedPropPart;
+  const s = node.object.scale;
+  const before: Vec3Tuple = [s.x, s.y, s.z];
+  const delta = key === "ArrowUp" || key === "ArrowRight" ? step : -step;
+  s.x = Math.max(0.01, s.x + delta);
+  s.y = Math.max(0.01, s.y + delta);
+  s.z = Math.max(0.01, s.z + delta);
+  propPartLog.touchTransform(node, "scale");
+  propsPartInspector.refreshDisplays();
+  pushPropTransformHistory(node, "scale", before, [s.x, s.y, s.z], `propnudgescale:${node.path}`);
+}
+
+function nudgePropRotateSelected(key: string, step: number, rollAxis: boolean): void {
+  if (!selectedPropPart) return;
+  const node = selectedPropPart;
+  const r = node.object.rotation;
+  const before: Vec3Tuple = [r.x, r.y, r.z];
+  if (key === "ArrowLeft") r.y -= step;
+  else if (key === "ArrowRight") r.y += step;
+  else if (key === "ArrowUp") rollAxis ? (r.z += step) : (r.x -= step);
+  else if (key === "ArrowDown") rollAxis ? (r.z -= step) : (r.x += step);
+  propPartLog.touchTransform(node, "rotation");
+  propsPartInspector.refreshDisplays();
+  pushPropTransformHistory(node, "rotation", before, [r.x, r.y, r.z], `propnudgerot:${node.path}`);
+}
+
+window.addEventListener(
+  "keydown",
+  (e) => {
+    if (mode !== "props") return;
+    const active = document.activeElement;
+    const inTextField = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement;
+    const key = e.key.toLowerCase();
+
+    if ((e.ctrlKey || e.metaKey) && (key === "z" || key === "y")) {
+      e.preventDefault();
+      if (inTextField) active.blur();
+      if (key === "y" || (key === "z" && e.shiftKey)) propHistory.redo();
+      else propHistory.undo();
+      return;
+    }
+
+    if (inTextField || active instanceof HTMLSelectElement) return;
+
+    if (key === "s") scaleKeyHeld = true;
+    if (key === "r") rotateKeyHeld = true;
+
+    if (e.key === "Escape") {
+      selectPropPart(null);
+      return;
+    }
+    if (selectedPropPart && selectedPropPart.path !== "" && e.key === "Delete") {
+      e.preventDefault();
+      deletePropPartNode(selectedPropPart);
+      return;
+    }
+    if (
+      selectedPropPart &&
+      (e.key === "ArrowUp" || e.key === "ArrowDown" || e.key === "ArrowLeft" || e.key === "ArrowRight")
+    ) {
+      e.preventDefault();
+      const step = e.shiftKey ? NUDGE_COARSE : e.altKey ? NUDGE_FINE : NUDGE_STEP;
+      if (scaleKeyHeld) nudgePropScaleSelected(e.key, step);
+      else if (rotateKeyHeld) nudgePropRotateSelected(e.key, step, e.ctrlKey);
+      else nudgePropSelected(e.key, step, e.ctrlKey);
+    }
+  },
+  true,
+);
+
 // ===========================================================================
 // --- board mode (IDEA-027, dev-only) ---
 // A second workbench alongside everything above: pick a base theme (one of
@@ -898,6 +1056,25 @@ const boardInspector = createBoardInspector(boardGuiHost, {
     const code = formatThemeEntry(workingTheme, 2);
     return navigator.clipboard.writeText(code);
   },
+  // IDEA-034: "💾 Save to themes.ts" — generateFullThemesFile splices
+  // `workingTheme`'s formatted entry back into the REAL themes.ts's raw
+  // source (replacing whichever entry's id matches `loadedBaseThemeId` — the
+  // registry id this working copy started from, NOT necessarily
+  // `workingTheme.id`, since that field is free-text-editable — see
+  // loadBaseTheme's own bookkeeping and generateFullThemesFile's doc comment
+  // on why the base id, not the current id, is the right lookup key), then
+  // saveEditorFile writes the result to disk via the SAME dev-only endpoint
+  // characters.ts's own "Save to characters.ts" button already uses (see
+  // saveFile.ts — src/game/themes.ts is already on vite.config.ts's
+  // EDITOR_SAVABLE_FILES whitelist). Never throws: a null from
+  // generateFullThemesFile (MAZE_THEMES's own delimiters unrecognizable) or a
+  // failed fetch both resolve to `{ ok: false, error }` for the button to
+  // flash, exactly mirroring saveEditorFile's own "never throws" contract.
+  onSaveFile: async () => {
+    const full = generateFullThemesFile(workingTheme, loadedBaseThemeId);
+    if (!full) return { ok: false, error: "could not locate MAZE_THEMES in themes.ts" };
+    return saveEditorFile("src/game/themes.ts", full);
+  },
 });
 
 // IDEA-030/031: the placement-interaction controller — ONE instance for
@@ -943,13 +1120,15 @@ boardInspector.bindPlacementActions({
   removeSelected: () => boardPlacement.removeSelected(),
 });
 
-// IDEA-030/031: arrow-key nudge for the selected APRON placement's offset —
-// "reusing the editor's existing arrow-nudge convention" (the task brief) —
-// same NUDGE_STEP/NUDGE_COARSE(Shift)/NUDGE_FINE(Alt) constants the
-// character-mode position nudge above already uses, and the same capture-
-// phase + inTextField/HTMLSelectElement guard so typing in a lil-gui number
-// field or using a dropdown's own arrow keys is never hijacked. Kept as its
-// OWN listener (not folded into the character-mode one above) because that
+// IDEA-030/031/034: keyboard editing for the selected placement — offset
+// (arrows), rotation (`[`/`]`), scale (`-`/`=`), and delete (Delete key), all
+// in ONE listener since they share the exact same mode/focus guards. Reusing
+// the editor's existing arrow-nudge convention (the task brief) — same
+// NUDGE_STEP/NUDGE_COARSE(Shift)/NUDGE_FINE(Alt) constants the character-mode
+// position nudge above already uses, and the same capture-phase +
+// inTextField/HTMLSelectElement guard so typing in a lil-gui number field or
+// using a dropdown's own arrow keys is never hijacked. Kept as its OWN
+// listener (not folded into the character-mode one above) because that
 // handler's very first line is `if (mode !== "character") return;` — adding
 // a board-mode branch there would mean threading a second mode check through
 // every line below it; a second listener scoped to `mode === "board"` is a
@@ -964,37 +1143,107 @@ boardInspector.bindPlacementActions({
 // (unlike the character nudge, which reassigns Up/Down from Y to Z under
 // Ctrl) — an apron placement's only two nudgeable axes ARE offset X/Z, so
 // there is no third axis to make room for.
+//
+// IDEA-034 ROTATION-FIRST-CLASS: Nuno's brief specifically calls out rotation
+// ("I need to rotate them") — `[`/`]` (a mnemonic-free but keyboard-ergonomic
+// pair sitting right next to Enter, unclaimed by any browser/OS shortcut, and
+// already precedented as a "rotate the current selection" idiom in other
+// editors, e.g. many level/scene tools bind bracket keys to yaw) rotate the
+// CURRENTLY SELECTED placement (either sub-mode — see
+// boardPlacement.nudgeSelectedRotation's own doc comment for why rotation,
+// unlike offset, isn't apron-only) counter-/clockwise. Arrow keys were
+// already fully claimed by offset nudging above, and reusing the character
+// mode's "hold R + arrows" scheme here would collide with board mode's OWN
+// arrow-key meaning (offset, not rotation) — bracket keys sidestep that
+// collision entirely rather than needing a modifier-held state variable.
+// `-`/`=` (the unshifted keys immediately left of Backspace — no Shift needed
+// for either, so this never fights the Shift-for-coarse-step convention every
+// other nudge here already uses) scale it up/down. The viewport hint (see
+// editor/index.html) documents both for a first-time user.
+const BOARD_ROTATE_STEP = 0.12; // radians per keypress — a clearly visible turn, not the slider-drag-grain 0.01 boardInspector.ts's own ROTATION_STEP uses
+const BOARD_ROTATE_COARSE = Math.PI / 4; // Shift: quarter-turn snaps
+const BOARD_ROTATE_FINE = 0.02; // Alt: fine adjustment
+const BOARD_SCALE_STEP = 0.04;
+const BOARD_SCALE_COARSE = 0.2;
+const BOARD_SCALE_FINE = 0.01;
+
 window.addEventListener(
   "keydown",
   (e) => {
     if (mode !== "board") return;
     const active = document.activeElement;
     const inTextField = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement;
-    if (inTextField || active instanceof HTMLSelectElement) return; // arrows inside a widget belong to it
+    if (inTextField || active instanceof HTMLSelectElement) return; // arrows/typing inside a widget belong to it
 
-    if (e.key !== "ArrowUp" && e.key !== "ArrowDown" && e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    if (e.key === "ArrowUp" || e.key === "ArrowDown" || e.key === "ArrowLeft" || e.key === "ArrowRight") {
+      const step = e.shiftKey ? NUDGE_COARSE : e.altKey ? NUDGE_FINE : NUDGE_STEP;
+      let dx = 0;
+      let dz = 0;
+      if (e.key === "ArrowLeft") dx = -step;
+      else if (e.key === "ArrowRight") dx = step;
+      else if (e.key === "ArrowUp") dz = -step;
+      else if (e.key === "ArrowDown") dz = step;
 
-    const step = e.shiftKey ? NUDGE_COARSE : e.altKey ? NUDGE_FINE : NUDGE_STEP;
-    let dx = 0;
-    let dz = 0;
-    if (e.key === "ArrowLeft") dx = -step;
-    else if (e.key === "ArrowRight") dx = step;
-    else if (e.key === "ArrowUp") dz = -step;
-    else if (e.key === "ArrowDown") dz = step;
+      const nudged = boardPlacement.nudgeSelectedOffset(dx, dz);
+      if (!nudged) return; // no selection, wall-mode selection, or empty slot — nothing to nudge
+      e.preventDefault();
+      // nudgeSelectedOffset already called boardPlacement's own onChange
+      // (rebuildBoardFromWorkingTheme) internally — but it does NOT rebuild
+      // the inspector's Placement folder (unlike assignProp/removeSelected,
+      // it deliberately does not re-fire setSelection on every single nudge
+      // tick, so a fast arrow-key run doesn't thrash the folder's DOM while
+      // the offset sliders are mid-drag-equivalent) — refresh just the
+      // slider DISPLAYS so they reflect the nudged value without a full
+      // folder rebuild, the same "updateDisplay, don't rebuild" idiom
+      // inspector.ts's own arrow-nudge path uses for position widgets.
+      boardInspector.refreshPlacementDisplays();
+      return;
+    }
 
-    const nudged = boardPlacement.nudgeSelectedOffset(dx, dz);
-    if (!nudged) return; // no selection, wall-mode selection, or empty slot — nothing to nudge
-    e.preventDefault();
-    // nudgeSelectedOffset already called boardPlacement's own onChange
-    // (rebuildBoardFromWorkingTheme) internally — but it does NOT rebuild
-    // the inspector's Placement folder (unlike assignProp/removeSelected,
-    // it deliberately does not re-fire setSelection on every single nudge
-    // tick, so a fast arrow-key run doesn't thrash the folder's DOM while
-    // the offset sliders are mid-drag-equivalent) — refresh just the
-    // slider DISPLAYS so they reflect the nudged value without a full
-    // folder rebuild, the same "updateDisplay, don't rebuild" idiom
-    // inspector.ts's own arrow-nudge path uses for position widgets.
-    boardInspector.refreshPlacementDisplays();
+    // IDEA-034 gotcha: matched on `e.code` (the PHYSICAL key, e.g.
+    // "BracketRight"), not `e.key` — `e.key` reflects what the key actually
+    // PRODUCES, which changes under Shift on a standard layout
+    // (Shift+"]" -> "}", Shift+"-" -> "_", Shift+"=" -> "+") — matching on
+    // `e.key === "]"` would silently stop working the instant Shift is held,
+    // exactly the moment BOARD_ROTATE_COARSE/BOARD_SCALE_COARSE are supposed
+    // to kick in. `e.code` identifies the physical key regardless of
+    // Shift/Alt/layout, so "hold Shift for the coarse step" (the same
+    // modifier convention every other nudge in this file already uses) keeps
+    // working correctly.
+    if (e.code === "BracketLeft" || e.code === "BracketRight") {
+      const step = e.shiftKey ? BOARD_ROTATE_COARSE : e.altKey ? BOARD_ROTATE_FINE : BOARD_ROTATE_STEP;
+      const delta = e.code === "BracketLeft" ? -step : step;
+      const rotated = boardPlacement.nudgeSelectedRotation(delta);
+      if (!rotated) return;
+      e.preventDefault();
+      boardInspector.refreshPlacementDisplays(); // same "updateDisplay, don't rebuild" idiom as the offset nudge above
+      return;
+    }
+
+    if (e.code === "Minus" || e.code === "Equal") {
+      const step = e.shiftKey ? BOARD_SCALE_COARSE : e.altKey ? BOARD_SCALE_FINE : BOARD_SCALE_STEP;
+      const delta = e.code === "Minus" ? -step : step;
+      const scaled = boardPlacement.nudgeSelectedScale(delta);
+      if (!scaled) return;
+      e.preventDefault();
+      boardInspector.refreshPlacementDisplays();
+      return;
+    }
+
+    // IDEA-034: Delete removes the selected placement — the same dispatch
+    // path the inspector's own "remove this placement 🗑" button already
+    // uses (boardPlacement.removeSelected() drives the marker repaint + live
+    // board re-apply + folder teardown via the SAME onSelectionChange chain
+    // every other removal already goes through — see
+    // boardPlacement.ts:removeSelected's own doc comment). A no-op (not an
+    // error) when nothing is selected or the selection is already an empty
+    // slot, mirroring removeSelected's own guard — so this is safe to fire
+    // on every Delete keypress in board mode without a manual "is there
+    // something to delete" pre-check duplicating removeSelected's own.
+    if (e.key === "Delete") {
+      e.preventDefault();
+      boardPlacement.removeSelected();
+    }
   },
   true,
 );
@@ -1078,18 +1327,365 @@ function disposePropsPreview(): void {
  *  per-tile deterministic hash. */
 const PREVIEW_INSTANCE_HASH = 0.5;
 
+/** IDEA-033: writes the LIVE part-edit log's current state back onto
+ *  `def.parts` (undefined again if the user genuinely undid every edit back
+ *  to nothing — see the isDirty guard below for exactly how that's told
+ *  apart from "nothing to flush") — called right before rebuildPropsPreview
+ *  tears down and rebuilds the mesh, so a rebuild triggered by an unrelated
+ *  "Base" params/name/shape edit NEVER loses in-progress part edits: they
+ *  flow def.parts -> (torn down) -> makePropFromDef re-applies them onto the
+ *  fresh mesh -> propPartLog.snapshot() re-baselines against that (now
+ *  identical) result. Also the ONLY place `def.parts` is written outside the
+ *  inspector's own shape-swap reset (propsInspector.ts) — codegen/save both
+ *  read `workingLibrary` directly, so this must run before either of THOSE
+ *  too (see the copy/save button handlers below, which call it first).
+ *
+ *  Targets `propPartLogOwnerId` — NOT `selectedPropId` (see that variable's
+ *  own doc comment for the exact bug this avoids: selectProp() already
+ *  reassigns selectedPropId to the INCOMING def before rebuildPropsPreview
+ *  ever calls this function, so flushing against selectedPropId would write
+ *  the OUTGOING def's edits onto the wrong entry).
+ *
+ *  Skips ENTIRELY when `!propPartLog.isDirty` — a real bug found during
+ *  testing: TWO back-to-back rebuilds of the SAME def with no genuine edit
+ *  in between (e.g. leaving Props mode and re-entering it with the same
+ *  selection still active — enterPropsMode() unconditionally calls
+ *  rebuildPropsPreview()) would otherwise see an "empty" log on the SECOND
+ *  flush (the first rebuild's own snapshot() already re-baselined it to
+ *  match the just-saved def.parts) and misread that as "the user undid
+ *  everything", silently deleting the def's own already-correct parts.
+ *  isDirty (see propPartEditLog.ts's own doc comment) distinguishes
+ *  "genuinely untouched since the last snapshot" from "touched, and now
+ *  happens to read as empty because every edit was explicitly undone" —
+ *  only the latter should ever clear def.parts. */
+function syncPartsIntoWorkingDef(): void {
+  if (!propPartLog || !propPartLogOwnerId || !propPartLog.isDirty) return;
+  const def = workingLibrary.find((d) => d.id === propPartLogOwnerId);
+  if (!def) return;
+  const layer = propPartLog.toPropPartLayer();
+  if (layer.edits.length === 0 && layer.added.length === 0) delete def.parts;
+  else def.parts = layer;
+}
+
 function rebuildPropsPreview(): void {
+  syncPartsIntoWorkingDef(); // flush any live part edits onto the OUTGOING def first
+  selectPropPart(null); // clears selection/highlight before the old mesh is disposed
   disposePropsPreview();
   const def = selectedPropId ? workingLibrary.find((d) => d.id === selectedPropId) : undefined;
-  if (!def) return;
+  if (!def) {
+    propPartTree.render([]);
+    propPartLogOwnerId = null; // nothing selected -> nothing for a future flush to target
+    return;
+  }
   // makePropFromDef takes a PropDef (params fields are `readonly number[]`
   // where present) — a WorkingPropDef's params satisfy that structurally
   // (mutable arrays are assignable to readonly ones), so no conversion is
   // needed beyond the type-level widen already expressed in propsWorking.ts.
+  // IDEA-033: this call ALSO re-applies def.parts (if any) via board.ts's own
+  // applyPropParts — the exact same function the real game uses — so the
+  // editor's preview and the shipped board can never show a part-edited prop
+  // differently.
   const mesh = makePropFromDef(def, PREVIEW_INSTANCE_HASH);
   mesh.traverse((o) => { o.castShadow = true; });
   propsPreviewRoot.add(mesh);
   propsPreview.currentMesh = mesh;
+  // A genuinely NEW mesh — every part's authored pose/material must be
+  // re-baselined against IT (a fresh PropPartEditLog), unlike
+  // refreshPropParts' own re-walk below (called after add/delete, where the
+  // mesh is the SAME live object with one child added/removed — see that
+  // function's own doc comment on why it must NEVER replace the log).
+  propPartLog = new PropPartEditLog();
+  propPartLogOwnerId = def.id; // this log now belongs to THIS def — see its own doc comment
+  refreshPropParts();
+  propPartLog.snapshot(propPartNodes);
+}
+
+// ===========================================================================
+// --- props part editing (IDEA-033, dev-only) ---
+// Selecting a library prop no longer just tunes SLIDERS — click any of its
+// built components (in the viewport or the new "Components" tree below the
+// library list) to move/scale/recolor/hide it, add brand-new primitive
+// parts, or delete one — exactly the same interaction the character
+// workbench already offers for the beagle, layered on top of (never
+// replacing) the existing parametric shape+params controls above.
+//
+// `propPartLog` is rebuilt fresh every time rebuildPropsPreview() runs (a NEW
+// preview mesh means every part's baseline pose/material must be
+// re-snapshotted against IT, not the disposed one) — see that function's own
+// call site. refreshPropParts (below) re-walks the tree on every structural
+// change but deliberately NEVER touches propPartLog itself — see its own
+// doc comment for why replacing the log there was a real bug during
+// development.
+let propPartNodes: PartNode[] = [];
+let propPartNodeByObject = new Map<THREE.Object3D, PartNode>();
+let propPartLog: PropPartEditLog = new PropPartEditLog();
+/** IDEA-033: which working-library def `propPartLog` is CURRENTLY tracking —
+ *  deliberately NOT the same thing as `selectedPropId`. `selectProp(id)`
+ *  (propsTree's onSelect callback) assigns `selectedPropId = id` and THEN
+ *  calls rebuildPropsPreview(), which calls syncPartsIntoWorkingDef() as its
+ *  very first line — by that point `selectedPropId` already points at the
+ *  INCOMING def, not the outgoing one whose edits actually live in
+ *  `propPartLog`. Flushing against `selectedPropId` there was a real bug
+ *  found during testing: switching from "Palm" (edited) to "Flower Bloom"
+ *  silently wrote Palm's edits onto BLOOM's def instead of Palm's own, and
+ *  Palm's `parts` field was never populated at all. `propPartLogOwnerId` is
+ *  set ONLY where a fresh log is actually created (rebuildPropsPreview,
+ *  right after `propPartLog = new PropPartEditLog()`) and read ONLY by
+ *  syncPartsIntoWorkingDef — so the flush target is always "whichever def
+ *  this log was snapshotted against", independent of whatever
+ *  `selectedPropId` has since been reassigned to. */
+let propPartLogOwnerId: string | null = null;
+let selectedPropPart: PartNode | null = null;
+const propHistory = new History(); // IDEA-033: props get their OWN undo stack, independent of character mode's
+
+const propPartTree = createPartTreeView(propsPartTreeContainer, (node) => selectPropPart(node));
+const propsPartInspector = createPropsPartInspector(propsGuiHost, {
+  onAddPart: (kind, name) => addPropPart(kind, name),
+});
+
+/** Re-walks propsPreview.currentMesh into a fresh propPartNodes/
+ *  propPartNodeByObject + re-renders the Components tree — called after
+ *  EVERY structural change to that SAME live mesh (add-part attach/detach,
+ *  delete/undo/redo of either kind) so the tree/lookup map never go stale.
+ *
+ *  Deliberately does NOT touch `propPartLog` — unlike rebuildPropsPreview
+ *  (which constructs a genuinely NEW mesh and correctly re-baselines with a
+ *  fresh log), every caller of THIS function is mutating the mesh the log
+ *  is ALREADY tracking edits/added-parts against (an add/delete just
+ *  attaches/detaches one child) — replacing the log here would silently
+ *  drop whatever addPropPart/deletePropPartNode just recorded (this was a
+ *  real bug during development: attach() called propPartLog.addPart(record)
+ *  immediately followed by this function, which used to re-snapshot the log
+ *  and wipe that very record before it could ever be found again). See
+ *  rebuildPropsPreview's own call site for the ONE place a fresh log is
+ *  actually correct. */
+function refreshPropParts(): void {
+  const mesh = propsPreview.currentMesh;
+  if (!mesh) {
+    propPartNodes = [];
+    propPartNodeByObject = new Map();
+    propPartTree.render([]);
+    return;
+  }
+  const def = selectedPropId ? workingLibrary.find((d) => d.id === selectedPropId) : undefined;
+  propPartNodes = buildPartList(mesh, def?.name ?? "Prop");
+  propPartNodeByObject = new Map(propPartNodes.map((n) => [n.object, n]));
+  propPartTree.render(propPartNodes);
+  if (selectedPropPart) propPartTree.setSelected(selectedPropPart.path);
+}
+
+/** Selection for a prop's OWN component — the props-mode analogue of
+ *  character-mode's select(). Reuses the SAME `highlighter` instance
+ *  character mode owns (stage.scene is shared and only one mode is ever
+ *  interactive at a time — see setMode, which already clears the character
+ *  selection via select(null) before entering Props mode, so the wireframe
+ *  overlay can never belong to two modes at once). */
+function selectPropPart(node: PartNode | null): void {
+  selectedPropPart = node;
+  propPartTree.setSelected(node?.path ?? null);
+  highlighter.set(state.highlight ? node : null);
+  propsPartInspector.setSelection(node, node ? propPartSelectionContext() : null);
+}
+
+function propPartSelectionContext() {
+  return {
+    log: propPartLog,
+    addedRecord: selectedPropPart ? propPartLog.findAddedPart(selectedPropPart.object) : undefined,
+    onEdit: () => {}, // Props mode has no bottom code panel to refresh (see main.ts's setMode note)
+    onGeometryRebuilt: (node: PartNode) => {
+      if (selectedPropPart === node) highlighter.set(state.highlight ? node : null);
+    },
+    onDelete: deletePropPartNode,
+    onTransformCommitted: (node: PartNode, channel: PropTransformChannel, before: Vec3Tuple, after: Vec3Tuple) => {
+      pushPropTransformHistory(node, channel, before, after);
+    },
+    onVisibleCommitted: (node: PartNode, before: boolean, after: boolean) => {
+      const apply = (value: boolean) => (): void => {
+        node.object.visible = value;
+        propPartLog.touchVisible(node);
+        afterPropHistoryApply(node);
+      };
+      propHistory.push({ undo: apply(before), redo: apply(after) });
+    },
+    onMaterialCommitted: (node: PartNode, channel: "color" | "emissive", before: number, after: number) => {
+      const apply = (value: number) => (): void => {
+        if (node.object instanceof THREE.Mesh) {
+          const mat = Array.isArray(node.object.material) ? node.object.material[0] : node.object.material;
+          if (mat instanceof THREE.MeshStandardMaterial) {
+            if (channel === "color") mat.color.setHex(value);
+            else mat.emissive.setHex(value);
+          }
+        }
+        propPartLog.touchMaterial(node, channel, value);
+        afterPropHistoryApply(node);
+      };
+      propHistory.push({ undo: apply(before), redo: apply(after), coalesceKey: `propmat:${node.path}:${channel}` });
+    },
+    onParamCommitted: (record: LiveAddedPropPart, key: string, before: number, after: number) => {
+      const apply = (value: number) => (): void => {
+        record.params[key] = value;
+        record.object.geometry.dispose();
+        record.object.geometry = buildPropPartPrimitiveGeometry(record.kind, record.params);
+        const node = propPartNodeByObject.get(record.object);
+        if (node && selectedPropPart === node) highlighter.set(state.highlight ? node : null);
+        afterPropHistoryApply(node ?? null);
+      };
+      propHistory.push({ undo: apply(before), redo: apply(after), coalesceKey: `propparam:${record.id}:${key}` });
+    },
+  };
+}
+
+type PropTransformChannel = "position" | "rotation" | "scale";
+
+function applyPropChannel(object: THREE.Object3D, channel: PropTransformChannel, v: Vec3Tuple): void {
+  if (channel === "rotation") object.rotation.set(v[0], v[1], v[2]);
+  else object[channel].set(v[0], v[1], v[2]);
+}
+
+/** After a props-history entry mutated the scene: refresh the inspector
+ *  folder's widgets (a full rebuild — same "re-init gesture snapshots"
+ *  reasoning as character mode's own afterHistoryApply). */
+function afterPropHistoryApply(node: PartNode | null): void {
+  if (selectedPropPart && (node === null || node === selectedPropPart)) {
+    propsPartInspector.setSelection(selectedPropPart, propPartSelectionContext());
+  }
+}
+
+function pushPropTransformHistory(
+  node: PartNode,
+  channel: PropTransformChannel,
+  before: Vec3Tuple,
+  after: Vec3Tuple,
+  coalesceKey?: string,
+): void {
+  const apply = (v: Vec3Tuple) => (): void => {
+    applyPropChannel(node.object, channel, v);
+    propPartLog.touchTransform(node, channel);
+    afterPropHistoryApply(node);
+  };
+  propHistory.push({ undo: apply(before), redo: apply(after), coalesceKey });
+}
+
+/** Sanitizes a user-typed "Add part" name into something safe to show as a
+ *  tree row label — same character-class filter as character-mode's own
+ *  sanitizeName, minus its "must be a unique JS identifier" concern (props
+ *  parts are never referenced by a generated LOCAL VARIABLE the way
+ *  characters.ts's added parts are — see AddedPropPart's own doc comment on
+ *  why `id` is a separate, auto-generated pairing key instead). Falls back
+ *  to the raw `kind` when the typed name sanitizes to nothing. */
+function sanitizePropPartName(raw: string, kind: PropPrimKind): string {
+  const cleaned = raw.replace(/[^a-zA-Z0-9_ -]/g, "").trim();
+  return cleaned.length > 0 ? cleaned : kind;
+}
+
+/** Add a primitive part to the SELECTED component (or the prop's own root if
+ *  nothing is selected) — same "attach under the current selection" UX as
+ *  character-mode's addPart. `kind`/`rawName` come from the "Add part"
+ *  mini-form below the component tree (propsPartInspector.ts's persistent
+ *  "Add part" folder) — `rawName` becomes the tree row's DISPLAY name
+ *  (mesh.name, sanitized) while the actual codegen/pairing key is the
+ *  separately auto-generated `id` (nextAddedPartId) — see
+ *  sanitizePropPartName's own doc comment for why these are split. */
+function addPropPart(kind: PropPrimKind, rawName: string): void {
+  const mesh = propsPreview.currentMesh;
+  if (!mesh) return;
+  const parentNode = selectedPropPart ?? propPartNodeByObject.get(mesh);
+  if (!parentNode) return;
+
+  const id = nextAddedPartId(kind);
+  const displayName = sanitizePropPartName(rawName, kind);
+  const params = { ...PROP_PART_GEOMETRY_DEFAULTS[kind] };
+  const material = new THREE.MeshStandardMaterial({ color: 0xe8a23d, roughness: 0.6 });
+  const geomMesh = new THREE.Mesh(buildPropPartPrimitiveGeometry(kind, params), material);
+  geomMesh.name = displayName;
+  geomMesh.castShadow = true;
+  geomMesh.position.set(0, 0.15, 0); // pop out of the parent so it's immediately visible
+  geomMesh.userData.editorAdded = true;
+
+  const record: LiveAddedPropPart = { id, parentPath: parentNode.path, kind, object: geomMesh, material, params };
+  const parent = parentNode.object;
+
+  function attach(): void {
+    parent.add(geomMesh);
+    propPartLog.addPart(record);
+    refreshPropParts();
+    // Land on the (re-)added part every time attach() runs — the initial
+    // add below AND a later redo-of-undo both funnel through here, so both
+    // get "straight into tweaking it" for free instead of needing their own
+    // explicit selectPropPart call (see deletePropPartNode's undo closure,
+    // fixed the same way, for the mirror-image case).
+    const node = propPartNodeByObject.get(geomMesh);
+    if (node) selectPropPart(node);
+  }
+  function detach(): void {
+    if (selectedPropPart?.object === geomMesh) selectPropPart(null);
+    geomMesh.removeFromParent();
+    propPartLog.removePart(geomMesh);
+    refreshPropParts();
+  }
+
+  attach();
+  propHistory.push({
+    undo: detach,
+    redo: attach,
+    onDiscard: () => {
+      if (!geomMesh.parent) {
+        geomMesh.geometry.dispose();
+        material.dispose();
+      }
+    },
+  });
+}
+
+/** Deletes the selected component — an ADDED part is fully removed from the
+ *  scene (same "detach + dispose on discard" story as character-mode's
+ *  deletePart); a BASE part (straight from the factory) is instead hidden
+ *  (visible=false), which is what "delete" means for a part the factory
+ *  always rebuilds fresh every time (see props.ts's PropPartEdit doc
+ *  comment) — undo simply un-hides it again. */
+function deletePropPartNode(node: PartNode): void {
+  const added = propPartLog.findAddedPart(node.object);
+  if (added) {
+    if (selectedPropPart?.object === node.object) selectPropPart(null);
+    const parent = node.object.parent;
+    if (!parent) return;
+    node.object.removeFromParent();
+    propPartLog.removePart(node.object);
+    refreshPropParts();
+    propHistory.push({
+      undo: () => {
+        parent.add(node.object);
+        propPartLog.addPart(added);
+        refreshPropParts();
+        // Land back on the restored part, same as character-mode's
+        // attachOriginalAt/attachAdded — otherwise a follow-up "delete
+        // part" click has no selected folder to find the button in.
+        const restored = propPartNodeByObject.get(node.object);
+        if (restored) selectPropPart(restored);
+      },
+      redo: () => {
+        node.object.removeFromParent();
+        propPartLog.removePart(node.object);
+        refreshPropParts();
+      },
+      onDiscard: () => {
+        if (!node.object.parent) {
+          added.object.geometry.dispose();
+          added.material.dispose();
+        }
+      },
+    });
+    return;
+  }
+  if (node.path === "") return; // the prop's own root is never deletable
+  const before = node.object.visible;
+  const apply = (visible: boolean) => (): void => {
+    node.object.visible = visible;
+    propPartLog.touchVisible(node);
+    afterPropHistoryApply(node);
+  };
+  apply(false)();
+  propHistory.push({ undo: apply(before), redo: apply(false) });
 }
 
 /** Counts, across every MAZE_THEMES entry's placements + wallDecor, how many
@@ -1207,8 +1803,8 @@ copyLibraryBtn.id = "copyLibraryBtn";
 copyLibraryBtn.className = "copy-btn";
 copyLibraryBtn.textContent = "Copy library code 📋";
 copyLibraryBtn.title = "Copy the whole PROP_LIBRARY export — paste over src/game/props.ts's own PROP_LIBRARY";
-propsGuiHost.prepend(copyLibraryBtn);
 copyLibraryBtn.addEventListener("click", () => {
+  syncPartsIntoWorkingDef(); // IDEA-033: flush any live part edits so the copy includes them
   const code = formatPropLibrary(workingLibrary, 2);
   void navigator.clipboard.writeText(code).then(() => {
     const original = copyLibraryBtn.textContent ?? "";
@@ -1220,6 +1816,80 @@ copyLibraryBtn.addEventListener("click", () => {
     }, 1600);
   });
 });
+propsGuiHost.prepend(copyLibraryBtn);
+
+// IDEA-033/032: "Save to props.ts" — the SAFE path, mirroring
+// character-mode's saveFileBtn (see editor/index.html's own button and
+// characters.ts's save flow): writes the COMPLETE src/game/props.ts straight
+// to disk via the dev-only /__save-file middleware (saveEditorFile — the
+// same whitelisted endpoint characters.ts/themes.ts already use), so
+// applying part edits/new props never risks a copy-paste-into-the-wrong-
+// place mistake. Falls back to a clear failure flash if the dev endpoint
+// isn't reachable (page not served under `vite`) — "use Copy library code"
+// is the manual fallback either way. A plain HTML button (not lil-gui),
+// matching copyLibraryBtn's own placement/rationale exactly.
+const savePropsFileBtn = document.createElement("button");
+savePropsFileBtn.id = "savePropsFileBtn";
+savePropsFileBtn.className = "save-btn";
+savePropsFileBtn.textContent = "💾 Save to props.ts";
+savePropsFileBtn.title = "Write the whole prop library (including part edits) straight into src/game/props.ts (dev server only).";
+savePropsFileBtn.addEventListener("click", () => {
+  syncPartsIntoWorkingDef(); // flush any live part edits onto the working library first
+  const full = generateFullPropsFile(workingLibrary);
+  if (!full) {
+    const original = savePropsFileBtn.textContent ?? "";
+    savePropsFileBtn.textContent = "Failed — use Copy library code";
+    window.setTimeout(() => { savePropsFileBtn.textContent = original; }, 1600);
+    return;
+  }
+  void saveEditorFile("src/game/props.ts", full).then((r) => {
+    const original = savePropsFileBtn.textContent ?? "";
+    savePropsFileBtn.classList.toggle("copied", r.ok);
+    savePropsFileBtn.textContent = r.ok ? "Saved ✓ props.ts" : "Save failed — use Copy library code";
+    window.setTimeout(() => {
+      savePropsFileBtn.classList.remove("copied");
+      savePropsFileBtn.textContent = original;
+    }, 1600);
+  });
+});
+
+// Prepended LAST (copyLibraryBtn was already prepended above, right after
+// its own addEventListener) so #propsGuiHost reads top-to-bottom exactly
+// like the character-mode code panel's saveFileBtn/copyBtn/copyFileBtn trio
+// does: `prepend` always inserts at the very front, so prepending
+// savePropsFileBtn NOW — after copyLibraryBtn already claimed that spot —
+// pushes IT to the front instead, yielding [save, copy, …lil-gui folders]
+// in final DOM order (hero action first, fallback second).
+propsGuiHost.prepend(savePropsFileBtn);
+
+// IDEA-034: mode-specific viewport hints — the character-mode text is the
+// exact string editor/index.html originally hard-coded (captured here so
+// re-entering character mode restores it byte-for-byte); the board-mode text
+// is NEW, documenting this task's additions (arrows nudge OFFSET now,
+// `[`/`]` rotate, `-`/`=` scale, Delete removes) — "a clear on-screen hint"
+// per the brief, since none of these keys have any other visible affordance
+// the way a lil-gui slider label does. Props mode intentionally reuses the
+// character-mode text below (unchanged from what it silently inherited
+// before this task) — its own keyboard story isn't part of this task's
+// scope, and leaving it as-is is the additive-only choice here.
+const HINT_CHARACTER =
+  "drag to orbit · scroll to zoom · click a part to select · " +
+  "arrows nudge position (hold S = scale · hold R = rotate · Shift = big · Alt = fine · " +
+  "Ctrl = depth/roll) · Ctrl+Z undo · Esc deselect";
+const HINT_BOARD =
+  "drag to orbit · scroll to zoom · click a highlighted slot to select/plant a prop · " +
+  "arrows nudge offset · [ / ] rotate · - / = scale (Shift = big · Alt = fine) · " +
+  "Delete removes the selection";
+// IDEA-033: Props mode's own hint — click a COMPONENT (viewport or the
+// Components tree) rather than a "part" of a character, and Delete
+// hides/removes it instead of always deleting outright (a base part is
+// hidden, an added one is truly removed — see deletePropPartNode's own doc
+// comment) — worth calling out explicitly rather than silently inheriting
+// HINT_CHARACTER's character-flavored wording the way this mode used to.
+const HINT_PROPS =
+  "drag to orbit · scroll to zoom · click a component to select · " +
+  "arrows nudge position (hold S = scale · hold R = rotate · Shift = big · Alt = fine · " +
+  "Ctrl = depth/roll) · Ctrl+Z undo · Delete hides/removes · Esc deselect";
 
 /** IDEA-029: rewritten from a binary `toChar`/`else` branch (the pre-Props
  *  shape, when "not character" only ever meant "board") into a real 3-way
@@ -1231,6 +1901,7 @@ copyLibraryBtn.addEventListener("click", () => {
  *  placement-editing logic (owned by the parallel agent) is untouched. */
 function setMode(next: Mode): void {
   if (mode === next) return;
+  const previousMode = mode; // IDEA-033 needs "what we're LEAVING", captured before the reassignment below
   mode = next;
 
   modeCharacterBtn.classList.toggle("active", next === "character");
@@ -1247,6 +1918,13 @@ function setMode(next: Mode): void {
   boardGuiHost.hidden = next !== "board";
   propsGuiHost.hidden = next !== "props";
   byId<HTMLElement>("codePane").style.display = next === "character" ? "" : "none";
+  // IDEA-034/033: swap the viewport hint's text to match whichever keyboard
+  // story is actually live in the new mode.
+  viewportHint.textContent = next === "board" ? HINT_BOARD : next === "props" ? HINT_PROPS : HINT_CHARACTER;
+  // IDEA-033: the "Components" sub-tree only makes sense in Props mode —
+  // toggled alongside every other mode-scoped pane above.
+  propsPartTreeContainer.hidden = next !== "props";
+  propsPartTreeTitle.hidden = next !== "props";
 
   // Every mode's OWN tree view must release #partTree before another mode's
   // view claims it (all three render into the same shared DOM node — see
@@ -1257,6 +1935,18 @@ function setMode(next: Mode): void {
   // unconditionally on every transition is simplest and always correct.
   if (next !== "board") boardTree.destroy();
   if (next !== "props") propsTree.destroy();
+  // IDEA-033: leaving Props mode for either sibling — flush any in-progress
+  // part edits onto the working library (so they're never silently lost by
+  // switching tabs) and clear the props-part selection (selectPropPart(null)
+  // clears propsPartInspector's own folder AND the highlighter, which is the
+  // SAME shared instance character mode's select(null) below also drives —
+  // whichever mode is entered next calls its own select(null) too, but only
+  // AFTER this one, so clearing here first prevents a one-frame flash of a
+  // stale prop wireframe under the character/board scene).
+  if (previousMode === "props") {
+    syncPartsIntoWorkingDef();
+    selectPropPart(null);
+  }
 
   if (next === "character") {
     if (group) group.visible = true;
@@ -1378,6 +2068,13 @@ declare global {
        *  exactly on the marker's own render position, not the tile's floor
        *  level. */
       tileToClientXY(tile: [number, number], mode: "apron" | "wall"): { x: number; y: number } | null;
+      /** IDEA-034: reads back one slot marker's CURRENT rendered visual
+       *  state (disc opacity/color, uniform scale) — see
+       *  boardPlacement.ts's getMarkerState doc comment for why this is a
+       *  test hook rather than something the suite re-derives from a raw
+       *  scene traversal. Returns null for an out-of-range tile (shouldn't
+       *  happen for any real apron/wall candidate). */
+      markerState(tile: [number, number], mode: "apron" | "wall"): { opacity: number; color: number; scale: number } | null;
     };
   }
 }
@@ -1418,6 +2115,7 @@ window.__boardTestHook = {
     if (!sel) return null;
     return { tile: [sel.tile[0], sel.tile[1]], propId: sel.existing?.propId ?? null };
   },
+  markerState: (tile, mode) => boardPlacement.getMarkerState(tile, mode),
 };
 
 // TEST-SUPPORT ONLY: same rationale as __boardTestHook above, scoped to
@@ -1425,6 +2123,17 @@ window.__boardTestHook = {
 // selected prop rendered) has no DOM surface of its own, unlike everything
 // else Props mode exposes (tree rows, lil-gui labels, clipboard text), which
 // that suite reads exactly as a person would.
+//
+// IDEA-033: extended with the part-editing surface — `selectedPartPath`/
+// `componentCount` fill the same "no DOM surface of its own" gap for the
+// NEW Components tree/selection (a tree row's `.selected` class already
+// proves WHICH row is selected — see componentTreeRows in the test file —
+// but not what PATH main.ts's own selectedPropPart currently points at,
+// which matters for asserting undo/redo landed on the right node, not just
+// "a row is highlighted"). Everything else (did a transform/color/geometry
+// edit actually APPLY) is asserted the same way the rest of this suite
+// already does: through "Copy library code"'s real clipboard text, which
+// now includes the emitted `parts` field — see the new test sections below.
 declare global {
   interface Window {
     __propsTestHook?: {
@@ -1433,6 +2142,33 @@ declare global {
       previewMeshCount(): number;
       libraryLength(): number;
       selectedPropId(): string | null;
+      /** IDEA-033: the CURRENTLY selected component's tree path ("" for the
+       *  prop's own root, "0" for its first child, etc.) — null if nothing
+       *  is selected. The stable identity propPartLog/codegen key on. */
+      selectedPartPath(): string | null;
+      /** IDEA-033: total nodes in the Components tree right now (root +
+       *  every base part + every added primitive) — the same count
+       *  componentTreeRows(page) would report by counting DOM rows, exposed
+       *  here too so a test can assert on it without a DOM round-trip when
+       *  it's the ONLY thing being checked. */
+      componentCount(): number;
+      /** IDEA-033: whether the CURRENTLY selected working def has a `parts`
+       *  layer at all (undefined until the first flush — see
+       *  livePartEditCount below for the LIVE, pre-flush signal instead).
+       *  A pure read of `workingLibrary`'s current state; does NOT flush
+       *  propPartLog first (an earlier version of this hook did, which was
+       *  itself a real bug — see syncPartsIntoWorkingDef's own doc comment
+       *  on why an incidental flush right after a fresh rebuild can
+       *  incorrectly clear an already-correct def.parts). */
+      selectedDefHasParts(): boolean;
+      /** IDEA-033: the LIVE, unflushed edit count on the CURRENT
+       *  propPartLog (edits.size + added.length) — unlike
+       *  selectedDefHasParts (which reads workingLibrary's last-FLUSHED
+       *  state), this reads the in-memory log directly, so it reflects a
+       *  transform/material edit the instant it's made, before any mode
+       *  switch/copy/save has had a chance to flush it onto the working
+       *  def. */
+      livePartEditCount(): number;
     };
   }
 }
@@ -1440,6 +2176,26 @@ window.__propsTestHook = {
   previewMeshCount: () => propsPreview.currentMesh?.children.length ?? 0,
   libraryLength: () => workingLibrary.length,
   selectedPropId: () => selectedPropId,
+  selectedPartPath: () => selectedPropPart?.path ?? null,
+  componentCount: () => propPartNodes.length,
+  // IDEA-033: deliberately does NOT call syncPartsIntoWorkingDef() — this is
+  // a passive READ, and calling the flush from here was a genuine bug found
+  // during development: right after rebuildPropsPreview's OWN internal
+  // flush+rebuild+re-snapshot sequence, propPartLog legitimately has ZERO
+  // pending deltas (snapshot() just re-baselined it to MATCH the already-
+  // correct def.parts that was written moments earlier) — an empty log at
+  // that exact moment means "nothing NEW since the last save", not "the
+  // parts were removed". syncPartsIntoWorkingDef's own "empty log -> delete
+  // def.parts" rule is only correct when called from a genuine outgoing-
+  // def transition (mode switch, def switch, explicit save/copy) — never
+  // from an incidental read that happens to run moments after a fresh
+  // rebuild. def.parts is already kept correctly in sync by those real
+  // call sites; this hook only ever needs to READ it.
+  selectedDefHasParts: () => {
+    const def = selectedPropId ? workingLibrary.find((d) => d.id === selectedPropId) : undefined;
+    return def?.parts !== undefined;
+  },
+  livePartEditCount: () => propPartLog.edits.size + propPartLog.added.length,
 };
 
 // --- go ---

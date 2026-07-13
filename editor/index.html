@@ -22,6 +22,15 @@
       <aside id="treePane">
         <h2 class="pane-title" id="treePaneTitle">Parts</h2>
         <div id="partTree"></div>
+        <!-- IDEA-033: Props mode's SECOND tree — the selected prop's own
+             component list (base parts + any added primitives), stacked
+             below the prop-library list above (#partTree doubles as that
+             library list while in Props mode — see propsTree.ts). Hidden in
+             every other mode (main.ts toggles `hidden` alongside the other
+             mode-scoped panes) so Character/Board mode's single #partTree
+             keeps the whole pane exactly as before. -->
+        <h2 class="pane-title" id="propsPartTreeTitle" hidden>Components</h2>
+        <div id="propsPartTree" hidden></div>
       </aside>
       <main id="viewportPane">
         <canvas id="viewport"></canvas>

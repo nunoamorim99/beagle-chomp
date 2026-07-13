@@ -19,7 +19,7 @@
 // `undefined` placeholders), which is a different omission rule than
 // ThemePalette's always-fully-populated object, so folding the two
 // formatters into one shared module would need a branch per caller anyway.
-import type { PropBaseShape } from "../game/props";
+import type { PropBaseShape, PropPartEdit, AddedPropPart } from "../game/props";
 import type { WorkingPropDef, WorkingPropParams } from "./propsWorking";
 
 function hex(n: number): string {
@@ -90,20 +90,108 @@ function paramsLiteral(params: WorkingPropParams, i1: string, i2: string): strin
   return [`${i1}params: {`, ...lines.map((l) => `${i2}${l}`), `${i1}},`].join("\n");
 }
 
-/** Formats one WorkingPropDef as a multi-line object literal (id/name/shape/
- *  params), `i1`-indented to sit as a direct element of the PROP_LIBRARY
- *  array — matches every hand-authored entry in props.ts (see e.g. the
- *  "shrub"/"oak"/"tower" entries: `{ id: ..., name: ..., shape: ...,
- *  params: {...} },`). */
-function propEntryLiteral(def: WorkingPropDef, i1: string, i2: string, i3: string): string {
+// ---------------------------------------------------------------------------
+// IDEA-033 "Props as editable part-assemblies": formats a def's OPTIONAL
+// `parts` field (src/game/props.ts's PropPartLayer) — omitted entirely for
+// every def that was never part-edited (the round-trip guarantee: a def with
+// no `parts` today emits NO `parts` field, so re-parsing the output produces
+// an `undefined` field exactly like the original, never an empty
+// `{ edits: [], added: [] }` stand-in that would change makePropFromDef's
+// `if (def.parts)` guard from "skip" to "run a no-op loop" — harmless
+// either way, but the terser omission matches every OTHER optional field's
+// own convention in this file, e.g. paramFieldLiteral's `undefined -> null`
+// skip).
+
+function numTuple(v: readonly [number, number, number]): string {
+  return `[${v.map(fmtNum).join(", ")}]`;
+}
+
+/** Same 3-decimal rounding as fileExport.ts/codegen.ts's fmt (that module is
+ *  characters.ts-scoped, so this is a small local copy rather than an
+ *  import — see this file's own header on why props codegen stays
+ *  independent of the character-editor modules). */
+function fmtNum(n: number): number {
+  const r = Math.round(n * 1000) / 1000;
+  return r === 0 ? 0 : r;
+}
+
+/** One PropPartEdit as a compact single-line object literal — edits are
+ *  typically small (2-4 fields) and there can be several per def, so one
+ *  line per edit (not one line per FIELD, unlike paramsLiteral's per-field
+ *  layout) keeps a def with many edits scannable rather than sprawling. */
+function partEditLiteral(edit: PropPartEdit, indent: string): string {
+  const fields: string[] = [`path: ${str(edit.path)}`];
+  if (edit.position) fields.push(`position: ${numTuple(edit.position)}`);
+  if (edit.rotation) fields.push(`rotation: ${numTuple(edit.rotation)}`);
+  if (edit.scale) fields.push(`scale: ${numTuple(edit.scale)}`);
+  if (edit.color !== undefined) fields.push(`color: ${hex(edit.color)}`);
+  if (edit.emissive !== undefined) fields.push(`emissive: ${hex(edit.emissive)}`);
+  if (edit.visible !== undefined) fields.push(`visible: ${edit.visible}`);
+  return `${indent}{ ${fields.join(", ")} },`;
+}
+
+/** One AddedPropPart as a compact single-line object literal — same
+ *  rationale as partEditLiteral (several of these can coexist per def). The
+ *  `params` sub-object is inlined (`{ radius: 0.12 }`) since it's always
+ *  small and kind-specific (1-3 numeric fields, see
+ *  propsPartCodegen.ts's PROP_PART_GEOMETRY_DEFAULTS). */
+function addedPartLiteral(added: AddedPropPart, indent: string): string {
+  const paramsInline = `{ ${Object.entries(added.params).map(([k, v]) => `${k}: ${fmtNum(v)}`).join(", ")} }`;
+  const fields: string[] = [
+    `id: ${str(added.id)}`,
+    `parentPath: ${str(added.parentPath)}`,
+    `kind: ${str(added.kind)}`,
+    `params: ${paramsInline}`,
+    `position: ${numTuple(added.position)}`,
+  ];
+  if (added.rotation) fields.push(`rotation: ${numTuple(added.rotation)}`);
+  if (added.scale) fields.push(`scale: ${numTuple(added.scale)}`);
+  fields.push(`color: ${hex(added.color)}`);
+  if (added.emissive !== undefined) fields.push(`emissive: ${hex(added.emissive)}`);
+  return `${indent}{ ${fields.join(", ")} },`;
+}
+
+/** Formats a def's `parts: { edits: [...], added: [...] }` field, or returns
+ *  `null` if the def has no `parts` at all (the caller filters this out —
+ *  same "return null for absent, caller filters" idiom paramFieldLiteral
+ *  already uses). An empty-but-present `parts` (edits.length === 0 AND
+ *  added.length === 0) can't actually occur in practice — main.ts clears
+ *  `parts` back to `undefined` once both arrays empty out (see its
+ *  syncPartsIntoWorkingDef) — but if it ever did, this still emits a valid,
+ *  harmless `parts: { edits: [], added: [] },` rather than special-casing
+ *  it away. */
+function partsLiteral(def: WorkingPropDef, i1: string, i2: string): string | null {
+  if (!def.parts) return null;
+  const { edits, added } = def.parts;
+  const editLines = edits.map((e) => partEditLiteral(e, i2)).join("\n");
+  const addedLines = added.map((a) => addedPartLiteral(a, i2)).join("\n");
   return [
+    `${i1}parts: {`,
+    `${i2}edits: [${edits.length === 0 ? "" : `\n${editLines}\n${i1}`}],`,
+    `${i2}added: [${added.length === 0 ? "" : `\n${addedLines}\n${i1}`}],`,
+    `${i1}},`,
+  ].join("\n");
+}
+
+/** Formats one WorkingPropDef as a multi-line object literal (id/name/shape/
+ *  params/parts), `i1`-indented to sit as a direct element of the
+ *  PROP_LIBRARY array — matches every hand-authored entry in props.ts (see
+ *  e.g. the "shrub"/"oak"/"tower" entries: `{ id: ..., name: ..., shape:
+ *  ..., params: {...} },`). IDEA-033: `parts` is appended ONLY when present
+ *  (partsLiteral returns null otherwise), so a def that was never part-
+ *  edited emits byte-identical output to pre-IDEA-033 propsCodegen.ts. */
+function propEntryLiteral(def: WorkingPropDef, i1: string, i2: string, i3: string): string {
+  const lines = [
     `${i1}{`,
     `${i2}id: ${str(def.id)},`,
     `${i2}name: ${str(def.name)},`,
     `${i2}shape: ${str(def.shape)},`,
     paramsLiteral(def.params, i2, i3),
-    `${i1}},`,
-  ].join("\n");
+  ];
+  const parts = partsLiteral(def, i2, i3);
+  if (parts) lines.push(parts);
+  lines.push(`${i1}},`);
+  return lines.join("\n");
 }
 
 /**
