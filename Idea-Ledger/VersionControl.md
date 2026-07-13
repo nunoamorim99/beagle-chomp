@@ -25,6 +25,19 @@ _(nothing planned yet — v4.0 "New Territory" was fulfilled and cut on 2026-07-
 
 ## Version history
 
+### v4.2 — Editor Power (2026-07-13)
+The editor grew teeth: apply-your-edits safely, sculpt props part-by-part, and dress the board by
+hand. Driven by Nuno hitting the copy-paste footgun (a broken beagle shipped) and wanting real
+direct manipulation, not sliders.
+- **IDEA-032** — save-to-file: a dev-only endpoint writes characters.ts / themes.ts / props.ts
+  directly from the editor ("💾 Save" buttons) — no more paste-in-the-wrong-place. Root-cause fix
+  for the residue hazard.
+- **IDEA-033** — props as part-assemblies: select a component (a tower's window, a tree's crown),
+  move/scale/recolor it, add primitive parts, delete parts — props edited like the beagle. Shipped
+  defs render byte-identically.
+- **IDEA-034** — fuller on-board editing: pulsing highlighted slots showing where props go,
+  first-class rotation ([ / ] keys), move/scale/add/delete for apron props and wall components.
+
 ### v4.1 — Set Dressing (2026-07-13)
 An increment on v4.0's themes: props became a proper set-dressing system you author and place by
 hand. A reusable prop LIBRARY edited in the editor, explicit hand placement of every prop on the

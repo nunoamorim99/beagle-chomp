@@ -19,7 +19,7 @@ Living backlog of ideas. Two purposes:
 _(empty — nothing to triage)_
 
 ## Backlog (open ideas)
-> New registered ideas go here. Next free ID: IDEA-032
+> New registered ideas go here. Next free ID: IDEA-035
 
 ### IDEA-019 — Player login & cross-device account recovery 💡
 - **Priority:** 🟡
@@ -57,6 +57,64 @@ _(nothing yet)_
 
 ## Delivered ✅
 > Already in production. Do NOT delete. Each keeps its version history.
+
+### IDEA-032 — Save-to-file for the editor (stop the copy-paste footgun) ✅
+- **Priority:** 🔴
+- **Area:** tooling
+- **Registered:** 2026-07-13
+- **Description:** the character editor's "Copy full file" produces the WHOLE `characters.ts` (edit
+  block injected before `return g;`) — so it must REPLACE the file, but nothing says that, and
+  pasting it at the END stacks generated blocks and deletes body parts (shipped a three-legged
+  beagle, [[editor-residue-hazard]]). Add a **"Save to file"** button that writes the file directly
+  via a tiny dev-only Vite middleware (works only under `npm run dev`) — no copy-paste, no
+  wrong-place risk. Keep the copy buttons as a fallback with clearer labels + inline instructions
+  (Copy edits = paste before `return g;`; Copy full file = replaces the whole file).
+- **Notes:** Nuno hit this directly. Applies to ALL editor export surfaces: character
+  `characters.ts`, Board&Themes `themes.ts`, Props `props.ts`. The middleware whitelists exactly
+  those three paths, dev-only (never in the built PWA). Kills the recurring residue hazard at the
+  root. First item of v4.2.
+- **Dependencies:** [[IDEA-025]]
+- **History:**
+  - **v1** (2026-07-13) — the save-to-file fix, first item of v4.2 "Editor Power". A DEV-ONLY Vite middleware (`/__save-file`, `apply:"serve"` so it's never in the production build) writes exactly three whitelisted, path-contained source files (`characters.ts` / `themes.ts` / `props.ts`). `saveFile.ts` client helper (never throws; falls back on failure). Character mode gets a prominent green "💾 Save to characters.ts" that writes the file directly — no copy-paste, no wrong-place risk, no stacking (this is the root-cause fix for the three-legged-beagle residue: [[editor-residue-hazard]]). Copy buttons kept as clearly-relabelled fallbacks ("paste before return g;" / "replaces the whole file"). Board/Props modes got their own "Save to themes.ts"/"Save to props.ts" via [[IDEA-034]]/[[IDEA-033]]. Verified live: edit → Save → one clean block before makeBeagle's return g;, typechecks; endpoint absent from dist. `vite.config.ts`, `src/editor/saveFile.ts` (new), `main.ts`, `editor/index.html`, `editor.css`. _(63faaf5)_
+
+### IDEA-033 — Props as editable part-assemblies (per-component editing) ✅
+- **Priority:** 🟡
+- **Area:** tooling
+- **Registered:** 2026-07-13
+- **Description:** props in the Props tab become part-assemblies edited like the beagle: select a
+  component (a building's window, a tree's crown, a lamp's head) → move/scale/recolor it, ADD new
+  primitive parts, DELETE parts. Today's parametric-only model "doesn't give much more
+  possibilities" (Nuno) — this makes props first-class editable models with a part tree +
+  inspector, reusing the character editor's part-editing machinery.
+- **Notes:** Nuno: "select one component of the props and edit, like the beagle… add more
+  components or delete." Big: props stop being pure `PropParams` bundles and gain an editable part
+  list (the parametric defs become the STARTING geometry, then per-part edits layer on — same
+  decal-shell/part-inspector approach as [[IDEA-025]]). Export via [[IDEA-032]]'s save-to-file.
+  Builds on [[IDEA-029]]. Keep the existing 10 defs working as the base shapes.
+- **Dependencies:** [[IDEA-029]], [[IDEA-025]]
+- **History:**
+  - **v1** (2026-07-13) — props became editable PART-ASSEMBLIES (Nuno: "select one component of the prop and edit, like the beagle… add more components or delete"), second item of v4.2. `PropDef` gains an OPTIONAL `parts` layer (`PropPartEdit` transform/color/visibility addressed by a DFS path + `AddedPropPart` primitives) applied ON TOP of the parametric base shape; every shipped def omits it, so all 6 boards render byte-identically. `board.ts`'s 9 factories now NAME every mesh (base/window0..N, trunk/crown0..N, …) and `makePropFromDef` applies `parts` after building the base. The Props tab gains a real per-prop COMPONENT tree + per-part inspector (transform/material/visibility), add-primitive-part, delete-part, its own undo stack, and keyboard nudge — the same direct manipulation as the character editor ([[IDEA-025]]) — plus "💾 Save to props.ts" ([[IDEA-032]]). Two real flush-sequencing bugs caught in build (def-switch writing edits onto the wrong def; a redundant rebuild silently deleting a saved `parts` field). `props.ts`, `board.ts`, `src/editor/propPartEditLog.ts`+`propsPartInspector.ts`+`propsPartCodegen.ts`+`propsFileExport.ts` (new) + `propsCodegen/propsWorking/propsInspector.ts`, `main.ts`, `editor/index.html`, `editor.css`, `scripts/test-editor-props.ts`. _(e6e5061)_
+
+### IDEA-034 — Fuller on-board prop editing (move · rotate · scale · add · delete · highlighted slots) ✅
+- **Priority:** 🟡
+- **Area:** tooling
+- **Registered:** 2026-07-13
+- **Description:** on Board & Themes, edit placed props in place with more power: select a placed
+  prop and move / ROTATE / scale it (Nuno specifically wants rotation), add props to highlighted
+  empty slots, delete placed ones — for both apron props AND wall components. Clear visual
+  HIGHLIGHTING of every valid spot while placing. (Per-placement color is intentionally NOT
+  included — Nuno: "if I want a different-color umbrella I create a prop for that"; color lives in
+  the library [[IDEA-033]].)
+- **Notes:** Nuno: "add and delete… edit the position and the rotation and the blooms or wall maze
+  components, with the indication where I can put this." Extends [[IDEA-030]]/[[IDEA-031]]'s
+  placement editing (which already has slot markers + offset/rotation/scale sliders) toward a more
+  visible, direct-manipulation flow: brighten/animate the valid-slot highlight, make rotation
+  first-class, ensure add+delete are obvious for both apron and wall sub-modes. Export via
+  [[IDEA-032]].
+- **Dependencies:** [[IDEA-030]], [[IDEA-031]]
+- **History:**
+  - **v1** (2026-07-13) — fuller ON-BOARD prop editing (Nuno: "add and delete, edit the position and rotation, with indication where I can put this"), third item of v4.2. Empty slot markers now PULSE (a shared sine wave), read LARGER and blue vs filled — an unmistakable "put things here" affordance, for both apron and wall sub-modes. Rotation is first-class: `[`/`]` rotate the selected placement (Shift = quarter-turn coarse, Alt = fine), wrapped to [0, 2π); an on-screen hint spells the whole vocabulary out (click a highlighted slot to plant · arrows nudge · [ / ] rotate · - / = scale · Delete removes). Move/scale/add/delete work for apron props AND wall components. "💾 Save to themes.ts" ([[IDEA-032]]) writes the whole file (generateFullThemesFile splices the edited theme back into MAZE_THEMES). Per-placement color deliberately NOT added — color lives in the prop library ([[IDEA-033]]), Nuno's call. (The build was completed by an agent that died mid-run before testing; the 3 remaining failures were diagnosed as test bugs — a rotation-wrap expectation + HMR-reload state leaks — and fixed; the implementation was sound.) `src/editor/boardPlacement.ts`, `boardInspector.ts`, `boardTree.ts`, `boardCodegen.ts`, `main.ts`, `scripts/test-editor-board.ts`. _(e6e5061)_
+
 
 ### IDEA-029 — Reusable prop library + a Props editor tab ✅
 - **Priority:** 🟡
