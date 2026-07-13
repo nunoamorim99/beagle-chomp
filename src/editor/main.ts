@@ -38,10 +38,16 @@ import { getBeagleSkin, DEFAULT_BEAGLE_SKIN_ID } from "../game/cosmetics";
 // the bottom of this file for everything it adds. Imports grouped separately
 // so the character-mode wiring above stays exactly as IDEA-025/v2 left it.
 import { createBoardStage } from "./boardStage";
-import { createBoardTreeView } from "./boardTree";
+import { createBoardTreeView, isPlacementRow, type BoardTreeRowId } from "./boardTree";
 import { createBoardInspector, type BoardMaterialHandles } from "./boardInspector";
 import { cloneWorkingTheme, formatThemeEntry, type WorkingTheme } from "./boardCodegen";
 import { buildBoard, applyBoardTheme, type Board } from "../render/board";
+// IDEA-030/031 (on-board placement editor, dev-only): the raycast/slot-
+// marker/placement-CRUD module — see boardPlacement.ts's own header for the
+// full design. Imported alongside the rest of board mode's wiring (not a
+// fourth top-level import group) since it's a genuine PART of board mode,
+// not a sibling workbench mode the way Props (below) is.
+import { createBoardPlacement, type PlacementSelection } from "./boardPlacement";
 // computeFitDistance is scene.ts's own board-AABB camera-fit math (pure,
 // canvas-free) — reused here rather than reimplemented so board mode frames
 // MAZES[0] with the SAME proven fit the real game uses (default `corners`
@@ -52,10 +58,27 @@ import { buildBoard, applyBoardTheme, type Board } from "../render/board";
 // see boardStage.ts's header for why the rest of the atmosphere is ported
 // rather than imported.
 import { computeFitDistance } from "../render/scene";
-import { Grid, COLS, ROWS } from "../game/grid";
+import { Grid, COLS, ROWS, worldX, worldZ } from "../game/grid";
 import { MAZES } from "../game/mazes";
-import { getMazeTheme, setEquippedMazeThemeId, DEFAULT_MAZE_THEME_ID } from "../game/themes";
+import { getMazeTheme, setEquippedMazeThemeId, DEFAULT_MAZE_THEME_ID, MAZE_THEMES } from "../game/themes";
 import { CAM_FOV, CAM_POS, CAM_LOOK, CAM_MIN_DISTANCE, CAM_MAX_DISTANCE } from "./stage";
+// IDEA-029 (props library, dev-only): a THIRD workbench mode alongside
+// character/board — see the "--- props mode (IDEA-029) ---" block near the
+// bottom of this file. Imports grouped separately, same convention the board
+// block above already established, so the character-mode wiring at the top
+// of this file stays untouched.
+import { makePropFromDef } from "../render/board";
+import { formatPropLibrary } from "./propsCodegen";
+import { createPropsTreeView } from "./propsTree";
+import { createPropsInspector } from "./propsInspector";
+import {
+  cloneWorkingLibrary,
+  defaultWorkingPropDef,
+  duplicateWorkingPropDef,
+  nextPropId,
+  uniquifyPropId,
+  type WorkingPropDef,
+} from "./propsWorking";
 
 // --- DOM ---
 function byId<T extends HTMLElement>(id: string): T {
@@ -68,6 +91,7 @@ const treeContainer = byId<HTMLDivElement>("partTree");
 const treePaneTitle = byId<HTMLHeadingElement>("treePaneTitle");
 const charGuiHost = byId<HTMLDivElement>("charGuiHost");
 const boardGuiHost = byId<HTMLDivElement>("boardGuiHost");
+const propsGuiHost = byId<HTMLDivElement>("propsGuiHost");
 const generatedPre = byId<HTMLPreElement>("generatedView");
 const sourcePre = byId<HTMLPreElement>("sourceView");
 const codeTitle = byId<HTMLSpanElement>("codeTitle");
@@ -76,6 +100,7 @@ const copyFileBtn = byId<HTMLButtonElement>("copyFileBtn");
 const editorApp = byId<HTMLDivElement>("editorApp");
 const modeCharacterBtn = byId<HTMLButtonElement>("modeCharacterBtn");
 const modeBoardBtn = byId<HTMLButtonElement>("modeBoardBtn");
+const modePropsBtn = byId<HTMLButtonElement>("modePropsBtn");
 
 // --- state ---
 const state: EditorState = {
@@ -690,12 +715,35 @@ window.addEventListener("blur", () => {
 // full-reset (reload the base theme dropdown), this ships without undo — a
 // future pass COULD add a coarser "snapshot the whole WorkingTheme on every
 // committed gesture" history entry if that's ever worth the complexity.
-type Mode = "character" | "board";
+// IDEA-029: widened from "character" | "board" to add "props" — every OTHER
+// reference to Mode/mode in this board-mode block (the keydown guard, the
+// per-frame character-only gate, boardTest hook) already tests `mode ===
+// "character"` or `mode !== "character"` rather than branching on the OLD
+// binary directly, so none of them need editing for a third mode to slot in
+// safely — see setMode below (rewritten as a real 3-way switch) for the one
+// place that DID need updating.
+type Mode = "character" | "board" | "props";
 let mode: Mode = "character";
 
+// IDEA-030/031: onTreeSelect now branches on WHICH KIND of row was clicked —
+// the six palette-slot rows (Atmosphere/Walls/.../Specks) still just
+// open/scroll to their existing lil-gui folder via focusSlot (unchanged
+// behavior), but the two placement rows ("Props (apron)"/"Wall components")
+// instead SWITCH boardPlacement's active sub-mode (which candidate tiles
+// show slot markers and are clickable) — see boardTree.ts's own header for
+// why these two rows don't map to a static folder at all. `boardPlacement`
+// itself is constructed further below (after boardStage/boardGrid exist),
+// so this callback reads it through a mutable `let` set once at the bottom
+// of the board-mode section — declared here, ASSIGNED there (TDZ-safe: this
+// callback only ever RUNS after a user click, always after module init has
+// finished and the assignment below has already run).
 const boardTreeContainer = treeContainer; // #partTree — same DOM node, one view owns it at a time
-const boardTree = createBoardTreeView(boardTreeContainer, (id) => {
+const boardTree = createBoardTreeView(boardTreeContainer, (id: BoardTreeRowId) => {
   boardTree.setSelected(id);
+  if (isPlacementRow(id)) {
+    boardPlacement.setSubMode(id === "placementApron" ? "apron" : "wall");
+    return;
+  }
   boardInspector.focusSlot(id);
 });
 
@@ -795,13 +843,27 @@ function rebuildBoardFromWorkingTheme(): void {
 /** Loads a fresh working copy of a MAZE_THEMES entry — the ONLY place
  *  `workingTheme` is reassigned to a new object (every other board edit
  *  mutates the existing one in place), so this is also the natural
- *  "reset/undo everything" action (see the UNDO DECISION note above). */
+ *  "reset/undo everything" action (see the UNDO DECISION note above).
+ *
+ *  IDEA-030/031: also re-syncs boardPlacement's slot markers from the fresh
+ *  `workingTheme` — DELIBERATELY here, not inside rebuildBoardFromWorkingTheme
+ *  itself, even though that function also runs on every placement edit: a
+ *  base-theme swap is the one moment marker state should be FULLY rebuilt
+ *  (every marker's empty/filled color re-derived from the fresh theme's
+ *  placements/wallDecor, and any stale selection cleared — the OLD theme's
+ *  selected placement no longer exists once workingTheme is a whole new
+ *  object). A single placement edit's own onChange, by contrast, must NOT
+ *  clear the very selection that triggered it — see boardPlacement's
+ *  syncFromTheme doc comment ("Clears the current selection") and the
+ *  createBoardPlacement call site above, whose onChange calls
+ *  rebuildBoardFromWorkingTheme WITHOUT ever calling syncFromTheme. */
 function loadBaseTheme(id: string): void {
   loadedBaseThemeId = id;
   workingTheme = cloneWorkingTheme(getMazeTheme(id));
   rebuildBoardFromWorkingTheme();
   if (!boardMaterials) throw new Error("editor: board materials not captured after buildBoard");
   boardInspector.setTheme(workingTheme, loadedBaseThemeId, boardMaterials, boardStage.lights);
+  boardPlacement.syncFromTheme(workingTheme);
 }
 
 const boardInspector = createBoardInspector(boardGuiHost, {
@@ -815,23 +877,367 @@ const boardInspector = createBoardInspector(boardGuiHost, {
   },
 });
 
+// IDEA-030/031: the placement-interaction controller — ONE instance for
+// board mode's whole lifetime (mirrors boardStage/boardInspector's own
+// "created once, reused across every base-theme swap" shape). Constructed
+// here (after boardStage.boardRoot/boardGrid/stage.camera/canvas all
+// already exist) — `boardTree`'s onSelect callback ABOVE already reads this
+// variable, but only from inside a click handler that can't fire before
+// this line runs (module init is synchronous top-to-bottom; DOM click
+// events can't interleave mid-script) — see boardTree's construction site
+// for the TDZ-safety note.
+//
+// onChange -> rebuildBoardFromWorkingTheme: every placement mutation
+// (create/swap/nudge/remove) re-applies the live board EXACTLY like a
+// palette edit's onDecorChange does — same shared function, so a placement
+// edit and a bloom-color edit can never drift onto two different rebuild
+// paths.
+//
+// onSelectionChange -> keeps boardTree's row highlight in sync (a filled/
+// empty MARKER click doesn't change which TREE ROW is "selected" — that
+// stays on "Props (apron)"/"Wall components" for as long as that sub-mode
+// is active — so this callback does NOT touch boardTree.setSelected; it
+// only forwards the selection to boardInspector's "Placement" folder).
+const boardPlacement = createBoardPlacement(
+  canvas,
+  stage.camera,
+  boardStage.boardRoot,
+  boardGrid,
+  () => rebuildBoardFromWorkingTheme(),
+  (selection: PlacementSelection | null) => {
+    boardInspector.setPlacementSelection(selection, () => {
+      rebuildBoardFromWorkingTheme();
+      // A field edit (offset/rotation/scale/prop swap) changes what this ONE
+      // marker should show (still filled, but e.g. a different prop) —
+      // repaint just it rather than a full syncFromTheme (which would also
+      // clear the very selection whose field we're editing).
+      if (boardPlacement.getSelection()) boardPlacement.refreshMarkerFor(boardPlacement.getSelection()!.tile);
+    });
+  },
+);
+boardInspector.bindPlacementActions({
+  assignProp: (propId) => boardPlacement.assignProp(propId),
+  removeSelected: () => boardPlacement.removeSelected(),
+});
+
+// IDEA-030/031: arrow-key nudge for the selected APRON placement's offset —
+// "reusing the editor's existing arrow-nudge convention" (the task brief) —
+// same NUDGE_STEP/NUDGE_COARSE(Shift)/NUDGE_FINE(Alt) constants the
+// character-mode position nudge above already uses, and the same capture-
+// phase + inTextField/HTMLSelectElement guard so typing in a lil-gui number
+// field or using a dropdown's own arrow keys is never hijacked. Kept as its
+// OWN listener (not folded into the character-mode one above) because that
+// handler's very first line is `if (mode !== "character") return;` — adding
+// a board-mode branch there would mean threading a second mode check through
+// every line below it; a second listener scoped to `mode === "board"` is a
+// direct, minimal addition instead, mirroring how the character listener is
+// itself scoped to character mode via its own early return.
+//
+// Left/Right nudge offset X; Up/Down nudge offset Z (matches grid.ts's own
+// `up = -Z, down = +Z` convention documented in CLAUDE.md, so "down" on the
+// keyboard moves the marker visually toward the camera, same as the
+// character-mode position nudge's un-Ctrl'd Up/Down-on-Y vs Ctrl'd
+// Up/Down-on-Z split does for its own depth axis). No Ctrl-axis-swap here
+// (unlike the character nudge, which reassigns Up/Down from Y to Z under
+// Ctrl) — an apron placement's only two nudgeable axes ARE offset X/Z, so
+// there is no third axis to make room for.
+window.addEventListener(
+  "keydown",
+  (e) => {
+    if (mode !== "board") return;
+    const active = document.activeElement;
+    const inTextField = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement;
+    if (inTextField || active instanceof HTMLSelectElement) return; // arrows inside a widget belong to it
+
+    if (e.key !== "ArrowUp" && e.key !== "ArrowDown" && e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+
+    const step = e.shiftKey ? NUDGE_COARSE : e.altKey ? NUDGE_FINE : NUDGE_STEP;
+    let dx = 0;
+    let dz = 0;
+    if (e.key === "ArrowLeft") dx = -step;
+    else if (e.key === "ArrowRight") dx = step;
+    else if (e.key === "ArrowUp") dz = -step;
+    else if (e.key === "ArrowDown") dz = step;
+
+    const nudged = boardPlacement.nudgeSelectedOffset(dx, dz);
+    if (!nudged) return; // no selection, wall-mode selection, or empty slot — nothing to nudge
+    e.preventDefault();
+    // nudgeSelectedOffset already called boardPlacement's own onChange
+    // (rebuildBoardFromWorkingTheme) internally — but it does NOT rebuild
+    // the inspector's Placement folder (unlike assignProp/removeSelected,
+    // it deliberately does not re-fire setSelection on every single nudge
+    // tick, so a fast arrow-key run doesn't thrash the folder's DOM while
+    // the offset sliders are mid-drag-equivalent) — refresh just the
+    // slider DISPLAYS so they reflect the nudged value without a full
+    // folder rebuild, the same "updateDisplay, don't rebuild" idiom
+    // inspector.ts's own arrow-nudge path uses for position widgets.
+    boardInspector.refreshPlacementDisplays();
+  },
+  true,
+);
+
+// ===========================================================================
+// --- props mode (IDEA-029, dev-only) ---
+// A THIRD workbench alongside character/board: the reusable PROP LIBRARY
+// (src/game/props.ts's PROP_LIBRARY) as its own editable surface — a list of
+// every def (left, reusing #partTree exactly like board mode's slot list
+// does), a live single-prop turntable preview (center, built via the SAME
+// render/board.ts makePropFromDef the real game/board mode both use — never
+// a re-implementation), and a lil-gui inspector (right) for the selected
+// def's name/id/shape/params.
+//
+// Nuno's ask: "reuse the props on different themes… personalize the props
+// later" — a PropDef is already the reusable, hand-tunable unit referenced
+// BY ID from any theme's placements/wallDecor (see props.ts's own header);
+// this tab is where that def gets AUTHORED/tuned, independent of any one
+// theme's placements. This tab never edits WHERE a prop is placed (tile/
+// offset/rotation/scale on a theme) — that's the placement editor inside
+// board mode (a parallel piece of work) — only what the prop definition
+// ITSELF looks like, shared by every theme that references its id.
+//
+// Working-copy discipline mirrors board mode exactly: `workingLibrary` is a
+// deep copy of PROP_LIBRARY (see propsWorking.ts's cloneWorkingLibrary),
+// taken ONCE on the FIRST entry into Props mode and never re-cloned on
+// subsequent entries (same "the base-theme dropdown is the only reset" idea
+// board mode uses, just there is no per-def "reset to registry" dropdown
+// here — Props mode has no analogous "start over" affordance beyond a page
+// reload, which is an acceptable v1 scope match for a dev-only tool with no
+// undo in board mode either).
+let workingLibrary: WorkingPropDef[] = [];
+let libraryLoaded = false;
+let selectedPropId: string | null = null;
+
+/** The live single-prop preview: a small container Group holding exactly the
+ *  CURRENT selection's mesh (rebuilt via makePropFromDef on every param
+ *  change), added directly to the shared stage scene (not `stage.contentRoot`
+ *  — that group is the CHARACTER turntable's own wrapper, entangled with
+ *  character-mode's rotation/disposal; the props preview needs an
+ *  independent lifetime) and toggled visible alongside the shared neutral
+ *  ground disc (stage.ts's own `setGroundVisible`), so a selected prop reads
+ *  on the exact same character-scale rig (ground + daylight) character mode
+ *  already uses — no bespoke atmosphere needed for a single small object. */
+const propsPreviewRoot = new THREE.Group();
+stage.scene.add(propsPreviewRoot);
+propsPreviewRoot.visible = false;
+
+const propsPreview = {
+  currentMesh: null as THREE.Group | null,
+  setVisible(on: boolean): void {
+    propsPreviewRoot.visible = on;
+  },
+};
+
+/** Disposes the current preview mesh's geometries/materials (every
+ *  makePropFromDef factory builds its OWN, per board.ts's doc comments —
+ *  never a shared module-level material — so a full traverse-dispose is
+ *  correct and complete, same shape as board.ts's own disposePropGroup). */
+function disposePropsPreview(): void {
+  if (!propsPreview.currentMesh) return;
+  propsPreviewRoot.remove(propsPreview.currentMesh);
+  propsPreview.currentMesh.traverse((o) => {
+    if (o instanceof THREE.Mesh) {
+      o.geometry.dispose();
+      const mat = o.material;
+      if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
+      else mat.dispose();
+    }
+  });
+  propsPreview.currentMesh = null;
+}
+
+/** Rebuilds the live preview from the currently selected working def — the
+ *  ONE function every param/shape/name edit funnels through (propsInspector's
+ *  onChange), so "every change rebuilds the preview live" (the brief) is a
+ *  single code path, not one per field. A fixed instanceHash (0.5 — the
+ *  midpoint of makePropFromDef's 0..1 variance range) keeps the preview
+ *  visually STABLE across edits (a color-list edit shouldn't also reroll
+ *  which color an instance happens to show), unlike the real board's
+ *  per-tile deterministic hash. */
+const PREVIEW_INSTANCE_HASH = 0.5;
+
+function rebuildPropsPreview(): void {
+  disposePropsPreview();
+  const def = selectedPropId ? workingLibrary.find((d) => d.id === selectedPropId) : undefined;
+  if (!def) return;
+  // makePropFromDef takes a PropDef (params fields are `readonly number[]`
+  // where present) — a WorkingPropDef's params satisfy that structurally
+  // (mutable arrays are assignable to readonly ones), so no conversion is
+  // needed beyond the type-level widen already expressed in propsWorking.ts.
+  const mesh = makePropFromDef(def, PREVIEW_INSTANCE_HASH);
+  mesh.traverse((o) => { o.castShadow = true; });
+  propsPreviewRoot.add(mesh);
+  propsPreview.currentMesh = mesh;
+}
+
+/** Counts, across every MAZE_THEMES entry's placements + wallDecor, how many
+ *  reference `id` — the "used by N placements" signal the brief asks the
+ *  library ops + id rename to surface. Reads the REAL registry (not
+ *  workingLibrary or any board-mode working theme) since this warns about
+ *  the SHIPPED game's dependencies on this id, which is what actually
+ *  matters for "does removing/renaming this orphan something real." */
+function usedByCount(id: string): number {
+  let count = 0;
+  for (const theme of MAZE_THEMES) {
+    for (const p of theme.placements) if (p.propId === id) count++;
+    for (const w of theme.wallDecor) if (w.propId === id) count++;
+  }
+  return count;
+}
+
+const propsTreeContainer = treeContainer; // #partTree — same DOM node, one view owns it at a time
+const propsTree = createPropsTreeView(propsTreeContainer, (id) => selectProp(id));
+
+const propsInspector = createPropsInspector(propsGuiHost, {
+  onChange: () => {
+    rebuildPropsPreview();
+    propsInspector.setLibrary(workingLibrary, selectedPropId);
+    propsTree.render(workingLibrary, usedByCount);
+    if (selectedPropId) propsTree.setSelected(selectedPropId);
+  },
+  onIdChanged: (before, after) => {
+    // The rename itself already happened (propsInspector.ts's id controller
+    // uniquifies + writes def.id before calling this) — this callback exists
+    // so the id itself becomes the tracked selection going forward (the tree
+    // row/inspector folder both key off the CURRENT id) and so a rename that
+    // orphans real placements is visible immediately, not just on the next
+    // manual look at the "used by" note.
+    if (selectedPropId === before) selectedPropId = after;
+    const orphaned = usedByCount(before);
+    if (orphaned > 0) {
+      // eslint-disable-next-line no-console -- dev-only tool; a visible
+      // console warning is the simplest honest signal here (the inspector's
+      // "used by N" note already re-renders under the NEW id on the very
+      // next rebuildDefFolder, which happens right after this callback
+      // returns — see propsInspector.ts's onFinishChange handler).
+      console.warn(
+        `editor: renaming prop id "${before}" -> "${after}" — ${orphaned} theme placement(s) still reference "${before}" and will fall back to the default prop until updated.`,
+      );
+    }
+  },
+  onAdd: () => {
+    const id = nextPropId(workingLibrary);
+    const def = defaultWorkingPropDef(id);
+    workingLibrary.push(def);
+    selectedPropId = id;
+    return id;
+  },
+  onDuplicate: () => {
+    const source = selectedPropId ? workingLibrary.find((d) => d.id === selectedPropId) : undefined;
+    if (!source) return selectedPropId ?? workingLibrary[0]?.id ?? "";
+    const newId = uniquifyPropId(workingLibrary, `${source.id}-copy`);
+    const clone = duplicateWorkingPropDef(source, newId, `${source.name} Copy`);
+    workingLibrary.push(clone);
+    selectedPropId = newId;
+    return newId;
+  },
+  onRemove: () => {
+    // Guard: never remove the last def (per the brief) — a props-less
+    // library has nothing for the preview/inspector to show and no sensible
+    // "add prop" starting point to recover from within this tab.
+    if (workingLibrary.length <= 1) return null;
+    const idx = selectedPropId ? workingLibrary.findIndex((d) => d.id === selectedPropId) : -1;
+    if (idx === -1) return null;
+    workingLibrary.splice(idx, 1);
+    const nextIdx = Math.min(idx, workingLibrary.length - 1);
+    selectedPropId = workingLibrary[nextIdx]?.id ?? null;
+    return selectedPropId;
+  },
+  usedByCount,
+});
+
+function selectProp(id: string): void {
+  selectedPropId = id;
+  propsTree.setSelected(id);
+  rebuildPropsPreview();
+  propsInspector.setLibrary(workingLibrary, selectedPropId);
+}
+
+/** First entry into Props mode: deep-copy PROP_LIBRARY once (never again —
+ *  see workingLibrary's own doc comment above), select the first def, render
+ *  the list + inspector + preview. Subsequent entries just re-show what's
+ *  already there (mirrors board mode's `if (!board) loadBaseTheme(...)`
+ *  once-only guard in setMode's board branch). */
+function enterPropsMode(): void {
+  if (!libraryLoaded) {
+    workingLibrary = cloneWorkingLibrary();
+    libraryLoaded = true;
+    selectedPropId = workingLibrary[0]?.id ?? null;
+  }
+  propsTree.render(workingLibrary, usedByCount);
+  if (selectedPropId) propsTree.setSelected(selectedPropId);
+  propsInspector.setLibrary(workingLibrary, selectedPropId);
+  rebuildPropsPreview();
+}
+
+// TEST-SUPPORT ONLY: "Copy library code" — see propsCodegen.ts's
+// formatPropLibrary for the emitted format contract. Not a lil-gui button
+// (propsInspector.ts's Library folder owns add/duplicate/remove only, per
+// the brief's own split of concerns) — this button lives in the SAME
+// #propsGuiHost pane as a plain HTML button, mirroring how the character
+// mode's copy buttons (copyBtn/copyFileBtn) are plain DOM buttons in the
+// CODE panel rather than lil-gui controls, since "copy to clipboard" reads
+// more like page chrome than a tunable. Created once, appended once, reused
+// across every Props-mode entry (never destroyed/rebuilt — it doesn't depend
+// on which def is selected).
+const copyLibraryBtn = document.createElement("button");
+copyLibraryBtn.id = "copyLibraryBtn";
+copyLibraryBtn.className = "copy-btn";
+copyLibraryBtn.textContent = "Copy library code 📋";
+copyLibraryBtn.title = "Copy the whole PROP_LIBRARY export — paste over src/game/props.ts's own PROP_LIBRARY";
+propsGuiHost.prepend(copyLibraryBtn);
+copyLibraryBtn.addEventListener("click", () => {
+  const code = formatPropLibrary(workingLibrary, 2);
+  void navigator.clipboard.writeText(code).then(() => {
+    const original = copyLibraryBtn.textContent ?? "";
+    copyLibraryBtn.classList.add("copied");
+    copyLibraryBtn.textContent = "Copied ✓ paste over PROP_LIBRARY";
+    window.setTimeout(() => {
+      copyLibraryBtn.classList.remove("copied");
+      copyLibraryBtn.textContent = original;
+    }, 1600);
+  });
+});
+
+/** IDEA-029: rewritten from a binary `toChar`/`else` branch (the pre-Props
+ *  shape, when "not character" only ever meant "board") into a real 3-way
+ *  switch over `next` — the ONE necessarily-shared touch this task's brief
+ *  calls out ("if main.ts mode-switch wiring forces a shared touch, keep it
+ *  additive"). The character and board branches below are UNCHANGED in
+ *  content from the pre-Props version (same calls, same order, same
+ *  comments) — only the dispatch shape changed, so board mode's own
+ *  placement-editing logic (owned by the parallel agent) is untouched. */
 function setMode(next: Mode): void {
   if (mode === next) return;
   mode = next;
 
-  const toChar = next === "character";
-  modeCharacterBtn.classList.toggle("active", toChar);
-  modeBoardBtn.classList.toggle("active", !toChar);
-  editorApp.classList.toggle("mode-board", !toChar);
-  treePaneTitle.textContent = toChar ? "Parts" : "Board slots";
-  charGuiHost.hidden = !toChar;
-  boardGuiHost.hidden = toChar;
-  byId<HTMLElement>("codePane").style.display = toChar ? "" : "none";
+  modeCharacterBtn.classList.toggle("active", next === "character");
+  modeBoardBtn.classList.toggle("active", next === "board");
+  modePropsBtn.classList.toggle("active", next === "props");
+  // Board mode and Props mode share the same "no bottom code panel" layout
+  // (see editor.css's `#editorApp.mode-board, #editorApp.mode-props` rule) —
+  // both classes are applied/removed together so either non-character mode
+  // gets the two-row grid.
+  editorApp.classList.toggle("mode-board", next === "board");
+  editorApp.classList.toggle("mode-props", next === "props");
+  treePaneTitle.textContent = next === "character" ? "Parts" : next === "board" ? "Board slots" : "Prop library";
+  charGuiHost.hidden = next !== "character";
+  boardGuiHost.hidden = next !== "board";
+  propsGuiHost.hidden = next !== "props";
+  byId<HTMLElement>("codePane").style.display = next === "character" ? "" : "none";
 
-  if (toChar) {
+  // Every mode's OWN tree view must release #partTree before another mode's
+  // view claims it (all three render into the same shared DOM node — see
+  // propsTree.ts's/boardTree.ts's header notes) — destroy whichever of the
+  // two non-active tree views might currently own it. Both destroy() calls
+  // are no-ops if that view never rendered into the container in the first
+  // place (textContent = "" on an already-empty node), so calling both
+  // unconditionally on every transition is simplest and always correct.
+  if (next !== "board") boardTree.destroy();
+  if (next !== "props") propsTree.destroy();
+
+  if (next === "character") {
     if (group) group.visible = true;
     boardStage.setVisible(false);
-    boardTree.destroy(); // release the #partTree rows board mode owned
     refreshParts(); // re-render #partTree with the character's own rows
     // Re-running select() on the SAME node it already was (rather than a
     // narrower "just fix the highlighter" patch) is deliberate: select() is
@@ -839,28 +1245,49 @@ function setMode(next: Mode): void {
     // pink wireframe, inspector folder, idle-pause, source-view mark) — the
     // tree row and inspector folder survive the hide/show unchanged (their
     // DOM was never destroyed, just hidden), but the highlighter's wireframe
-    // overlay was explicitly cleared on the way INTO board mode (see the
-    // `else` branch's select(null) below) and has no such survival path, so
-    // it needs a real re-set. Rebuilding the (already-correct) inspector
-    // folder along the way is a harmless bit of redundant DOM churn, traded
-    // for the guarantee that "restore exactly" can never silently miss a
-    // future side effect select() grows.
+    // overlay was explicitly cleared on the way INTO board/props mode (see
+    // the other two branches' select(null) below) and has no such survival
+    // path, so it needs a real re-set. Rebuilding the (already-correct)
+    // inspector folder along the way is a harmless bit of redundant DOM
+    // churn, traded for the guarantee that "restore exactly" can never
+    // silently miss a future side effect select() grows.
     select(selected);
     stage.setGroundVisible(true);
+    propsPreview.setVisible(false);
+    // IDEA-030/031: board mode's slot markers live under boardStage.boardRoot
+    // (toggled invisible, never removed — see boardStage's own dispose note)
+    // and three.js's Raycaster ignores `.visible` entirely (see
+    // boardPlacement.ts's setPickingEnabled doc comment) — without this
+    // explicit gate, a character-mode canvas click at the same screen
+    // position a board slot marker occupies would silently create/select a
+    // board placement while the user can't even see the board.
+    boardPlacement.setPickingEnabled(false);
     setCharacterCameraFraming();
-  } else {
+  } else if (next === "board") {
     select(null); // clears character selection/highlight/inspector folder
     if (group) group.visible = false;
     boardStage.setVisible(true);
     stage.setGroundVisible(false); // board.ts's own floor plane covers this job
+    propsPreview.setVisible(false);
     if (!board) loadBaseTheme(loadedBaseThemeId); // first entry into board mode
     boardTree.render();
+    boardPlacement.setPickingEnabled(true); // the only mode where slot clicks matter
     setBoardCameraFraming();
+  } else {
+    select(null); // clears character selection/highlight/inspector folder
+    if (group) group.visible = false;
+    boardStage.setVisible(false);
+    boardPlacement.setPickingEnabled(false); // see the character branch's own note above
+    stage.setGroundVisible(true); // props preview sits on the SAME neutral ground character mode uses
+    propsPreview.setVisible(true);
+    enterPropsMode();
+    setCharacterCameraFraming(); // props are character-scale — reuse the exact same framing/orbit limits
   }
 }
 
 modeCharacterBtn.addEventListener("click", () => setMode("character"));
 modeBoardBtn.addEventListener("click", () => setMode("board"));
+modePropsBtn.addEventListener("click", () => setMode("props"));
 
 // TEST-SUPPORT ONLY: a minimal, explicitly-typed read hook for
 // scripts/test-editor-board.ts's Playwright suite — the numbers the brief
@@ -877,14 +1304,57 @@ declare global {
     __boardTestHook?: {
       wallCount(): number;
       hedgeDecorMeshCount(): number;
-      /** Total mesh COUNT across every planted prop (board.props' Group
-       *  child count — 0 for both "no props folder rebuild happened yet" and
-       *  a genuinely propless theme, e.g. classic; a live edit's before/after
+      /** Total mesh COUNT across every planted apron prop (board.props'
+       *  Group child count — 0 for both "no props built yet" and a
+       *  genuinely propless theme, e.g. classic; a live edit's before/after
        *  DELTA is what the suite asserts on, not the absolute number, so
        *  that ambiguity is harmless — see test-editor-board.ts). */
       propMeshCount(): number;
+      /** IDEA-030/031: mesh count across every planted WALL-TOP component —
+       *  the wall-decor analogue of propMeshCount above. Board.hedgeDecor
+       *  holds either the density-scatter InstancedMeshes (empty wallDecor)
+       *  OR one wall-decor Group (non-empty wallDecor), never both (see
+       *  board.ts's Board.hedgeDecor doc comment) — this reads children off
+       *  that ONE Group specifically when it's the wall-decor kind, 0
+       *  otherwise (including "using the density fallback right now",
+       *  which is a legitimate, distinct state from "wall components
+       *  planted" — the suite tells the two apart via workingTheme's own
+       *  wallDecor.length, not this count alone). */
+      wallDecorMeshCount(): number;
       mode(): Mode;
       workingThemeId(): string;
+      /** IDEA-030/031: the working theme's raw placements/wallDecor ARRAY
+       *  LENGTHS — the most direct "did an add/remove actually mutate the
+       *  data" signal, independent of whatever the render layer chose to
+       *  build from it (a rebuild bug could leave meshCount stale while the
+       *  data itself is correct, or vice versa — asserting on BOTH is what
+       *  proves the whole pipeline, data through render, actually works). */
+      placementsLength(): number;
+      wallDecorLength(): number;
+      /** IDEA-030/031: boardPlacement's current sub-mode + selection state —
+       *  lets the suite verify a tree-row click actually switched sub-modes,
+       *  and read back exactly which tile/propId is selected after a slot
+       *  pick without re-deriving it from marker colors (which would need
+       *  pixel-level scene inspection Playwright can't easily do headless). */
+      placementSubMode(): "apron" | "wall";
+      placementSelection(): { tile: [number, number]; propId: string | null } | null;
+      /** IDEA-030/031: projects a board tile to CLIENT-VIEWPORT pixel
+       *  coordinates using the live camera + canvas rect — the exact inverse
+       *  of boardPlacement.ts's own raycast unprojection. A Playwright suite
+       *  driving the raycast-click UX (as opposed to a lil-gui DOM control)
+       *  has no other reliable way to know WHERE on screen a given apron/
+       *  wall tile currently renders (the camera's angle/distance/canvas
+       *  size all affect it, and re-deriving that math independently in the
+       *  test file would risk silently drifting from boardPlacement's own —
+       *  reusing the SAME camera instance here is what keeps the two
+       *  perfectly in sync). Returns null if the tile projects behind the
+       *  camera (`w <= 0` after projection) — should never happen for any
+       *  real apron/wall tile at this rig's fixed framing, but defensive
+       *  regardless. `mode` picks the same Y-seating boardPlacement.ts uses
+       *  (MARKER_Y_APRON vs MARKER_Y_WALL) so the projected point lands
+       *  exactly on the marker's own render position, not the tile's floor
+       *  level. */
+      tileToClientXY(tile: [number, number], mode: "apron" | "wall"): { x: number; y: number } | null;
     };
   }
 }
@@ -892,8 +1362,61 @@ window.__boardTestHook = {
   wallCount: () => board?.walls.count ?? 0,
   hedgeDecorMeshCount: () => board?.hedgeDecor.length ?? 0,
   propMeshCount: () => board?.props?.children.length ?? 0,
+  wallDecorMeshCount: () => {
+    // board.hedgeDecor is ALWAYS either N density-scatter InstancedMeshes or
+    // exactly ONE wall-decor Group (see board.ts's Board.hedgeDecor doc
+    // comment) — a Group is the wall-decor kind; an InstancedMesh is the
+    // density fallback. Sum any Group entries' children (there's at most
+    // one in practice, but summing is correct even if that ever changes).
+    if (!board) return 0;
+    let count = 0;
+    for (const entry of board.hedgeDecor) {
+      if (entry instanceof THREE.Group) count += entry.children.length;
+    }
+    return count;
+  },
   mode: () => mode,
   workingThemeId: () => workingTheme.id,
+  placementsLength: () => workingTheme.placements.length,
+  wallDecorLength: () => workingTheme.wallDecor.length,
+  placementSubMode: () => boardPlacement.getSubMode(),
+  tileToClientXY: (tile, submode) => {
+    const y = submode === "apron" ? 0.02 : 1.02; // mirrors boardPlacement.ts's MARKER_Y_APRON/MARKER_Y_WALL
+    const world = new THREE.Vector3(worldX(tile[0]), y, worldZ(tile[1]));
+    const ndc = world.clone().project(stage.camera);
+    if (ndc.z > 1 || ndc.z < -1) return null; // outside the camera's near/far range entirely
+    const rect = canvas.getBoundingClientRect();
+    const x = ((ndc.x + 1) / 2) * rect.width + rect.left;
+    const yPix = ((1 - ndc.y) / 2) * rect.height + rect.top;
+    return { x, y: yPix };
+  },
+  placementSelection: () => {
+    const sel = boardPlacement.getSelection();
+    if (!sel) return null;
+    return { tile: [sel.tile[0], sel.tile[1]], propId: sel.existing?.propId ?? null };
+  },
+};
+
+// TEST-SUPPORT ONLY: same rationale as __boardTestHook above, scoped to
+// scripts/test-editor-props.ts — the live PREVIEW mesh's child count (a
+// selected prop rendered) has no DOM surface of its own, unlike everything
+// else Props mode exposes (tree rows, lil-gui labels, clipboard text), which
+// that suite reads exactly as a person would.
+declare global {
+  interface Window {
+    __propsTestHook?: {
+      /** The live preview group's child count — 0 if nothing is selected/
+       *  built yet, >0 once a def is selected and makePropFromDef ran. */
+      previewMeshCount(): number;
+      libraryLength(): number;
+      selectedPropId(): string | null;
+    };
+  }
+}
+window.__propsTestHook = {
+  previewMeshCount: () => propsPreview.currentMesh?.children.length ?? 0,
+  libraryLength: () => workingLibrary.length,
+  selectedPropId: () => selectedPropId,
 };
 
 // --- go ---

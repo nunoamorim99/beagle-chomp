@@ -12,9 +12,21 @@
 // loss) while rebuilding only the purely-cosmetic hedge decor. Pickups
 // (bones/fruit/coin/golden bone) keep FIXED identity colors in every theme —
 // only wall/floor/biscuit/hedge-decor read the palette.
+//
+// v4.1 "Set Dressing": theme.props (density populations) is gone, replaced by
+// a reusable PROP LIBRARY (src/game/props.ts's PropDef/PropParams) referenced
+// BY ID from two kinds of explicit, hand-authored placement:
+//   - theme.placements ([[IDEA-030]]) — apron props, exactly where the editor
+//     put them (see buildProps below).
+//   - theme.wallDecor ([[IDEA-031]]) — wall-top components (lamps, signs,
+//     blooms), exactly where the editor put them (see buildWallDecor below).
+// A theme with an empty wallDecor still gets the original density-scattered
+// hedge blooms (buildHedgeDecor, unchanged) as a fallback — a theme either
+// hand-places wall components OR gets scattered palette blooms, never both.
 import * as THREE from "three";
 import { Grid, COLS, ROWS, TILE, worldX, worldZ } from "../game/grid";
-import { getEquippedMazeTheme, type MazeTheme, type ThemePalette, type ThemeProp, type ThemePropKind } from "../game/themes";
+import { getEquippedMazeTheme, type MazeTheme, type ThemePalette, type PropPlacement, type WallDecorPlacement } from "../game/themes";
+import { getPropDef, type PropDef, type PropBaseShape, type PropParams } from "../game/props";
 
 export const WALL_H = 1;
 
@@ -44,23 +56,36 @@ export interface Board {
    *  Placement (which tile, when) is gameplay's call (src/game/game.ts); this
    *  field just tracks the mesh so eating/spinDecor/teardown can find it. */
   life: THREE.Object3D | null;
-  /** IDEA-011 hedge-top decoration: a handful of InstancedMeshes (one per
-   *  bloom color + one for leaf specks). Purely cosmetic, lives for the
-   *  level like the walls do — not tracked per-tile like pellets.
-   *  IDEA-026: theme-parameterized (buildHedgeDecor takes a ThemePalette) and
-   *  entirely rebuilt (materials + instances) by applyBoardTheme on a
-   *  mid-run re-theme — never mutated in place like matWall/matFloor/
-   *  matBiscuit, since the SET of decorated tiles/colors can itself change
-   *  (e.g. classic's bloomChance 0 means no decor at all). */
-  hedgeDecor: THREE.InstancedMesh[];
-  /** IDEA-026 follow-up (theme props — "shrubs in the garden, lighting
-   *  stations in the night city, beach umbrellas... buildings"): every prop
-   *  mesh planted around the board's apron ring, in ONE container Group so
-   *  teardown is a single `scene.remove` + traverse-dispose (see buildProps'
-   *  doc comment for exactly what "traverse-dispose" means here — props own
-   *  their materials outright, nothing shared with matWall/matFloor/
-   *  matBiscuit/hedgeDecor). `null` for a theme with an empty `props` array
-   *  (classic) — zero group, zero traverse cost, not just zero children. */
+  /** IDEA-011 hedge-top decoration, now DUAL-PURPOSE as of v4.1 "Set
+   *  Dressing" (see the module doc comment above):
+   *   - `theme.wallDecor` EMPTY (garden/forest/beach/park): the original
+   *     density-scattered blooms/specks — a handful of THREE.InstancedMesh,
+   *     one per bloom color + one for leaf specks (buildHedgeDecor, entirely
+   *     unchanged from IDEA-011/IDEA-026).
+   *   - `theme.wallDecor` NON-EMPTY (city): explicit hand-placed wall-top
+   *     PROP components (lamps/signs/blooms from the prop library), one
+   *     THREE.Group per placement (buildWallDecor, new in v4.1).
+   *  A theme gets ONE of the two, never both (see buildBoard's dispatch)— so
+   *  this array is always either all InstancedMesh or all Group, never mixed
+   *  — but it's typed as the common `THREE.Object3D` supertype so game.ts's
+   *  teardown loop (`level.board.hedgeDecor.forEach((m) =>
+   *  this.rig.scene.remove(m))`) keeps working unchanged for either kind
+   *  (folded here deliberately so the wall-decor addition needs NO game.ts
+   *  change — see applyBoardTheme's disposal below for why the two kinds
+   *  still dispose correctly despite sharing this one array). Purely
+   *  cosmetic, lives for the level like the walls do — not tracked per-tile
+   *  like pellets. Entirely rebuilt by applyBoardTheme on a mid-run
+   *  re-theme — never mutated in place like matWall/matFloor/matBiscuit,
+   *  since the SET (and even the kind) of decor can itself change. */
+  hedgeDecor: THREE.Object3D[];
+  /** IDEA-030 (v4.1 "Set Dressing" — was IDEA-026's density-scattered theme
+   *  props): every apron PROP mesh from `theme.placements`, in ONE container
+   *  Group so teardown is a single `scene.remove` + traverse-dispose (see
+   *  buildProps' doc comment for exactly what "traverse-dispose" means here —
+   *  props own their materials outright, nothing shared with matWall/
+   *  matFloor/matBiscuit/hedgeDecor). `null` for a theme with an empty
+   *  `placements` array (classic) — zero group, zero traverse cost, not just
+   *  zero children. */
   props: THREE.Group | null;
 }
 
@@ -354,10 +379,31 @@ export function buildBoard(scene: THREE.Object3D, grid: Grid): Board {
 
   scene.add(walls);
 
-  const hedgeDecor = buildHedgeDecor(scene, grid, theme.palette);
-  const props = buildProps(scene, grid, theme);
+  const hedgeDecor = buildWallTopDecor(scene, grid, theme);
+  const props = buildProps(scene, theme);
 
   return { pelletMeshes, pelletsLeft, walls, floor, fruit: null, coin: null, life: null, hedgeDecor, props };
+}
+
+/**
+ * v4.1 "Set Dressing": the single dispatch point deciding which of the two
+ * wall-top decor mechanisms a theme gets — see Board.hedgeDecor's doc comment
+ * for the "never both" contract this enforces. Shared by buildBoard (fresh
+ * level) and applyBoardTheme (mid-run re-theme) so the two can never drift.
+ * buildWallDecor returns ONE container Group (mirrors buildProps' own
+ * single-Group shape) — folded into the single-element array
+ * `[group]` here so Board.hedgeDecor stays a flat `THREE.Object3D[]` either
+ * way (see Board.hedgeDecor's doc comment for why that folding is exactly
+ * what lets this whole feature ship with NO game.ts change: its teardown
+ * loop just calls `scene.remove` per array entry, which works identically
+ * whether the entry is an InstancedMesh or this one wall-decor Group).
+ */
+function buildWallTopDecor(scene: THREE.Object3D, grid: Grid, theme: MazeTheme): THREE.Object3D[] {
+  if (theme.wallDecor.length > 0) {
+    const group = buildWallDecor(scene, theme);
+    return group ? [group] : [];
+  }
+  return buildHedgeDecor(scene, grid, theme.palette);
 }
 
 /**
@@ -403,12 +449,19 @@ function syncBoardMaterials(palette: ThemePalette): void {
  * matBlooms/matLeafSpeck constants) so applyBoardTheme can swap the whole
  * decor set — colors, counts, and all — by rebuilding rather than mutating;
  * see applyBoardTheme's disposal of the outgoing meshes' materials below.
+ *
+ * v4.1: unchanged in every particular (kept EXACTLY, per the task brief) —
+ * this is the fallback path for a theme with an empty `wallDecor` (see
+ * buildWallTopDecor above and Board.hedgeDecor's doc comment). Return type
+ * widened to THREE.Object3D[] only so it unifies with buildWallDecor's own
+ * return type (both InstancedMesh and Group are Object3D — no behavior
+ * change, still literally InstancedMesh instances at runtime).
  */
 function buildHedgeDecor(
   scene: THREE.Object3D,
   grid: Grid,
   palette: ThemePalette,
-): THREE.InstancedMesh[] {
+): THREE.Object3D[] {
   if (palette.bloomChance <= 0 || palette.bloomColors.length === 0) return [];
 
   const bloomColors = palette.bloomColors;
@@ -486,35 +539,46 @@ function buildHedgeDecor(
 }
 
 // ---------------------------------------------------------------------------
-// IDEA-026 follow-up: theme PROPS — Nuno's ask verbatim: "on the garden add
-// some shrubs, on the night city some lighting stations, on the beach some
-// beach umbrella... On the night city we could add some buildings too...
-// components like this turn the themes more reliable and meaningful." Props
-// are a SEPARATE decoration layer from buildHedgeDecor above (which lives ON
-// the wall tops, inside the maze footprint): props stand on the APRON —
-// the 1-tile ring of floor surrounding the maze — so they dress the world
-// the board sits in without ever competing with gameplay for a play tile.
+// v4.1 "Set Dressing" — theme PROPS, now built from the REUSABLE prop library
+// (src/game/props.ts's PropDef/PropParams) instead of IDEA-026's density
+// populations. Nuno's original ask still holds ("on the garden add some
+// shrubs, on the night city some lighting stations, on the beach some beach
+// umbrella... buildings"), but a PropDef is now a named, hand-tunable
+// definition referenced BY ID from any theme's explicit placements
+// (theme.placements — apron — or theme.wallDecor — wall tops), so "Oak" or
+// "Skyscraper" can appear in many themes and be personalized once rather than
+// re-described per theme. Props are a SEPARATE decoration layer from
+// buildHedgeDecor's density-scatter fallback above (which lives ON the wall
+// tops): apron props stand on the 1-tile ring of floor surrounding the maze,
+// so they dress the world the board sits in without ever competing with
+// gameplay for a play tile; wall-top props sit directly on a wall's hedge top
+// (see buildWallDecor below).
 //
-// One factory per ThemePropKind (below), all primitive-based and built with
-// the same MeshStandardMaterial language board.ts/characters.ts already use
-// everywhere else (modest roughness, no flatShading — flatShading was
-// auditioned for characters and dropped, see characters.ts line ~128 — and
-// emissive reserved for things that are actually "lit", i.e. windows/lamp
-// heads, not foliage). Every factory returns a THREE.Group centered on its
-// own local origin (no baked position/rotation/scale) so buildProps can
-// freely position/rotate/scale each instance uniformly, and every factory
-// builds its OWN materials (never module-level shared ones like matWall) —
-// see buildProps' doc comment for why: a single container Group is disposed
-// as a whole on teardown/re-theme, so nothing here can be a shared singleton
-// the walls/floor/biscuits also reference.
+// One factory per PropBaseShape (below), each reading its own slice of
+// PropParams with the DEFAULTS documented in props.ts's PropParams doc, all
+// primitive-based and built with the same MeshStandardMaterial language
+// board.ts/characters.ts already use everywhere else (modest roughness, no
+// flatShading — flatShading was auditioned for characters and dropped, see
+// characters.ts line ~128 — and emissive reserved for things that are
+// actually "lit", i.e. windows/lamp heads/blooms/signs, not foliage). Every
+// factory returns a THREE.Group centered on its own local origin (no baked
+// position/rotation/scale) so buildProps/buildWallDecor can freely position/
+// rotate/scale each instance uniformly, and every factory builds its OWN
+// materials (never module-level shared ones like matWall) — see buildProps'
+// doc comment for why: a single container Group is disposed as a whole on
+// teardown/re-theme, so nothing here can be a shared singleton the
+// walls/floor/biscuits also reference.
 
 /** Height class for camera-safety capping (see buildProps' per-side rules
  *  below): "tall" props are skyline-scale and must never stand where they'd
  *  block the view of the board from the fixed camera; "medium" are eye-level
- *  street furniture; "low" hug the ground and are always safe in front. */
+ *  street furniture; "low" hug the ground (or a wall top) and are always
+ *  safe in front. Derived from the SHAPE (not the individual def) per the
+ *  task brief — every def sharing a base shape shares its camera-safety
+ *  class, since the shape is what determines silhouette scale. */
 type PropHeightClass = "tall" | "medium" | "low";
 
-const PROP_HEIGHT_CLASS: Record<ThemePropKind, PropHeightClass> = {
+const PROP_HEIGHT_CLASS: Record<PropBaseShape, PropHeightClass> = {
   building: "tall",
   pine: "tall",
   palm: "tall",
@@ -522,13 +586,16 @@ const PROP_HEIGHT_CLASS: Record<ThemePropKind, PropHeightClass> = {
   streetlight: "medium",
   umbrella: "medium",
   shrub: "low",
+  bloom: "low",
+  sign: "low",
 };
 
-// Fixed trunk color family for every woody prop (tree/pine/palm) —
-// independent of the prop's own `colors` (which are reserved for FOLIAGE/
-// canopy/facade — the part that actually varies by theme), matching
-// board.ts's own floor brown (0x6b4a2f) so trunks read as "the same wood"
-// across every theme rather than each population inventing its own bark hue.
+// Fixed default trunk color family for every woody prop (tree/pine/palm) —
+// independent of the def's own `foliageColors` (reserved for FOLIAGE/canopy —
+// the part that actually varies by theme), matching board.ts's own floor
+// brown (0x6b4a2f) so trunks read as "the same wood" across every theme
+// rather than each def inventing its own bark hue. A def's own
+// `params.trunkColor` overrides this per-shape default (see props.ts).
 // Deliberately NOT a shared module-level THREE.MeshStandardMaterial (unlike
 // matWall/matFloor/matBiscuit above) — makeTrunkMat below is called fresh by
 // every tree/pine/palm instance so each prop's disposal is fully
@@ -539,9 +606,12 @@ const PROP_HEIGHT_CLASS: Record<ThemePropKind, PropHeightClass> = {
 // after the very first prop teardown — a real bug this per-call factory
 // avoids entirely, at a negligible cost (prop counts are capped at
 // MAX_TOTAL_PROPS=40, so at most a few dozen tiny extra material objects).
-const TRUNK_COLOR = 0x6b4a2f;
-function makeTrunkMat(): THREE.MeshStandardMaterial {
-  return new THREE.MeshStandardMaterial({ color: TRUNK_COLOR, roughness: 0.75 });
+const DEFAULT_TRUNK_COLOR = 0x6b4a2f;
+const DEFAULT_POLE_COLOR = 0x2a2a30; // streetlight/sign poles
+const DEFAULT_UMBRELLA_POLE_COLOR = 0xdedede;
+
+function makeTrunkMat(color = DEFAULT_TRUNK_COLOR): THREE.MeshStandardMaterial {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.75 });
 }
 
 /** Picks one entry from `colors` deterministically via an already-computed
@@ -551,24 +621,32 @@ function pickColor(colors: readonly number[], h: number): number {
   return colors[Math.floor(h * colors.length) % colors.length];
 }
 
-/** shrub — 2-3 overlapping squashed spheres, low and rounded. `h` is a
- *  0..1 hash driving which of the 2-3 lobes appears and their color pick, so
- *  two shrubs from the same population still look like individuals. */
-function makeShrub(colors: readonly number[], h: number): THREE.Group {
+/** shrub — 2-3 overlapping squashed spheres, low and rounded.
+ *  - `params.foliageColors` (default the classic garden greens) — per-lobe
+ *    color pick via `h`.
+ *  - `params.width` (default 1) scales the whole lobe cluster's footprint.
+ *  - `params.segments` (default 3, clamped 2-3) sets the lobe COUNT
+ *    deterministically (was hash-driven "60% of the time" pre-v4.1 — now the
+ *    def itself picks 2 vs 3, with `h` still choosing WHICH lobes/color so
+ *    instances of the same def still look individual).
+ *  `h` is a 0..1 instance hash driving color pick (and, for a 2-lobe def,
+ *  which 2 of the 3 authored lobe slots appear). */
+function makeShrub(params: PropParams, h: number): THREE.Group {
   const g = new THREE.Group();
+  const colors = params.foliageColors ?? [0x4e9a3e, 0x3f8f3a, 0x5fae4d];
+  const width = params.width ?? 1;
+  const segments = THREE.MathUtils.clamp(Math.round(params.segments ?? 3), 2, 3);
+
   const mat = new THREE.MeshStandardMaterial({ color: pickColor(colors, h), roughness: 0.65 });
   const lobes: Array<[number, number, number, number]> = [
     [0, 0.12, 0, 0.22],
     [0.13, 0.15, 0.05, 0.17],
     [-0.12, 0.14, -0.06, 0.17],
   ];
-  // A third lobe only about 60% of the time (hash-driven) so shrubs vary
-  // between a tight double-lobe and a fuller triple-lobe bush.
-  const lobeCount = h > 0.4 ? 3 : 2;
-  for (let i = 0; i < lobeCount; i++) {
+  for (let i = 0; i < segments; i++) {
     const [x, y, z, r] = lobes[i];
-    const sphere = new THREE.Mesh(new THREE.SphereGeometry(r, 10, 8), mat);
-    sphere.position.set(x, y, z);
+    const sphere = new THREE.Mesh(new THREE.SphereGeometry(r * width, 10, 8), mat);
+    sphere.position.set(x * width, y, z * width);
     sphere.scale.y = 0.72; // squashed, low-and-rounded read
     sphere.castShadow = true;
     g.add(sphere);
@@ -576,86 +654,137 @@ function makeShrub(colors: readonly number[], h: number): THREE.Group {
   return g;
 }
 
-/** tree — slim brown trunk + a generous 2-sphere foliage crown. */
-function makeTree(colors: readonly number[], h: number): THREE.Group {
+/** tree — trunk + a stack of 1-3 foliage crown spheres.
+ *  - `params.trunkColor` (default DEFAULT_TRUNK_COLOR), `params.foliageColors`
+ *    (default the classic garden greens).
+ *  - `params.height` (default 1) scales overall Y (trunk length + crown
+ *    stack height); `params.width` (default 1) scales trunk+crown girth.
+ *  - `params.segments` (default 2, clamped 1-3) sets crown sphere COUNT —
+ *    was fixed at exactly 2 pre-v4.1 (crownLo+crownHi); now 1 gives a single
+ *    round canopy, 3 stacks a taller, fuller crown. */
+function makeTree(params: PropParams, h: number): THREE.Group {
   const g = new THREE.Group();
-  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.06, 0.42, 8), makeTrunkMat());
-  trunk.position.y = 0.21;
+  const colors = params.foliageColors ?? [0x4e9a3e, 0x5fae4d];
+  const height = params.height ?? 1;
+  const width = params.width ?? 1;
+  const segments = THREE.MathUtils.clamp(Math.round(params.segments ?? 2), 1, 3);
+
+  const trunk = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.045 * width, 0.06 * width, 0.42 * height, 8),
+    makeTrunkMat(params.trunkColor),
+  );
+  trunk.position.y = 0.21 * height;
   trunk.castShadow = true;
   g.add(trunk);
 
   const foliageMat = new THREE.MeshStandardMaterial({ color: pickColor(colors, h), roughness: 0.6 });
-  const crownLo = new THREE.Mesh(new THREE.SphereGeometry(0.28, 12, 10), foliageMat);
-  crownLo.position.y = 0.48;
-  crownLo.castShadow = true;
-  g.add(crownLo);
-  const crownHi = new THREE.Mesh(new THREE.SphereGeometry(0.21, 12, 10), foliageMat);
-  crownHi.position.y = 0.72;
-  crownHi.castShadow = true;
-  g.add(crownHi);
+  // Crown spheres stack upward from just above the trunk, each a touch
+  // smaller than the last — segments=2 reproduces the exact pre-v4.1
+  // crownLo/crownHi radii/positions.
+  const crownBaseY = 0.42 * height;
+  const crownStep = 0.24 * height;
+  for (let i = 0; i < segments; i++) {
+    const r = (0.28 - i * 0.07) * width;
+    const crown = new THREE.Mesh(new THREE.SphereGeometry(Math.max(r, 0.08), 12, 10), foliageMat);
+    crown.position.y = crownBaseY + i * crownStep;
+    crown.castShadow = true;
+    g.add(crown);
+  }
 
   return g;
 }
 
-/** pine — trunk + 2-3 stacked cones, noticeably taller than makeTree. */
-function makePine(colors: readonly number[], h: number): THREE.Group {
+/** pine — trunk + 2-4 stacked cones, noticeably taller than makeTree.
+ *  - `params.trunkColor`, `params.foliageColors` (default deep conifer
+ *    greens).
+ *  - `params.height` (default 1) scales overall Y (trunk + cone-tier
+ *    heights/positions); `params.width` (default 1) scales trunk+cone
+ *    radii.
+ *  - `params.segments` (default 3, clamped 2-4) sets the tier COUNT —
+ *    was fixed at exactly 3 pre-v4.1; a 4th tier is a smaller/higher cone
+ *    continuing the same taper the first 3 establish, so the def stays a
+ *    single continuous conifer silhouette at any tier count. */
+function makePine(params: PropParams, h: number): THREE.Group {
   const g = new THREE.Group();
-  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.07, 0.5, 8), makeTrunkMat());
-  trunk.position.y = 0.25;
+  const colors = params.foliageColors ?? [0x2e6b34, 0x24552a, 0x3a7a40];
+  const height = params.height ?? 1;
+  const width = params.width ?? 1;
+  const segments = THREE.MathUtils.clamp(Math.round(params.segments ?? 3), 2, 4);
+
+  const trunk = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.05 * width, 0.07 * width, 0.5 * height, 8),
+    makeTrunkMat(params.trunkColor),
+  );
+  trunk.position.y = 0.25 * height;
   trunk.castShadow = true;
   g.add(trunk);
 
   const foliageMat = new THREE.MeshStandardMaterial({ color: pickColor(colors, h), roughness: 0.65 });
-  // Three stacked cones, each smaller and higher than the last — a classic
-  // conifer silhouette. Radius/height chosen so consecutive cones overlap
-  // enough to read as one continuous canopy, not three separate collars.
-  const tiers: Array<[number, number, number]> = [
-    [0.34, 0.5, 0.52],
-    [0.26, 0.42, 0.86],
-    [0.17, 0.34, 1.16],
-  ];
-  tiers.forEach(([r, h2, y]) => {
-    const cone = new THREE.Mesh(new THREE.ConeGeometry(r, h2, 10), foliageMat);
+  // Tiers taper radius/height by a fixed ratio per step (matches the
+  // pre-v4.1 authored 3-tier sequence exactly at segments=3) and climb in Y
+  // by a fixed step so consecutive cones keep overlapping enough to read as
+  // one continuous canopy at any tier count.
+  const tierStep = 0.34;
+  for (let i = 0; i < segments; i++) {
+    const r = (0.34 - i * 0.085) * width;
+    const h2 = (0.5 - i * 0.08) * height;
+    const y = (0.52 + i * tierStep) * height;
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(Math.max(r, 0.08), Math.max(h2, 0.14), 10), foliageMat);
     cone.position.y = y;
     cone.castShadow = true;
     g.add(cone);
-  });
+  }
 
   return g;
 }
 
 /** palm — a slightly tilted 2-segment trunk (curved read) + 4-5 drooping
- *  frond ellipsoids + a couple of tiny coconuts. */
-function makePalm(colors: readonly number[], h: number): THREE.Group {
+ *  frond ellipsoids + a couple of tiny coconuts.
+ *  - `params.trunkColor`, `params.foliageColors` (default beach-green
+ *    fronds).
+ *  - `params.height` (default 1) scales trunk-segment lengths + crown
+ *    origin Y; `params.width` (default 1) scales trunk radii + frond
+ *    length.
+ *  - `params.tilt` (default 0.22 rad) — the lean applied to BOTH trunk
+ *    segments (was a fixed 0.08/0.22 split pre-v4.1; now that split scales
+ *    proportionally with the def's own tilt so a def authored with less
+ *    lean reads as "less windswept" rather than snapping to a fixed lean). */
+function makePalm(params: PropParams, h: number): THREE.Group {
   const g = new THREE.Group();
+  const colors = params.foliageColors ?? [0x5fae4d, 0x4e9a3e];
+  const height = params.height ?? 1;
+  const width = params.width ?? 1;
+  const tilt = params.tilt ?? 0.22;
+  const tiltRatio = tilt / 0.22; // proportional to the original 0.08/0.22 authored split
 
-  // Two trunk segments, the upper one angled a touch further than the lower
-  // — reads as a gentle curve rather than a robotic dogleg, matching the
-  // "curved trunk" beach-palm silhouette. Both segments share ONE trunk
-  // material (they're the same physical trunk) — still per-instance, not the
-  // module-level TRUNK_COLOR constant directly, so disposal stays correct.
-  const trunkMat = makeTrunkMat();
-  const lower = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.07, 0.4, 8), trunkMat);
-  lower.position.set(0, 0.2, 0);
-  lower.rotation.z = 0.08;
+  const trunkMat = makeTrunkMat(params.trunkColor);
+  const lower = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.05 * width, 0.07 * width, 0.4 * height, 8),
+    trunkMat,
+  );
+  lower.position.set(0, 0.2 * height, 0);
+  lower.rotation.z = 0.08 * tiltRatio;
   lower.castShadow = true;
   g.add(lower);
 
-  const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.05, 0.42, 8), trunkMat);
-  upper.position.set(0.09, 0.58, 0);
-  upper.rotation.z = 0.22;
+  const upper = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.035 * width, 0.05 * width, 0.42 * height, 8),
+    trunkMat,
+  );
+  upper.position.set(0.09 * width, 0.58 * height, 0);
+  upper.rotation.z = tilt;
   upper.castShadow = true;
   g.add(upper);
 
-  const crownOrigin = new THREE.Vector3(0.17, 0.8, 0);
+  const crownOrigin = new THREE.Vector3(0.17 * width, 0.8 * height, 0);
   const frondMat = new THREE.MeshStandardMaterial({ color: pickColor(colors, h), roughness: 0.55 });
   const frondCount = 4 + (h > 0.5 ? 1 : 0); // 4-5 fronds
   for (let i = 0; i < frondCount; i++) {
     const angle = (i / frondCount) * Math.PI * 2 + h * 1.7;
-    const frond = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 6), frondMat);
+    const frond = new THREE.Mesh(new THREE.SphereGeometry(0.3 * width, 8, 6), frondMat);
     frond.position.copy(crownOrigin);
-    frond.position.x += Math.cos(angle) * 0.16;
-    frond.position.z += Math.sin(angle) * 0.16;
+    frond.position.x += Math.cos(angle) * 0.16 * width;
+    frond.position.z += Math.sin(angle) * 0.16 * width;
     // Flattened + elongated along its own outward axis, tipped downward for
     // the drooping-frond read.
     frond.scale.set(1.7, 0.22, 0.55);
@@ -668,8 +797,8 @@ function makePalm(colors: readonly number[], h: number): THREE.Group {
   // A tiny coconut cluster tucked under the crown.
   const coconutMat = new THREE.MeshStandardMaterial({ color: 0x4a3524, roughness: 0.7 });
   for (let i = 0; i < 2; i++) {
-    const coconut = new THREE.Mesh(new THREE.SphereGeometry(0.045, 6, 6), coconutMat);
-    coconut.position.set(crownOrigin.x + (i === 0 ? -0.05 : 0.06), crownOrigin.y - 0.08, i === 0 ? 0.04 : -0.05);
+    const coconut = new THREE.Mesh(new THREE.SphereGeometry(0.045 * width, 6, 6), coconutMat);
+    coconut.position.set(crownOrigin.x + (i === 0 ? -0.05 : 0.06) * width, crownOrigin.y - 0.08 * height, i === 0 ? 0.04 * width : -0.05 * width);
     coconut.castShadow = true;
     g.add(coconut);
   }
@@ -677,35 +806,59 @@ function makePalm(colors: readonly number[], h: number): THREE.Group {
   return g;
 }
 
-// Lit-window layout for makeBuilding: a small deterministic grid of thin
-// emissive boxes on the two visible-ish facades (+X and +Z — the faces most
-// likely to catch the camera from its fixed north-looking angle), sized to
-// land exactly on the brief's own "4-8 windows" ceiling: 2 rows x 2 cols x 2
-// faces = 8 window meshes on every instance (no row-skipping needed — kept
-// deliberately at 2 rows, not 3, specifically so the worst case never exceeds
-// 8; an earlier 3-row draft could reach 12 on a tall instance, which pushed
-// Night City's total prop draw-call count well past what its ~15-20
-// buildings should cost — see buildProps' MAX_TOTAL_PROPS note for the
-// sibling per-theme prop-COUNT budget this pairs with). Positions are
+// Lit-window layout for makeBuilding: a deterministic grid of thin emissive
+// boxes on the two visible-ish facades (+X and +Z — the faces most likely to
+// catch the camera from its fixed north-looking angle). Positions are
 // FRACTIONS of the tower's own width/height (multiplied out in makeBuilding
-// once the instance's actual footprint/height are known), not raw units, so
-// the same layout scales cleanly across the kind's whole minScale..maxScale
-// band.
-const WINDOW_ROWS = [0.32, 0.68] as const;
-const WINDOW_COLS = [0.28, 0.72] as const;
+// once the instance's actual footprint/height are known) so the layout
+// scales cleanly across any footprint/height. `windowRows`/`windowCols`
+// (default 2x2 = 8 windows total across both faces, unchanged from pre-v4.1)
+// pick how many evenly-spaced fractional rows/cols to use; 0 of either means
+// an unlit tower (rooftop/facade only).
+function windowFractions(count: number): number[] {
+  if (count <= 0) return [];
+  if (count === 1) return [0.5];
+  // Evenly spaced within a [0.2, 0.8] band (matches the pre-v4.1 authored
+  // 2-row/2-col band [0.28..0.72]/[0.32..0.68] at count=2 closely enough to
+  // be visually identical, while generalizing to any count).
+  const lo = 0.22;
+  const hi = 0.78;
+  return Array.from({ length: count }, (_, i) => lo + ((hi - lo) * i) / (count - 1));
+}
 
-/** building — a box tower (facade hue from colors) + a smaller rooftop box
- *  on some instances + a hand-placed deterministic grid of lit windows on
- *  two faces so towers read alive under Night City's dusk light. */
-function makeBuilding(colors: readonly number[], h: number): THREE.Group {
+/** building — a box tower (facade hue from colors) + an optional smaller
+ *  rooftop box + a deterministic grid of lit windows on two faces so towers
+ *  read alive under Night City's dusk light.
+ *  - `params.facadeColors` (default greys), `params.height`/`params.width`
+ *    (default 1 each) scale the tower's base story height/footprint on top
+ *    of the existing hash-driven per-instance variance.
+ *  - `params.windowRows`/`params.windowCols` (default 2/2) set the lit-
+ *    window grid size per facade; 0 rows or 0 cols -> unlit tower.
+ *  - `params.windowColor`/`params.windowEmissiveIntensity` (default warm
+ *    0xf4d060 / 1.1) drive the window material.
+ *  - `params.rooftop` (default true) toggles the smaller rooftop block
+ *    (was hash-driven "on ~half of instances" pre-v4.1; now the DEF decides
+ *    whether this building kind ever gets one, with `h` still choosing
+ *    which half of instances show it when `rooftop` is true, preserving the
+ *    per-instance variety). */
+function makeBuilding(params: PropParams, h: number): THREE.Group {
   const g = new THREE.Group();
+  const colors = params.facadeColors ?? [0x5a5a68, 0x6d6a78, 0x4a4a58, 0x7a7480];
+  const heightMul = params.height ?? 1;
+  const widthMul = params.width ?? 1;
+  const windowRows = params.windowRows ?? 2;
+  const windowCols = params.windowCols ?? 2;
+  const windowColor = params.windowColor ?? 0xf4d060;
+  const windowEmissiveIntensity = params.windowEmissiveIntensity ?? 1.1;
+  const rooftop = params.rooftop ?? true;
 
-  const footprint = 0.7 + h * 0.2; // ~0.7-0.9 tile, per the brief
-  // Height is driven by the INSTANCE's own scale (applied uniformly by
-  // buildProps) — the geometry itself just picks a believable base story
-  // count so short and tall instances (after scaling) both read as
+  const footprint = (0.7 + h * 0.2) * widthMul; // ~0.7-0.9 tile pre-multiplier, per the original brief
+  // Height is driven by BOTH the def's own height multiplier and the
+  // INSTANCE's own hash `h` (short/tall variance survives per-instance even
+  // within one def) — the geometry itself just picks a believable base
+  // story count so short and tall instances (after scaling) both read as
   // buildings rather than one fixed silhouette stretched thin.
-  const baseHeight = 1.1 + h * 0.9;
+  const baseHeight = (1.1 + h * 0.9) * heightMul;
 
   const facadeMat = new THREE.MeshStandardMaterial({ color: pickColor(colors, h), roughness: 0.75 });
   const tower = new THREE.Mesh(new THREE.BoxGeometry(footprint, baseHeight, footprint), facadeMat);
@@ -713,9 +866,10 @@ function makeBuilding(colors: readonly number[], h: number): THREE.Group {
   tower.castShadow = true;
   g.add(tower);
 
-  // A smaller rooftop block on ~half of instances (hash-driven), off-center
-  // so the skyline doesn't read as identical box-on-box stamps.
-  if (h > 0.5) {
+  // A smaller rooftop block, only if this def wants one at all AND on ~half
+  // of instances (hash-driven), off-center so the skyline doesn't read as
+  // identical box-on-box stamps.
+  if (rooftop && h > 0.5) {
     const roofMat = new THREE.MeshStandardMaterial({ color: pickColor(colors, 1 - h), roughness: 0.75 });
     const roofSize = footprint * 0.48;
     const roof = new THREE.Mesh(new THREE.BoxGeometry(roofSize, baseHeight * 0.3, roofSize), roofMat);
@@ -724,65 +878,80 @@ function makeBuilding(colors: readonly number[], h: number): THREE.Group {
     g.add(roof);
   }
 
-  // Lit windows: thin emissive boxes, hand-placed on the +X and +Z facades
-  // from WINDOW_ROWS/WINDOW_COLS (fractions of footprint/baseHeight so the
-  // grid scales with the instance), sat just proud of the facade so they
-  // never z-fight the tower box.
-  const windowMat = new THREE.MeshStandardMaterial({
-    color: 0xf4d060,
-    emissive: 0xf4d060,
-    emissiveIntensity: 1.1,
-    roughness: 0.4,
-  });
-  const winW = footprint * 0.16;
-  const winH = baseHeight * 0.07;
-  const winDepth = 0.012;
-  const half = footprint / 2;
-
-  WINDOW_ROWS.forEach((rowFrac) => {
-    WINDOW_COLS.forEach((colFrac) => {
-      const y = rowFrac * baseHeight;
-
-      const winX = new THREE.Mesh(new THREE.BoxGeometry(winDepth, winH, winW), windowMat);
-      winX.position.set(half + winDepth / 2, y, (colFrac - 0.5) * footprint);
-      g.add(winX);
-
-      const winZ = new THREE.Mesh(new THREE.BoxGeometry(winW, winH, winDepth), windowMat);
-      winZ.position.set((colFrac - 0.5) * footprint, y, half + winDepth / 2);
-      g.add(winZ);
+  // Lit windows: thin emissive boxes, placed on the +X and +Z facades from
+  // an evenly-spaced windowRows x windowCols grid (fractions of
+  // footprint/baseHeight so the grid scales with the instance), sat just
+  // proud of the facade so they never z-fight the tower box. 0 rows or 0
+  // cols means no window meshes at all — an intentionally unlit tower.
+  if (windowRows > 0 && windowCols > 0) {
+    const windowMat = new THREE.MeshStandardMaterial({
+      color: windowColor,
+      emissive: windowColor,
+      emissiveIntensity: windowEmissiveIntensity,
+      roughness: 0.4,
     });
-  });
+    const winW = footprint * (0.16 / windowCols) * 2; // narrower as columns increase, so a denser grid doesn't overlap
+    const winH = baseHeight * (0.07 / windowRows) * 2;
+    const winDepth = 0.012;
+    const half = footprint / 2;
+
+    windowFractions(windowRows).forEach((rowFrac) => {
+      windowFractions(windowCols).forEach((colFrac) => {
+        const y = rowFrac * baseHeight;
+
+        const winX = new THREE.Mesh(new THREE.BoxGeometry(winDepth, winH, winW), windowMat);
+        winX.position.set(half + winDepth / 2, y, (colFrac - 0.5) * footprint);
+        g.add(winX);
+
+        const winZ = new THREE.Mesh(new THREE.BoxGeometry(winW, winH, winDepth), windowMat);
+        winZ.position.set((colFrac - 0.5) * footprint, y, half + winDepth / 2);
+        g.add(winZ);
+      });
+    });
+  }
 
   return g;
 }
 
 /** streetlight — thin dark pole + small arm + a glowing head sphere. NO
  *  PointLight (perf/shadow budget, per the brief) — the emissive sphere
- *  alone reads as lit under the tuned ACES exposure every theme shares. */
-function makeStreetlight(colors: readonly number[], h: number): THREE.Group {
+ *  alone reads as lit under the tuned ACES exposure every theme shares.
+ *  - `params.trunkColor` doubles as the pole color here (default
+ *    DEFAULT_POLE_COLOR — a dark street-furniture grey, distinct from the
+ *    woody trunk default) — reusing the same param slot per props.ts's
+ *    documented per-shape default rather than adding a dedicated
+ *    `poleColor` field.
+ *  - `params.height` (default 1) scales pole+arm length/position.
+ *  - `params.glowColor`/`params.glowIntensity` (default warm 0xf4d060/0.9)
+ *    drive the lamp head. */
+function makeStreetlight(params: PropParams, h: number): THREE.Group {
   const g = new THREE.Group();
+  const poleColor = params.trunkColor ?? DEFAULT_POLE_COLOR;
+  const height = params.height ?? 1;
+  const glowColors = params.glowColor !== undefined ? [params.glowColor] : [0xf4d060];
+  const glowIntensity = params.glowIntensity ?? 0.9;
 
-  const poleMat = new THREE.MeshStandardMaterial({ color: 0x2a2a30, roughness: 0.55, metalness: 0.3 });
-  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.03, 0.85, 8), poleMat);
-  pole.position.y = 0.425;
+  const poleMat = new THREE.MeshStandardMaterial({ color: poleColor, roughness: 0.55, metalness: 0.3 });
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.03, 0.85 * height, 8), poleMat);
+  pole.position.y = 0.425 * height;
   pole.castShadow = true;
   g.add(pole);
 
   const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.22, 6), poleMat);
-  arm.position.set(0.09, 0.82, 0);
+  arm.position.set(0.09, 0.82 * height, 0);
   arm.rotation.z = Math.PI / 2;
   arm.castShadow = true;
   g.add(arm);
 
-  const headColor = pickColor(colors, h);
+  const headColor = pickColor(glowColors, h);
   const headMat = new THREE.MeshStandardMaterial({
     color: headColor,
     emissive: headColor,
-    emissiveIntensity: 0.9,
+    emissiveIntensity: glowIntensity,
     roughness: 0.3,
   });
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.075, 10, 8), headMat);
-  head.position.set(0.19, 0.8, 0);
+  head.position.set(0.19, 0.8 * height, 0);
   head.castShadow = true;
   g.add(head);
 
@@ -791,197 +960,346 @@ function makeStreetlight(colors: readonly number[], h: number): THREE.Group {
 
 /** umbrella — pole + a squashed cone canopy, slight tilt for a beach-casual
  *  read. ~Half get a second canopy color as a darker tip sphere accent
- *  (an alternating-look nod without a full multi-gore canopy). */
-function makeUmbrella(colors: readonly number[], h: number): THREE.Group {
+ *  (an alternating-look nod without a full multi-gore canopy).
+ *  - `params.trunkColor` doubles as the pole color (default
+ *    DEFAULT_UMBRELLA_POLE_COLOR — a light aluminium grey, distinct from the
+ *    woody trunk default).
+ *  - `params.foliageColors` (default beach-parasol colors) drives the
+ *    canopy + tip accent.
+ *  - `params.height`/`params.width` (default 1 each) scale pole length and
+ *    canopy radius respectively.
+ *  - `params.tilt` (default 0.12 rad) replaces the pre-v4.1 hash-driven
+ *    `(h-0.5)*0.14` tilt (max ~0.07 rad either way) with a def-level lean,
+ *    still applied with the same left/right hash-driven sign so instances
+ *    of one def don't all lean the same way. */
+function makeUmbrella(params: PropParams, h: number): THREE.Group {
   const g = new THREE.Group();
+  const poleColor = params.trunkColor ?? DEFAULT_UMBRELLA_POLE_COLOR;
+  const colors = params.foliageColors ?? [0xf29a8a, 0x5fc8c0, 0xf2d43a, 0xf4efe6];
+  const height = params.height ?? 1;
+  const width = params.width ?? 1;
+  const tilt = params.tilt ?? 0.12;
 
-  const poleMat = new THREE.MeshStandardMaterial({ color: 0xdedede, roughness: 0.5, metalness: 0.15 });
-  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.66, 8), poleMat);
-  pole.position.y = 0.33;
+  const poleMat = new THREE.MeshStandardMaterial({ color: poleColor, roughness: 0.5, metalness: 0.15 });
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.66 * height, 8), poleMat);
+  pole.position.y = 0.33 * height;
   pole.castShadow = true;
   g.add(pole);
 
   const canopyColor = pickColor(colors, h);
   const canopyMat = new THREE.MeshStandardMaterial({ color: canopyColor, roughness: 0.5 });
-  const canopy = new THREE.Mesh(new THREE.ConeGeometry(0.34, 0.24, 10), canopyMat);
-  canopy.position.y = 0.68;
+  const canopy = new THREE.Mesh(new THREE.ConeGeometry(0.34 * width, 0.24, 10), canopyMat);
+  canopy.position.y = 0.68 * height;
   canopy.castShadow = true;
   g.add(canopy);
 
   // ~Half get a contrasting tip in a second palette color, and every canopy
-  // gets a slight tilt (beach-casual, never perfectly vertical).
+  // gets a slight tilt (beach-casual, never perfectly vertical) sized off
+  // the def's own `tilt`, sign chosen by the hash so instances vary.
   if (h > 0.5 && colors.length > 1) {
     const tipColor = pickColor(colors, (h + 0.5) % 1);
     const tipMat = new THREE.MeshStandardMaterial({ color: tipColor, roughness: 0.5 });
-    const tip = new THREE.Mesh(new THREE.SphereGeometry(0.045, 8, 6), tipMat);
-    tip.position.y = 0.81;
+    const tip = new THREE.Mesh(new THREE.SphereGeometry(0.045 * width, 8, 6), tipMat);
+    tip.position.y = 0.81 * height;
     tip.castShadow = true;
     g.add(tip);
   }
-  g.rotation.z = (h - 0.5) * 0.14;
+  g.rotation.z = (h - 0.5) * (tilt / 0.07); // preserves the original max-~0.07-rad-either-way feel at the default tilt
 
   return g;
 }
 
-/** Dispatches to the factory for `kind`, keyed the same way theme.props
- *  entries are (kind + colors + a 0..1 instance hash). Exported so
+/** bloom — a tiny flower/sphere on a thin stem: the wall-top flower
+ *  ([[IDEA-031]]), colored by `glowColor` with `glowIntensity` emissive (same
+ *  visual language as board.ts's own buildHedgeDecor blooms — geoBloom's
+ *  0.075-radius sphere, color==emissive). Deliberately small (wall-top
+ *  scale) so it never looks out of place stacked among hand-placed
+ *  lamps/signs on a hedge top.
+ *  - `params.width` (default 1) scales the whole bloom+stem.
+ *  - `params.glowColor`/`params.glowIntensity` (default warm yellow/0.25,
+ *    matching the garden's own first bloom color) drive the flower's
+ *    emissive material. */
+function makeBloom(params: PropParams, h: number): THREE.Group {
+  const g = new THREE.Group();
+  const width = params.width ?? 1;
+  const glowColor = params.glowColor ?? 0xf2d43a;
+  const glowIntensity = params.glowIntensity ?? 0.25;
+
+  const stemMat = new THREE.MeshStandardMaterial({ color: 0x4a6a2e, roughness: 0.6 });
+  const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.012 * width, 0.015 * width, 0.1 * width, 6), stemMat);
+  stem.position.y = 0.05 * width;
+  stem.castShadow = true;
+  g.add(stem);
+
+  const bloomMat = new THREE.MeshStandardMaterial({
+    color: glowColor,
+    roughness: 0.5,
+    emissive: glowColor,
+    emissiveIntensity: glowIntensity,
+  });
+  const bloom = new THREE.Mesh(new THREE.SphereGeometry(0.075 * width, 8, 8), bloomMat);
+  bloom.position.y = 0.13 * width;
+  // A tiny per-instance jitter on the bloom head so a row of blooms doesn't
+  // look perfectly identical stamped side by side.
+  bloom.scale.setScalar(0.85 + h * 0.3);
+  bloom.castShadow = true;
+  g.add(bloom);
+
+  return g;
+}
+
+/** sign — a thin post + a small glowing element: a warm round head for a
+ *  streetlamp-style wall piece, or a small rectangular board (in
+ *  `signBoardColor`) with a `glowColor`-emissive face for a transit signal.
+ *  Kept small (wall-top scale, per the task brief) — this is the SAME
+ *  physical shape for both "lamp-post" and "transit-sign" library defs, the
+ *  visual difference coming entirely from params (a def with no
+ *  `signBoardColor` reads as a bare glowing lamp head; one WITH it grows the
+ *  small board behind the glow face).
+ *  - `params.trunkColor` doubles as the post color (default
+ *    DEFAULT_POLE_COLOR).
+ *  - `params.height` (default 0.7) sets the post length.
+ *  - `params.glowColor`/`params.glowIntensity` (default warm 0xf4d060/0.85)
+ *    drive the glow face/head.
+ *  - `params.signBoardColor` (default undefined -> no board, just a round
+ *    lamp head) sets the board color when present. */
+function makeSign(params: PropParams, h: number): THREE.Group {
+  const g = new THREE.Group();
+  const postColor = params.trunkColor ?? DEFAULT_POLE_COLOR;
+  const height = params.height ?? 0.7;
+  const glowColor = params.glowColor ?? 0xf4d060;
+  const glowIntensity = params.glowIntensity ?? 0.85;
+  const boardColor = params.signBoardColor;
+
+  const postMat = new THREE.MeshStandardMaterial({ color: postColor, roughness: 0.55, metalness: 0.3 });
+  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.024, height, 8), postMat);
+  post.position.y = height / 2;
+  post.castShadow = true;
+  g.add(post);
+
+  const glowMat = new THREE.MeshStandardMaterial({
+    color: glowColor,
+    emissive: glowColor,
+    emissiveIntensity: glowIntensity,
+    roughness: 0.3,
+  });
+
+  if (boardColor !== undefined) {
+    // Transit-signal read: a small rectangular board mounted near the top of
+    // the post, with a glowing face plate slightly proud of it.
+    const boardMat = new THREE.MeshStandardMaterial({ color: boardColor, roughness: 0.5, metalness: 0.2 });
+    const board = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.13, 0.02), boardMat);
+    board.position.set(0, height * 0.92, 0.01);
+    board.castShadow = true;
+    g.add(board);
+
+    const face = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.08, 0.008), glowMat);
+    face.position.set(0, height * 0.92, 0.021);
+    face.castShadow = true;
+    g.add(face);
+  } else {
+    // Bare lamp-head read: a small warm glowing sphere atop the post,
+    // deterministically nudged by `h` so a row of wall lamps varies slightly.
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.055 + h * 0.01, 8, 8), glowMat);
+    head.position.y = height + 0.03;
+    head.castShadow = true;
+    g.add(head);
+  }
+
+  return g;
+}
+
+/** Builds one prop instance from a full PropDef, dispatching on its `shape`
+ *  via an EXHAUSTIVE switch (adding a PropBaseShape without a matching case
+ *  here is a compile-time error, per the task brief) — `instanceHash` is the
+ *  0..1 per-instance hash driving color pick / lobe-tier variance /
+ *  micro-jitter (the same role `h` played pre-v4.1, just now paired with a
+ *  full `def.params` bundle instead of a bare colors array). Exported so
  *  shopScene.ts's diorama can plant the exact same meshes it sells in the
  *  actual maze — never a re-implementation with its own drift risk. */
-export function makeThemeProp(kind: ThemePropKind, colors: readonly number[], h: number): THREE.Group {
-  switch (kind) {
-    case "shrub": return makeShrub(colors, h);
-    case "tree": return makeTree(colors, h);
-    case "pine": return makePine(colors, h);
-    case "palm": return makePalm(colors, h);
-    case "building": return makeBuilding(colors, h);
-    case "streetlight": return makeStreetlight(colors, h);
-    case "umbrella": return makeUmbrella(colors, h);
+export function makePropFromDef(def: PropDef, instanceHash: number): THREE.Group {
+  const p = def.params;
+  switch (def.shape) {
+    case "shrub": return makeShrub(p, instanceHash);
+    case "tree": return makeTree(p, instanceHash);
+    case "pine": return makePine(p, instanceHash);
+    case "palm": return makePalm(p, instanceHash);
+    case "building": return makeBuilding(p, instanceHash);
+    case "streetlight": return makeStreetlight(p, instanceHash);
+    case "umbrella": return makeUmbrella(p, instanceHash);
+    case "bloom": return makeBloom(p, instanceHash);
+    case "sign": return makeSign(p, instanceHash);
   }
 }
 
-// Prop-count sanity cap: if a theme's density math would place more than
-// this many total props, later populations simply stop claiming once the
-// running total hits it (earlier theme.props entries — and earlier apron
-// spots within a population — always win, so the cap never causes visible
-// "holes", just an early stop once the board is already dressed).
-const MAX_TOTAL_PROPS = 40;
+/** Convenience wrapper: looks up `id` in the prop library (never throws —
+ *  degrades to the library's fallback def, see props.ts's getPropDef) and
+ *  builds it. The idiom every placement-consuming call site below uses. */
+export function makePropById(id: string, instanceHash: number): THREE.Group {
+  return makePropFromDef(getPropDef(id), instanceHash);
+}
+
+/** Seed band for buildProps' per-placement instance hash (0..1, deterministic
+ *  via hash01) — its own band (200+) so it can never collide with
+ *  buildHedgeDecor's bloom/speck seeds (1-7) or buildWallDecor's own band
+ *  (300+) even though all three can read the same tile coords. */
+const PROP_INSTANCE_HASH_SEED = 201;
 
 /**
- * IDEA-026 follow-up: builds every prop for `theme` around `grid`'s apron —
- * the 1-tile ring of floor OUTSIDE the maze footprint (tx in [-1..COLS], ty
- * in [-1..ROWS], excluding the interior [0..COLS-1]x[0..ROWS-1] tiles the
- * maze itself occupies) — and returns them all as ONE container Group (or
- * `null` for an empty `theme.props`, e.g. classic, so a propless theme costs
- * nothing: no group, no children, no traverse). Every mesh gets its OWN
- * material (built inside the makeX factories above) rather than referencing
- * a shared module-level one, specifically so `board.props` can be disposed
- * as a self-contained unit (scene.remove + traverse-dispose geometries AND
- * materials) without any risk of double-disposing something matWall/
- * hedgeDecor/pellets also reference — see applyBoardTheme's disposal below.
+ * v4.1 "Set Dressing": builds every apron prop for `theme.placements` — each
+ * an EXPLICIT, hand-authored PropPlacement (editor-placed, per [[IDEA-030]]),
+ * not a density scatter — and returns them all as ONE container Group (or
+ * `null` for an empty `placements` array, e.g. classic, so a propless theme
+ * costs nothing: no group, no children, no traverse). Every mesh gets its
+ * OWN material (built inside the makeX factories above) rather than
+ * referencing a shared module-level one, specifically so `board.props` can
+ * be disposed as a self-contained unit (scene.remove + traverse-dispose
+ * geometries AND materials) without any risk of double-disposing something
+ * matWall/hedgeDecor/pellets also reference — see applyBoardTheme's
+ * disposal below.
  *
- * Placement contract (mirrors buildHedgeDecor's determinism promise):
- *  - Candidate spots = every apron tile, MINUS the tiles immediately flanking
- *    a tunnel-row exit (tx===-1 or tx===COLS on a `grid.tunnelRows` row, plus
- *    that row's vertical neighbors on the same column) so a prop can never
- *    visually plug a tunnel mouth.
- *  - Deterministic: hash01(x, y, seed) — same idiom buildHedgeDecor uses,
- *    just its own seed band (100+) so prop placement can never collide with
- *    bloom/speck placement's seeds (1-7) even though both read the same tile
- *    coords.
- *  - Each population in `theme.props`, IN ORDER, claims up to
- *    `density * candidateCount` spots from whatever's left in the shuffled
- *    candidate pool — "in order" means an earlier population (e.g. garden's
- *    shrubs before its trees) always gets first pick, so a denser later
- *    population can never crowd out an earlier one's promised density.
- *  - Per instance: jitter (+-0.25 tile), a random y-rotation, and a scale
- *    lerp(minScale, maxScale, hash) — same "hash-driven, not Math.random"
- *    idiom as the jitter above, so a theme's prop layout is exactly as
- *    reproducible as its hedge blooms are.
+ * Per placement:
+ *  - `makePropById(placement.propId, instanceHash)` where instanceHash is a
+ *    deterministic hash01 of the placement's OWN tile (so a given
+ *    hand-placed prop's color/lobe-tier variance stays stable across
+ *    rebuilds/re-themes, same determinism promise as buildHedgeDecor).
+ *  - Position: `worldX(tile[0]) + offset[0]`, y=0, `worldZ(tile[1]) +
+ *    offset[1]` — offset is the editor's fine ±tile nudge within the tile.
+ *  - `rotation.y = placement.rotationY`; `scale.setScalar(placement.scale)`
+ *    (see the height-safety clamp below, applied ON TOP of this).
  *
- * Height-safety contract (the doc-commented promise in themes.ts): the fixed
- * camera sits at +Z looking north (see scene.ts's BASE_POS/BASE_LOOK), so the
- * SOUTH apron row (ty===ROWS, nearest the camera) only ever gets LOW props
- * (tall/medium kinds don't even attempt to claim a spot there); EAST/WEST
- * apron columns (tx===-1 or tx===COLS, for the ROWS between the two corners)
- * cap TALL props' scale to ~1.0 so a maxed-out building/pine/palm can't loom
- * beside the board where it would crowd the tunnel-mouth sightline; the NORTH
- * row (ty===-1) and all four corners (grouped with whichever row owns them —
- * "corners count as their row") allow every kind at full scale, since that's
- * strictly BEHIND the board from the camera's fixed look direction — the
- * skyline row.
+ * Height-safety contract (the doc-commented promise in themes.ts) — now a
+ * RENDER-TIME GUARD rather than a placement-time filter, since placements are
+ * hand-authored (there's no "later population" to fall back to if a spot is
+ * rejected — the guard must instead CLAMP the effective scale so a
+ * hand-placed/edited prop can never loom over the play area, protecting
+ * against both the shipped placements — already authored to respect this —
+ * and any future hand-edit that doesn't): the fixed camera sits at +Z
+ * looking north (see scene.ts's BASE_POS/BASE_LOOK), so a placement on the
+ * SOUTH apron row (`tile[1] === ROWS`, nearest the camera) whose prop's shape
+ * is in the "tall" height class (see PROP_HEIGHT_CLASS above) has its scale
+ * clamped hard to `SOUTH_ROW_TALL_SCALE_CAP` — low enough that even a
+ * building/pine/palm reads as background dressing rather than blocking the
+ * play area; a placement on an EAST/WEST apron column (`tile[0] === -1` or
+ * `tile[0] === COLS`) whose prop is "tall" is clamped to `1.0` (the original
+ * IDEA-026 cap) so a maxed-out building/pine/palm can't loom beside the
+ * board where it would crowd the tunnel-mouth sightline. The NORTH row
+ * (`tile[1] === -1`) and all four corners (grouped with whichever row owns
+ * them — "corners count as their row") allow every shape at full authored
+ * scale, since that's strictly BEHIND the board from the camera's fixed look
+ * direction — the skyline row. Medium/low shapes are never capped anywhere.
+ *
+ * No `grid` parameter (unlike the pre-v4.1 version this replaces, which
+ * needed it for tunnel-mouth exclusion + apron-candidate enumeration): both
+ * of those were density-scatter concerns that don't apply to hand-authored
+ * placements — a placement's tile IS its position, nothing to enumerate or
+ * exclude — so buildProps depends only on the theme's own placements data.
  */
-export function buildProps(scene: THREE.Object3D, grid: Grid, theme: MazeTheme): THREE.Group | null {
-  if (theme.props.length === 0) return null;
+const SOUTH_ROW_TALL_SCALE_CAP = 0.55;
+const EAST_WEST_TALL_SCALE_CAP = 1.0;
 
-  // Tunnel-mouth exclusion: for every tunnel row, both its exit columns
-  // (tx=-1 and tx=COLS) AND that row's immediate vertical neighbors on the
-  // same column are off-limits, so nothing ever visually plugs a tunnel
-  // mouth or crowds right up against one.
-  const excluded = new Set<string>();
-  grid.tunnelRows.forEach((ty) => {
-    ([-1, COLS] as const).forEach((tx) => {
-      excluded.add(`${tx},${ty - 1}`);
-      excluded.add(`${tx},${ty}`);
-      excluded.add(`${tx},${ty + 1}`);
-    });
-  });
-
-  // Every apron tile: the (COLS+2)x(ROWS+2) floor footprint minus the
-  // interior [0..COLS-1]x[0..ROWS-1] the maze itself occupies.
-  const candidates: Array<[number, number]> = [];
-  for (let ty = -1; ty <= ROWS; ty++) {
-    for (let tx = -1; tx <= COLS; tx++) {
-      const isInterior = tx >= 0 && tx < COLS && ty >= 0 && ty < ROWS;
-      if (isInterior) continue;
-      const key = `${tx},${ty}`;
-      if (excluded.has(key)) continue;
-      candidates.push([tx, ty]);
-    }
-  }
-
-  // Deterministic shuffle (Fisher-Yates driven by hash01, never Math.random)
-  // so "which spots exist" and "what order populations claim them in" are
-  // both stable across rebuilds, matching the rest of this module's
-  // determinism promise.
-  for (let i = candidates.length - 1; i > 0; i--) {
-    const j = Math.floor(hash01(candidates[i][0], candidates[i][1], 101) * (i + 1));
-    [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
-  }
+export function buildProps(scene: THREE.Object3D, theme: MazeTheme): THREE.Group | null {
+  if (theme.placements.length === 0) return null;
 
   const group = new THREE.Group();
-  const claimed = new Set<string>(); // "tx,ty" already taken by an earlier population
-  let cursor = 0; // walks the shuffled candidate pool once, shared across populations
-  let totalPlaced = 0;
 
-  theme.props.forEach((pop: ThemeProp) => {
-    const target = Math.round(pop.density * candidates.length);
-    let placedForPop = 0;
+  theme.placements.forEach((placement: PropPlacement) => {
+    const def = getPropDef(placement.propId);
+    const [tx, ty] = placement.tile;
+    const instanceHash = hash01(tx, ty, PROP_INSTANCE_HASH_SEED);
 
-    while (placedForPop < target && cursor < candidates.length && totalPlaced < MAX_TOTAL_PROPS) {
-      const [tx, ty] = candidates[cursor];
-      cursor++;
-      const key = `${tx},${ty}`;
-      if (claimed.has(key)) continue;
+    const mesh = makePropFromDef(def, instanceHash);
 
-      const heightClass = PROP_HEIGHT_CLASS[pop.kind];
-      const onSouthRow = ty === ROWS;
-      const onEastWestCol = (tx === -1 || tx === COLS) && ty >= 0 && ty < ROWS;
+    const heightClass = PROP_HEIGHT_CLASS[def.shape];
+    const onSouthRow = ty === ROWS;
+    const onEastWestCol = (tx === -1 || tx === COLS) && ty >= 0 && ty < ROWS;
 
-      // South apron row (closest to the fixed camera): only LOW props may
-      // stand there at all — a medium/tall population simply skips this
-      // spot (it stays unclaimed for a later, shorter population to use).
-      if (onSouthRow && heightClass !== "low") continue;
-
-      claimed.add(key);
-
-      const hJitterX = hash01(tx, ty, 102);
-      const hJitterZ = hash01(tx, ty, 103);
-      const hRot = hash01(tx, ty, 104);
-      const hScale = hash01(tx, ty, 105);
-      const hVariant = hash01(tx, ty, 106); // fed to the factory for color/lobe-count variance
-
-      const mesh = makeThemeProp(pop.kind, pop.colors, hVariant);
-
-      let scale = THREE.MathUtils.lerp(pop.minScale, pop.maxScale, hScale);
-      // East/West columns: cap TALL kinds' scale so a maxed-out building/
-      // pine/palm never looms right beside the board/tunnel — medium/low
-      // stay free to use their full density band there.
-      if (onEastWestCol && heightClass === "tall") scale = Math.min(scale, 1.0);
-
-      const jx = (hJitterX - 0.5) * 0.5; // +-0.25 tile
-      const jz = (hJitterZ - 0.5) * 0.5;
-      mesh.position.set(worldX(tx) + jx, 0, worldZ(ty) + jz);
-      mesh.rotation.y = hRot * Math.PI * 2;
-      mesh.scale.setScalar(scale);
-      mesh.traverse((o) => {
-        o.castShadow = true;
-        o.receiveShadow = false;
-      });
-      group.add(mesh);
-
-      placedForPop++;
-      totalPlaced++;
+    let scale = placement.scale;
+    if (heightClass === "tall") {
+      if (onSouthRow) scale = Math.min(scale, SOUTH_ROW_TALL_SCALE_CAP);
+      else if (onEastWestCol) scale = Math.min(scale, EAST_WEST_TALL_SCALE_CAP);
     }
+
+    mesh.position.set(worldX(tx) + placement.offset[0], 0, worldZ(ty) + placement.offset[1]);
+    mesh.rotation.y = placement.rotationY;
+    mesh.scale.setScalar(scale);
+    mesh.traverse((o) => {
+      o.castShadow = true;
+      o.receiveShadow = false;
+    });
+    group.add(mesh);
+  });
+
+  scene.add(group);
+  return group;
+}
+
+/** Seed band for buildWallDecor's per-placement instance hash — its own band
+ *  (300+), distinct from buildProps' (200+) and buildHedgeDecor's bloom/speck
+ *  seeds (1-7), so a tile that happens to carry both an apron prop and a
+ *  wall-top component (different tiles in practice — one's a wall tile, one's
+ *  an apron tile — but the hash bands stay non-colliding regardless). */
+const WALL_DECOR_INSTANCE_HASH_SEED = 301;
+/** Small clearance above the wall top so a wall-decor component visibly sits
+ *  ON the hedge rather than embedded in it — mirrors buildHedgeDecor's own
+ *  bloom clearance (WALL_H + 0.06) closely; wall-decor components are
+ *  slightly larger silhouettes (lamps/signs) than a bare bloom sphere, so a
+ *  touch more clearance keeps their base from clipping the wall box. */
+const WALL_DECOR_Y_OFFSET = 0.08;
+
+/**
+ * v4.1 "Set Dressing" ([[IDEA-031]]): builds every wall-top component for
+ * `theme.wallDecor` — each an EXPLICIT, hand-authored WallDecorPlacement (a
+ * lamp, transit signal, or bloom the editor placed on a specific wall tile's
+ * top), as opposed to buildHedgeDecor's density-scattered fallback above —
+ * and returns them all as ONE container Group (`null` for an empty
+ * `wallDecor`, mirroring buildProps' own null-for-empty contract exactly,
+ * though in practice buildWallTopDecor's dispatch above never calls this
+ * with an empty array — buildHedgeDecor handles that case instead — this
+ * function still honors the contract standalone so it's correct to call
+ * directly, e.g. from a future editor preview). Every mesh gets its OWN
+ * material (built inside the makeX factories above), so `board.hedgeDecor`'s
+ * entry for this Group can be disposed as a self-contained unit exactly like
+ * `board.props` — see applyBoardTheme's disposal below, which now branches on
+ * whether an outgoing hedgeDecor entry is a bare Mesh-bearing InstancedMesh
+ * (buildHedgeDecor's shared-geometry contract) or one of THESE self-owned
+ * Groups.
+ *
+ * Per placement: `makePropById(placement.propId, instanceHash)` (deterministic
+ * hash01 of the placement's own wall tile, same determinism promise as
+ * buildProps), seated ON TOP of the wall tile — position `worldX(tile[0])`,
+ * y = WALL_H + WALL_DECOR_Y_OFFSET (so it sits on the hedge top rather than
+ * embedded in it, mirroring buildHedgeDecor's own bloom clearance),
+ * `worldZ(tile[1])`; `rotation.y = placement.rotationY`;
+ * `scale.setScalar(placement.scale)`. No height-safety clamp here (unlike
+ * buildProps' apron guard) — wall-top components are, by construction
+ * (bloom/sign shapes only — see props.ts's WALL_TOP_SHAPES), always in the
+ * "low" PROP_HEIGHT_CLASS, so they can never loom over the play area
+ * regardless of which wall tile they sit on.
+ *
+ * No `grid` parameter, same reasoning as buildProps above — a wall-top
+ * placement's tile IS its position, nothing to enumerate/exclude against
+ * the grid.
+ */
+export function buildWallDecor(scene: THREE.Object3D, theme: MazeTheme): THREE.Group | null {
+  if (theme.wallDecor.length === 0) return null;
+
+  const group = new THREE.Group();
+
+  theme.wallDecor.forEach((placement: WallDecorPlacement) => {
+    const def = getPropDef(placement.propId);
+    const [tx, ty] = placement.tile;
+    const instanceHash = hash01(tx, ty, WALL_DECOR_INSTANCE_HASH_SEED);
+
+    const mesh = makePropFromDef(def, instanceHash);
+    mesh.position.set(worldX(tx), WALL_H + WALL_DECOR_Y_OFFSET, worldZ(ty));
+    mesh.rotation.y = placement.rotationY;
+    mesh.scale.setScalar(placement.scale);
+    mesh.traverse((o) => {
+      o.castShadow = true;
+      o.receiveShadow = false;
+    });
+    group.add(mesh);
   });
 
   scene.add(group);
@@ -1023,33 +1341,58 @@ export function buildProps(scene: THREE.Object3D, grid: Grid, theme: MazeTheme):
  * Pickups (bones/fruit/coin/golden bone) are untouched — they keep fixed
  * identity colors in every theme (see makeBone/makeFruit/makeCoin/
  * makeLifeBone above) and are never read from ThemePalette.
+ *
+ * v4.1 "Set Dressing": hedge decor's disposal (step 2) now branches per
+ * OUTGOING ENTRY, since `board.hedgeDecor` can hold either kind (see
+ * Board.hedgeDecor's doc comment): a bare `THREE.InstancedMesh` from
+ * buildHedgeDecor's density-scatter fallback (shares geoBloom/geoLeafSpeck —
+ * only its own per-build MATERIAL is disposed, geometry is a reused
+ * module-level constant), or a self-owned `THREE.Group` of wall-decor prop
+ * components from buildWallDecor (every mesh inside owns its OWN geometry
+ * AND material — needs a full traverse-dispose, exactly disposePropGroup's
+ * job, reused here rather than duplicated). Whichever kind theme.wallDecor
+ * calls for, the OLD entries are always disposed correctly before the new
+ * ones are built — a re-theme that swaps from one kind to the other (e.g.
+ * leaving city's hand-placed lamps for garden's density blooms) never leaks.
  */
 export function applyBoardTheme(board: Board, scene: THREE.Object3D, grid: Grid, theme: MazeTheme): void {
   syncBoardMaterials(theme.palette);
 
-  board.hedgeDecor.forEach((mesh) => {
-    scene.remove(mesh);
+  board.hedgeDecor.forEach((entry) => {
+    if (entry instanceof THREE.Group) {
+      // Wall-decor component: self-owned geometries/materials throughout —
+      // full traverse-dispose, same path buildProps' outgoing group uses.
+      disposePropGroup(scene, entry);
+      return;
+    }
+    // Density-scatter InstancedMesh: shares geoBloom/geoLeafSpeck (NOT
+    // disposed — reused by the next build), only its own per-build material
+    // is torn down.
+    scene.remove(entry);
+    const mesh = entry as THREE.InstancedMesh;
     const mat = mesh.material;
     if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
     else mat.dispose();
-    // geometry (geoBloom/geoLeafSpeck) is a shared module-level constant —
-    // intentionally NOT disposed here, it's reused by the next build.
   });
 
-  board.hedgeDecor = buildHedgeDecor(scene, grid, theme.palette);
+  board.hedgeDecor = buildWallTopDecor(scene, grid, theme);
 
   if (board.props) disposePropGroup(scene, board.props);
-  board.props = buildProps(scene, grid, theme);
+  board.props = buildProps(scene, theme);
 }
 
 /**
  * Removes `group` from `scene` and disposes every mesh's geometry AND
- * material inside it (unlike hedgeDecor's disposal above, props never share
- * geometries/materials with anything else — see buildProps' doc comment —
- * so a full traverse-dispose is correct and complete here). Exported so
- * game.ts's disposeLevel can call the SAME disposal path this module uses
- * internally on a re-theme, rather than duplicating the traverse logic at
- * the call site.
+ * material inside it (unlike buildHedgeDecor's density-scatter
+ * InstancedMeshes, whose geometry is shared and must NOT be disposed here,
+ * every mesh inside a prop/wall-decor Group owns its geometry+material
+ * outright — see buildProps'/buildWallDecor's doc comments — so a full
+ * traverse-dispose is correct and complete). Used for BOTH `board.props`
+ * (buildProps' apron container) and any wall-decor Group folded into
+ * `board.hedgeDecor` (buildWallDecor's output — see applyBoardTheme's
+ * disposal branch above). Exported so game.ts's disposeLevel can call the
+ * SAME disposal path this module uses internally on a re-theme, rather than
+ * duplicating the traverse logic at the call site.
  */
 export function disposePropGroup(scene: THREE.Object3D, group: THREE.Group): void {
   scene.remove(group);
