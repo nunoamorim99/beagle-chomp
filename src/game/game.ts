@@ -318,7 +318,14 @@ export class Game {
   // new-game sites as coinsAwardedFromScore.
   private livesAwardedFromScore = 0;
 
-  constructor(canvas: HTMLCanvasElement) {
+  /** Opens the leaderboard. Injected by main.ts rather than imported, because
+   *  the game layer knows nothing about accounts or the network — same reason
+   *  #menuProfileBtn is wired out there. Undefined simply means no button. */
+  private readonly openLeaderboard?: () => void;
+
+  constructor(canvas: HTMLCanvasElement, openLeaderboard?: () => void) {
+    this.openLeaderboard = openLeaderboard;
+
     // Load the persisted profile FIRST — before ANYTHING that builds a
     // beagle. createMenuScene() below bakes the showcase dog from
     // getEquippedBeagleSkin() at construction time, so if the profile loads
@@ -1627,6 +1634,11 @@ export class Game {
     // it lands.
     void this.submitRun();
 
+    // The leaderboard link is CLASSIC ONLY — a challenge run is unranked, so
+    // offering to "check the leaderboard" after one would point at a board the
+    // run could never appear on.
+    const showBoardBtn = !isChallenge && this.openLeaderboard !== undefined;
+
     const panel = this.hud.showPanel(
       '<div class="eyebrow">final score</div>' +
       `<h1>${this.score}</h1>` +
@@ -1634,8 +1646,17 @@ export class Game {
       '<div class="menu-actions">' +
       '<button id="againBtn">Play again</button>' +
       '<button id="gameOverMenuBtn" class="btn-secondary">Menu</button>' +
+      (showBoardBtn
+        ? '<button id="gameOverBoardBtn" class="btn-secondary">🏆 Leaderboard</button>'
+        : "") +
       "</div>",
     );
+
+    // The score is already banked by submitRun() above, so opening the board
+    // from here always shows a board that includes this run.
+    panel
+      .querySelector<HTMLButtonElement>("#gameOverBoardBtn")
+      ?.addEventListener("click", () => this.openLeaderboard?.());
     const againBtn = panel.querySelector<HTMLButtonElement>("#againBtn");
     againBtn?.addEventListener("click", () => {
       this.sound.resume();

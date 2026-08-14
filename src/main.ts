@@ -118,7 +118,10 @@ async function startApp(): Promise<void> {
   // Only now is it safe to construct the game: the profile cache is hydrated,
   // so initProfileFromCache() in the Game constructor has something to read.
   const canvas = document.getElementById("scene") as HTMLCanvasElement;
-  const game = new Game(canvas);
+  // IDEA-020: the game-over panel offers a link to the board. Passed as a
+  // closure rather than the handle itself because `leaderboard` is created
+  // below — the closure is only ever called on a click, long after that.
+  const game = new Game(canvas, () => leaderboard.open());
   game.start();
 
   // The account screen is wired HERE rather than in game.ts, deliberately: the
