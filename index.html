@@ -56,18 +56,20 @@
         <p class="coin-line" id="menuCoinLine">&#x1FA99; 0 coins</p>
       </div>
       <div class="menu-bottom">
-        <!-- IDEA-036: Play stays a standalone primary action; the four
-             secondary destinations became a CARROUSEL. At five stacked
-             buttons the row was crowding the 3D showcase, and the beagle
-             should stay the hero of this screen. -->
-        <button type="button" id="playBtn" class="menu-play">&#9654; Play</button>
-
+        <!-- IDEA-036 v3: Play is now the FIRST card of the carousel rather
+             than a separate button above it. One row of destinations reads
+             more cleanly than a button plus a rail, and Play keeps its
+             primacy by sitting first and carrying the accent colour. -->
         <div class="menu-carousel">
           <button type="button" class="carousel-arrow" id="carouselPrev"
                   aria-label="Previous option">&#8249;</button>
 
           <div class="carousel-viewport">
             <div class="carousel-track" id="carouselTrack">
+              <button type="button" id="playBtn" class="carousel-item carousel-play">
+                <span class="carousel-icon" aria-hidden="true">&#9654;</span>
+                <span class="carousel-label">Play</span>
+              </button>
               <!-- IDEA-013 Challenge Mode: 8 fixed levels with per-level
                    speed/extra-ghost/short-fright twists. -->
               <button type="button" id="challengeBtn" class="carousel-item">

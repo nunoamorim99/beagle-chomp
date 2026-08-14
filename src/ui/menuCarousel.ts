@@ -48,7 +48,10 @@ export function attachMenuCarousel(): MenuCarouselHandle {
       return;
     }
 
-    const atStart = viewport!.scrollLeft <= 1;
+    // Tolerance covers the track's own edge padding: scroll-snap settles at
+    // that offset rather than a true 0, so a 1px threshold left the back
+    // arrow showing on a rail that was already at its start.
+    const atStart = viewport!.scrollLeft <= 12;
     const atEnd =
       viewport!.scrollLeft + viewport!.clientWidth >= viewport!.scrollWidth - 1;
 
@@ -61,10 +64,29 @@ export function attachMenuCarousel(): MenuCarouselHandle {
   viewport.addEventListener("scroll", syncArrows, { signal, passive: true });
   window.addEventListener("resize", syncArrows, { signal });
 
-  // The menu is hidden at first paint, so widths read as 0 until it's shown.
-  // A ResizeObserver catches that transition without polling.
+  // The menu is hidden at first paint (display:none), so every width reads 0
+  // until it's shown — and `hidden` toggling on an ANCESTOR resizes neither
+  // the viewport nor the track in a way a ResizeObserver on the viewport
+  // alone reliably catches. Observing BOTH the viewport and the track covers
+  // the layout settling, and a MutationObserver on #mainMenu's class catches
+  // the show/hide itself.
+  //
+  // Without this the arrows stayed hidden even when the rail could scroll —
+  // which is exactly what happened when Play joined the rail (IDEA-036 v3)
+  // and five cards no longer fit on a desktop.
   const observer = new ResizeObserver(() => syncArrows());
   observer.observe(viewport);
+  const track = viewport.querySelector(".carousel-track");
+  if (track) observer.observe(track);
+
+  const menu = document.getElementById("mainMenu");
+  const menuObserver = menu
+    ? new MutationObserver(() => {
+        // Let layout settle after the class flip before measuring.
+        requestAnimationFrame(() => syncArrows());
+      })
+    : null;
+  menuObserver?.observe(menu!, { attributes: true, attributeFilter: ["class"] });
 
   syncArrows();
 
@@ -72,6 +94,7 @@ export function attachMenuCarousel(): MenuCarouselHandle {
     detach(): void {
       listeners.abort();
       observer.disconnect();
+      menuObserver?.disconnect();
     },
   };
 }

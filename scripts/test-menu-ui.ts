@@ -87,9 +87,11 @@ async function checkMenu(page: Page, label: string): Promise<void> {
   ok("the eyebrow is gone", (await page.locator("#mainMenu .eyebrow").count()) === 0);
   ok("the title stays", (await page.textContent(".menu-top h1")) === "Beagle Chomp");
 
-  ok("Play is a standalone button", await page.isVisible(".menu-play"));
   ok("the carousel is present", await page.isVisible(".menu-carousel"));
-  ok("all four destinations are in the rail", (await page.locator(".carousel-item").count()) === 4);
+  // IDEA-036 v3: Play joined the rail, so five cards not four.
+  ok("all five destinations are in the rail", (await page.locator(".carousel-item").count()) === 5);
+  ok("Play is the FIRST card", await page.locator(".carousel-item").first().evaluate((el) => el.id === "playBtn"));
+  ok("Play keeps its accent styling", await page.locator("#playBtn").evaluate((el) => el.classList.contains("carousel-play")));
 
   // The point of the rework: the beagle should be visible ABOVE the controls.
   const menuBottom = await page.locator(".menu-bottom").boundingBox();
@@ -127,7 +129,7 @@ async function checkMenu(page: Page, label: string): Promise<void> {
   // Every card must be reachable — this is what a wrapped/clipped row breaks.
   // NOTE: this loop SCROLLS the rail, so the "opens at first option" check
   // above must stay before it.
-  for (const id of ["#challengeBtn", "#menuShopBtn", "#menuLeaderboardBtn", "#menuProfileBtn"]) {
+  for (const id of ["#playBtn", "#challengeBtn", "#menuShopBtn", "#menuLeaderboardBtn", "#menuProfileBtn"]) {
     await page.locator(id).scrollIntoViewIfNeeded();
     const box = await page.locator(id).boundingBox();
     ok(
@@ -230,12 +232,31 @@ async function main(): Promise<void> {
     await checkInstallBanner(desktop, "Desktop");
 
     section("Desktop — carousel arrows");
-    // Four cards fit comfortably at 1280px, so the arrows should hide
-    // themselves rather than sit there doing nothing.
+    // checkMenu above scrolls every card into view, which leaves the rail at
+    // its END. Reset to the start so these assertions describe the rail as a
+    // player first meets it.
+    await desktop.locator(".carousel-viewport").evaluate((el) => { el.scrollLeft = 0; });
+    await desktop.waitForTimeout(400);
+    // With Play in the rail (IDEA-036 v3) there are five cards, which may or
+    // may not fit depending on width — so assert the arrows are CONSISTENT
+    // with whether the rail actually scrolls, rather than assuming either.
+    const scrollableDesktop = await desktop
+      .locator(".carousel-viewport")
+      .evaluate((el) => el.scrollWidth > el.clientWidth + 1);
     const prevHidden = await desktop.locator("#carouselPrev").evaluate((el) =>
       el.classList.contains("hidden-arrow"),
     );
-    ok("the back arrow hides when there's nothing to scroll", prevHidden);
+    const nextHidden = await desktop.locator("#carouselNext").evaluate((el) =>
+      el.classList.contains("hidden-arrow"),
+    );
+    // At the START of the rail the back arrow is always useless; the forward
+    // arrow is useful exactly when there's more to scroll to.
+    ok("the back arrow hides at the start of the rail", prevHidden);
+    ok(
+      "the forward arrow matches whether the rail can scroll",
+      nextHidden === !scrollableDesktop,
+      `scrollable=${scrollableDesktop}, nextHidden=${nextHidden}`,
+    );
 
     await deleteAccount(desktop, desktopUser);
 
