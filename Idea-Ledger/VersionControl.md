@@ -16,7 +16,17 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
 > lines here roll up into the numbered version below and this section is cleared (hold a line back
 > only if you explicitly choose to).
 
-_(nothing unreleased — v5.0 "Signed In" was cut on 2026-08-14)_
+- (2026-08-14) IDEA-012 v2 — cosmetic prices raised: beagle and enemy skins 5 → **25**, maze themes
+  5–10 → **50**. At 5 coins a skin was about one good run, so nothing in the shop was worth saving
+  for. First price change since the server became authoritative, so it needed a catalog re-sync —
+  the drift test caught all 11 mismatches before they could reach a player.
+- (2026-08-14) IDEA-036 v1 — home menu reworked: the "three.js · maze chase" eyebrow is gone, Play
+  stays a standalone primary button, and the four destinations became a swipeable carousel so the
+  beagle stays the hero of the screen instead of being crowded by five stacked buttons.
+- (2026-08-14) IDEA-006 v3 — the PWA install banner is readable on a phone at last. It was a
+  round-cornered pill anchored to the bottom that deformed into an unreadable lozenge when its text
+  wrapped, directly over the menu buttons. Now a top-pinned banner that stacks properly on narrow
+  screens, with real touch targets, clear of both the buttons and the game's title.
 
 ## 📌 Planned
 > Forward-looking targets from `/plan-version`. Each is a checklist of IDEAs intended for a

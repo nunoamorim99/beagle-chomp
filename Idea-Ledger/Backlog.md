@@ -40,22 +40,6 @@ _(empty — nothing to triage)_
   documented in `auth.ts` when moving that markup.
 - **Dependencies:** [[IDEA-019]]
 
-### IDEA-036 — Home menu: drop the eyebrow, carousel the buttons 💡
-- **Priority:** 🟡
-- **Area:** menu
-- **Registered:** 2026-08-14
-- **Description:** on the home menu, keep the "Beagle Chomp" title but **remove the
-  "three.js · maze chase" eyebrow** above it. Then turn the button options into a **carousel below
-  the beagle** so they look better on screen. On desktop, move the beagle preview a little up and
-  put the buttons below it; keep mobile the same way so the two stay uniform.
-- **Notes:** the menu now carries five buttons (Play · Challenge · Shop · Leaderboard · Account)
-  after [[IDEA-019]]/[[IDEA-020]] added two — a stack that was fine at two options and is crowding
-  the showcase at five. A carousel keeps the beagle the hero instead of squeezing it. The eyebrow
-  was a v2.0 framing device ([[IDEA-021]] v2) that has outlived its purpose. `index.html`'s
-  `.menu-actions`, `style.css`, and the portrait camera dolly in `menuScene.ts` if the beagle moves
-  up. Pairs naturally with [[IDEA-037]] — both are menu-screen work.
-- **Dependencies:** —
-
 ### IDEA-037 — Show the equipped MAZE THEME on the menu showcase 💡
 - **Priority:** 🟢
 - **Area:** menu
@@ -109,6 +93,34 @@ _(nothing yet)_
 
 ## Delivered ✅
 > Already in production. Do NOT delete. Each keeps its version history.
+
+### IDEA-036 — Home menu: drop the eyebrow, carousel the buttons ✅
+- **Priority:** 🟡
+- **Area:** menu
+- **Registered:** 2026-08-14
+- **Description:** on the home menu, keep the "Beagle Chomp" title but remove the
+  "three.js · maze chase" eyebrow above it. Then turn the button options into a carousel below the
+  beagle so they look better on screen. On desktop, move the beagle preview a little up and put the
+  buttons below it; keep mobile the same way so the two stay uniform.
+- **Notes:** the menu had grown to five buttons after [[IDEA-019]]/[[IDEA-020]] — fine at two,
+  crowding the 3D showcase at five.
+- **Dependencies:** —
+- **History:**
+  - **v1** (2026-08-14) — the eyebrow is gone (a v2.0 framing device from [[IDEA-021]] v2 that had
+    outlived its purpose), **Play** stays a standalone primary action, and the four destinations
+    (Challenge · Shop · Leaderboard · Account) became a **carousel** so the beagle stays the hero of
+    the screen. Built on native `overflow-x` + `scroll-snap` rather than a JS slider: swipe,
+    trackpad, arrow keys and Tab focus all work for free, and it degrades to a plain scrolling row
+    if `menuCarousel.ts` never loads — the arrows are a mouse convenience, not the mechanism, and
+    hide themselves when there's nothing to scroll. The beagle was raised by lowering `menuScene`'s
+    **LOOK TARGET** (0.5 → 0.34) rather than moving the camera, because the portrait dolly distance
+    was tuned by projection math and derives from the camera/target pair — re-aiming re-frames the
+    shot without disturbing it. One bug caught by screenshot: `scroll-snap-align:center` plus the
+    centring edge padding made the rail open part-scrolled, cropping "Challenge" to "nge"; now
+    start-aligned with modest padding, and the test screenshots the menu BEFORE its own scrolling
+    loop so it shows what a player actually first sees.
+    `index.html`, `style.css`, `src/ui/menuCarousel.ts` (new), `main.ts`, `render/menuScene.ts`,
+    `scripts/test-menu-ui.ts` (new, 45 checks across desktop 1280×800 + phone 390×844). _(cc4b5d1)_
 
 ### IDEA-020 — Shared scoreboard ✅
 - **Priority:** 🟢
@@ -531,14 +543,17 @@ _(nothing yet)_
 - **Dependencies:** [[IDEA-009]], [[IDEA-010]]
 - **History:**
   - **v1** (2026-07-09) — the storefront: 🛒 HUD button opens a dedicated overlay (own `#shop` container, never fights the Start/GameOver panel) with live coin balance + Beagle/Enemy sections; per-skin cards (coat-color swatches for beagles, icons for enemies) with contextual actions — Equipped / Equip / Buy · 5 🪙 / "Need N more 🪙". Data layer: `price` on both skin registries; `ownedBeagleSkinIds`/`ownedEnemySkinIds` in the profile blob (defaults always owned, defensive load); `buyBeagleSkin`/`buyEnemySkin` (atomic coin-deduct + unlock in one write; refuses already-owned/insufficient/unknown); `equipBeagleSkin`/`equipEnemySkin` now gated on ownership (return boolean); boot fallback if equipped-but-unowned. HUD coin counter syncs live on purchase (`onCoinsChanged`). Responsive desktop + phone (cards stack, ≥44px targets). Verified live end-to-end with real clicks: buy 12→7 🪙, unlock, equip (beagle recolors live), reload persists all. `ui/shop.ts` (new), `ui/skin.ts` (deleted), `cosmetics.ts`, `profileStore.ts`, `game.ts`, `index.html`, `style.css`, `scripts/test-cosmetics.ts`. _(9126a00)_
-- **Queued v2 scope (triaged 2026-08-14):** **raise cosmetic prices** — Nuno, after playing v5.0:
-  "it's too easy to buy a skin". Target **25 coins** for a beagle skin, **25** for an enemy skin,
-  **50** for a maze theme (from today's 5 / 5 / 5–10). One coin is earned per 1,000 points plus
-  4 pickups per level ([[IDEA-016]]/[[IDEA-017]]), so this turns a skin from "one good run" into a
-  real goal. Prices live in `cosmetics.ts` + `themes.ts` — but since [[IDEA-020]] the SERVER charges
-  from `server/src/catalog.generated.ts`, so **`npm run sync` in `server/` must be re-run** or the
-  server keeps charging the old price; `npm run test:catalog` fails on that drift by design.
-  Existing owners are unaffected (ownership is stored, not re-charged).
+  - **v2** (2026-08-14) — prices raised: beagle skins **5 → 25**, enemy skins **5 → 25**, maze
+    themes **5–10 → 50**. Nuno after playing v5.0: "it's too easy to buy a skin" — at 5 coins a skin
+    was roughly one good run, so cosmetics had no pull. The first price change since [[IDEA-020]]
+    made the SERVER authoritative, which is the interesting part: prices now live in BOTH
+    `cosmetics.ts`/`themes.ts` and the generated `server/src/catalog.generated.ts`, so `npm run sync`
+    in `server/` is mandatory or the shop says 25 while the server charges 5. The drift test caught
+    all 11 mismatches with the fix in its own message — exactly what it was written for. Existing
+    owners unaffected (ownership is stored, not re-charged). Test scenarios were reworked to DERIVE
+    their wallets from the real prices so the next rebalance doesn't break them again.
+    `cosmetics.ts`, `themes.ts`, `server/src/catalog.generated.ts`, `scripts/test-cosmetics.ts`.
+    _(cc4b5d1)_
 
 ### IDEA-016 — Classic mode: earn coins from points ✅
 - **Priority:** 🟡
@@ -716,13 +731,17 @@ _(nothing yet)_
 - **History:**
   - **v1** (2026-07-07) — PWA config, install UX, GitHub Pages deploy workflow. _(a426ced)_
   - **v2** (2026-07-08) — fix: canvas was sized to `viewport × devicePixelRatio` on phones (only the top-left corner was visible). `renderer.setSize(w, h)` now sets the canvas CSS size to the logical viewport while the buffer stays 2× for sharpness. Verified full-maze framing in portrait + landscape. `scene.ts`. _(8226b88)_
-- **Queued v3 scope (triaged 2026-08-14):** the install pop-up **isn't responsive** — Nuno: "on
-  mobile screens it looks like a rounded button and we can't read the text". Fix the install pill's
-  sizing/wrapping so the message is legible on a phone, and **move it to the TOP of the screen** so
-  it stops sitting over the menu buttons. `src/ui/install.ts` + `install.css` (the pill is the
-  Chromium `beforeinstallprompt` path; check the iOS "Add to Home Screen" hint at the same time).
-  Note the menu is being reworked in [[IDEA-036]], so the "not above the buttons" requirement should
-  be settled against that new layout rather than the current one.
+  - **v3** (2026-08-14) — the install banner, rebuilt. Nuno: "on mobile screens it looks like a
+    rounded button and we can't read the text". The v1 pill was `border-radius:999px` on a flex ROW
+    anchored to the BOTTOM — at ~360px the row wrapped, and a 999px radius on a now-tall box renders
+    as a lozenge that crops its own text, sitting over the menu buttons (the exact place the player
+    taps). Now a **top-pinned banner** with a fixed 14px radius that can't deform, a CSS grid on
+    narrow screens (message + ✕ on row one, full-width action below) and ≥44px touch targets.
+    A `body.install-open` class shifts the menu title down so the banner can't cover the game's own
+    name. Settled against [[IDEA-036]]'s new menu layout, as triage flagged. Two bugs here were
+    caught by LOOKING at screenshots rather than by assertions that all passed: the ✕ stranded on
+    its own line, and the banner over the title. `install.css`, `install.ts`, `style.css`,
+    `scripts/test-menu-ui.ts` (new, 45 checks across desktop + phone). _(cc4b5d1)_
 
 ### IDEA-007 — Beagle app icon & favicon artwork ✅
 - **Area:** brand
