@@ -1,0 +1,68 @@
+// OWNER: backend
+//
+// /api/v1/profile/* and /api/v1/leaderboard — everything tied to an account.
+// All of it requires a bearer token.
+
+import { Hono } from "hono";
+import * as profileService from "../services/profileService.js";
+import { requireAuth, type AuthVars } from "../http/auth-middleware.js";
+import { rateLimit } from "../http/rate-limit.js";
+import { readBody } from "../http/body.js";
+
+export const profileRoutes = new Hono<{ Variables: AuthVars }>();
+
+// Generous ceiling: enough that normal play never notices, low enough that a
+// runaway client loop can't hammer the database.
+profileRoutes.use("*", rateLimit({ name: "profile", limit: 120, windowMs: 60_000 }));
+profileRoutes.use("*", requireAuth);
+
+// --- read -------------------------------------------------------------------
+
+profileRoutes.get("/profile", (c) =>
+  c.json({ profile: profileService.getProfile(c.get("user")) }),
+);
+
+// --- equip ------------------------------------------------------------------
+
+profileRoutes.patch("/profile/equipped", async (c) => {
+  const body = await readBody(c);
+  const profile = await profileService.equip(c.get("user"), {
+    beagleSkinId: body.beagleSkinId,
+    enemySkinId: body.enemySkinId,
+    mazeThemeId: body.mazeThemeId,
+  });
+  return c.json({ profile });
+});
+
+// --- purchase ---------------------------------------------------------------
+
+/** The client sends only WHAT it wants, never what it costs — the price comes
+ *  from the server's own catalog. */
+profileRoutes.post("/profile/purchase", async (c) => {
+  const body = await readBody(c);
+  const profile = await profileService.purchase(
+    c.get("user").id,
+    body.kind,
+    body.id,
+  );
+  return c.json({ profile });
+});
+
+// --- delete account ---------------------------------------------------------
+
+profileRoutes.delete("/profile", async (c) => {
+  const body = await readBody(c);
+  await profileService.deleteAccount(c.get("user"), body.confirmUsername);
+  return c.body(null, 204);
+});
+
+// --- leaderboard ------------------------------------------------------------
+
+/** Classic mode only — challenge runs never write high_score. */
+profileRoutes.get("/leaderboard", async (c) => {
+  const result = await profileService.leaderboard(
+    c.get("user"),
+    c.req.query("limit"),
+  );
+  return c.json(result);
+});

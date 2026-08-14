@@ -13,10 +13,16 @@
     "start": "node dist/src/index.js",
     "typecheck": "tsc --noEmit",
     "migrate": "tsx scripts/migrate.ts",
-    "migrate:built": "node dist/scripts/migrate.js"
+    "migrate:built": "node dist/scripts/migrate.js",
+    "sync": "tsx scripts/sync-game-constants.ts",
+    "test:units": "tsx scripts/test-auth-units.ts",
+    "test:db": "tsx scripts/test-auth.ts",
+    "test:catalog": "tsx scripts/test-catalog.ts",
+    "test": "npm run test:units && npm run test:catalog"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.0",
+    "@node-rs/argon2": "^2.1.0",
     "hono": "^4.6.14",
     "pg": "^8.13.1",
     "zod": "^3.24.1"

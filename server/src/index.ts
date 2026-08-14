@@ -2,11 +2,9 @@
 //
 // The Hono app + server bootstrap for the Beagle Chomp API.
 //
-// Increment 0 scope: GET /health ONLY. This exists to prove the deployment path
-// end-to-end — Dokploy builds the subfolder Dockerfile, Traefik routes it, the
-// Cloudflare Origin Certificate terminates TLS behind the orange cloud — before
-// any product code is at stake. Auth, profile, sessions and leaderboard routes
-// land in later increments (see the approved plan).
+// Increment 1 scope: auth (signup/login/recover/logout/me), profile
+// (read/equip/purchase/delete) and the classic-mode leaderboard. Game sessions
+// and score submission arrive in Increment 2.
 //
 // Conventions enforced here (STACK.md §2):
 //   §2.1 JSON only, including errors and 404s — see notFound/onError below.
@@ -21,6 +19,8 @@ import { closeDb } from "./db.js";
 import { corsMiddleware } from "./http/cors.js";
 import { ApiError } from "./http/errors.js";
 import { healthRoutes } from "./routes/health.js";
+import { authRoutes } from "./routes/auth.js";
+import { profileRoutes } from "./routes/profile.js";
 import { APP_VERSION } from "./version.js";
 
 const app = new Hono();
@@ -54,9 +54,13 @@ app.use("*", async (c, next) => {
 app.route("/", healthRoutes);
 
 // Product surface. Versioned so installed apps keep working when v2 ships
-// (STACK.md §2.4). Empty in Increment 0 beyond this identifying stub.
+// (STACK.md §2.4).
 const v1 = new Hono();
 v1.get("/", (c) => c.json({ api: "beagle-chomp", version: APP_VERSION }));
+v1.route("/auth", authRoutes);
+// profileRoutes declares its own full paths (/profile, /leaderboard) because
+// they share one auth+rate-limit middleware stack but sit at different roots.
+v1.route("/", profileRoutes);
 app.route("/api/v1", v1);
 
 // --- JSON-only error handling (STACK.md §2.1) -------------------------------
