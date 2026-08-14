@@ -27,6 +27,7 @@ import { attachAuthGate } from "./ui/auth";
 import { attachRecoveryCode } from "./ui/recoveryCode";
 import { attachPrivacy } from "./ui/privacy";
 import { attachProfile } from "./ui/profile";
+import { attachLeaderboard } from "./ui/leaderboard";
 import { me } from "./net/endpoints";
 import {
   getToken,
@@ -143,12 +144,21 @@ async function startApp(): Promise<void> {
     { signal: sessionListeners.signal },
   );
 
+  // IDEA-020: classic-mode scoreboard, opened from the menu.
+  const leaderboard = attachLeaderboard();
+  document.getElementById("menuLeaderboardBtn")?.addEventListener(
+    "click",
+    () => leaderboard.open(),
+    { signal: sessionListeners.signal },
+  );
+
   // If the server ever rejects our token mid-session (deleted on another
   // device, revoked by a password reset), drop everything and go back to the
   // gate rather than leaving a game running against a dead session.
   setUnauthorizedHandler(() => {
     game.stop();
     profile.detach();
+    leaderboard.detach();
     clearProfileCache();
     void startApp();
   });

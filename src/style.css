@@ -639,9 +639,12 @@ body.privacy-open .shop-btn, body.privacy-open .home-btn,
 body.privacy-open #mainMenu,
 body.boot-open .hud,     body.boot-open .mute-btn,
 body.boot-open .shop-btn, body.boot-open .home-btn,
-body.boot-open #mainMenu{display:none}
+body.boot-open #mainMenu,
+body.leaderboard-open .hud, body.leaderboard-open .mute-btn,
+body.leaderboard-open .shop-btn, body.leaderboard-open .home-btn,
+body.leaderboard-open #mainMenu{display:none}
 
-#authGate,#recoveryCode,#profile,#privacy,#boot{
+#authGate,#recoveryCode,#profile,#privacy,#boot,#leaderboard{
   position:fixed;inset:0;z-index:60;
   display:flex;align-items:center;justify-content:center;
   padding:max(16px,env(safe-area-inset-top)) 16px max(16px,env(safe-area-inset-bottom));
@@ -652,7 +655,7 @@ body.boot-open #mainMenu{display:none}
    still mounted (the gate awaits it), so it must cover it. */
 #recoveryCode{z-index:70;background:linear-gradient(160deg,#2a1f10,#0b0b16 65%)}
 
-.auth-card,.recovery-sheet,.profile-sheet,.privacy-sheet,.boot-sheet{
+.auth-card,.recovery-sheet,.profile-sheet,.privacy-sheet,.boot-sheet,.lb-sheet{
   width:min(520px,100%);max-height:100%;
   background:rgba(16,16,30,.72);border:1px solid rgba(255,255,255,.12);
   border-radius:18px;padding:clamp(20px,5vw,32px);
@@ -749,3 +752,27 @@ button.recovery-copy{padding:8px 14px;font-size:14px;flex:0 0 auto}
 .boot-hint{font-size:14px;color:var(--muted);line-height:1.5;margin:0 0 20px}
 #bootRetryBtn{width:100%}
 @media (prefers-reduced-motion:reduce){.boot-spinner{animation:none}}
+
+/* ---------------------------------------------------------------------- */
+/* IDEA-020: the shared scoreboard. Classic mode only — see leaderboard.ts. */
+
+.lb-sheet{width:min(560px,100%);display:flex;flex-direction:column;max-height:min(85vh,100%)}
+.lb-header{display:flex;align-items:flex-start;justify-content:space-between;
+  gap:12px;margin-bottom:14px}
+.lb-header h1{margin:0;font-size:clamp(20px,5vw,26px)}
+.lb-sub{margin:4px 0 0;font-size:13px;color:var(--muted)}
+.lb-body{overflow-y:auto;-webkit-overflow-scrolling:touch;min-height:0}
+.lb-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px}
+.lb-row{display:grid;grid-template-columns:2.6rem 1fr auto;align-items:center;gap:10px;
+  padding:10px 12px;border-radius:10px;background:rgba(0,0,0,.28)}
+/* The player's own row, so they can find themselves at a glance. */
+.lb-row-me{background:rgba(232,162,61,.16);border:1px solid rgba(232,162,61,.5)}
+.lb-rank{font-size:15px;color:var(--muted);text-align:center}
+.lb-row-me .lb-rank{color:var(--accent)}
+/* Long usernames must never push the score off-screen. */
+.lb-name{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lb-score{font-variant-numeric:tabular-nums;font-weight:700;color:var(--accent)}
+.lb-divider{text-align:center;color:var(--muted);margin:8px 0;letter-spacing:.3em}
+.lb-message{color:var(--muted);text-align:center;line-height:1.5;margin:18px 0}
+.lb-hint{font-size:14px}
+.lb-body>.btn-secondary{display:block;margin:0 auto}

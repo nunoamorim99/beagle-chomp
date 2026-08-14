@@ -50,10 +50,12 @@
                extra-ghost/short-fright twists on the classic engine. -->
           <button type="button" id="challengeBtn" class="btn-secondary">&#127942; Challenge</button>
           <button type="button" id="menuShopBtn" class="btn-secondary">&#128722; Shop</button>
+          <!-- IDEA-020: the shared scoreboard (classic mode only). -->
+          <button type="button" id="menuLeaderboardBtn" class="btn-secondary">&#127942; Leaderboard</button>
           <!-- IDEA-019: account screen (stats, sign out, delete account).
-               Wired in main.ts rather than game.ts — the game layer has no
-               concept of accounts, and keeping it that way means the auth work
-               never reaches into the game loop. -->
+               Both are wired in main.ts rather than game.ts — the game layer
+               has no concept of accounts, and keeping it that way means the
+               auth work never reaches into the game loop. -->
           <button type="button" id="menuProfileBtn" class="btn-secondary">&#128100; Account</button>
         </div>
       </div>
@@ -90,6 +92,14 @@
     <div class="hidden" id="recoveryCode"></div>
     <div class="hidden" id="profile"></div>
     <div class="hidden" id="privacy"></div>
+
+    <!-- IDEA-020: the shared scoreboard. CLASSIC MODE ONLY — challenge runs are
+         deliberately unranked (their modifiers make scores incomparable). Rows
+         are built with createElement/textContent by src/ui/leaderboard.ts, not
+         innerHTML: this is the one screen that renders strings authored by
+         OTHER players, so injection is structurally impossible rather than
+         escaped-and-hopefully-correct. -->
+    <div class="hidden" id="leaderboard"></div>
 
     <!-- Shown while the boot flow checks a stored token, and if the API can't
          be reached (the game is online-only by design). -->
