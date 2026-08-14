@@ -16,6 +16,13 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
 > lines here roll up into the numbered version below and this section is cleared (hold a line back
 > only if you explicitly choose to).
 
+- (2026-08-14) IDEA-035 v1 — the login screen leads with the app icon and game name, then
+  Create-account / Login tabs (signing up is the default) with the recovery-code option below.
+- (2026-08-14) IDEA-037 v1 — the menu showcase now shows your equipped MAZE THEME, not just your
+  skin: sky, ground, hedges, blooms and lighting all follow the theme you're wearing.
+- (2026-08-14) IDEA-038 v1 — an optional on-screen D-pad for phones, for players who find the swipe
+  gesture fiddly. Swipe stays the default; the choice is saved to your account, so it follows you to
+  any device.
 - (2026-08-14) IDEA-012 v2 — cosmetic prices raised: beagle and enemy skins 5 → **25**, maze themes
   5–10 → **50**. At 5 coins a skin was about one good run, so nothing in the shop was worth saving
   for. First price change since the server became authoritative, so it needed a catalog re-sync —

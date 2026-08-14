@@ -21,57 +21,6 @@ _(empty — nothing to triage)_
 ## Backlog (open ideas)
 > New registered ideas go here. Next free ID: IDEA-039
 
-### IDEA-035 — Login screen: favicon, title, and Create-account / Login tabs 💡
-- **Priority:** 🟡
-- **Area:** accounts
-- **Registered:** 2026-08-14
-- **Description:** improve the login screen. Put the favicon on the screen with the name of the game
-  below it, then the message we already have about creating an account to keep everything. Below
-  that, instead of the two buttons, two TABS — "Create account" and "Login" — with **Create account
-  as the default**; selecting Login shows the login form. Below the tabs, the option to use a
-  recovery code.
-- **Notes:** first impression of the whole game now that sign-in comes before play ([[IDEA-019]]),
-  so it's the screen every player sees first. The current gate is a three-button "choose" view that
-  branches to separate forms; this replaces that with tabs and makes signing up the default path
-  rather than an equal option — which is right, since a brand-new player is the common case.
-  Recovery stays deliberately below and quieter: it's the rare path. All in `src/ui/auth.ts` (the
-  four views already live in one module for exactly this kind of change) + `style.css`. The favicon
-  art already exists from [[IDEA-007]]. Watch the `#signupUsername` pattern attribute quirk
-  documented in `auth.ts` when moving that markup.
-- **Dependencies:** [[IDEA-019]]
-
-### IDEA-037 — Show the equipped MAZE THEME on the menu showcase 💡
-- **Priority:** 🟢
-- **Area:** menu
-- **Registered:** 2026-08-14
-- **Description:** when a player selects a different theme, the menu preview should show the
-  selected theme — the same way it already shows the equipped beagle skin.
-- **Notes:** the menu showcase ([[IDEA-021]] v2's `menuScene.ts`) reacts to the equipped SKIN but
-  not the equipped THEME, so a player who buys Night City sees no sign of it until they start a
-  run. Not just a palette swap: `menuScene` builds its own small garden vignette (turf patch, hedge
-  arc, blooms, daytime sky) rather than using `board.ts`, so this means giving it a theme-aware path
-  — likely reusing `ThemePalette` from [[IDEA-026]] for sky/lighting/materials, and deciding what
-  the garden props become under each theme. Also worth checking the equip path updates it LIVE from
-  the shop, the way `setBeagleSkin` already does. Pairs with [[IDEA-036]].
-- **Dependencies:** [[IDEA-026]]
-
-### IDEA-038 — Optional on-screen D-pad for mobile 💡
-- **Priority:** 🟡
-- **Area:** ux
-- **Registered:** 2026-08-14
-- **Description:** add the option to have BUTTONS instead of finger swipes on mobile. Watching
-  people play on phones with a not-so-good screen, the gameplay can be frustrating — so offer
-  on-screen buttons as an alternative.
-- **Notes:** Nuno saw this happen with real players, which is the strongest signal in the backlog.
-  Swipe (`src/input/touch.ts`, [[IDEA-005]]) stays the default; this is an OPTION, so it needs a
-  setting that persists — and since [[IDEA-019]] moved profile state server-side, "control scheme"
-  is a natural new profile field rather than another localStorage key. The d-pad must not cover the
-  maze or fight the safe-area insets, and its buttons feed the same queued-direction model the
-  keyboard and swipe already share (so no gameplay logic changes). Consider auto-suggesting it on
-  small screens rather than hiding it in a menu. The biggest of the current batch and the only one
-  that touches how the game actually plays.
-- **Dependencies:** —
-
 
 
 
@@ -93,6 +42,74 @@ _(nothing yet)_
 
 ## Delivered ✅
 > Already in production. Do NOT delete. Each keeps its version history.
+
+### IDEA-035 — Login screen: favicon, title, and Create-account / Login tabs ✅
+- **Priority:** 🟡
+- **Area:** accounts
+- **Registered:** 2026-08-14
+- **Description:** put the favicon on the screen with the game name below it, then the message about
+  creating an account to keep everything. Below that, two TABS — "Create account" and "Login" — with
+  Create account as the default; selecting Login shows the login form. Below the tabs, the option to
+  use a recovery code.
+- **Dependencies:** [[IDEA-019]]
+- **History:**
+  - **v1** (2026-08-14) — the gate now leads with IDENTITY rather than a form: app icon, "Beagle
+    Chomp", and one line on why an account is worth having. The old three-button "choose" view is
+    gone; the four internal views collapse to two (a tabbed main screen + recovery). **Create
+    account is the default tab** — a brand-new player is the common case, and the previous layout
+    made signing up merely one option among three. Recovery sits below the tabs, deliberately
+    quieter: it's the rare path, and a third equal button cluttered the common one. Since signup is
+    now the landing state, every browser test that used to click `#goSignup` just waits for the
+    form. `src/ui/auth.ts`, `style.css`, `scripts/test-auth-ui.ts` (44 checks). _(25a50ed)_
+
+### IDEA-037 — Show the equipped MAZE THEME on the menu showcase ✅
+- **Priority:** 🟢
+- **Area:** menu
+- **Registered:** 2026-08-14
+- **Description:** when a player selects a different theme, the menu preview should show the
+  selected theme — the same way it already shows the equipped beagle skin.
+- **Dependencies:** [[IDEA-026]]
+- **History:**
+  - **v1** (2026-08-14) — the menu vignette is now theme-aware. This was bigger than a palette swap,
+    as triage flagged: `menuScene.ts` builds its OWN garden scene (turf patch, hedge arc, blooms,
+    sky dome, 3-light rig) rather than using `board.ts`, so none of [[IDEA-026]]'s board re-theming
+    applied to it. New `applyTheme()` maps a `ThemePalette` onto every themed surface — sky gradient
+    stops, soil, grass rim, hedges, blooms and all three lights — mutating materials IN PLACE, the
+    same technique `applyBoardTheme` uses, so re-theming is instant and allocates nothing. The
+    equipped theme is applied at build time (no garden flash on first paint) and live from the shop
+    via `onThemeChanged`, exactly as `onEquipBeagle` already recolours the showcase dog. Arcade
+    Night ships an empty bloom palette by design, so blooms fall back to the biscuit colour rather
+    than rendering black. Verified with Night City: purple dusk sky, blue city walls, dark floor and
+    the beagle lit by that theme's sodium-amber rig. `render/menuScene.ts`, `game.ts`. _(25a50ed)_
+
+### IDEA-038 — Optional on-screen D-pad for mobile ✅
+- **Priority:** 🟡
+- **Area:** ux
+- **Registered:** 2026-08-14
+- **Description:** add the option to have BUTTONS instead of finger swipes on mobile — watching
+  people play on phones with a not-so-good screen, the gameplay can be frustrating.
+- **Notes:** Nuno saw this with real players, which is the strongest signal the backlog has had.
+- **Dependencies:** —
+- **History:**
+  - **v1** (2026-08-14) — an OPTIONAL on-screen D-pad. Swipe ([[IDEA-005]]) stays the default and is
+    untouched; this is an alternative, chosen per player. The pad feeds the **same queued-direction
+    model** the keyboard and swipe already share, so no gameplay logic changed at all — `game.ts`
+    just receives `onDir(d)` from another source. `pointerdown` rather than `click` so a direction
+    registers the instant the finger lands (waiting for press-and-release reads as the beagle "not
+    responding"), plus `touch-action:none` and preventDefault so a thumb resting on the pad can't
+    scroll or zoom the page.
+    The preference lives on the **ACCOUNT** (migration `002_control_scheme.sql`), not in
+    localStorage: someone who prefers buttons prefers them on every phone they sign in from, and
+    since [[IDEA-019]] the profile is the natural home for that — it reaches the client through the
+    same synchronous `profileStore` façade as everything else. Toggle lives in the profile screen as
+    two labelled cards rather than a switch, so it's obvious what each option means before choosing.
+    Verified end-to-end on a 390×844 phone: hidden by default, appears after the toggle, **pressing
+    it actually steers** (score 20 from eating), hidden under every full-screen page, and the
+    preference survives a reload.
+    `src/input/dpad.ts` (new), `server/migrations/002_control_scheme.sql` (new), `game.ts`,
+    `profileStore.ts`, `profileMapping.ts`, `net/{endpoints,profileSync}.ts`, `ui/profile.ts`,
+    `main.ts`, `style.css`, server `repo/{types,users,tokens}.ts` +
+    `services/profileService.ts` + `routes/profile.ts`. _(25a50ed)_
 
 ### IDEA-036 — Home menu: drop the eyebrow, carousel the buttons ✅
 - **Priority:** 🟡
