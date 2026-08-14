@@ -25,7 +25,19 @@ the safety net for the trickiest logic and run without a browser.
 - Balance numbers live in `src/game/config.ts`. Don't scatter magic numbers.
 
 ## What is BUILT (do not rewrite lightly)
-The full game is built, shipped, and deployed (playable since v1.0; now on v1.2).
+The full game is built, shipped, and deployed (playable since v1.0; **now on v5.0 "Signed In"**).
+
+**v5.0 made this a full-stack app.** It is no longer a static offline PWA:
+- **Frontend** — `beaglechomp.nunoamorim.dev` (Cloudflare Pages). Needs `VITE_API_URL` at build time.
+- **API** — `beaglechomp-api.nunoamorim.dev`, source in `server/` (Hono + Postgres + argon2id,
+  deployed by Dokploy from this same repo — see `server/README.md` and root `STACK.md`).
+- **Sign-in is required before play.** `src/main.ts` awaits the auth gate before `new Game()` exists;
+  there is no guest mode. `profileStore.ts` kept all 19 synchronous signatures but now reads an
+  in-memory cache hydrated from the server, so `game.ts`/`shop.ts`/`levelMap.ts` were untouched.
+- **Scores are server-validated** (`server/src/validation/plausibility.ts`, pure + heavily tested).
+  Its constants are GENERATED from the real game modules by `server/scripts/sync-game-constants.ts`
+  — so **after changing `config.ts`, `mazes.json` or `challenges.ts`, run `npm run sync` in
+  `server/`**, or honest runs will start being rejected. `npm run test:catalog` fails on drift.
 - **Pure logic** (`src/game/*`): `mazes.json`+`mazes.ts` (two **validated** mazes —
   connected, all pellets reachable, ghosts can leave the pen), `grid.ts` (tiles, tunnel
   wrap, walkability), `movement.ts` (tile-stepping model), `ghostAI.ts` (targeting with a

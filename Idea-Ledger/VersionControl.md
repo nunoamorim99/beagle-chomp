@@ -15,24 +15,8 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
 > Every `/ship` drops a line here so nothing shipped goes uncounted. When a release is cut, **all**
 > lines here roll up into the numbered version below and this section is cleared (hold a line back
 > only if you explicitly choose to).
-- (2026-08-14) IDEA-020 v1 — the shared scoreboard, and the score pipeline that makes it worth
-  trusting. Runs now get a server-issued, server-timestamped ticket before they start, and every
-  submitted score is validated against what the game can physically produce (per-level ceilings
-  derived from the real maze data, a minimum-time floor, item counts, and score/item consistency).
-  Implausible runs are rejected outright rather than clamped, and logged. Coins are recomputed
-  server-side and challenge progress only advances on a validated clear, so neither can be forged.
-  The board itself is **classic mode only** — challenge modifiers make those scores incomparable —
-  and it says so on screen.
-- (2026-08-14) IDEA-019 v1 — player accounts with single-use recovery codes, server-backed profile,
-  sign-in before play. The game went full-stack: a Dockerised JSON API on
-  **beaglechomp-api.nunoamorim.dev** (Hono + Postgres + argon2id, deployed via Dokploy) and the
-  frontend moved to **beaglechomp.nunoamorim.dev** on Cloudflare Pages. No email is collected, ever
-  — a single-use recovery code is the only way back into an account, shown once on a genuinely
-  blocking screen. Profile state (coins, skins, themes, challenge progress) moved from localStorage
-  to the account, so it now follows the player across devices instead of dying with a browser
-  profile. **Save-wipe release:** no local→account migration, by decision. Also the first app on the
-  platform, which proved the Cloudflare Origin Certificate + orange-cloud method that STACK.md §10
-  requires before História migrates.
+
+_(nothing unreleased — v5.0 "Signed In" was cut on 2026-08-14)_
 
 ## 📌 Planned
 > Forward-looking targets from `/plan-version`. Each is a checklist of IDEAs intended for a
@@ -41,6 +25,33 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
 _(nothing planned yet — v4.0 "New Territory" was fulfilled and cut on 2026-07-12)_
 
 ## Version history
+
+### v5.0 — Signed In (2026-08-14)
+Beagle Chomp stopped being a static offline PWA and became a full-stack game. It now knows who you
+are: your coins, skins, themes and progress live on an account rather than in one browser's storage,
+so they follow you across devices — and there's a shared board to compare high scores on.
+
+Deployed to the self-hosted platform in `STACK.md`: a Dockerised JSON API on
+**beaglechomp-api.nunoamorim.dev** (Hono + Postgres + argon2id, via Dokploy) with the frontend moved
+to **beaglechomp.nunoamorim.dev** on Cloudflare Pages. This was also the first app on that platform,
+which proved the Cloudflare Origin Certificate + orange-cloud method §10 requires before História's
+irreplaceable data migrates.
+
+- **IDEA-019** — player accounts & cross-device recovery: username + password, **no email ever**,
+  and a single-use recovery code that both resets a forgotten password and signs you in on a new
+  device. Consuming one issues a replacement, shown on a genuinely blocking screen — with no email
+  on file it's the only way back into an account, so it can't be dismissed by a stray click.
+  Sign-in is required before play, enforced structurally rather than by scattered checks.
+- **IDEA-020** — shared **classic-mode** scoreboard, and the score pipeline that makes it worth
+  trusting: server-issued, server-timestamped run tickets, and scores validated against what the
+  game can physically produce before they count. Implausible runs are rejected outright rather than
+  clamped, and logged. Coins and challenge progress are computed server-side, so neither can be
+  forged. Challenge runs are deliberately unranked — their modifiers make those scores
+  incomparable.
+
+**Breaking:** a save-wipe release. There is no local→account migration, by decision — profile state
+moved from `localStorage` to the account, and the old blob is deliberately left untouched on disk
+rather than read or deleted.
 
 ### v4.2 — Editor Power (2026-07-13)
 The editor grew teeth: apply-your-edits safely, sculpt props part-by-part, and dress the board by
