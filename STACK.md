@@ -100,11 +100,52 @@ These exist so the API can later serve native apps (Capacitor) without rework. F
 | 1 | 2 GB swap file on the VPS (prevents OOM kills during builds). | free |
 | 2 | Memory limits per container (one build can't starve Postgres). | free |
 | 3 | `restart: unless-stopped` on every container. | free |
-| 4 | Nightly `pg_dump` to R2 — **História first**, others as they get real data. | free |
+| 4 | Nightly `pg_dump` to R2 — **História** ✅ (03:30, custom `backup.js` as a Dokploy Schedule on the API service), **Beagle Chomp** ✅ (04:00, Dokploy's native Backups tab → `beaglechomp-backups`). **Restore verified 2026-08-14** — see below. | free |
 | 5 | Hetzner snapshots once História has real content. | ~€1.10/mo |
 | 6 | Separate copy of original photos outside R2 (human error is the real risk). | free |
 | 7 | UptimeRobot on every public URL. | free |
 | 8 | Dokploy dashboard at `panel.nunoamorim.dev`, protected by Cloudflare Access (email OTP, single allowed address). SSH tunnel kept as emergency fallback. See §10. | free |
+
+### Restore drill (verified 2026-08-14 — §11 step 4 satisfied for História)
+
+A backup is not proven until a restore has actually worked. This was run against the real
+`historia-2026-08-14T03-30-00.dump.gz`, on a local throwaway container, touching nothing in production.
+
+**Two backup formats are in play — using the wrong tool is the classic restore failure:**
+
+| Project | Object name | Format | Restore with |
+|---|---|---|---|
+| História | `historia-<ts>.dump.gz` | custom (`PGDMP` magic, `pg_dump -Fc`) | **`pg_restore`** |
+| Beagle Chomp | `<ts>.sql.gz` (under `beaglechomp-db-<id>/`) | plain SQL | **`psql`** |
+
+```bash
+# 1. Download the object from R2, then check integrity + format before anything else
+gzip -t historia-<ts>.dump.gz                    # not truncated?
+gunzip -c historia-<ts>.dump.gz | head -c 5      # "PGDMP" => custom format
+
+# 2. Throwaway target (never restore into a live database)
+docker run --rm -d --name pg-restore-test \
+  -e POSTGRES_PASSWORD=test -e POSTGRES_DB=scratch postgres:17-alpine
+
+# 3. Restore  (on Git Bash, MSYS_NO_PATHCONV=1 stops /var/... being rewritten to a Windows path)
+gunzip -k historia-<ts>.dump.gz
+docker cp historia-<ts>.dump pg-restore-test:/var/lib/postgresql/h.dump
+MSYS_NO_PATHCONV=1 docker exec pg-restore-test \
+  pg_restore -U postgres -d scratch --no-owner --no-privileges /var/lib/postgresql/h.dump
+
+# 4. Verify DATA, not just tables — a schema-only restore looks like success
+docker exec pg-restore-test psql -U postgres -d scratch \
+  -c "SELECT relname, n_live_tup FROM pg_stat_user_tables ORDER BY n_live_tup DESC;"
+
+# 5. Destroy the evidence
+docker rm -f pg-restore-test
+```
+
+**2026-08-14 result:** 13 tables, 30 constraints, 29 indexes, and real rows —
+`media=223 · fotos=145 · ilustracoes=78 · mensagens=1 · user=2`.
+The `media` count matches the 223 objects in the `historia-media` R2 bucket exactly, so the metadata rows
+and the stored files agree. **Re-run this drill after any change to a backup job**, and note that the
+`--no-owner --no-privileges` flags are what let the dump land in a database with different role names.
 
 ---
 
