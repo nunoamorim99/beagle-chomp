@@ -16,7 +16,27 @@ Living backlog of ideas. Two purposes:
 ## 📥 Inbox (raw captures — untriaged)
 > `/idea` appends raw notes here with a date. `/idea-triage` turns them into registered ideas
 > below, then clears them from here. Don't assign IDs in the Inbox.
-_(empty — nothing to triage)_
+- (2026-08-14) Improve the login screen. Have the favicon on the screen and the name of the game
+  below. Then the message we already have, to create an account to keep everything. Then below,
+  the section that has the two buttons — I was thinking more of two TABS, one for creation another
+  for login, like sign in / sign up but with the text "Create account" / "Login". The default is
+  Create account; when the user selects Login we show the login form. Below that, the option to use
+  the recovery code.
+- (2026-08-14) On the home page menu we have "Beagle Chomp" at the top and that's to keep, but
+  above the name we have "three.js · maze chase" — we can remove that. Then still on the home page,
+  the button options: create a CARROUSEL below the beagle with all the options, this way the
+  buttons will look better on the screen. On desktop we should put the beagle a little up (the
+  preview) and the buttons below. On mobile the same, to keep it uniform.
+- (2026-08-14) When a player selects a different theme, on the preview we should see the theme
+  selected — like we already do with the skin of the beagle.
+- (2026-08-14) The pop-up with the message to install the PWA is not responsive: on mobile screens
+  it looks like a rounded button and we can't read the text. Improve this pop-up — maybe put it at
+  the TOP of the screen so it's not above the buttons.
+- (2026-08-14) The prices of the skins and themes: make them a little more expensive. It's too easy
+  to buy a skin. Something like 25 coins for a dog skin, 25 for an enemy skin, and 50 for themes.
+- (2026-08-14) Add the option to have BUTTONS instead of finger movement (swipe) on mobile devices.
+  Some people playing on phones with a not-so-good screen find the gameplay frustrating, so add the
+  option of on-screen buttons.
 
 ## Backlog (open ideas)
 > New registered ideas go here. Next free ID: IDEA-035
