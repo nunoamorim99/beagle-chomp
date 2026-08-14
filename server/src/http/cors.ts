@@ -5,7 +5,7 @@
 // Two things worth knowing, because both have bitten people before:
 //
 // 1. An `Origin` header is scheme + host + port ONLY. The Pages deploy lives at
-//    https://beagle-chomp.nunoamorim.dev/ and (historically) at
+//    https://beaglechomp.nunoamorim.dev/ and (historically) at
 //    https://nunoamorim99.github.io/beagle-chomp/ — but the PATH is never part
 //    of the Origin. So the github.io allowlist entry is the bare origin, and it
 //    would also allow any OTHER project on that same github.io account. That is

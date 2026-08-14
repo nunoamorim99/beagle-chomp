@@ -110,7 +110,7 @@ UptimeRobot both see a real failure instead of a false green.
    certificate = the existing `*.nunoamorim.dev` **Cloudflare Origin Certificate**
    (Dokploy → Certificates). Cloudflare SSL mode **Full (strict)**.
 5. **Env vars** (Dokploy UI, never git): `DATABASE_URL`, `NODE_ENV=production`,
-   `PORT=3000`, `CORS_ORIGINS=https://beagle-chomp.nunoamorim.dev`, `TOKEN_TTL_DAYS=90`.
+   `PORT=3000`, `CORS_ORIGINS=https://beaglechomp.nunoamorim.dev`, `TOKEN_TTL_DAYS=90`.
 6. **Reliability** (`STACK.md` §3): memory limit **384 MB**, `restart: unless-stopped`,
    add `beaglechomp` to the nightly `pg_dump`→R2 job, add
    `https://beaglechomp-api.nunoamorim.dev/health` to UptimeRobot.
