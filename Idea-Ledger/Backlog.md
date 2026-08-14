@@ -21,21 +21,6 @@ _(empty — nothing to triage)_
 ## Backlog (open ideas)
 > New registered ideas go here. Next free ID: IDEA-035
 
-### IDEA-020 — Shared scoreboard 💡
-- **Priority:** 🟢
-- **Area:** social
-- **Description:** a scoreboard shared between players to create some healthy competitiveness.
-- **Notes:** needs identity to attribute scores ([[IDEA-019]] — **delivered**) and a home in the
-  menu ([[IDEA-021]]). **Scope decision (2026-08-14, Nuno): CLASSIC MODE ONLY.** Challenge runs are
-  never ranked — their modifiers (up to 5 ghosts at ×2 speed, ghost-chain ceiling 18,400/level vs
-  classic's 5,600) make scores incomparable, so mixing them would hand the board to whoever grinds
-  the hardest challenge level. If challenge is ever ranked it wants per-level bests
-  (`best_score` per `challenge_idx`), a new table — not a widened `high_score`.
-  **Server side already shipped with [[IDEA-019]]**: the `high_score`/`high_score_at` columns, the
-  partial index, and `GET /api/v1/leaderboard` (top N + a pinned "me", classic-only) are live.
-  What remains is the client: `src/ui/leaderboard.ts` + a menu entry, built AFTER score submission
-  so the board only ever shows validated scores.
-- **Dependencies:** [[IDEA-019]] ✅ · score submission + plausibility validation (Increment 2)
 
 
 
@@ -57,6 +42,54 @@ _(nothing yet)_
 
 ## Delivered ✅
 > Already in production. Do NOT delete. Each keeps its version history.
+
+### IDEA-020 — Shared scoreboard ✅
+- **Priority:** 🟢
+- **Area:** social
+- **Description:** a scoreboard shared between players to create some healthy competitiveness.
+- **Notes:** needed identity to attribute scores ([[IDEA-019]]) and a home in the menu
+  ([[IDEA-021]]). **Scope decision (2026-08-14, Nuno): CLASSIC MODE ONLY.** Challenge runs are
+  deliberately unranked — their modifiers (up to 5 ghosts at ×2 speed, ghost-chain ceiling
+  18,400/level vs classic's 5,600) make scores incomparable, so mixing them would hand the board to
+  whoever grinds the hardest challenge level. If challenge is ever ranked it wants per-level bests
+  (`best_score` per `challenge_idx`) — a new table, not a widened `high_score`.
+- **Dependencies:** [[IDEA-019]]
+- **History:**
+  - **v1** (2026-08-14) — the shared board, plus the score pipeline that makes it trustworthy.
+    Shipped in two increments.
+    **Scores are server-validated.** A run gets a server-issued ticket before it starts, and the
+    submitted score is judged against what the game can physically produce. The bound that does the
+    real work is per-LEVEL, not per-run: classic is endless so total score is unbounded, but score
+    per level isn't — every point comes from eating something finite (maze 2 with 3 ghosts caps at
+    exactly **8000**) and the level count is bounded by elapsed time. That turns "unbounded score"
+    into arithmetic rather than a heuristic. Elapsed time comes from `game_sessions.started_at`,
+    written by Postgres: a client can lie about its score but not about how long the server has
+    known the run was in progress.
+    Also enforced server-side: coins recomputed from the accepted score (a client can't mint them);
+    `challenge_progress` advances only on a validated clear of an already-unlocked level (closing
+    the "unlock the ladder with one POST" hole); a row lock on finish making the replay guard
+    airtight. Rejections return HTTP 200 with `accepted:false` (an implausible run is a normal
+    outcome, not a malformed request) and are logged to `score_rejections` with enough detail to
+    diagnose one in a single query — which paid off during the build, catching a test payload that
+    asked for 420 pellets on a 175-pellet maze.
+    Validator constants are **generated** from the real game modules (pellet counts from
+    `mazes.json`, `SCORE`/`SPEEDS`/`TIMING` from `config.ts`, `FRUIT_THRESHOLDS` from `game.ts`,
+    modifiers from `challenges.ts`), because if the game rebalances and the server doesn't follow,
+    honest runs would start being rejected. Pinned regression assertions caught my own arithmetic
+    error while writing them (maze 0 is 7750, not 7550 — the code was right).
+    **The board itself** is classic-only and says so on screen, and its rows are built with
+    `createElement`/`textContent` rather than `innerHTML` — the one screen rendering strings
+    authored by other players, so injection is structurally impossible rather than
+    escaped-and-hopefully-correct.
+    Verified by playing a real run in a browser (13 checks: real input, real deaths, stored score
+    matches the panel) and across two accounts (21 checks: Bob sees Alice's score, ordering
+    correct, every username node asserted free of element children), plus 49 plausibility and 40
+    session tests.
+    `server/src/validation/plausibility.ts` (new), `services/scoreService.ts` +
+    `repo/gameSessions.ts` + `routes/sessions.ts` (new), `scripts/sync-game-constants.ts`,
+    `src/game/runTelemetry.ts` (new), `game.ts`, `src/ui/leaderboard.ts` (new), `main.ts`,
+    `index.html`, `style.css`, `scripts/test-{plausibility,sessions,score-ui,leaderboard-ui}.ts`
+    (new). _(6b3ef88, c30b690)_
 
 ### IDEA-019 — Player login & cross-device account recovery ✅
 - **Priority:** 🟡

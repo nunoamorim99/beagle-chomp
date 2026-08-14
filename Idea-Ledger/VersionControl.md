@@ -15,6 +15,14 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
 > Every `/ship` drops a line here so nothing shipped goes uncounted. When a release is cut, **all**
 > lines here roll up into the numbered version below and this section is cleared (hold a line back
 > only if you explicitly choose to).
+- (2026-08-14) IDEA-020 v1 — the shared scoreboard, and the score pipeline that makes it worth
+  trusting. Runs now get a server-issued, server-timestamped ticket before they start, and every
+  submitted score is validated against what the game can physically produce (per-level ceilings
+  derived from the real maze data, a minimum-time floor, item counts, and score/item consistency).
+  Implausible runs are rejected outright rather than clamped, and logged. Coins are recomputed
+  server-side and challenge progress only advances on a validated clear, so neither can be forged.
+  The board itself is **classic mode only** — challenge modifiers make those scores incomparable —
+  and it says so on screen.
 - (2026-08-14) IDEA-019 v1 — player accounts with single-use recovery codes, server-backed profile,
   sign-in before play. The game went full-stack: a Dockerised JSON API on
   **beaglechomp-api.nunoamorim.dev** (Hono + Postgres + argon2id, deployed via Dokploy) and the
