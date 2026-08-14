@@ -1,0 +1,86 @@
+# Local development stack (STACK.md §1: "Docker Compose — frontend + backend +
+# Postgres, with hot reload").
+#
+# Usual workflow on Windows:
+#     docker compose up db api        # Postgres + the API in containers
+#     npm run dev                     # Vite on the host — much faster HMR
+#
+# The `web` service exists so the full stack can run in Docker when needed
+# (e.g. verifying a clean machine), but bind-mounting node_modules on Windows is
+# slow, so the host-Vite path above is the default. Start it explicitly with:
+#     docker compose --profile full up
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: beaglechomp
+      POSTGRES_USER: beaglechomp
+      POSTGRES_PASSWORD: devpassword
+    ports:
+      # 5433 on the host so this never collides with a locally installed
+      # Postgres on the default 5432.
+      - "5433:5432"
+    volumes:
+      - beaglechomp_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U beaglechomp -d beaglechomp"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      # Context is the repo ROOT (not server/) — matches the Dokploy config, and
+      # later increments COPY src/game/* for the shared game constants.
+      context: .
+      dockerfile: server/Dockerfile
+      target: dev
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      # `db` is the compose service name; inside the network it's port 5432.
+      DATABASE_URL: postgres://beaglechomp:devpassword@db:5432/beaglechomp
+      # localhost:5173 is added automatically outside production (see env.ts),
+      # but listing it here keeps the intent visible.
+      CORS_ORIGINS: http://localhost:5173
+      TOKEN_TTL_DAYS: 90
+      LOG_LEVEL: debug
+    ports:
+      # Host 3001 → container 3000. 3000 is taken on this machine by another
+      # project (tln-backend), and picking a free host port is friendlier than
+      # fighting over it. The container still listens on 3000 internally, so
+      # production/Dokploy is unaffected — only the host-side mapping differs.
+      # The frontend's VITE_API_URL must therefore be http://localhost:3001.
+      - "3001:3000"
+    volumes:
+      # Hot reload: tsx watch picks up host edits. node_modules stays in the
+      # image (anonymous volume) so the host's OS/arch can't leak in.
+      - ./server/src:/app/src
+      - ./server/scripts:/app/scripts
+      - ./server/migrations:/app/migrations
+      - /app/node_modules
+    mem_limit: 384m   # STACK.md §3.2 — one service can't starve Postgres
+
+  web:
+    profiles: ["full"]
+    image: node:22-bookworm-slim
+    working_dir: /app
+    command: sh -c "npm ci && npm run dev -- --host 0.0.0.0"
+    environment:
+      # Matches the api service's host-side port mapping above.
+      VITE_API_URL: http://localhost:3001
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./:/app
+      - /app/node_modules
+    mem_limit: 1g
+
+volumes:
+  beaglechomp_pgdata:

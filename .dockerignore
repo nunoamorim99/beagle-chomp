@@ -1,0 +1,33 @@
+# The Docker build context is the REPO ROOT (see server/Dockerfile), so without
+# this file every build would ship the whole frontend, node_modules, git history
+# and the editor to the daemon. Keep the context small — it's the difference
+# between a fast Dokploy deploy and a slow one.
+
+.git
+.github
+node_modules
+server/node_modules
+dist
+dist-ssr
+dev-dist
+server/dist
+server/vendor
+
+# Frontend-only assets the API never needs.
+public
+editor
+prototype
+docs
+Idea-Ledger
+*.md
+
+# Secrets must never enter an image layer.
+.env
+.env.*
+server/.env
+server/.env.*
+
+.vscode
+.idea
+.DS_Store
+*.local

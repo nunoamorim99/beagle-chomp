@@ -1,0 +1,30 @@
+{
+  "name": "beagle-chomp-server",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Beagle Chomp API — accounts, profile and leaderboard (IDEA-019 + IDEA-020)",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/src/index.js",
+    "typecheck": "tsc --noEmit",
+    "migrate": "tsx scripts/migrate.ts",
+    "migrate:built": "node dist/scripts/migrate.js"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.1.0",
+    "hono": "^4.6.14",
+    "pg": "^8.13.1",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/pg": "^8.11.10",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

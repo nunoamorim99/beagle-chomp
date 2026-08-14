@@ -5,3 +5,18 @@ dev-dist
 *.local
 .DS_Store
 .vite
+
+# Backend (server/)
+server/node_modules
+server/dist
+# Game modules copied from src/game at build time by
+# server/scripts/sync-game-constants.ts — generated, never edited by hand.
+server/vendor
+
+# Secrets — never commit these (STACK.md §2.6). .env.example IS committed.
+.env
+.env.*
+!.env.example
+server/.env
+server/.env.*
+!server/.env.example

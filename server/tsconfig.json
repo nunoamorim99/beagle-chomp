@@ -1,0 +1,28 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    // "bundler" is right for the Vite frontend, but this is plain Node with no
+    // bundler in front of it — NodeNext makes tsc enforce the real ESM rules
+    // (explicit .js extensions on relative imports) instead of letting through
+    // specifiers that only a bundler could resolve.
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022"],
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "outDir": "dist",
+    "rootDir": ".",
+    "sourceMap": true,
+    "types": ["node"]
+  },
+  // vendor/ holds the game modules copied from ../src/game (see
+  // scripts/sync-game-constants.ts). It is gitignored but IS typechecked and
+  // compiled, because the plausibility validator imports from it.
+  "include": ["src", "scripts", "vendor"]
+}

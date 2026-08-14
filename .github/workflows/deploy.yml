@@ -6,6 +6,16 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: [main]
+    # The backend lives in the same repo (server/), so a server-only or
+    # docs-only push would otherwise trigger a pointless frontend rebuild.
+    # Note: paths-ignore only skips the workflow — it never blocks a merge.
+    paths-ignore:
+      - "server/**"
+      - "Idea-Ledger/**"
+      - "docs/**"
+      - "**.md"
+      - "docker-compose.yml"
+      - ".dockerignore"
   # Allow manually re-running the deploy from the Actions tab.
   workflow_dispatch:
 
