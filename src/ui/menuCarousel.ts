@@ -39,12 +39,16 @@ export function attachMenuCarousel(): MenuCarouselHandle {
   }
 
   /** Hide arrows that can't do anything: nothing to scroll, or already at the
-   *  end of the rail. */
+   *  end of the rail. Also drives the EDGE FADE — the same two facts
+   *  (at-start / at-end) decide which side gets a fade, which is the only cue
+   *  a phone gets, since the arrows are hidden there. */
   function syncArrows(): void {
     const scrollable = viewport!.scrollWidth > viewport!.clientWidth + 1;
     if (!scrollable) {
       prev!.classList.add("hidden-arrow");
       next!.classList.add("hidden-arrow");
+      // Everything fits: no fade on either edge.
+      viewport!.classList.add("at-start", "at-end");
       return;
     }
 
@@ -57,6 +61,10 @@ export function attachMenuCarousel(): MenuCarouselHandle {
 
     prev!.classList.toggle("hidden-arrow", atStart);
     next!.classList.toggle("hidden-arrow", atEnd);
+
+    // Fade only the edge that actually has more cards past it.
+    viewport!.classList.toggle("at-start", atStart);
+    viewport!.classList.toggle("at-end", atEnd);
   }
 
   prev.addEventListener("click", () => step(-1), { signal });

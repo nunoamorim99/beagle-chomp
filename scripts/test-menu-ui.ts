@@ -277,6 +277,35 @@ async function main(): Promise<void> {
     await checkMenu(phone, "Phone");
     await checkInstallBanner(phone, "Phone");
 
+    section("Phone — the edge fade cues that the rail scrolls");
+    // The arrows are hidden on phones, so this fade is the ONLY hint that
+    // there's more past the edge. Assert it tracks the scroll position rather
+    // than just existing.
+    const fadeAt = async () =>
+      phone.locator(".carousel-viewport").evaluate((el) => {
+        const cs = getComputedStyle(el);
+        return {
+          left: cs.getPropertyValue("--fade-left").trim(),
+          right: cs.getPropertyValue("--fade-right").trim(),
+        };
+      });
+
+    await phone.locator(".carousel-viewport").evaluate((el) => { el.scrollLeft = 0; });
+    await phone.waitForTimeout(500);
+    const atStartFade = await fadeAt();
+    ok("at the start: no left fade", atStartFade.left === "0px", JSON.stringify(atStartFade));
+    ok("at the start: right edge fades", atStartFade.right !== "0px", JSON.stringify(atStartFade));
+
+    await phone.locator(".carousel-viewport").evaluate((el) => { el.scrollLeft = el.scrollWidth; });
+    await phone.waitForTimeout(500);
+    const atEndFade = await fadeAt();
+    ok("at the end: left edge fades", atEndFade.left !== "0px", JSON.stringify(atEndFade));
+    ok("at the end: no right fade", atEndFade.right === "0px", JSON.stringify(atEndFade));
+
+    // Reset so later steps see the rail as a player first meets it.
+    await phone.locator(".carousel-viewport").evaluate((el) => { el.scrollLeft = 0; });
+    await phone.waitForTimeout(400);
+
     section("Phone — the rail actually scrolls");
     const scrollable = await phone
       .locator(".carousel-viewport")

@@ -1,3 +1,10 @@
+/* Registering these as <length> lets the carousel's edge fade TRANSITION
+   (custom properties are untyped strings by default, so a plain transition on
+   them would snap rather than interpolate). Purely cosmetic: browsers without
+   @property still get the fade, just without the ease. */
+@property --fade-left{syntax:"<length>";inherits:false;initial-value:0px}
+@property --fade-right{syntax:"<length>";inherits:false;initial-value:0px}
+
 :root{
   --bg:#0b0b16; --ink:#f2eee4; --muted:#9a94b0; --accent:#E8A23D; --danger:#e0577a;
 }
@@ -174,8 +181,38 @@ body.install-open .menu-top{margin-top:clamp(84px,15vh,132px)}
   scroll-snap-type:x mandatory;scroll-behavior:smooth;
   -webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;
   /* The rail scrolls; the page must not. */
-  scrollbar-width:none}
+  scrollbar-width:none;
+  /* Fade the edge that has more cards past it, so it's obvious the rail
+     scrolls — the arrows are hidden on phones, where swiping is the only way
+     across. Implemented as a MASK rather than an overlaid gradient because
+     the menu floats over a LIVE 3D scene: a coloured gradient would read as a
+     grey smear against the sky, while a mask fades the cards themselves and
+     lets the scene show through untouched.
+
+     The two custom properties are toggled by .at-start / .at-end below;
+     transitioning them needs @property (registered at the top of this file)
+     so the browser knows they're lengths and can interpolate. */
+  --fade-left:0px;
+  --fade-right:28px;
+  -webkit-mask-image:linear-gradient(to right,
+    transparent 0, #000 var(--fade-left),
+    #000 calc(100% - var(--fade-right)), transparent 100%);
+  mask-image:linear-gradient(to right,
+    transparent 0, #000 var(--fade-left),
+    #000 calc(100% - var(--fade-right)), transparent 100%);
+  transition:--fade-left .18s ease,--fade-right .18s ease}
 .carousel-viewport::-webkit-scrollbar{display:none}
+
+/* No more cards that way -> no fade on that edge. Set by menuCarousel.ts's
+   syncArrows(), which already computes exactly these two facts for the
+   arrows. */
+.carousel-viewport.at-start{--fade-left:0px}
+.carousel-viewport:not(.at-start){--fade-left:28px}
+.carousel-viewport.at-end{--fade-right:0px}
+
+@media (prefers-reduced-motion:reduce){
+  .carousel-viewport{transition:none}
+}
 
 .carousel-track{display:flex;gap:10px;padding:4px}
 
