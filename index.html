@@ -24,6 +24,15 @@
       </div>
       <div class="stat" style="text-align:center"><div class="k">Map</div><div class="v" id="level">1</div></div>
       <div class="stat" style="text-align:right"><div class="k">Lives</div><div class="lives v" id="lives">🐶🐶🐶</div></div>
+    </div>
+
+    <!-- IDEA-036 v2: mute / shop / home, laid out as a HORIZONTAL row rather
+         than the old vertical stack down the right edge. The stack cost ~120px
+         of height and pushed the maze down — noticeable on a phone, and worse
+         with the D-pad (IDEA-038) taking the bottom of the screen.
+         Deliberately OUTSIDE .hud so its own flex layout can't disturb the
+         Score/Map/Lives space-between row. -->
+    <div class="hud-buttons">
       <button type="button" class="mute-btn" id="muteBtn" aria-label="Mute sound" aria-pressed="false">🔊</button>
       <!-- IDEA-012 shop: opens the skin-picker/storefront overlay (#shop below). -->
       <button type="button" class="shop-btn" id="shopBtn" aria-label="Open shop">🛒</button>

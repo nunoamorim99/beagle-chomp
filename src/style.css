@@ -43,43 +43,43 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--ink);
 .coin-stat .k{font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:#ffffff}
 .coin-stat .v{font-size:16px;font-weight:700;color:#ffffff}
 
-/* Mute toggle — a small icon button pinned below the Lives stat, at the
-   top-right of the HUD strip. Offset down past the Score/Lives row's own
-   height (~18px padding + ~16px label + ~31px value, see .stat rules above)
-   so it never overlaps the "Lives" text/dog emojis it sits under. The .hud
-   row itself is pointer-events:none (so it never blocks touch-steering the
-   maze underneath); this button opts back in, same as .panel/button do. */
-.mute-btn{position:fixed;top:calc(78px + env(safe-area-inset-top));
-  right:calc(22px + env(safe-area-inset-right));z-index:6;pointer-events:auto;
-  width:34px;height:34px;padding:0;display:flex;align-items:center;justify-content:center;
-  font-size:16px;line-height:1;border-radius:50%;
-  background:rgba(16,16,30,.55);border:1px solid rgba(255,255,255,.12);color:var(--ink);
-  box-shadow:0 4px 16px rgba(0,0,0,.35);backdrop-filter:blur(4px)}
-.mute-btn:hover{transform:translateY(-1px);filter:brightness(1.12)}
-.mute-btn:focus-visible{outline:2px solid #fff;outline-offset:2px}
+/* IDEA-036 v2: the mute/shop/home buttons were a VERTICAL stack down the
+   right edge (top 78/120/162px). That column pushed the maze down and stole
+   ~120px of height — worst on a phone, and worse still with the D-pad
+   ([[IDEA-038]]) occupying the bottom. Laid out as a HORIZONTAL row instead:
+   the same three buttons on one line, giving the board back the vertical
+   space it was losing.
 
-/* Shop button (IDEA-012) — replaces the old skin/enemy cycle buttons. Same
-   size/shape/background/blur/focus language as .mute-btn so the pair reads
-   as a matching stack, sitting directly below it at the top-right. */
-.shop-btn{position:fixed;top:calc(120px + env(safe-area-inset-top));
-  right:calc(22px + env(safe-area-inset-right));z-index:6;pointer-events:auto;
-  width:34px;height:34px;padding:0;display:flex;align-items:center;justify-content:center;
-  font-size:16px;line-height:1;border-radius:50%;
-  background:rgba(16,16,30,.55);border:1px solid rgba(255,255,255,.12);color:var(--ink);
-  box-shadow:0 4px 16px rgba(0,0,0,.35);backdrop-filter:blur(4px)}
-.shop-btn:hover{transform:translateY(-1px);filter:brightness(1.12)}
-.shop-btn:focus-visible{outline:2px solid #fff;outline-offset:2px}
+   All three share one rule now rather than three near-identical copies —
+   they were already visually identical, and keeping them in sync by hand was
+   an accident waiting to happen. Positioning is delegated to the flex row. */
+.hud-buttons{
+  position:fixed;
+  top:calc(78px + env(safe-area-inset-top));
+  right:calc(14px + env(safe-area-inset-right));
+  z-index:6;
+  display:flex;
+  flex-direction:row;
+  gap:8px;
+  /* The row itself must not intercept taps meant for the maze behind it —
+     only the buttons opt back in, same as .hud does. */
+  pointer-events:none;
+}
 
-/* Home/quit-to-menu button (IDEA-021) — same matching-stack language as
-   .mute-btn/.shop-btn, taking the next free slot directly below Shop. */
-.home-btn{position:fixed;top:calc(162px + env(safe-area-inset-top));
-  right:calc(22px + env(safe-area-inset-right));z-index:6;pointer-events:auto;
-  width:34px;height:34px;padding:0;display:flex;align-items:center;justify-content:center;
-  font-size:16px;line-height:1;border-radius:50%;
-  background:rgba(16,16,30,.55);border:1px solid rgba(255,255,255,.12);color:var(--ink);
-  box-shadow:0 4px 16px rgba(0,0,0,.35);backdrop-filter:blur(4px)}
-.home-btn:hover{transform:translateY(-1px);filter:brightness(1.12)}
-.home-btn:focus-visible{outline:2px solid #fff;outline-offset:2px}
+.mute-btn,.shop-btn,.home-btn{
+  position:static;
+  pointer-events:auto;
+  width:38px;height:38px;padding:0;
+  display:flex;align-items:center;justify-content:center;
+  font-size:17px;line-height:1;border-radius:50%;
+  background:rgba(16,16,30,.55);border:1px solid rgba(255,255,255,.12);
+  color:var(--ink);
+  box-shadow:0 4px 16px rgba(0,0,0,.35);backdrop-filter:blur(4px);
+}
+.mute-btn:hover,.shop-btn:hover,.home-btn:hover{
+  transform:translateY(-1px);filter:brightness(1.12)}
+.mute-btn:focus-visible,.shop-btn:focus-visible,.home-btn:focus-visible{
+  outline:2px solid #fff;outline-offset:2px}
 
 /* Center banners + panels */
 .center{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
@@ -212,6 +212,7 @@ body.install-open .menu-top{margin-top:clamp(84px,15vh,132px)}
    while the full-screen menu is showing (IDEA-021 v2) — body.menu-open is
    toggled by game.ts's showMenu()/leave-menu paths. */
 body.menu-open .hud,
+body.menu-open .hud-buttons,
 body.menu-open .mute-btn,
 body.menu-open .shop-btn,
 body.menu-open .home-btn{display:none}
@@ -222,6 +223,7 @@ body.menu-open .home-btn{display:none}
    it), so nothing else's pointer-events/scroll fights the shop page.
    body.shop-open is toggled by game.ts's onOpen/onClose shop callbacks. */
 body.shop-open .hud,
+body.shop-open .hud-buttons,
 body.shop-open .mute-btn,
 body.shop-open .shop-btn,
 body.shop-open .home-btn,
@@ -237,6 +239,7 @@ body.shop-open #mainMenu{display:none}
    the HUD/menu chrome buttons so nothing underneath fights the map's own
    touch targets. body.map-open is toggled by game.ts's levelMap onOpen/onClose. */
 body.map-open .hud,
+body.map-open .hud-buttons,
 body.map-open .mute-btn,
 body.map-open .shop-btn,
 body.map-open .home-btn,
@@ -696,22 +699,28 @@ body.map-open #mainMenu{display:none}
    3D scene through — they're identity screens, not part of the game world,
    and at boot there is no scene rendered yet anyway. */
 
-body.auth-open .hud,     body.auth-open .mute-btn,
+body.auth-open .hud,     body.auth-open .hud-buttons,
+body.auth-open .mute-btn,
 body.auth-open .shop-btn, body.auth-open .home-btn,
 body.auth-open #mainMenu,
-body.recovery-open .hud, body.recovery-open .mute-btn,
+body.recovery-open .hud, body.recovery-open .hud-buttons,
+body.recovery-open .mute-btn,
 body.recovery-open .shop-btn, body.recovery-open .home-btn,
 body.recovery-open #mainMenu,
-body.profile-open .hud,  body.profile-open .mute-btn,
+body.profile-open .hud,  body.profile-open .hud-buttons,
+body.profile-open .mute-btn,
 body.profile-open .shop-btn, body.profile-open .home-btn,
 body.profile-open #mainMenu,
-body.privacy-open .hud,  body.privacy-open .mute-btn,
+body.privacy-open .hud,  body.privacy-open .hud-buttons,
+body.privacy-open .mute-btn,
 body.privacy-open .shop-btn, body.privacy-open .home-btn,
 body.privacy-open #mainMenu,
-body.boot-open .hud,     body.boot-open .mute-btn,
+body.boot-open .hud,     body.boot-open .hud-buttons,
+body.boot-open .mute-btn,
 body.boot-open .shop-btn, body.boot-open .home-btn,
 body.boot-open #mainMenu,
-body.leaderboard-open .hud, body.leaderboard-open .mute-btn,
+body.leaderboard-open .hud, body.leaderboard-open .hud-buttons,
+body.leaderboard-open .mute-btn,
 body.leaderboard-open .shop-btn, body.leaderboard-open .home-btn,
 body.leaderboard-open #mainMenu{display:none}
 
@@ -914,7 +923,11 @@ button.recovery-copy{padding:8px 14px;font-size:14px;flex:0 0 auto}
 
 .dpad{
   position:fixed;
-  left:calc(12px + env(safe-area-inset-left));
+  /* Centred horizontally: the maze sits centred above it, so a centred pad
+     keeps the whole screen symmetric and works for either thumb. (v1 was
+     anchored bottom-left, which read as lopsided under a centred board.) */
+  left:50%;
+  transform:translateX(-50%);
   bottom:calc(12px + env(safe-area-inset-bottom));
   z-index:12;
   display:grid;
