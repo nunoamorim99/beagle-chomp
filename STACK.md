@@ -34,7 +34,7 @@ moving part, flag it and explain the trade-off first.
 |---|---|
 | DNS | Cloudflare (free). One subdomain per frontend, one per API. |
 | Edge / proxy | Cloudflare proxy (**orange cloud**) enabled on all app + API subdomains — hides VPS IP, DDoS protection. See §10 for the cert method that makes this work. |
-| Static hosting | GitHub Pages **or** Cloudflare Pages. **Never serve a frontend from the VPS.** |
+| Static hosting | Cloudflare Pages (GitHub Pages acceptable for throwaways). **Never serve a frontend from the VPS.** *Note: Cloudflare has folded Pages into **Workers & Pages** — new projects are created via **Create application → Pages → Connect to Git**. "Pages" is now a project type inside Workers, not a separate product; the dashboard nav no longer has a standalone Pages entry.* |
 | Server | One Hetzner VPS (CX23, ~€6.75/mo incl. VAT), shared by all backends. Already provisioned & hardened — see §10. |
 | Packaging | Docker. Every backend has a `Dockerfile`. |
 | Local dev | Docker Compose — frontend + backend + Postgres, with hot reload. |
