@@ -15,7 +15,16 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
 > Every `/ship` drops a line here so nothing shipped goes uncounted. When a release is cut, **all**
 > lines here roll up into the numbered version below and this section is cleared (hold a line back
 > only if you explicitly choose to).
-_(nothing yet — all shipped work is captured in the versions below)_
+- (2026-08-14) IDEA-019 v1 — player accounts with single-use recovery codes, server-backed profile,
+  sign-in before play. The game went full-stack: a Dockerised JSON API on
+  **beaglechomp-api.nunoamorim.dev** (Hono + Postgres + argon2id, deployed via Dokploy) and the
+  frontend moved to **beaglechomp.nunoamorim.dev** on Cloudflare Pages. No email is collected, ever
+  — a single-use recovery code is the only way back into an account, shown once on a genuinely
+  blocking screen. Profile state (coins, skins, themes, challenge progress) moved from localStorage
+  to the account, so it now follows the player across devices instead of dying with a browser
+  profile. **Save-wipe release:** no local→account migration, by decision. Also the first app on the
+  platform, which proved the Cloudflare Origin Certificate + orange-cloud method that STACK.md §10
+  requires before História migrates.
 
 ## 📌 Planned
 > Forward-looking targets from `/plan-version`. Each is a checklist of IDEAs intended for a

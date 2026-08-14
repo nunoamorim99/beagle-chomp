@@ -21,21 +21,21 @@ _(empty — nothing to triage)_
 ## Backlog (open ideas)
 > New registered ideas go here. Next free ID: IDEA-035
 
-### IDEA-019 — Player login & cross-device account recovery 💡
-- **Priority:** 🟡
-- **Area:** accounts
-- **Description:** a login system that identifies the player and gives them a way to recover their
-  account on other devices — at least until the game becomes a fully native app.
-- **Notes:** prerequisite for a shared scoreboard ([[IDEA-020]]) and for persisting shop purchases
-  across devices ([[IDEA-012]]). Backend/auth choice is TBD.
-- **Dependencies:** —
-
 ### IDEA-020 — Shared scoreboard 💡
 - **Priority:** 🟢
 - **Area:** social
 - **Description:** a scoreboard shared between players to create some healthy competitiveness.
-- **Notes:** needs identity to attribute scores ([[IDEA-019]]) and a home in the menu ([[IDEA-021]]).
-- **Dependencies:** [[IDEA-019]]
+- **Notes:** needs identity to attribute scores ([[IDEA-019]] — **delivered**) and a home in the
+  menu ([[IDEA-021]]). **Scope decision (2026-08-14, Nuno): CLASSIC MODE ONLY.** Challenge runs are
+  never ranked — their modifiers (up to 5 ghosts at ×2 speed, ghost-chain ceiling 18,400/level vs
+  classic's 5,600) make scores incomparable, so mixing them would hand the board to whoever grinds
+  the hardest challenge level. If challenge is ever ranked it wants per-level bests
+  (`best_score` per `challenge_idx`), a new table — not a widened `high_score`.
+  **Server side already shipped with [[IDEA-019]]**: the `high_score`/`high_score_at` columns, the
+  partial index, and `GET /api/v1/leaderboard` (top N + a pinned "me", classic-only) are live.
+  What remains is the client: `src/ui/leaderboard.ts` + a menu entry, built AFTER score submission
+  so the board only ever shows validated scores.
+- **Dependencies:** [[IDEA-019]] ✅ · score submission + plausibility validation (Increment 2)
 
 
 
@@ -57,6 +57,55 @@ _(nothing yet)_
 
 ## Delivered ✅
 > Already in production. Do NOT delete. Each keeps its version history.
+
+### IDEA-019 — Player login & cross-device account recovery ✅
+- **Priority:** 🟡
+- **Area:** accounts
+- **Description:** a login system that identifies the player and gives them a way to recover their
+  account on other devices — at least until the game becomes a fully native app.
+- **Notes:** prerequisite for a shared scoreboard ([[IDEA-020]]) and for persisting shop purchases
+  across devices ([[IDEA-012]]). Turned the game from a static offline PWA into a full-stack app:
+  first project deployed on the Dokploy/VPS platform described in `STACK.md`, and the one that
+  **proved the Cloudflare Origin Certificate + orange-cloud method end to end** (STACK.md §10's
+  stated precondition before História's irreplaceable data migrates).
+- **Dependencies:** —
+- **History:**
+  - **v1** (2026-08-14) — accounts, live at **beaglechomp.nunoamorim.dev** +
+    **beaglechomp-api.nunoamorim.dev**. Shipped in two increments behind a health-only deploy that
+    de-risked the infrastructure before any product code existed.
+    **Auth model — no email, ever** (Nuno's brief): username + password only, argon2id hashes, and a
+    single-use **recovery code** (`BEAGLE-XXXX-XXXX-XXXX`, 60 bits from a Crockford alphabet with no
+    I/L/O/U so a hand-transcribed code can't be mis-read) that both resets a forgotten password and
+    signs in on a new device. Consuming one issues a replacement, shown with equal prominence.
+    Single-use is enforced by a row lock (`SELECT … FOR UPDATE` around verify+rotate in one
+    transaction), not by timing — and the new password is validated **before** the code is consumed,
+    so a typo'd password can't burn the code and leave the player locked out holding a dead one (the
+    worst failure this system can produce; there's a test for it).
+    A password reset revokes every other token; a new-device sign-in deliberately doesn't.
+    **Sign-in before play is structural**, not a scattered check: `main.ts` awaits the auth gate
+    before `new Game()` exists. No guest mode, no local→account migration (hard cut, agreed: Nuno
+    was the only player). **The blocking recovery screen** is a functional requirement — with no
+    email on file it's the only thing between a player and a permanently lost account — so Escape,
+    backdrop clicks and stray clicks all fail to dismiss it; only checkbox + button does.
+    **Client refactor:** `profileStore.ts` moved from localStorage to a server-backed cache while
+    keeping all 19 exports' EXACT synchronous signatures — `game.ts`/`shop.ts`/`levelMap.ts` (~27
+    call sites, several in the frame loop) compile untouched. Writes are optimistic locally and
+    reconciled by a background sync queue. `getProfileCache()` now THROWS when unhydrated rather
+    than returning defaults, because silent defaulting is exactly how the [[IDEA-021]] v3 bug
+    shipped. Prices come from a generated catalog (`npm run sync` from the real registries) with a
+    drift test — the client never sends a price.
+    Deviations recorded in STACK.md rather than left as drift: hand-rolled auth instead of Better
+    Auth (the recovery flow has no equivalent there), one Postgres service per project (Dokploy has
+    no UI to add a database to an existing service), and §8's "no recovery flow" amended.
+    Browser-driven verification caught a bug no headless test could: the username `pattern`
+    attribute was silently disabled — browsers compile it with the RegExp `v` flag where an
+    unescaped `-` in a character class is a syntax error, and the escape doesn't survive esbuild.
+    Verified on production: **32 UI checks · 86 DB tests · 43 auth units · 43 catalog**, plus the
+    full game suite, typecheck and build.
+    `server/` (new: Hono + pg + argon2, 20 modules), `src/net/*` (new), `src/game/profileCache.ts` +
+    `profileMapping.ts` (new), `profileStore.ts` (rewritten), `src/ui/{auth,recoveryCode,profile,
+    privacy,boot,escape}.ts` (new), `main.ts`, `index.html`, `style.css`,
+    `scripts/test-auth-ui.ts` (new), `test-cosmetics.ts`, `STACK.md`. _(24dcaee, 2804e38, f11fe3b)_
 
 ### IDEA-032 — Save-to-file for the editor (stop the copy-paste footgun) ✅
 - **Priority:** 🔴
