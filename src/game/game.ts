@@ -210,6 +210,7 @@ export class Game {
   // startChallenge(getChallengeProgress()) auto-continue call.
   private readonly levelMap: LevelMapHandle;
   private readonly dpad: DpadHandle;
+  private readonly detachPauseButton: () => void;
   private readonly detachHomeButton: () => void;
   private readonly detachMenuResize: () => void;
   private readonly detachPlayButton: () => void;
@@ -257,6 +258,11 @@ export class Game {
   // update(dt), only advances shopScene's own turntable) and renders
   // shopScene instead of `rig`/`menuScene` — see tick() below.
   private shopOpen = false;
+  /** Pause: freezes the run without touching any game state. The frame loop
+   *  simply stops advancing timers/entities while this is true, so resuming
+   *  continues from the exact same instant — the same trick the shop already
+   *  uses (see tick()). */
+  private paused = false;
 
   // Fright window + escalating eat-chain score (prototype triggerFright/checkCollisions).
   private frightTimer = 0;
@@ -475,6 +481,7 @@ export class Game {
     // IDEA-038: the D-pad feeds the SAME queued-direction model as swipe and
     // the keyboard, so nothing downstream knows or cares which was used.
     this.dpad = attachDpad(document.body, (d) => { this.beagle.queued = d; });
+    this.detachPauseButton = this.attachPauseButton();
     this.detachHomeButton = this.attachHomeButton();
 
     // IDEA-021 v2: #playBtn/#menuShopBtn are now static markup in index.html
@@ -711,6 +718,7 @@ export class Game {
     this.detachTouch();
     this.detachMuteButton();
     this.detachAudioUnlock();
+    this.detachPauseButton();
     this.detachHomeButton();
     this.detachMenuResize();
     this.detachPlayButton();
@@ -1572,6 +1580,7 @@ export class Game {
   }
 
   private gameOver(): void {
+    this.clearPause();
     this.mode = "over";
     // IDEA-013: the "Play again" button restarts THE SAME challenge level
     // when the run that just ended was a challenge run, rather than always
@@ -1650,6 +1659,58 @@ export class Game {
 
   /** Wires the HUD's 🏠 "back to menu" button. Owned here (not shop.ts/hud.ts)
    *  since it needs direct access to the run-abandoning state reset below. */
+  /** Pause replaced the old mid-run shop button: since [[IDEA-036]] the shop
+   *  has its own card on the menu, so a shortcut here was redundant — while
+   *  the game had no way to pause at all. */
+  private attachPauseButton(): () => void {
+    const btn = document.getElementById("pauseBtn") as HTMLButtonElement | null;
+    if (!btn) throw new Error("attachPauseButton: missing #pauseBtn — check index.html");
+    const onClick = (): void => this.togglePause();
+    btn.addEventListener("click", onClick);
+    return () => btn.removeEventListener("click", onClick);
+  }
+
+  /**
+   * Toggle pause. Only meaningful during an active run — pausing the menu or
+   * a game-over panel would just be a confusing no-op button, so those modes
+   * ignore it.
+   *
+   * Nothing here mutates game state: tick() stops calling update(dt) while
+   * paused, so every timer, position and animation resumes exactly where it
+   * left off. That's the same approach the shop already takes.
+   */
+  private togglePause(): void {
+    if (this.mode !== "play" && this.mode !== "ready") return;
+
+    this.paused = !this.paused;
+    document.body.classList.toggle("paused", this.paused);
+
+    const btn = document.getElementById("pauseBtn");
+    if (btn) {
+      btn.textContent = this.paused ? "▶" : "⏸";
+      btn.setAttribute("aria-label", this.paused ? "Resume game" : "Pause game");
+    }
+
+    if (this.paused) {
+      this.hud.showBanner("Paused");
+    } else {
+      this.hud.hideCenter();
+    }
+  }
+
+  /** Force pause off and restore the button. Called wherever a run ends or is
+   *  abandoned, so pause can never leak into the next one. */
+  private clearPause(): void {
+    if (!this.paused) return;
+    this.paused = false;
+    document.body.classList.remove("paused");
+    const btn = document.getElementById("pauseBtn");
+    if (btn) {
+      btn.textContent = "⏸";
+      btn.setAttribute("aria-label", "Pause game");
+    }
+  }
+
   private attachHomeButton(): () => void {
     const btn = document.getElementById("homeBtn") as HTMLButtonElement | null;
     if (!btn) throw new Error("attachHomeButton: missing #homeBtn — check index.html");
@@ -1689,6 +1750,10 @@ export class Game {
    */
   private quitToMenu(): void {
     if (this.mode === "start") return;
+
+    // Always clear pause on the way out: otherwise the NEXT run would start
+    // frozen with a stale banner, and the button would still read "resume".
+    this.clearPause();
 
     // Abandon the run's session WITHOUT submitting: a quit isn't a score, and
     // the run's score is discarded here anyway. The server sweeps sessions
@@ -1869,6 +1934,17 @@ export class Game {
     if (this.shopOpen) {
       this.shopScene.update(dt);
       this.rig.renderer.render(this.shopScene.scene, this.shopScene.camera);
+      this.rafHandle = requestAnimationFrame(this.tick);
+      return;
+    }
+
+    // Pause: skip update(dt) but KEEP rendering, so the frozen board stays on
+    // screen behind the "Paused" banner. Deliberately after the shop branch
+    // (the shop renders its own scene) and before the menu branch (pause only
+    // applies to an active run, which togglePause already enforces).
+    // Nothing is mutated here — every timer and position resumes untouched.
+    if (this.paused) {
+      this.rig.renderer.render(this.rig.scene, this.rig.camera);
       this.rafHandle = requestAnimationFrame(this.tick);
       return;
     }

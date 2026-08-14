@@ -96,7 +96,7 @@ export interface ShopCallbacks {
 }
 
 /** Return shape of {@link attachShop}: `open()` lets any other UI (the main
- *  menu's Shop button, IDEA-021) open the same page the HUD `#shopBtn` opens,
+ *  menu's Shop carousel card, IDEA-036) open the shop page,
  *  without synthesizing a click on that button; `detach()` is the usual
  *  teardown, same as every other attach* helper's return value; `isOpen()`
  *  (IDEA-023) lets the caller's frame loop branch on shop state (pausing
@@ -105,7 +105,7 @@ export interface ShopCallbacks {
 export interface ShopHandle {
   /** Opens the shop page (re-renders it fresh first, so balance/ownership are
    *  always current), defaulting to the "beagle" tab with the equipped skin
-   *  selected — the same action `#shopBtn` triggers. */
+   *  selected. */
   open: () => void;
   /** Unwires the HUD button listener and clears the page's contents. */
   detach: () => void;
@@ -148,7 +148,7 @@ function getMazeThemeById(id: string): MazeTheme {
 }
 
 /**
- * Wires the HUD's shop button (`#shopBtn`) to open a dedicated full-screen
+ * Opens a dedicated full-screen
  * shop PAGE (`#shop` in index.html — deliberately separate from `#center`/
  * `#mainMenu`, so it can cover either without clobbering them), and builds/
  * re-renders the page's contents: a header (back button, title, live coin
@@ -168,9 +168,9 @@ function getMazeThemeById(id: string): MazeTheme {
  *
  * Call once (alongside attachMuteButton) from Game's constructor. Returns a
  * {@link ShopHandle} (`{ open, detach, isOpen }`) rather than a bare detach
- * function (IDEA-021) so callers outside the HUD button — e.g. the main
- * menu's Shop button — can open the exact same page/state instead of hacking
- * a synthetic click on `#shopBtn`.
+ * function (IDEA-021) so callers can open the page directly — which is now
+ * the ONLY way in, since the HUD's shop button became Pause and the menu's
+ * carousel card calls open() through this handle.
  */
 export function attachShop(root: ParentNode, callbacks: ShopCallbacks = {}): ShopHandle {
   const scope: ParentNode = root ?? document;
@@ -183,7 +183,8 @@ export function attachShop(root: ParentNode, callbacks: ShopCallbacks = {}): Sho
     return el;
   }
 
-  const shopBtn = require<HTMLButtonElement>("shopBtn");
+  // The HUD's shop button is gone (replaced by Pause): the shop is reached
+  // from the menu's carousel now, which calls open() through ShopHandle.
   const shopRoot = require<HTMLElement>("shop");
 
   // ---- selection state ----
@@ -230,10 +231,6 @@ export function attachShop(root: ParentNode, callbacks: ShopCallbacks = {}): Sho
     isOpenState = false;
     shopRoot.classList.add("hidden");
     callbacks.onClose?.();
-  }
-
-  function onShopBtnClick(): void {
-    open();
   }
 
   function selectTab(next: TabKind): void {
@@ -457,13 +454,10 @@ export function attachShop(root: ParentNode, callbacks: ShopCallbacks = {}): Sho
     render(); // re-render so balance/ownership/equipped state stay fresh
   }
 
-  shopBtn.addEventListener("click", onShopBtnClick);
-
   return {
     open,
     isOpen: () => isOpenState,
     detach: () => {
-      shopBtn.removeEventListener("click", onShopBtnClick);
       shopRoot.innerHTML = "";
     },
   };

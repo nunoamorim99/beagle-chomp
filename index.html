@@ -34,8 +34,10 @@
          Score/Map/Lives space-between row. -->
     <div class="hud-buttons">
       <button type="button" class="mute-btn" id="muteBtn" aria-label="Mute sound" aria-pressed="false">🔊</button>
-      <!-- IDEA-012 shop: opens the skin-picker/storefront overlay (#shop below). -->
-      <button type="button" class="shop-btn" id="shopBtn" aria-label="Open shop">🛒</button>
+      <!-- Pause. Replaced the old mid-run shop button: since IDEA-036 the shop
+           has its own place on the menu, so a shop shortcut here was redundant
+           — whereas the game had no way to pause at all. -->
+      <button type="button" class="pause-btn" id="pauseBtn" aria-label="Pause game">⏸</button>
       <!-- IDEA-021: abandons the run in progress and returns to the main menu. -->
       <button type="button" class="home-btn" id="homeBtn" aria-label="Back to menu">🏠</button>
     </div>

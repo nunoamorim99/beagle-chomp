@@ -76,7 +76,7 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--ink);
   pointer-events:none;
 }
 
-.mute-btn,.shop-btn,.home-btn{
+.mute-btn,.pause-btn,.home-btn{
   position:static;
   pointer-events:auto;
   width:38px;height:38px;padding:0;
@@ -86,9 +86,9 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--ink);
   color:var(--ink);
   box-shadow:0 4px 16px rgba(0,0,0,.35);backdrop-filter:blur(4px);
 }
-.mute-btn:hover,.shop-btn:hover,.home-btn:hover{
+.mute-btn:hover,.pause-btn:hover,.home-btn:hover{
   transform:translateY(-1px);filter:brightness(1.12)}
-.mute-btn:focus-visible,.shop-btn:focus-visible,.home-btn:focus-visible{
+.mute-btn:focus-visible,.pause-btn:focus-visible,.home-btn:focus-visible{
   outline:2px solid #fff;outline-offset:2px}
 
 /* Center banners + panels */
@@ -224,7 +224,7 @@ body.install-open .menu-top{margin-top:clamp(84px,15vh,132px)}
 body.menu-open .hud,
 body.menu-open .hud-buttons,
 body.menu-open .mute-btn,
-body.menu-open .shop-btn,
+body.menu-open .pause-btn,
 body.menu-open .home-btn{display:none}
 
 /* IDEA-023 (shop v2): the shop is now a full-screen PAGE that covers
@@ -235,7 +235,7 @@ body.menu-open .home-btn{display:none}
 body.shop-open .hud,
 body.shop-open .hud-buttons,
 body.shop-open .mute-btn,
-body.shop-open .shop-btn,
+body.shop-open .pause-btn,
 body.shop-open .home-btn,
 body.shop-open #mainMenu{display:none}
 
@@ -251,7 +251,7 @@ body.shop-open #mainMenu{display:none}
 body.map-open .hud,
 body.map-open .hud-buttons,
 body.map-open .mute-btn,
-body.map-open .shop-btn,
+body.map-open .pause-btn,
 body.map-open .home-btn,
 body.map-open #mainMenu{display:none}
 
@@ -711,27 +711,27 @@ body.map-open #mainMenu{display:none}
 
 body.auth-open .hud,     body.auth-open .hud-buttons,
 body.auth-open .mute-btn,
-body.auth-open .shop-btn, body.auth-open .home-btn,
+body.auth-open .pause-btn, body.auth-open .home-btn,
 body.auth-open #mainMenu,
 body.recovery-open .hud, body.recovery-open .hud-buttons,
 body.recovery-open .mute-btn,
-body.recovery-open .shop-btn, body.recovery-open .home-btn,
+body.recovery-open .pause-btn, body.recovery-open .home-btn,
 body.recovery-open #mainMenu,
 body.profile-open .hud,  body.profile-open .hud-buttons,
 body.profile-open .mute-btn,
-body.profile-open .shop-btn, body.profile-open .home-btn,
+body.profile-open .pause-btn, body.profile-open .home-btn,
 body.profile-open #mainMenu,
 body.privacy-open .hud,  body.privacy-open .hud-buttons,
 body.privacy-open .mute-btn,
-body.privacy-open .shop-btn, body.privacy-open .home-btn,
+body.privacy-open .pause-btn, body.privacy-open .home-btn,
 body.privacy-open #mainMenu,
 body.boot-open .hud,     body.boot-open .hud-buttons,
 body.boot-open .mute-btn,
-body.boot-open .shop-btn, body.boot-open .home-btn,
+body.boot-open .pause-btn, body.boot-open .home-btn,
 body.boot-open #mainMenu,
 body.leaderboard-open .hud, body.leaderboard-open .hud-buttons,
 body.leaderboard-open .mute-btn,
-body.leaderboard-open .shop-btn, body.leaderboard-open .home-btn,
+body.leaderboard-open .pause-btn, body.leaderboard-open .home-btn,
 body.leaderboard-open #mainMenu{display:none}
 
 #authGate,#recoveryCode,#profile,#privacy,#boot,#leaderboard{
@@ -986,7 +986,9 @@ body.recovery-open .dpad,
 body.profile-open .dpad,
 body.privacy-open .dpad,
 body.leaderboard-open .dpad,
-body.boot-open .dpad{display:none}
+body.boot-open .dpad,
+/* Steering while paused would do nothing visible and read as a broken pad. */
+body.paused .dpad{display:none}
 
 /* Landscape phones are short: shrink the pad so it can't crowd the maze. */
 @media (max-height:480px){
