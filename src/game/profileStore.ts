@@ -1,28 +1,45 @@
-// OWNER: gameplay-engineer (IDEA-010 beagle skins — profile persistence;
-// IDEA-012 extends this with skin ownership + the shop buy operation)
+// OWNER: gameplay-engineer (IDEA-010 skins → IDEA-012 shop → IDEA-019 accounts)
 //
-// localStorage persistence for player *profile/preference* state: equipped
-// skins (beagle/enemy), owned skins (IDEA-012), and the coin wallet
-// (IDEA-016/IDEA-017). This is UI/profile preference, not core gameplay state
-// (CLAUDE.md's "no localStorage assumptions for core state" rule is scoped to
-// score/lives/level), so persisting it is the same documented exception
-// src/ui/sound.ts already relies on for the mute preference — and this module
-// mirrors that file's defensive style exactly: every storage access wrapped
-// in try/catch, graceful fallback to in-memory defaults, never throws.
+// Player profile state: equipped/owned cosmetics, the coin wallet, and
+// challenge progress.
 //
-// Browser-only (touches `window.localStorage`) but three-free, so — like
-// sound.ts — it's importable from src/game/*, src/ui/*, and src/render/*
-// alike without pulling `three` into pure logic.
+// ============================================================================
+// IDEA-019 changed WHERE this lives, but deliberately NOT how it is called.
+// ============================================================================
+//
+// Until v4.2 this module read and wrote a single localStorage blob. It now
+// reads and writes an in-memory cache (profileCache.ts) that is hydrated from
+// the server at sign-in, with mutations pushed back through a background sync
+// queue (net/profileSync.ts).
+//
+// Every one of the exports below kept its EXACT signature — still synchronous,
+// still returning the same types, still never throwing. That was the whole
+// design goal: game.ts, ui/shop.ts and ui/levelMap.ts call these ~27 times
+// across hot paths (including inside the frame loop), and threading async
+// through all of that would have meant touching the game loop, the shop
+// rendering and the level map for no player-visible benefit.
+//
+// The one semantic shift worth knowing about, called out again at each site:
+//   addCoins() and advanceChallengeProgress() are now OPTIMISTIC LOCAL updates.
+//   The server is authoritative for both — coins are awarded and challenge
+//   progress advanced by the run-submission endpoint in Increment 2 — so these
+//   keep the HUD honest during a run and are corrected by the next sync.
+//
+// Why local storage is gone entirely: sign-in is required before play
+// (no guest mode), so there is no local-only state left to persist. The old
+// "beagle-chomp:profile" key is intentionally NOT deleted — it costs nothing to
+// leave, and it is the only trace of a pre-accounts save if we ever want it.
+//
+// Browser-only (the cache is memory, but the sync layer touches fetch) yet
+// three-free, so it stays importable from src/game/*, src/ui/* and src/render/*.
 
 import {
   BEAGLE_SKINS,
   DEFAULT_BEAGLE_SKIN_ID,
-  getEquippedBeagleSkinId,
   setEquippedBeagleSkinId,
   getBeagleSkinPrice,
   ENEMY_SKINS,
   DEFAULT_ENEMY_SKIN_ID,
-  getEquippedEnemySkinId,
   setEquippedEnemySkinId,
   getEnemySkinPrice,
 } from "./cosmetics";
@@ -30,44 +47,25 @@ import { CHALLENGE_LEVEL_COUNT } from "./challenges";
 import {
   MAZE_THEMES,
   DEFAULT_MAZE_THEME_ID,
-  getEquippedMazeThemeId,
   setEquippedMazeThemeId,
   getMazeThemePrice,
 } from "./themes";
+import {
+  getProfileCache,
+  mutateProfileCache,
+  isProfileCacheReady,
+} from "./profileCache";
+import { enqueueEquip, enqueuePurchase } from "../net/profileSync";
 
-const PROFILE_STORAGE_KEY = "beagle-chomp:profile";
-
-/** The persisted profile shape. Deliberately small at first; add fields as
- *  optional/defaulted so old saved blobs stay valid — see loadProfile's
- *  read-defensively-and-spread-over-defaults approach.
- *  `equippedEnemySkinId` (IDEA-009) was added after `equippedBeagleSkinId`
- *  shipped; old blobs on disk simply won't have the key, and loadProfile
- *  defaults it the same way a garbage/unknown value would.
- *  `coins` (IDEA-016/IDEA-017) was added later still, for the same reason:
- *  old blobs without the key default to 0, same as a garbage/negative/NaN
- *  value would.
- *  `ownedBeagleSkinIds`/`ownedEnemySkinIds` (IDEA-012) were added later
- *  still: old blobs without the keys default to just the default skin owned
- *  (["bagel"]/["ghost"]) — same fallback loadProfile already uses for a
- *  garbage/unknown-id value.
- *  `challengeProgress` (IDEA-013 Challenge Mode) was added later still: old
- *  blobs without the key default to 0. Convention: the highest challenge
- *  LEVEL INDEX (0-based) the player has UNLOCKED, i.e. is allowed to play —
- *  0 means only CHALLENGE_LEVELS[0] (level 1) is playable, and in general a
- *  value of N means levels 0..N are all playable (level N+1 is the next one
- *  to clear to unlock further). The special value
- *  CHALLENGE_LEVEL_COUNT (one past the last valid level index) means "every
- *  level has been cleared" — chosen deliberately over reusing
- *  CHALLENGE_LEVEL_COUNT-1 (the last level's own index) so "cleared the
- *  finale" is distinguishable from "unlocked but haven't cleared the
- *  finale yet"; see advanceChallengeProgress/getChallengeProgress below for
- *  how this value is read/written.
- *  `equippedMazeThemeId`/`ownedMazeThemeIds` (IDEA-026 maze themes) were
- *  added later still, mirroring `equippedBeagleSkinId`/`ownedBeagleSkinIds`
- *  exactly (same "old blobs without the keys default to owning/equipping
- *  just the default" fallback) — see the Maze themes section below for the
- *  full get/buy/equip API, which is a byte-for-byte parallel of the
- *  beagle-skin one just above it. */
+/** The profile shape. Unchanged from the localStorage era so the rest of the
+ *  game sees exactly what it always did; the server's own shape is mapped onto
+ *  this in profileMapping.ts.
+ *
+ *  `challengeProgress` convention: the highest challenge LEVEL INDEX (0-based)
+ *  the player has UNLOCKED. 0 means only level 1 is playable; N means levels
+ *  0..N are. The sentinel CHALLENGE_LEVEL_COUNT (one past the last index) means
+ *  "every level cleared" — deliberately distinct from COUNT-1, so clearing the
+ *  finale is distinguishable from merely having unlocked it. */
 export interface StoredProfile {
   equippedBeagleSkinId: string;
   equippedEnemySkinId: string;
@@ -79,7 +77,42 @@ export interface StoredProfile {
   ownedMazeThemeIds: string[];
 }
 
-function defaultProfile(): StoredProfile {
+// ---------------------------------------------------------------------------
+// Validation helpers. Still exported-in-spirit (used by the tests) and still
+// applied to everything that enters the cache, because an unknown id reaching
+// cosmetics.ts would crash the renderer mid-frame.
+
+function isKnownSkinId(id: unknown): id is string {
+  return typeof id === "string" && BEAGLE_SKINS.some((s) => s.id === id);
+}
+
+function isKnownEnemySkinId(id: unknown): id is string {
+  return typeof id === "string" && ENEMY_SKINS.some((s) => s.id === id);
+}
+
+function isKnownMazeThemeId(id: unknown): id is string {
+  return typeof id === "string" && MAZE_THEMES.some((t) => t.id === id);
+}
+
+/** A valid coin count: finite, non-negative, integral. Anything else degrades
+ *  to 0 rather than propagating garbage into the wallet. */
+export function sanitizeCoins(value: unknown): number {
+  const n = typeof value === "number" ? value : NaN;
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.floor(n);
+}
+
+/** Mirrors sanitizeCoins, plus the upper clamp challengeProgress needs. */
+export function sanitizeChallengeProgress(value: unknown): number {
+  const n = typeof value === "number" ? value : NaN;
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.min(Math.floor(n), CHALLENGE_LEVEL_COUNT);
+}
+
+/** The shape a brand-new account starts with: nothing owned but the free
+ *  defaults, no coins, no challenge progress. Matches the server's column
+ *  defaults in 001_init.sql exactly. */
+export function defaultProfile(): StoredProfile {
   return {
     equippedBeagleSkinId: DEFAULT_BEAGLE_SKIN_ID,
     equippedEnemySkinId: DEFAULT_ENEMY_SKIN_ID,
@@ -92,507 +125,240 @@ function defaultProfile(): StoredProfile {
   };
 }
 
-/** A valid coin count: a finite, non-negative integer. Anything else
- *  (missing, NaN, negative, a string, Infinity, a float) degrades to 0 rather
- *  than propagating garbage into the wallet. Floats are floored rather than
- *  rejected outright, since coins are always awarded/added as whole numbers
- *  by this module's own writers — this guard is about surviving a corrupted
- *  or hand-edited blob, not about legitimate callers. */
-function sanitizeCoins(value: unknown): number {
-  const n = typeof value === "number" ? value : NaN;
-  if (!Number.isFinite(n) || n < 0) return 0;
-  return Math.floor(n);
-}
+// ---------------------------------------------------------------------------
+// Reads. All synchronous, straight off the cache.
 
-/** A valid challengeProgress value: a finite, non-negative integer clamped to
- *  [0, CHALLENGE_LEVEL_COUNT] — mirrors sanitizeCoins' "degrade garbage to a
- *  safe default" shape exactly (missing, NaN, negative, a string, Infinity,
- *  a float all degrade rather than propagating garbage), plus the extra
- *  upper clamp coins doesn't need (challengeProgress has a real ceiling —
- *  see StoredProfile's own doc comment on the CHALLENGE_LEVEL_COUNT
- *  "all cleared" convention — whereas coins can grow unbounded). Floats are
- *  floored rather than rejected outright, for the same "survive a corrupted
- *  or hand-edited blob" reason sanitizeCoins floors floats. */
-function sanitizeChallengeProgress(value: unknown): number {
-  const n = typeof value === "number" ? value : NaN;
-  if (!Number.isFinite(n) || n < 0) return 0;
-  return Math.min(Math.floor(n), CHALLENGE_LEVEL_COUNT);
-}
-
-function isKnownSkinId(id: unknown): id is string {
-  return typeof id === "string" && BEAGLE_SKINS.some((s) => s.id === id);
-}
-
-function isKnownEnemySkinId(id: unknown): id is string {
-  return typeof id === "string" && ENEMY_SKINS.some((s) => s.id === id);
-}
-
-/** Mirrors isKnownSkinId/isKnownEnemySkinId exactly, for maze theme ids
- *  (IDEA-026). */
-function isKnownMazeThemeId(id: unknown): id is string {
-  return typeof id === "string" && MAZE_THEMES.some((t) => t.id === id);
-}
-
-/** Sanitizes a persisted "owned beagle skin ids" value (IDEA-012): anything
- *  that isn't an array degrades to just the default owned; array entries
- *  that aren't a known skin id are filtered out; and the default id is
- *  always unioned in afterwards so a corrupt/old blob (or one missing the
- *  default entirely) can never leave the player unable to use the default
- *  skin. De-duplicates as a side effect of the Set round-trip. */
-function sanitizeOwnedBeagleSkinIds(value: unknown): string[] {
-  const known = Array.isArray(value) ? value.filter(isKnownSkinId) : [];
-  return Array.from(new Set([DEFAULT_BEAGLE_SKIN_ID, ...known]));
-}
-
-/** Mirrors sanitizeOwnedBeagleSkinIds exactly, for enemy skins. */
-function sanitizeOwnedEnemySkinIds(value: unknown): string[] {
-  const known = Array.isArray(value) ? value.filter(isKnownEnemySkinId) : [];
-  return Array.from(new Set([DEFAULT_ENEMY_SKIN_ID, ...known]));
-}
-
-/** Mirrors sanitizeOwnedBeagleSkinIds exactly, for maze themes (IDEA-026). */
-function sanitizeOwnedMazeThemeIds(value: unknown): string[] {
-  const known = Array.isArray(value) ? value.filter(isKnownMazeThemeId) : [];
-  return Array.from(new Set([DEFAULT_MAZE_THEME_ID, ...known]));
-}
-
-/**
- * Reads + parses the stored profile blob. Returns a fully-defaulted
- * `StoredProfile` on ANY failure: missing key, storage unavailable
- * (private browsing, quota, disabled storage, non-browser/Node
- * environments where `window` doesn't exist), garbage/corrupt JSON, or a
- * stored skin id that no longer matches a known skin (e.g. a removed skin) —
- * all degrade to the default rather than throwing or propagating `null`.
- */
+/** The current profile. Throws if the cache isn't hydrated — see
+ *  profileCache.getProfileCache for why that's deliberate rather than
+ *  defaulting silently. */
 export function loadProfile(): StoredProfile {
-  try {
-    const raw = window.localStorage.getItem(PROFILE_STORAGE_KEY);
-    if (!raw) return defaultProfile();
-
-    const parsed: unknown = JSON.parse(raw);
-    if (typeof parsed !== "object" || parsed === null) return defaultProfile();
-
-    const record = parsed as Record<string, unknown>;
-    const candidate = record.equippedBeagleSkinId;
-    const enemyCandidate = record.equippedEnemySkinId;
-    const themeCandidate = record.equippedMazeThemeId;
-    return {
-      ...defaultProfile(),
-      equippedBeagleSkinId: isKnownSkinId(candidate) ? candidate : DEFAULT_BEAGLE_SKIN_ID,
-      equippedEnemySkinId: isKnownEnemySkinId(enemyCandidate) ? enemyCandidate : DEFAULT_ENEMY_SKIN_ID,
-      coins: sanitizeCoins(record.coins),
-      ownedBeagleSkinIds: sanitizeOwnedBeagleSkinIds(record.ownedBeagleSkinIds),
-      ownedEnemySkinIds: sanitizeOwnedEnemySkinIds(record.ownedEnemySkinIds),
-      challengeProgress: sanitizeChallengeProgress(record.challengeProgress),
-      equippedMazeThemeId: isKnownMazeThemeId(themeCandidate) ? themeCandidate : DEFAULT_MAZE_THEME_ID,
-      ownedMazeThemeIds: sanitizeOwnedMazeThemeIds(record.ownedMazeThemeIds),
-    };
-  } catch {
-    // Covers `window`/`localStorage` being unavailable, JSON.parse throwing
-    // on corrupt data, and any storage access throwing (e.g. Safari private
-    // mode's quota-of-zero behaviour) — all treated the same way: fall back
-    // to defaults, in-memory only for this session.
-    return defaultProfile();
-  }
+  return getProfileCache();
 }
 
-/**
- * Persists just the equipped-skin field, via read-modify-write so any other
- * fields already in the stored blob (future coins/ownedSkinIds) survive
- * untouched. Guarded like every other storage access here — never throws.
- */
-export function saveEquippedBeagleSkinId(id: string): void {
-  try {
-    const current = loadProfile();
-    const next: StoredProfile = { ...current, equippedBeagleSkinId: id };
-    window.localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(next));
-  } catch {
-    /* storage unavailable/throwing — keep the pick in memory for this
-       session only (cosmetics.ts's equipped-id state already reflects it);
-       nothing else to do, and this must never throw upward */
-  }
-}
-
-/**
- * Persists just the equipped-enemy-skin field, via read-modify-write so the
- * beagle field (and any other future fields) already in the stored blob
- * survive untouched. Mirrors saveEquippedBeagleSkinId exactly.
- */
-export function saveEquippedEnemySkinId(id: string): void {
-  try {
-    const current = loadProfile();
-    const next: StoredProfile = { ...current, equippedEnemySkinId: id };
-    window.localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(next));
-  } catch {
-    /* storage unavailable/throwing — keep the pick in memory for this
-       session only (cosmetics.ts's equipped-id state already reflects it);
-       nothing else to do, and this must never throw upward */
-  }
-}
-
-/**
- * Persists just the equipped-maze-theme field, via read-modify-write so every
- * other field already in the stored blob survives untouched. Mirrors
- * saveEquippedBeagleSkinId/saveEquippedEnemySkinId exactly (IDEA-026).
- */
-export function saveEquippedMazeThemeId(id: string): void {
-  try {
-    const current = loadProfile();
-    const next: StoredProfile = { ...current, equippedMazeThemeId: id };
-    window.localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(next));
-  } catch {
-    /* storage unavailable/throwing — keep the pick in memory for this
-       session only (themes.ts's equipped-id state already reflects it);
-       nothing else to do, and this must never throw upward */
-  }
-}
-
-/**
- * Persists just the coins field, via read-modify-write so the skin fields
- * already in the stored blob survive untouched — mirrors
- * saveEquippedBeagleSkinId/saveEquippedEnemySkinId exactly. Internal: callers
- * outside this module should go through getCoins/addCoins below.
- */
-function saveCoins(total: number): void {
-  try {
-    const current = loadProfile();
-    const next: StoredProfile = { ...current, coins: sanitizeCoins(total) };
-    window.localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(next));
-  } catch {
-    /* storage unavailable/throwing — keep the wallet in memory for this
-       session only (the caller's own view of the total, if any, is
-       unaffected); nothing else to do, and this must never throw upward */
-  }
-}
-
-/**
- * Reads the persisted coin wallet (IDEA-016/IDEA-017). Degrades to 0 on any
- * failure via loadProfile's own defensive handling — never throws.
- */
 export function getCoins(): number {
-  return loadProfile().coins;
+  return getProfileCache().coins;
 }
 
+export function getChallengeProgress(): number {
+  return getProfileCache().challengeProgress;
+}
+
+export function getOwnedBeagleSkinIds(): string[] {
+  return [...getProfileCache().ownedBeagleSkinIds];
+}
+
+export function getOwnedEnemySkinIds(): string[] {
+  return [...getProfileCache().ownedEnemySkinIds];
+}
+
+export function getOwnedMazeThemeIds(): string[] {
+  return [...getProfileCache().ownedMazeThemeIds];
+}
+
+export function isBeagleSkinOwned(id: string): boolean {
+  return getProfileCache().ownedBeagleSkinIds.includes(id);
+}
+
+export function isEnemySkinOwned(id: string): boolean {
+  return getProfileCache().ownedEnemySkinIds.includes(id);
+}
+
+export function isMazeThemeOwned(id: string): boolean {
+  return getProfileCache().ownedMazeThemeIds.includes(id);
+}
+
+// ---------------------------------------------------------------------------
+// Equipping. Local mutation + a background PATCH.
+
+export function saveEquippedBeagleSkinId(id: string): void {
+  mutateProfileCache((p) => ({ ...p, equippedBeagleSkinId: id }));
+  enqueueEquip({ beagleSkinId: id });
+}
+
+export function saveEquippedEnemySkinId(id: string): void {
+  mutateProfileCache((p) => ({ ...p, equippedEnemySkinId: id }));
+  enqueueEquip({ enemySkinId: id });
+}
+
+export function saveEquippedMazeThemeId(id: string): void {
+  mutateProfileCache((p) => ({ ...p, equippedMazeThemeId: id }));
+  enqueueEquip({ mazeThemeId: id });
+}
+
+// ---------------------------------------------------------------------------
+// Coins.
+
 /**
- * Adds `n` coins to the persisted wallet (read-modify-write, so the skin
- * fields survive) and clamps the result to >= 0. `n` may be negative in
- * principle (e.g. a future shop spend), but the total is always floored at 0
- * rather than going negative. Guarded like every other storage access here —
- * never throws.
+ * Adds `n` coins to the LOCAL wallet, floored at 0.
+ *
+ * SEMANTIC NOTE (IDEA-019): this is now an optimistic, local-only update. The
+ * server is authoritative for coins — they are awarded when a run is submitted
+ * (Increment 2), recomputed server-side from the accepted score so a client
+ * can't mint currency. This call exists so the HUD counter moves the instant a
+ * coin is collected mid-run, exactly as it did before; the next profile sync
+ * replaces it with the server's number.
+ *
+ * Consequently: do NOT treat a local coin increase as banked. Purchases are
+ * validated server-side against the real balance.
  */
 export function addCoins(n: number): void {
   const delta = Number.isFinite(n) ? n : 0;
-  const current = getCoins();
-  const next = Math.max(0, current + delta);
-  saveCoins(next);
-}
-
-// ---------------------------------------------------------------------------
-// IDEA-013: Challenge Mode progress. Mirrors the coins section immediately
-// above exactly (a private save* + a public get* + a public mutator), except
-// the mutator here is a "raise to the max" write rather than an additive one
-// — see advanceChallengeProgress's own doc comment for why.
-
-/**
- * Persists just the challengeProgress field, via read-modify-write so every
- * other field already in the stored blob survives untouched — mirrors
- * saveCoins exactly. Internal: callers outside this module should go through
- * getChallengeProgress/advanceChallengeProgress below.
- */
-function saveChallengeProgress(value: number): void {
-  try {
-    const current = loadProfile();
-    const next: StoredProfile = { ...current, challengeProgress: sanitizeChallengeProgress(value) };
-    window.localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(next));
-  } catch {
-    /* storage unavailable/throwing — keep progress in memory for this
-       session only (the caller's own view, if any, is unaffected); nothing
-       else to do, and this must never throw upward */
-  }
+  mutateProfileCache((p) => ({
+    ...p,
+    coins: Math.max(0, p.coins + delta),
+  }));
 }
 
 /**
- * Reads the persisted Challenge Mode progress (IDEA-013) — the highest
- * challenge level index unlocked (see StoredProfile's own doc comment for
- * the full 0-based / "=== CHALLENGE_LEVEL_COUNT means all cleared"
- * convention). Degrades to 0 (only level 1 unlocked) on any failure via
- * loadProfile's own defensive handling, and on any old blob saved before
- * this field existed — never throws.
- */
-export function getChallengeProgress(): number {
-  return loadProfile().challengeProgress;
-}
-
-/**
- * Records that challenge level `clearedIdx` (0-based) has just been cleared,
- * unlocking `clearedIdx + 1` (or, if `clearedIdx` was already the last
- * level, marking every level cleared via CHALLENGE_LEVEL_COUNT — see
- * StoredProfile's doc comment). This is a READ-MODIFY-WRITE that only ever
- * RAISES the stored value (`Math.max(current, ...)`), never lowers it:
- * clearing level 2 after already having cleared level 4 must not regress
- * progress back down to "level 3 unlocked" — the player keeps their best
- * unlock, exactly like a high score. Guarded like every other write here —
- * never throws, and a garbage/negative/non-finite `clearedIdx` is treated as
- * "no progress to record" (contributes 0, so `Math.max` is a no-op) rather
- * than corrupting the stored value.
+ * Raises challenge progress to at least `clearedIdx + 1`, never lowering it.
+ *
+ * SEMANTIC NOTE (IDEA-019): optimistic and local, like addCoins. The server
+ * advances the real value only when a challenge clear is submitted AND passes
+ * plausibility validation (Increment 2) — otherwise anyone could unlock every
+ * level with a single request.
  */
 export function advanceChallengeProgress(clearedIdx: number): void {
-  const safeCleared = Number.isFinite(clearedIdx) && clearedIdx >= 0 ? Math.floor(clearedIdx) : -1;
-  const unlockedThrough = Math.min(safeCleared + 1, CHALLENGE_LEVEL_COUNT);
-  const current = getChallengeProgress();
-  const next = Math.max(current, unlockedThrough);
-  if (next > current) saveChallengeProgress(next);
+  const idx = Number.isFinite(clearedIdx) ? Math.floor(clearedIdx) : -1;
+  if (idx < 0) return;
+
+  const next = Math.min(idx + 1, CHALLENGE_LEVEL_COUNT);
+  mutateProfileCache((p) => ({
+    ...p,
+    challengeProgress: Math.max(p.challengeProgress, next),
+  }));
 }
 
 // ---------------------------------------------------------------------------
-// IDEA-012: skin ownership + the shop buy operation. The owned-ids arrays
-// live in the same StoredProfile blob (see loadProfile's sanitize step
-// above), so every read/write here goes through the same
-// read-modify-write pattern the rest of this module already uses — no new
-// storage key, no separate persistence path.
+// Purchases.
 
-/** Reads the persisted set of owned beagle skin ids. Always includes the
- *  default id (loadProfile's sanitize step guarantees this) — degrades to
- *  `[DEFAULT_BEAGLE_SKIN_ID]` on any storage failure via loadProfile. */
-export function getOwnedBeagleSkinIds(): string[] {
-  return loadProfile().ownedBeagleSkinIds;
-}
-
-/** Reads the persisted set of owned enemy skin ids. Mirrors
- *  getOwnedBeagleSkinIds exactly. */
-export function getOwnedEnemySkinIds(): string[] {
-  return loadProfile().ownedEnemySkinIds;
-}
-
-/** Whether a given beagle skin id is owned. The default skin is always
- *  owned (loadProfile's sanitize step guarantees it's always present in the
- *  owned array), so this is true for it even before loadProfile ever runs
- *  (e.g. called against a totally fresh profile). Unknown ids are never
- *  "owned" (they can't be equipped/rendered anyway). */
-export function isBeagleSkinOwned(id: string): boolean {
-  if (id === DEFAULT_BEAGLE_SKIN_ID) return true;
-  return getOwnedBeagleSkinIds().includes(id);
-}
-
-/** Whether a given enemy skin id is owned. Mirrors isBeagleSkinOwned
- *  exactly. */
-export function isEnemySkinOwned(id: string): boolean {
-  if (id === DEFAULT_ENEMY_SKIN_ID) return true;
-  return getOwnedEnemySkinIds().includes(id);
-}
-
-/** The result shape every buy operation returns. `ok:false` always leaves
- *  coins/ownership completely unchanged (never a partial charge) — see each
- *  reason below:
- *    - "already-owned": the id was already owned; no coins were charged
- *      (buying is refused rather than treated as a harmless no-op re-buy, so
- *      the UI never risks double-charging by calling buy twice).
- *    - "insufficient-coins": the wallet has less than the skin's price.
- *    - "unknown": the id doesn't match any registered skin. */
+/** Why a purchase was refused. Unchanged — ui/shop.ts switches on these. */
 export interface BuyResult {
   ok: boolean;
   reason?: "already-owned" | "insufficient-coins" | "unknown";
 }
 
 /**
- * Atomically checks the wallet has at least `price` coins and, if so,
- * deducts them — all against a single freshly-loaded profile snapshot, so
- * there's no window where a caller could observe coins deducted without the
- * corresponding owned-id also being added (buyBeagleSkin/buyEnemySkin below
- * fold this into the same read-modify-write as the ownership update).
- * Returns the new coin total on success, or `null` if funds were
- * insufficient (in which case the blob is left untouched by this
- * function — the caller decides whether/how to persist).
- */
-function trySpend(profile: StoredProfile, price: number): number | null {
-  if (profile.coins < price) return null;
-  return profile.coins - price;
-}
-
-/**
- * Guarded shop purchase for a beagle skin. Never throws. On success, deducts
- * the skin's price from coins AND adds the id to the owned list in ONE
- * read-modify-write of the profile blob (see trySpend), so a purchase can
- * never be observed half-applied (coins gone but skin not owned, or vice
- * versa). Already-owned ids and unknown ids are both refused before any
- * coins are touched.
- */
-export function buyBeagleSkin(id: string): BuyResult {
-  if (!isKnownSkinId(id)) return { ok: false, reason: "unknown" };
-
-  const profile = loadProfile();
-  if (profile.ownedBeagleSkinIds.includes(id)) return { ok: false, reason: "already-owned" };
-
-  const price = getBeagleSkinPrice(id);
-  const newCoins = trySpend(profile, price);
-  if (newCoins === null) return { ok: false, reason: "insufficient-coins" };
-
-  const next: StoredProfile = {
-    ...profile,
-    coins: newCoins,
-    ownedBeagleSkinIds: [...profile.ownedBeagleSkinIds, id],
-  };
-  persistProfile(next);
-  return { ok: true };
-}
-
-/** Guarded shop purchase for an enemy skin. Mirrors buyBeagleSkin exactly. */
-export function buyEnemySkin(id: string): BuyResult {
-  if (!isKnownEnemySkinId(id)) return { ok: false, reason: "unknown" };
-
-  const profile = loadProfile();
-  if (profile.ownedEnemySkinIds.includes(id)) return { ok: false, reason: "already-owned" };
-
-  const price = getEnemySkinPrice(id);
-  const newCoins = trySpend(profile, price);
-  if (newCoins === null) return { ok: false, reason: "insufficient-coins" };
-
-  const next: StoredProfile = {
-    ...profile,
-    coins: newCoins,
-    ownedEnemySkinIds: [...profile.ownedEnemySkinIds, id],
-  };
-  persistProfile(next);
-  return { ok: true };
-}
-
-// ---------------------------------------------------------------------------
-// IDEA-026: maze theme ownership + the shop buy operation. Byte-for-byte
-// parallel of the beagle/enemy skin section just above — same owned-ids-array
-// storage shape (in the same StoredProfile blob, see loadProfile's sanitize
-// step above), same isOwned/BuyResult/trySpend/persistProfile plumbing, no
-// new storage key or separate persistence path.
-
-/** Reads the persisted set of owned maze theme ids. Always includes the
- *  default id (loadProfile's sanitize step guarantees this) — degrades to
- *  `[DEFAULT_MAZE_THEME_ID]` on any storage failure via loadProfile. Mirrors
- *  getOwnedBeagleSkinIds exactly. */
-export function getOwnedMazeThemeIds(): string[] {
-  return loadProfile().ownedMazeThemeIds;
-}
-
-/** Whether a given maze theme id is owned. The default theme is always owned
- *  (loadProfile's sanitize step guarantees it's always present in the owned
- *  array), so this is true for it even before loadProfile ever runs. Unknown
- *  ids are never "owned". Mirrors isBeagleSkinOwned exactly. */
-export function isMazeThemeOwned(id: string): boolean {
-  if (id === DEFAULT_MAZE_THEME_ID) return true;
-  return getOwnedMazeThemeIds().includes(id);
-}
-
-/**
- * Guarded shop purchase for a maze theme. Never throws. On success, deducts
- * the theme's price from coins AND adds the id to the owned list in ONE
- * read-modify-write of the profile blob (see trySpend), so a purchase can
- * never be observed half-applied (coins gone but theme not owned, or vice
- * versa). Already-owned ids and unknown ids are both refused before any coins
- * are touched. Mirrors buyBeagleSkin/buyEnemySkin exactly.
- */
-export function buyMazeTheme(id: string): BuyResult {
-  if (!isKnownMazeThemeId(id)) return { ok: false, reason: "unknown" };
-
-  const profile = loadProfile();
-  if (profile.ownedMazeThemeIds.includes(id)) return { ok: false, reason: "already-owned" };
-
-  const price = getMazeThemePrice(id);
-  const newCoins = trySpend(profile, price);
-  if (newCoins === null) return { ok: false, reason: "insufficient-coins" };
-
-  const next: StoredProfile = {
-    ...profile,
-    coins: newCoins,
-    ownedMazeThemeIds: [...profile.ownedMazeThemeIds, id],
-  };
-  persistProfile(next);
-  return { ok: true };
-}
-
-/**
- * Writes a full StoredProfile snapshot in one shot (used by the buy
- * operations above so the coin-deduct and owned-add land in the exact same
- * localStorage write). Guarded like every other storage write here — never
- * throws; if storage is unavailable the purchase simply doesn't persist
- * (matching every other write in this module's behaviour under a
- * private-mode/disabled-storage failure).
- */
-function persistProfile(profile: StoredProfile): void {
-  try {
-    window.localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile));
-  } catch {
-    /* storage unavailable/throwing — the purchase doesn't persist for this
-       session; nothing else to do, and this must never throw upward */
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Bridge between this module's persistence and cosmetics.ts's in-memory
-// equipped state. Lives here (not in cosmetics.ts) so the dependency arrow
-// stays one-directional — profileStore.ts -> cosmetics.ts — and cosmetics.ts
-// stays free of any storage/browser dependency, per its own docstring.
-
-/** Reads the persisted profile (if any) and applies its equipped-skin id to
- *  cosmetics.ts's in-memory state, so a page reload resumes the player's
- *  last pick. Call once during boot (e.g. from src/game/game.ts's setup),
- *  before any UI reads getEquippedBeagleSkin(). Safe to call even when
- *  storage/`window` isn't available — loadProfile() degrades to the default
- *  in that case, so this just re-affirms cosmetics.ts's existing default.
+ * Shared purchase path. Validates against the CACHED balance so the shop can
+ * respond synchronously (the button state updates on the same frame), then
+ * enqueues the real purchase.
  *
- *  Safety net (IDEA-012): if the persisted equipped id somehow isn't owned
- *  (shouldn't happen via normal equip/buy flow, but guards a hand-edited or
- *  pre-shop blob where an equipped skin was never actually purchased), falls
- *  back to the default id instead of equipping an unowned skin. The same
- *  safety net applies to the equipped maze theme (IDEA-026). */
-export function initProfileFromStorage(): void {
-  const profile = loadProfile();
-  setEquippedBeagleSkinId(
-    profile.ownedBeagleSkinIds.includes(profile.equippedBeagleSkinId)
-      ? profile.equippedBeagleSkinId
-      : DEFAULT_BEAGLE_SKIN_ID,
-  );
-  setEquippedEnemySkinId(
-    profile.ownedEnemySkinIds.includes(profile.equippedEnemySkinId)
-      ? profile.equippedEnemySkinId
-      : DEFAULT_ENEMY_SKIN_ID,
-  );
-  setEquippedMazeThemeId(
-    profile.ownedMazeThemeIds.includes(profile.equippedMazeThemeId)
-      ? profile.equippedMazeThemeId
-      : DEFAULT_MAZE_THEME_ID,
-  );
+ * The local check is an optimisation, not the authority: the server re-checks
+ * ownership and affordability against its own catalog price, and a rejection
+ * triggers a resync that corrects the cache. So the worst case for a client
+ * that lies to itself is a purchase that briefly appears to work and then
+ * reverts — never a free item.
+ */
+function buyCosmetic(
+  id: string,
+  kind: "beagle" | "enemy" | "theme",
+  isKnown: (id: unknown) => boolean,
+  price: (id: string) => number,
+  ownedKey: keyof Pick<
+    StoredProfile,
+    "ownedBeagleSkinIds" | "ownedEnemySkinIds" | "ownedMazeThemeIds"
+  >,
+): BuyResult {
+  if (!isKnown(id)) return { ok: false, reason: "unknown" };
+
+  const profile = getProfileCache();
+  if (profile[ownedKey].includes(id)) return { ok: false, reason: "already-owned" };
+
+  const cost = price(id);
+  if (profile.coins < cost) return { ok: false, reason: "insufficient-coins" };
+
+  // Deduct and grant together, so no caller can observe one without the other
+  // — the same atomicity the old localStorage read-modify-write guaranteed.
+  mutateProfileCache((p) => ({
+    ...p,
+    coins: p.coins - cost,
+    [ownedKey]: [...p[ownedKey], id],
+  }));
+
+  enqueuePurchase(kind, id);
+  return { ok: true };
 }
 
-/** Equips a skin AND persists the choice — but ONLY if it's owned (IDEA-012
- *  gating: the shop must only let players equip skins they've bought).
- *  Unknown ids are also refused (isBeagleSkinOwned is false for them). The
- *  default id is always owned, so it always equips successfully. Returns
- *  whether the equip happened, so shop UI can react (e.g. show a "buy
- *  first" hint) — callers that don't care about the outcome can ignore the
- *  return value. cosmetics.ts's plain setEquippedBeagleSkinId stays
- *  available for tests/callers that want in-memory-only, ungated state. */
+export function buyBeagleSkin(id: string): BuyResult {
+  return buyCosmetic(id, "beagle", isKnownSkinId, getBeagleSkinPrice, "ownedBeagleSkinIds");
+}
+
+export function buyEnemySkin(id: string): BuyResult {
+  return buyCosmetic(id, "enemy", isKnownEnemySkinId, getEnemySkinPrice, "ownedEnemySkinIds");
+}
+
+export function buyMazeTheme(id: string): BuyResult {
+  return buyCosmetic(id, "theme", isKnownMazeThemeId, getMazeThemePrice, "ownedMazeThemeIds");
+}
+
+// ---------------------------------------------------------------------------
+// Equip operations (ownership-gated), and boot wiring.
+
 export function equipBeagleSkin(id: string): boolean {
-  if (!isBeagleSkinOwned(id)) return false;
+  if (!isKnownSkinId(id) || !isBeagleSkinOwned(id)) return false;
   setEquippedBeagleSkinId(id);
-  saveEquippedBeagleSkinId(getEquippedBeagleSkinId());
+  saveEquippedBeagleSkinId(id);
   return true;
 }
 
-/** Equips an enemy skin AND persists the choice, mirroring equipBeagleSkin
- *  exactly (including the IDEA-012 ownership gate and boolean return). */
 export function equipEnemySkin(id: string): boolean {
-  if (!isEnemySkinOwned(id)) return false;
+  if (!isKnownEnemySkinId(id) || !isEnemySkinOwned(id)) return false;
   setEquippedEnemySkinId(id);
-  saveEquippedEnemySkinId(getEquippedEnemySkinId());
+  saveEquippedEnemySkinId(id);
   return true;
 }
 
-/** Equips a maze theme AND persists the choice, mirroring equipBeagleSkin/
- *  equipEnemySkin exactly (including the ownership gate and boolean return) —
- *  IDEA-026. Sets themes.ts's in-memory equipped state via
- *  setEquippedMazeThemeId, then persists via saveEquippedMazeThemeId, same
- *  two-step shape as the skin equip functions. */
 export function equipMazeTheme(id: string): boolean {
-  if (!isMazeThemeOwned(id)) return false;
+  if (!isKnownMazeThemeId(id) || !isMazeThemeOwned(id)) return false;
   setEquippedMazeThemeId(id);
-  saveEquippedMazeThemeId(getEquippedMazeThemeId());
+  saveEquippedMazeThemeId(id);
   return true;
+}
+
+/**
+ * Pushes the hydrated profile's equipped ids into cosmetics.ts/themes.ts's
+ * in-memory state. Called as the FIRST statement of the Game constructor,
+ * because createMenuScene() bakes the showcase beagle from the equipped skin at
+ * construction time (the IDEA-021 v3 bug: the menu showed the default dog
+ * because the profile hadn't loaded yet).
+ *
+ * Renamed from initProfileFromStorage — the profile no longer comes from
+ * storage, and a name that says otherwise would send the next reader looking
+ * for localStorage that isn't there.
+ *
+ * PRECONDITION: the cache must already be hydrated. main.ts guarantees this by
+ * awaiting sign-in before constructing Game; if it's ever violated this throws
+ * loudly rather than silently equipping defaults.
+ */
+export function initProfileFromCache(): void {
+  const profile = getProfileCache();
+
+  // Belt-and-braces: an equipped id must also be owned. fromServerProfile
+  // already enforces this, but repeating it here means a future code path that
+  // writes the cache directly still can't leave the player equipped with
+  // something they don't own.
+  const beagle = isBeagleSkinOwned(profile.equippedBeagleSkinId)
+    ? profile.equippedBeagleSkinId
+    : DEFAULT_BEAGLE_SKIN_ID;
+  const enemy = isEnemySkinOwned(profile.equippedEnemySkinId)
+    ? profile.equippedEnemySkinId
+    : DEFAULT_ENEMY_SKIN_ID;
+  const theme = isMazeThemeOwned(profile.equippedMazeThemeId)
+    ? profile.equippedMazeThemeId
+    : DEFAULT_MAZE_THEME_ID;
+
+  setEquippedBeagleSkinId(beagle);
+  setEquippedEnemySkinId(enemy);
+  setEquippedMazeThemeId(theme);
+}
+
+/** @deprecated Kept as a thin alias so any missed call site still compiles and
+ *  behaves correctly. Prefer initProfileFromCache. */
+export function initProfileFromStorage(): void {
+  initProfileFromCache();
+}
+
+/** True once a profile is loaded. Lets UI code check before reading rather than
+ *  catching a throw. */
+export function isProfileReady(): boolean {
+  return isProfileCacheReady();
 }

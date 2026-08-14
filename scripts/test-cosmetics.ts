@@ -1,8 +1,24 @@
 // Headless unit checks for the IDEA-010 beagle-skin cosmetics foundation:
 // src/game/cosmetics.ts (pure data + in-memory equipped state) and
-// src/game/profileStore.ts (localStorage bridge). No framework, matching
+// src/game/profileStore.ts (the account-backed profile). No framework, matching
 // validate-maze.ts/sim-logic.ts's style — assert + log, exit 1 on failure.
 // Run: tsx scripts/test-cosmetics.ts (wired into `npm run test`).
+//
+// IDEA-019 changed profileStore's backing store from localStorage to an
+// in-memory cache hydrated from the server (src/game/profileCache.ts). Two
+// consequences for this Node-run suite, both handled immediately below:
+//
+//   1. profileStore now transitively imports net/api.ts, which reads
+//      `import.meta.env.VITE_API_URL` — a Vite transform that doesn't exist
+//      under plain Node. api.ts guards that read (see readApiUrl there) so this
+//      suite can import it; no request is ever made here.
+//
+//   2. The old suite leaned on "no window ⇒ every read degrades to defaults".
+//      That behaviour is deliberately gone: getProfileCache() now THROWS when
+//      unhydrated, so an ordering bug is loud instead of silently serving
+//      default cosmetics (the IDEA-021 v3 class of bug). Those sections now
+//      seed the cache explicitly and assert the throw.
+
 import {
   BEAGLE_SKINS,
   DEFAULT_BEAGLE_SKIN_ID,
@@ -40,8 +56,17 @@ import {
   isMazeThemeOwned,
   buyMazeTheme,
   equipMazeTheme,
+  isProfileReady,
+  defaultProfile,
   type StoredProfile,
 } from "../src/game/profileStore";
+// IDEA-019: the profile now lives in an in-memory cache hydrated from the
+// server, so these tests seed it directly instead of stubbing localStorage.
+import {
+  setProfileCache,
+  clearProfileCache,
+} from "../src/game/profileCache";
+import { fromServerProfile } from "../src/game/profileMapping";
 import {
   MAZE_THEMES,
   DEFAULT_MAZE_THEME_ID,
@@ -274,16 +299,111 @@ console.log("\n=== themes.ts garden-regression guard (garden palette must match 
   check("garden.palette.biscuit === COLORS.biscuit", garden.biscuit === COLORS.biscuit);
 }
 
-console.log("\n=== profileStore.ts (Node, no window/localStorage) ===");
-// In this plain tsx/Node run there is no `window`, so loadProfile()'s
-// try/catch must catch the ReferenceError and degrade to the default —
-// exercising the same "storage unavailable" path a browser would hit in
-// private-mode/disabled-storage, without needing a DOM shim.
+console.log("\n=== profileCache.ts (IDEA-019: unhydrated reads must THROW) ===");
+// The single most important behavioural change of the accounts work.
+//
+// Before IDEA-019 an unavailable store degraded silently to defaults. That is
+// exactly how the IDEA-021 v3 bug shipped: createMenuScene() built the showcase
+// beagle before the profile had loaded, so the menu quietly showed the DEFAULT
+// dog instead of the equipped skin, and it took a player noticing to find it.
+//
+// So getProfileCache() now throws. main.ts guarantees hydration before the Game
+// is constructed; if that ordering is ever broken again it must fail loudly at
+// boot rather than serving plausible-looking wrong cosmetics.
 {
+  clearProfileCache();
+
+  let threw = false;
+  try {
+    loadProfile();
+  } catch {
+    threw = true;
+  }
+  check("loadProfile() throws when the cache is unhydrated", threw);
+
+  let coinsThrew = false;
+  try {
+    getCoins();
+  } catch {
+    coinsThrew = true;
+  }
+  check("getCoins() throws when the cache is unhydrated", coinsThrew);
+
+  check("isProfileReady() is false before hydration", !isProfileReady());
+}
+
+console.log("\n=== profileStore.ts reads (hydrated cache) ===");
+// With the cache seeded — as main.ts does after sign-in — every read is
+// synchronous and returns exactly what was hydrated. This is what lets the ~27
+// existing call sites in game.ts/shop.ts/levelMap.ts stay unchanged.
+{
+  setProfileCache(defaultProfile());
+
+  check("isProfileReady() is true after hydration", isProfileReady());
+
   const profile = loadProfile();
-  check("loadProfile() in Node (no window) returns the default beagle skin", profile.equippedBeagleSkinId === DEFAULT_BEAGLE_SKIN_ID);
-  check("loadProfile() in Node (no window) returns the default enemy skin", profile.equippedEnemySkinId === DEFAULT_ENEMY_SKIN_ID);
-  check("loadProfile() in Node (no window) returns the default maze theme", profile.equippedMazeThemeId === DEFAULT_MAZE_THEME_ID);
+  check("a fresh account has the default beagle skin", profile.equippedBeagleSkinId === DEFAULT_BEAGLE_SKIN_ID);
+  check("a fresh account has the default enemy skin", profile.equippedEnemySkinId === DEFAULT_ENEMY_SKIN_ID);
+  check("a fresh account has the default maze theme", profile.equippedMazeThemeId === DEFAULT_MAZE_THEME_ID);
+  check("a fresh account starts with 0 coins", profile.coins === 0);
+  check("a fresh account owns only the default beagle skin", profile.ownedBeagleSkinIds.length === 1);
+  check("a fresh account has no challenge progress", profile.challengeProgress === 0);
+
+  // Reads must not hand out the live object — a caller mutating the returned
+  // array would corrupt the cache behind everyone's back.
+  const owned = getOwnedBeagleSkinIds();
+  owned.push("not-a-real-skin");
+  check("getOwnedBeagleSkinIds() returns a defensive copy", getOwnedBeagleSkinIds().length === 1);
+}
+
+console.log("\n=== profileMapping.ts (server profile -> StoredProfile) ===");
+// The server is trusted, but a build can lag the API: an id added server-side
+// and not yet shipped to this client must degrade rather than reach
+// cosmetics.ts and crash the renderer mid-frame.
+{
+  const mapped = fromServerProfile({
+    coins: 42,
+    challengeProgress: 3,
+    highScore: 9001,
+    equipped: { beagleSkinId: "cookie", enemySkinId: "ghost", mazeThemeId: "garden" },
+    owned: {
+      beagleSkinIds: ["bagel", "cookie", "skin-from-the-future"],
+      enemySkinIds: ["ghost"],
+      mazeThemeIds: ["garden"],
+    },
+    recoveryCodeVersion: 2,
+  });
+
+  check("maps coins through", mapped.coins === 42);
+  check("maps challengeProgress through", mapped.challengeProgress === 3);
+  check("keeps a known owned skin", mapped.ownedBeagleSkinIds.includes("cookie"));
+  check("drops an unknown owned skin", !mapped.ownedBeagleSkinIds.includes("skin-from-the-future"));
+  check("keeps an equipped skin that is known AND owned", mapped.equippedBeagleSkinId === "cookie");
+
+  // Equipping something unowned should be impossible, but if the server ever
+  // said so we must not honour it.
+  const unowned = fromServerProfile({
+    coins: 0,
+    challengeProgress: 0,
+    highScore: 0,
+    equipped: { beagleSkinId: "muffin", enemySkinId: "ghost", mazeThemeId: "garden" },
+    owned: { beagleSkinIds: ["bagel"], enemySkinIds: ["ghost"], mazeThemeIds: ["garden"] },
+    recoveryCodeVersion: 1,
+  });
+  check("falls back to the default when equipped is not owned", unowned.equippedBeagleSkinId === DEFAULT_BEAGLE_SKIN_ID);
+
+  // Garbage from a corrupted response must not propagate into the wallet.
+  const garbage = fromServerProfile({
+    coins: -5,
+    challengeProgress: 99,
+    highScore: 0,
+    equipped: { beagleSkinId: "", enemySkinId: "", mazeThemeId: "" },
+    owned: { beagleSkinIds: [], enemySkinIds: [], mazeThemeIds: [] },
+    recoveryCodeVersion: 1,
+  } as never);
+  check("negative coins degrade to 0", garbage.coins === 0);
+  check("out-of-range challengeProgress clamps to CHALLENGE_LEVEL_COUNT", garbage.challengeProgress === CHALLENGE_LEVEL_COUNT);
+  check("empty owned lists still include the defaults", garbage.ownedBeagleSkinIds.includes(DEFAULT_BEAGLE_SKIN_ID));
 }
 
 // Round-trip check on the pure merge logic loadProfile() uses: a blob that
@@ -567,14 +687,14 @@ console.log("\n=== profileStore.ts loadProfile defensive ownership sanitizing ==
   );
 }
 
-console.log("\n=== profileStore.ts buy operations (Node, no window/localStorage) ===");
+console.log("\n=== profileStore.ts buy operations (fresh hydrated cache) ===");
 {
-  // With no `window`, every loadProfile() call degrades to a fresh
-  // defaultProfile() (coins:0, only the default owned) and persistProfile's
-  // write is caught and silently dropped — so buy operations here exercise
-  // the "insufficient funds" and "guard never throws" paths deterministically
-  // (every call starts from the same fresh-default snapshot, since nothing
-  // actually persists in this environment).
+  // IDEA-019: writes now STICK (they mutate the cache) instead of being
+  // silently dropped as they were when there was no localStorage to write to.
+  // So this section reseeds a fresh profile explicitly rather than relying on
+  // every read degrading to defaults.
+  setProfileCache(defaultProfile());
+
   const before = loadProfile();
   check("Node fresh profile has 0 coins (can't afford a 5-coin skin)", before.coins === 0);
 
@@ -704,13 +824,13 @@ console.log("\n=== profileStore.ts buy success + atomicity (pure, in-process pro
   check("2 coins cannot afford a 5-coin theme -> trySpend returns null", insufficientTheme === null);
 }
 
-console.log("\n=== profileStore.ts equip gating (Node, no window/localStorage) ===");
+console.log("\n=== profileStore.ts equip gating (fresh hydrated cache) ===");
 {
-  // With no window, equip*'s ownership check reads a fresh default profile
-  // each time (only the default owned), so an unowned skin is always
-  // refused here and the default always succeeds — exercising the gating
-  // logic itself (isBeagleSkinOwned/isEnemySkinOwned) rather than the
-  // storage persistence step (which is a guarded no-op in this environment).
+  // Reseed so only the defaults are owned — this section is about the
+  // ownership GATE (isBeagleSkinOwned/isEnemySkinOwned), not about whatever
+  // earlier sections happened to buy.
+  setProfileCache(defaultProfile());
+
   const refused = equipBeagleSkin("cookie");
   check("equipBeagleSkin(unowned 'cookie') is refused (returns false)", refused === false);
   check("equipBeagleSkin(unowned) does not change the equipped id", getEquippedBeagleSkinId() === DEFAULT_BEAGLE_SKIN_ID);
@@ -863,13 +983,12 @@ console.log("\n=== challenges.ts getChallengeLevel clamping ===");
   check("getChallengeLevel never throws for any of the above", true); // implicit — none of the calls above threw
 }
 
-console.log("\n=== profileStore.ts challengeProgress (Node, no window/localStorage) ===");
+console.log("\n=== profileStore.ts challengeProgress (fresh hydrated cache) ===");
 {
-  // No `window` in this Node run, so loadProfile()/getChallengeProgress()
-  // degrade to the default (0, "only level 1 unlocked") — same
-  // "storage unavailable" path exercised above for coins/skins.
-  check("loadProfile() in Node (no window) returns challengeProgress: 0 by default", loadProfile().challengeProgress === 0);
-  check("getChallengeProgress() in Node (no window) returns 0", getChallengeProgress() === 0);
+  setProfileCache(defaultProfile());
+
+  check("a fresh account has challengeProgress: 0", loadProfile().challengeProgress === 0);
+  check("getChallengeProgress() reads 0 on a fresh account", getChallengeProgress() === 0);
 
   // advanceChallengeProgress never throws, even with nowhere to persist to
   // (mirrors the addCoins(5) "never throws" check above).
@@ -879,17 +998,24 @@ console.log("\n=== profileStore.ts challengeProgress (Node, no window/localStora
   } catch {
     threw = true;
   }
-  check("advanceChallengeProgress(2) in Node (no window) never throws", !threw);
+  check("advanceChallengeProgress(2) never throws", !threw);
 
-  // With no window, every loadProfile() call degrades to a fresh
-  // defaultProfile() and persistProfile/saveChallengeProgress's write is
-  // caught and silently dropped (mirrors the coins section's own doc
-  // comment) — so getChallengeProgress() still reads 0 right after the call
-  // above, since nothing actually persisted in this environment. This
-  // exercises "never throws" deterministically; the actual read-modify-write
-  // max-write semantics are exercised against plain objects below (the same
-  // pattern the existing buy-operation atomicity tests use).
-  check("getChallengeProgress() still reads 0 after a dropped write (no persistence in Node)", getChallengeProgress() === 0);
+  // IDEA-019 INVERTED this assertion, deliberately.
+  //
+  // It used to check that the write was silently DROPPED — true only because
+  // there was no localStorage in Node to write to. Now writes land in the
+  // in-memory cache, so the correct expectation is that the value STUCK. If
+  // this ever reads 0 again, the optimistic local update is broken and the HUD
+  // would stop reflecting progress mid-session.
+  check("advanceChallengeProgress(2) unlocks through level index 3", getChallengeProgress() === 3);
+
+  // Max-write: progress must never regress, or replaying an earlier level
+  // would lock the player out of levels they had already cleared.
+  advanceChallengeProgress(0);
+  check("advanceChallengeProgress never regresses", getChallengeProgress() === 3);
+
+  advanceChallengeProgress(CHALLENGE_LEVEL_COUNT + 5);
+  check("advanceChallengeProgress clamps to CHALLENGE_LEVEL_COUNT", getChallengeProgress() === CHALLENGE_LEVEL_COUNT);
 }
 
 console.log("\n=== profileStore.ts challengeProgress: pure read-modify-write semantics (mirrors buy-atomicity tests) ===");

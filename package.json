@@ -17,7 +17,8 @@
     "test:editor:board": "tsx scripts/test-editor-board.ts",
     "test:editor:props": "tsx scripts/test-editor-props.ts",
     "test:editor": "npm run test:editor:character && npm run test:editor:board && npm run test:editor:props",
-    "test": "npm run validate && npm run sim && npm run test:cosmetics"
+    "test": "npm run validate && npm run sim && npm run test:cosmetics",
+    "test:auth-ui": "tsx scripts/test-auth-ui.ts"
   },
   "dependencies": {
     "three": "^0.169.0"

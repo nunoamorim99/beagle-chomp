@@ -50,6 +50,11 @@
                extra-ghost/short-fright twists on the classic engine. -->
           <button type="button" id="challengeBtn" class="btn-secondary">&#127942; Challenge</button>
           <button type="button" id="menuShopBtn" class="btn-secondary">&#128722; Shop</button>
+          <!-- IDEA-019: account screen (stats, sign out, delete account).
+               Wired in main.ts rather than game.ts — the game layer has no
+               concept of accounts, and keeping it that way means the auth work
+               never reaches into the game loop. -->
+          <button type="button" id="menuProfileBtn" class="btn-secondary">&#128100; Account</button>
         </div>
       </div>
     </div>
@@ -70,6 +75,25 @@
          src/ui/levelMap.ts. Opened by #challengeBtn (replacing the old
          auto-continue-at-progress behavior) and closes back to #mainMenu. -->
     <div class="hidden" id="levelMap"></div>
+
+    <!-- IDEA-019 accounts. Same "full-screen dedicated page, entirely rendered
+         by its own src/ui/* module" pattern as #shop and #levelMap above.
+
+         #authGate is the app's FRONT DOOR: sign-in is required before play (no
+         guest mode), so main.ts shows it before the Game is even constructed
+         and awaits it. It has no back-out by design.
+
+         #recoveryCode is deliberately blocking — no backdrop dismiss, no
+         Escape, an explicit confirm — because with no email on file the code it
+         shows is the ONLY way back into an account. -->
+    <div class="hidden" id="authGate"></div>
+    <div class="hidden" id="recoveryCode"></div>
+    <div class="hidden" id="profile"></div>
+    <div class="hidden" id="privacy"></div>
+
+    <!-- Shown while the boot flow checks a stored token, and if the API can't
+         be reached (the game is online-only by design). -->
+    <div class="hidden" id="boot"></div>
 
     <script type="module" src="/src/main.ts"></script>
   </body>

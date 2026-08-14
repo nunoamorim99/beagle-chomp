@@ -64,9 +64,19 @@ function parseEnv() {
   // do NOT use a dev proxy (see the plan): the client talks to the API
   // cross-origin in dev exactly as it will in production, so CORS is exercised
   // locally and can't surprise us on deploy.
+  //
+  // A range of ports rather than just 5173, because Vite walks upward when a
+  // port is taken — and on this machine another project already holds
+  // 5173/5174, so Beagle Chomp's dev server routinely lands on 5175. Without
+  // these, dev would fail CORS in a way that looks like a server bug.
+  const devOrigins = [5173, 5174, 5175, 5176, 5177].flatMap((port) => [
+    `http://localhost:${port}`,
+    `http://127.0.0.1:${port}`,
+  ]);
+
   const corsOrigins = isProd
     ? env.CORS_ORIGINS
-    : [...new Set([...env.CORS_ORIGINS, "http://localhost:5173"])];
+    : [...new Set([...env.CORS_ORIGINS, ...devOrigins])];
 
   if (isProd && corsOrigins.length === 0) {
     console.error(
