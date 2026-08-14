@@ -325,8 +325,35 @@ async function main(): Promise<void> {
   ok("ranks start at 1", ranked.top[0]?.rank === 1);
   ok("top is sorted descending", ranked.top.every((e, i, arr) => i === 0 || arr[i - 1].highScore >= e.highScore));
 
+  ok("own row is flagged by id, not by username", ranked.top.some((e) => e.isMe));
+  ok("me is flagged", ranked.me?.isMe === true);
+  ok("total counts ranked players", ranked.total >= 1);
+  ok(
+    "rank in `me` agrees with the row in `top`",
+    ranked.me!.rank === ranked.top.find((e) => e.isMe)!.rank,
+  );
+
   const limited = await profileService.leaderboard((await usersRepo.findById(lbUser.id))!, "1");
   ok("limit is respected", limited.top.length <= 1);
+  ok("total ignores the limit", limited.total === ranked.total);
+
+  // The reported bug: a better later run must REPLACE the earlier score, and a
+  // player must never occupy two rows. high_score is a running maximum, so the
+  // board shows each player's best — this pins that down.
+  await pool.query(`UPDATE users SET high_score = GREATEST(high_score, $2), high_score_at = now() WHERE id = $1`,
+    [lbUser.id, 99999]);
+  const improved = await profileService.leaderboard((await usersRepo.findById(lbUser.id))!, "100");
+  ok("a better score replaces the earlier one", improved.me?.highScore === 99999);
+  ok(
+    "a player appears exactly once on the board",
+    improved.top.filter((e) => e.isMe).length === 1,
+  );
+
+  // And a WORSE later run must not overwrite the best.
+  await pool.query(`UPDATE users SET high_score = GREATEST(high_score, $2) WHERE id = $1`,
+    [lbUser.id, 500]);
+  const kept = await profileService.leaderboard((await usersRepo.findById(lbUser.id))!, "100");
+  ok("a worse later score does not lower the best", kept.me?.highScore === 99999);
 
   // --- account deletion -----------------------------------------------------
   section("Delete account");

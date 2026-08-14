@@ -182,8 +182,11 @@ export async function deleteAccount(
 // --- leaderboard ------------------------------------------------------------
 
 export interface LeaderboardResponse {
-  top: Array<{ rank: number; username: string; highScore: number }>;
-  me: { rank: number; username: string; highScore: number } | null;
+  top: Array<{ rank: number; username: string; highScore: number; isMe: boolean }>;
+  me: { rank: number; username: string; highScore: number; isMe: true } | null;
+  /** How many players are ranked in total, so the client can decide whether a
+   *  "show all" affordance has anything left to reveal. */
+  total: number;
 }
 
 /** Classic-mode leaderboard. `me` is null for a player who has never posted a
@@ -198,22 +201,31 @@ export async function leaderboard(
     ? Math.min(Math.max(Math.floor(parsed), 1), 100)
     : 50;
 
-  const entries = await usersRepo.topScores(limit);
+  const [entries, total] = await Promise.all([
+    usersRepo.topScores(limit),
+    usersRepo.rankedPlayerCount(),
+  ]);
+
+  // Identify the player's own row by ID, not by username. Matching on the
+  // display string worked only by accident of usernames being unique, and it
+  // compared the one field on this screen that is untrusted player input.
   const top = entries.map((entry, idx) => ({
     rank: idx + 1,
     username: entry.username,
     highScore: entry.highScore,
+    isMe: entry.id === row.id,
   }));
 
   let me: LeaderboardResponse["me"] = null;
   if (row.high_score > 0) {
-    const existing = top.find((entry) => entry.username === row.username);
-    me = existing ?? {
-      rank: await usersRepo.rankForScore(row.high_score),
+    const existing = top.find((entry) => entry.isMe);
+    me = {
+      rank: existing?.rank ?? (await usersRepo.rankForScore(row.high_score)),
       username: row.username,
       highScore: row.high_score,
+      isMe: true,
     };
   }
 
-  return { top, me };
+  return { top, me, total };
 }

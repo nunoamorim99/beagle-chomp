@@ -1542,6 +1542,33 @@ export class Game {
    * Never throws: a run that can't be submitted is disappointing, not fatal,
    * and the panel is already on screen by the time this resolves.
    */
+  /**
+   * Append a line to whichever end-of-run panel is on screen.
+   *
+   * submitRun() resolves AFTER the panel renders (that's deliberate — the
+   * player reads the panel while the request is in flight), so this appends
+   * into the live panel rather than rebuilding it, which would destroy the
+   * button listeners already attached to it.
+   *
+   * A no-op if the player already dismissed the panel — a late notice about a
+   * run they've moved on from would be more confusing than none.
+   */
+  private showScoreNotice(message: string): void {
+    const center = document.getElementById("center");
+    if (!center || center.classList.contains("hidden")) return;
+    // showPanel() nests a .panel inside #center; append into that, not #center.
+    const panel = center.querySelector<HTMLElement>(".panel");
+    if (!panel) return;
+
+    const notice = document.createElement("p");
+    notice.className = "score-notice";
+    notice.textContent = message;
+
+    const actions = panel.querySelector(".menu-actions");
+    if (actions) panel.insertBefore(notice, actions);
+    else panel.append(notice);
+  }
+
   private async submitRun(): Promise<void> {
     const sessionId = this.sessionId;
     if (!sessionId) return;
@@ -1571,11 +1598,17 @@ export class Game {
         // Deliberately visible rather than silent. If this ever fires for an
         // honest run it's a bound that needs loosening, and a player who sees
         // it can say so — a silently-dropped score would just look like a bug.
+        //
+        // It used to be console.warn only, which meant a dropped score was
+        // indistinguishable from "the leaderboard is stuck on my old score"
+        // unless DevTools happened to be open. Now the panel says so.
         console.warn(`[score] rejected: ${result.reasonCode}`);
+        this.showScoreNotice("That run couldn't be verified, so it wasn't added to the leaderboard.");
       }
     } catch {
       // Offline, or the session already finished. The run still happened; the
       // score just isn't recorded.
+      this.showScoreNotice("Couldn't reach the server, so this score wasn't saved.");
     }
   }
 

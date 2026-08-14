@@ -232,23 +232,39 @@ export async function deleteUser(userId: string, client?: Executor): Promise<voi
 }
 
 export interface LeaderboardEntry {
+  /** Carried so the caller can identify the player's own row by id. Usernames
+   *  are unique case-insensitively, but matching on them means comparing the
+   *  untrusted display string — id is the actual key. */
+  id: string;
   username: string;
   highScore: number;
 }
 
 /** Top N by classic-mode high score. Challenge runs never write high_score
  *  (their modifiers make scores incomparable), so no mode filter is needed —
- *  see the leaderboard-scope note in the plan. */
+ *  see the leaderboard-scope note in the plan.
+ *
+ *  ONE ROW PER PLAYER, by design: `users.high_score` is a running maximum, so
+ *  this is each player's personal best, not their most recent run. A player
+ *  cannot occupy two places on the board. */
 export async function topScores(limit: number): Promise<LeaderboardEntry[]> {
-  const { rows } = await pool.query<{ username: string; high_score: number }>(
-    `SELECT username, high_score
+  const { rows } = await pool.query<{ id: string; username: string; high_score: number }>(
+    `SELECT id, username, high_score
        FROM users
       WHERE high_score > 0
       ORDER BY high_score DESC, high_score_at ASC
       LIMIT $1`,
     [limit],
   );
-  return rows.map((r) => ({ username: r.username, highScore: r.high_score }));
+  return rows.map((r) => ({ id: r.id, username: r.username, highScore: r.high_score }));
+}
+
+/** How many players hold a ranked (classic) score at all. */
+export async function rankedPlayerCount(): Promise<number> {
+  const { rows } = await pool.query<{ count: string }>(
+    `SELECT count(*) AS count FROM users WHERE high_score > 0`,
+  );
+  return Number(rows[0].count);
 }
 
 /** 1-based rank for a score. Counting users strictly above is cheap and avoids

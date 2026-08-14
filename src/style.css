@@ -961,9 +961,44 @@ button.recovery-copy{padding:8px 14px;font-size:14px;flex:0 0 auto}
 .lb-name{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .lb-score{font-variant-numeric:tabular-nums;font-weight:700;color:var(--accent)}
 .lb-divider{text-align:center;color:var(--muted);margin:8px 0;letter-spacing:.3em}
+/* The player's own row when they rank below the visible cut. Sticks to the
+   bottom of the scroller so it's on screen the moment the board opens — a
+   low-ranked player should never have to scroll to find themselves. The
+   backdrop keeps the rows underneath from showing through as it passes. */
+.lb-standing{position:sticky;bottom:0;padding-top:2px;margin-top:2px;
+  /* Opaque, unlike the translucent sheet: rows scrolling underneath must not
+     ghost through the player's own pinned row. */
+  background:#101020;backdrop-filter:blur(6px)}
+.lb-standing .lb-divider{margin:4px 0}
 .lb-message{color:var(--muted);text-align:center;line-height:1.5;margin:18px 0}
 .lb-hint{font-size:14px}
 .lb-body>.btn-secondary{display:block;margin:0 auto}
+/* Pinned below the scrolling list (a flex child of .lb-sheet), so the way to
+   see the rest of the board is always in view. */
+.lb-more{flex:0 0 auto;margin-top:12px;align-self:center}
+
+/* Appended to the game-over panel when a score didn't reach the board — a
+   rejected run or a failed submit. Previously console-only, which made a
+   dropped score look like a broken leaderboard. */
+.score-notice{margin:10px 0 0;font-size:13px;line-height:1.45;color:var(--danger)}
+
+/* "Your best" — pinned above the table so the player can compare their score
+   with 1st place without hunting for their own row in a long list. */
+/* A flex child of .lb-sheet, pinned between the header and the scrolling list —
+   so it stays visible while the table scrolls, and the list gets the rest of
+   the height (otherwise it ate enough space to clip "Show all" off-screen). */
+.lb-mine{background:rgba(232,162,61,.12);border:1px solid rgba(232,162,61,.35);
+  border-radius:12px;padding:12px 14px;margin-bottom:14px;flex:0 0 auto}
+.lb-mine-title{margin:0 0 8px;font-size:13px;font-weight:600;color:var(--muted);
+  text-transform:uppercase;letter-spacing:.08em}
+.lb-mine-figures{display:flex;gap:22px;align-items:baseline}
+.lb-mine-block{display:flex;flex-direction:column;gap:2px}
+.lb-mine-value{font-size:clamp(20px,5vw,26px);font-weight:700;color:var(--accent);
+  font-variant-numeric:tabular-nums;line-height:1.1}
+.lb-mine-label{font-size:12px;color:var(--muted)}
+.lb-mine-gap{margin:10px 0 0;font-size:13px;color:var(--muted)}
+.lb-mine-leader{color:var(--accent)}
+.lb-mine-empty{margin:0;font-size:14px;color:var(--muted);line-height:1.5}
 
 /* ---------------------------------------------------------------------- */
 /* IDEA-038: the optional on-screen D-pad.

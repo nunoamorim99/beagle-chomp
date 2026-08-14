@@ -142,12 +142,16 @@ export interface LeaderboardEntry {
   rank: number;
   username: string;
   highScore: number;
+  /** Server-decided, by user id — never by comparing usernames on the client. */
+  isMe: boolean;
 }
 
 export interface LeaderboardResponse {
   top: LeaderboardEntry[];
   /** null when the player has never posted a classic score. */
   me: LeaderboardEntry | null;
+  /** Total ranked players, so the UI knows if "show all" reveals anything. */
+  total: number;
 }
 
 /** Classic mode only — challenge runs are deliberately unranked. */
