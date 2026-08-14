@@ -53,7 +53,7 @@ export const BEAGLE_SKINS: readonly BeagleSkin[] = [
     // it doesn't flatten into a silhouette), and an ear a shade darker
     // than the body for a tonal, all-brown liver look.
     coat: { tan: 0x8a5a2b, white: 0xe8dcc8, black: 0x3a2416, ear: 0x5c3a1e },
-    price: 5,
+    price: 25,
   },
   {
     id: "muffin",
@@ -63,7 +63,7 @@ export const BEAGLE_SKINS: readonly BeagleSkin[] = [
     // saddle/markings so it reads as a lemon beagle rather than a
     // tricolor; ear a gentle tan-brown that stays close to the body tone.
     coat: { tan: 0xe4c58a, white: 0xfaf6ee, black: 0x9c7248, ear: 0xb6864f },
-    price: 5,
+    price: 25,
   },
   {
     id: "pepper",
@@ -73,7 +73,7 @@ export const BEAGLE_SKINS: readonly BeagleSkin[] = [
     // dark cool grey ear — deliberately cool-toned to contrast the three
     // warm coats above.
     coat: { tan: 0x7d8794, white: 0xf2f3f5, black: 0x1c1f24, ear: 0x4a4f57 },
-    price: 5,
+    price: 25,
   },
 ] as const;
 
@@ -169,9 +169,9 @@ export const ENEMY_SKINS: readonly EnemySkin[] = [
   // Default skin: free and always owned (see profileStore.ts's
   // defaultProfile()).
   { id: "ghost", name: "Ghost", price: 0 },
-  { id: "beetle", name: "Beetle", price: 5 },
-  { id: "bee", name: "Bee", price: 5 },
-  { id: "ladybug", name: "Ladybug", price: 5 },
+  { id: "beetle", name: "Beetle", price: 25 },
+  { id: "bee", name: "Bee", price: 25 },
+  { id: "ladybug", name: "Ladybug", price: 25 },
 ] as const;
 
 export const DEFAULT_ENEMY_SKIN_ID = "ghost";

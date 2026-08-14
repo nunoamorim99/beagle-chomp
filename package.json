@@ -20,7 +20,8 @@
     "test": "npm run validate && npm run sim && npm run test:cosmetics",
     "test:auth-ui": "tsx scripts/test-auth-ui.ts",
     "test:score-ui": "tsx scripts/test-score-ui.ts",
-    "test:leaderboard-ui": "tsx scripts/test-leaderboard-ui.ts"
+    "test:leaderboard-ui": "tsx scripts/test-leaderboard-ui.ts",
+    "test:menu-ui": "tsx scripts/test-menu-ui.ts"
   },
   "dependencies": {
     "three": "^0.169.0"

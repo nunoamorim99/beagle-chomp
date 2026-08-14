@@ -13,25 +13,25 @@ export interface CatalogItem {
 
 export const BEAGLE_SKINS: readonly CatalogItem[] = [
   { id: "bagel", price: 0 },
-  { id: "cookie", price: 5 },
-  { id: "muffin", price: 5 },
-  { id: "pepper", price: 5 },
+  { id: "cookie", price: 25 },
+  { id: "muffin", price: 25 },
+  { id: "pepper", price: 25 },
 ];
 
 export const ENEMY_SKINS: readonly CatalogItem[] = [
   { id: "ghost", price: 0 },
-  { id: "beetle", price: 5 },
-  { id: "bee", price: 5 },
-  { id: "ladybug", price: 5 },
+  { id: "beetle", price: 25 },
+  { id: "bee", price: 25 },
+  { id: "ladybug", price: 25 },
 ];
 
 export const MAZE_THEMES: readonly CatalogItem[] = [
   { id: "garden", price: 0 },
-  { id: "classic", price: 5 },
-  { id: "forest", price: 10 },
-  { id: "beach", price: 10 },
-  { id: "park", price: 10 },
-  { id: "city", price: 10 },
+  { id: "classic", price: 50 },
+  { id: "forest", price: 50 },
+  { id: "beach", price: 50 },
+  { id: "park", price: 50 },
+  { id: "city", price: 50 },
 ];
 
 export const DEFAULT_BEAGLE_SKIN_ID = "bagel";

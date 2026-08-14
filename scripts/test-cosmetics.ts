@@ -159,19 +159,19 @@ BEAGLE_SKINS.forEach((s) => {
 console.log("\n=== cosmetics.ts (IDEA-012 shop prices) ===");
 {
   check("bagel.price === 0 (default, free)", getBeagleSkin("bagel").price === 0);
-  check("cookie.price === 5", getBeagleSkin("cookie").price === 5);
-  check("muffin.price === 5", getBeagleSkin("muffin").price === 5);
-  check("pepper.price === 5", getBeagleSkin("pepper").price === 5);
+  check("cookie.price === 25", getBeagleSkin("cookie").price === 25);
+  check("muffin.price === 25", getBeagleSkin("muffin").price === 25);
+  check("pepper.price === 25", getBeagleSkin("pepper").price === 25);
   check("getBeagleSkinPrice('bagel') === 0", getBeagleSkinPrice("bagel") === 0);
-  check("getBeagleSkinPrice('cookie') === 5", getBeagleSkinPrice("cookie") === 5);
+  check("getBeagleSkinPrice('cookie') === 25", getBeagleSkinPrice("cookie") === 25);
   check("getBeagleSkinPrice(unknown) === 0 (falls back to default's price)", getBeagleSkinPrice("nope") === 0);
 
   check("ghost.price === 0 (default, free)", getEnemySkin("ghost").price === 0);
-  check("beetle.price === 5", getEnemySkin("beetle").price === 5);
-  check("bee.price === 5", getEnemySkin("bee").price === 5);
-  check("ladybug.price === 5", getEnemySkin("ladybug").price === 5);
+  check("beetle.price === 25", getEnemySkin("beetle").price === 25);
+  check("bee.price === 25", getEnemySkin("bee").price === 25);
+  check("ladybug.price === 25", getEnemySkin("ladybug").price === 25);
   check("getEnemySkinPrice('ghost') === 0", getEnemySkinPrice("ghost") === 0);
-  check("getEnemySkinPrice('beetle') === 5", getEnemySkinPrice("beetle") === 5);
+  check("getEnemySkinPrice('beetle') === 25", getEnemySkinPrice("beetle") === 25);
   check("getEnemySkinPrice(unknown) === 0 (falls back to default's price)", getEnemySkinPrice("nope") === 0);
 }
 
@@ -236,13 +236,13 @@ console.log("\n=== themes.ts (IDEA-026 maze themes registry) ===");
     "every non-garden theme is priced > 0 (never free/default)",
     MAZE_THEMES.filter((t) => t.id !== "garden").every((t) => t.price > 0),
   );
-  check("classic.price === 5", getMazeTheme("classic").price === 5);
-  check("forest.price === 10", getMazeTheme("forest").price === 10);
-  check("beach.price === 10", getMazeTheme("beach").price === 10);
-  check("park.price === 10", getMazeTheme("park").price === 10);
-  check("city.price === 10", getMazeTheme("city").price === 10);
+  check("classic.price === 50", getMazeTheme("classic").price === 50);
+  check("forest.price === 50", getMazeTheme("forest").price === 50);
+  check("beach.price === 50", getMazeTheme("beach").price === 50);
+  check("park.price === 50", getMazeTheme("park").price === 50);
+  check("city.price === 50", getMazeTheme("city").price === 50);
   check("getMazeThemePrice('garden') === 0", getMazeThemePrice("garden") === 0);
-  check("getMazeThemePrice('classic') === 5", getMazeThemePrice("classic") === 5);
+  check("getMazeThemePrice('classic') === 50", getMazeThemePrice("classic") === 50);
   check("getMazeThemePrice(unknown) === 0 (falls back to default's price)", getMazeThemePrice("nope") === 0);
 
   // Every theme's every palette color slot is a valid 24-bit hex number
@@ -750,10 +750,15 @@ console.log("\n=== profileStore.ts buy success + atomicity (pure, in-process pro
     return coins - price;
   }
 
+  // Wallet derived from the real prices (+7 change) so the arithmetic below
+  // stays valid across rebalances — IDEA-012 v2 moved skins 5 -> 25 and themes
+  // to 50, which broke a hardcoded 12.
+  const scenarioCoins = Math.max(getBeagleSkinPrice("cookie"), getMazeThemePrice("classic")) + 7;
+
   const profile: StoredProfile = {
     equippedBeagleSkinId: "bagel",
     equippedEnemySkinId: "ghost",
-    coins: 12,
+    coins: scenarioCoins,
     ownedBeagleSkinIds: ["bagel"],
     ownedEnemySkinIds: ["ghost"],
     challengeProgress: 0,
@@ -762,10 +767,12 @@ console.log("\n=== profileStore.ts buy success + atomicity (pure, in-process pro
   };
 
   const price = getBeagleSkinPrice("cookie");
-  check("cookie price is 5 for this scenario", price === 5);
+  // Derived from the real price rather than hardcoded, so a rebalance
+  // (IDEA-012 v2 moved skins 5 -> 25) doesn't break this scenario again.
+  check("cookie has a non-zero price for this scenario", price > 0);
 
   const newCoins = trySpend(profile.coins, price);
-  check("12 coins can afford a 5-coin skin", newCoins === 7);
+  check("the wallet affords the skin and change is exact", newCoins === profile.coins - price);
 
   const afterBuy: StoredProfile = {
     ...profile,
@@ -798,10 +805,10 @@ console.log("\n=== profileStore.ts buy success + atomicity (pure, in-process pro
   // buyBeagleSkin/buyEnemySkin's) also lands the coin-deduct and owned-add
   // together, and leaves the beagle/enemy fields untouched.
   const themePrice = getMazeThemePrice("classic");
-  check("classic theme price is 5 for this scenario", themePrice === 5);
+  check("classic theme has a non-zero price for this scenario", themePrice > 0);
 
   const themeNewCoins = trySpend(profile.coins, themePrice);
-  check("12 coins can afford a 5-coin theme", themeNewCoins === 7);
+  check("the wallet affords the theme and change is exact", themeNewCoins === profile.coins - themePrice);
 
   const afterThemeBuy: StoredProfile = {
     ...profile,

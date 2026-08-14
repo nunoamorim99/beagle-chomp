@@ -197,7 +197,7 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
     // emissive intensity the hedges had before the daylight retune (0.72)
     // and the cool lavender/indigo light rig the garden pass replaced.
     // No blooms: the classic board is clean neon walls, nothing planted.
-    price: 5,
+    price: 50,
     palette: {
       bg: 0x0b0b16,
       backdropTop: 0x232348,
@@ -235,7 +235,7 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
     // dark loam floor, dappled softer sun. Blooms read as forest-floor
     // flora — wood anemone white, bluebell, a red toadstool — with mossy
     // specks, denser than the garden's tidy beds.
-    price: 10,
+    price: 50,
     palette: {
       bg: 0x87a998,
       backdropTop: 0xc8dcc8,
@@ -313,7 +313,7 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
     // (kept well below the biscuit tone so the trail stays readable), the
     // brightest sun of any theme. Blooms are shoreline finds — shell white,
     // seafoam, coral — with seagrass specks.
-    price: 10,
+    price: 50,
     palette: {
       bg: 0xa8d8ef,
       backdropTop: 0xd8f0fa,
@@ -374,7 +374,7 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
     // trimmed-hedge green, gravel-path floor, and noticeably LUSHER
     // flowerbeds (highest bloom density of any theme, plus a purple joining
     // the garden's palette) under a slightly brighter sun.
-    price: 10,
+    price: 50,
     palette: {
       bg: 0x9ecbe8,
       backdropTop: 0xd4ecfa,
@@ -452,7 +452,7 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
     // glow, asphalt floor, biscuits as warm streetlight dots. The "blooms"
     // are rooftop LIGHTS — warm windows, cyan and pink neon — glowing far
     // stronger than any flower, with sparse cool-grey vents as specks.
-    price: 10,
+    price: 50,
     palette: {
       // Identity note (two tuning passes): the first cuts (cool grey walls +
       // blue window emissive under cool moonlight) kept collapsing into

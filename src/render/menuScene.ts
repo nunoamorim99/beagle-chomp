@@ -192,7 +192,16 @@ function makeGardenPatch(): THREE.Group {
 // aspect>=1).
 const CAM_FOV = 42;
 const CAM_POS = new THREE.Vector3(0, 1.15, 3.2);
-const CAM_LOOK = new THREE.Vector3(0, 0.5, 0);
+// IDEA-036: the look target was lowered 0.5 -> 0.34, which lifts the beagle in
+// frame and opens up the lower third for the button carousel (Nuno: "put the
+// beagle a little up... and the buttons below", same on desktop and mobile).
+//
+// Done by moving the LOOK TARGET rather than the camera: the dolly math below
+// derives BASE_DIST and CAM_DIR from this pair, so nudging the camera would
+// have shifted the portrait framing that was tuned by projection math. Moving
+// what it aims at re-frames the shot while leaving distance and direction
+// intact.
+const CAM_LOOK = new THREE.Vector3(0, 0.34, 0);
 
 // Portrait dolly-back (coordinator follow-up #2): on a narrow aspect the
 // horizontal FOV shrinks for a fixed vertical FOV, so the base landscape rig

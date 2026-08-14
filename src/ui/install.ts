@@ -51,6 +51,10 @@ function buildBanner(message: string, buttonLabel: string | null): {
     (buttonLabel ? `<button type="button" class="install-hint__action">${buttonLabel}</button>` : "") +
     '<button type="button" class="install-hint__dismiss" aria-label="Dismiss">&times;</button>';
   document.body.appendChild(el);
+  // IDEA-006 v3: the banner is pinned to the TOP now, so the menu's title block
+  // must move down out from under it. A body class keeps that entirely in CSS,
+  // and means no gap is reserved when the banner isn't showing.
+  document.body.classList.add("install-open");
   return {
     el,
     button: el.querySelector<HTMLButtonElement>(".install-hint__action"),
@@ -73,6 +77,7 @@ export function initInstallPrompt(): void {
   function teardown(): void {
     banner?.el.remove();
     banner = null;
+    document.body.classList.remove("install-open");
   }
 
   window.addEventListener("beforeinstallprompt", (e) => {

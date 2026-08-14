@@ -129,13 +129,84 @@ button.btn-secondary:hover{filter:brightness(1.2);background:rgba(16,16,30,.62)}
     calc(28px + env(safe-area-inset-bottom)) calc(20px + env(safe-area-inset-left));}
 .menu-top{display:flex;flex-direction:column;align-items:center;gap:6px;
   text-shadow:0 2px 10px rgba(0,0,0,.45),0 0 2px rgba(255,255,255,.35);}
-.menu-top .eyebrow{font-family:ui-monospace,monospace;font-size:12px;letter-spacing:.28em;
-  text-transform:uppercase;color:#fff;opacity:.85}
+/* IDEA-006 v3: the install banner is pinned to the TOP now, so on the menu the
+   title/coin block has to start below it or the banner hides the game's own
+   name (caught in a phone screenshot). body.install-open is set by install.ts
+   only while the banner is actually mounted — no reserved gap otherwise. */
+body.install-open .menu-top{margin-top:clamp(84px,15vh,132px)}
 .menu-top h1{font-size:clamp(34px,9vw,56px);font-weight:800;letter-spacing:-.02em;color:#fff;margin:2px 0}
 .menu-top .coin-line{font-family:ui-monospace,"SF Mono",monospace;color:#fff;
   font-weight:700;font-size:16px}
 .menu-bottom{display:flex;flex-direction:column;align-items:center;gap:14px;width:100%}
 .menu-bottom .menu-actions{pointer-events:auto}
+
+/* ---------------------------------------------------------------------- */
+/* IDEA-036: the menu button CARROUSEL.
+
+   Five stacked buttons (Play + four destinations after IDEA-019/IDEA-020)
+   were crowding the 3D showcase — the beagle is supposed to be the hero of
+   this screen. Play stays a standalone primary action; the four secondary
+   destinations scroll in a rail.
+
+   Built on native overflow + scroll-snap rather than a JS slider: swipe,
+   trackpad, arrow keys and Tab focus all work for free, and it degrades to a
+   plain scrolling row if anything about the arrows fails. The arrows are a
+   convenience for mouse users, not the mechanism. */
+
+.menu-play{pointer-events:auto}
+
+.menu-carousel{display:flex;align-items:center;gap:8px;width:100%;
+  max-width:560px;pointer-events:auto}
+
+.carousel-viewport{flex:1 1 auto;overflow-x:auto;overflow-y:hidden;
+  scroll-snap-type:x mandatory;scroll-behavior:smooth;
+  -webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;
+  /* The rail scrolls; the page must not. */
+  scrollbar-width:none}
+.carousel-viewport::-webkit-scrollbar{display:none}
+
+.carousel-track{display:flex;gap:10px;padding:4px}
+
+.carousel-item{flex:0 0 auto;scroll-snap-align:start;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:6px;min-width:104px;min-height:88px;padding:12px 16px;
+  color:var(--ink);background:rgba(16,16,30,.55);
+  border:1px solid rgba(255,255,255,.35);border-radius:14px;
+  font:inherit;font-size:14px;cursor:pointer;
+  transition:transform .12s ease,background .12s ease}
+.carousel-item:hover{background:rgba(16,16,30,.72);transform:translateY(-2px)}
+.carousel-item:active{transform:translateY(0)}
+.carousel-icon{font-size:26px;line-height:1}
+.carousel-label{font-weight:600;white-space:nowrap}
+
+.carousel-arrow{flex:0 0 auto;width:36px;height:36px;padding:0;
+  display:flex;align-items:center;justify-content:center;
+  font-size:22px;line-height:1;color:var(--ink);
+  background:rgba(16,16,30,.5);border:1px solid rgba(255,255,255,.3);
+  border-radius:50%;cursor:pointer}
+.carousel-arrow:hover{background:rgba(16,16,30,.72)}
+/* Hidden when the rail can't scroll (everything already fits) — main.ts
+   toggles this rather than leaving dead controls on screen. */
+.carousel-arrow.hidden-arrow{visibility:hidden}
+
+/* Phones: the arrows are redundant next to a swipe, and the space is better
+   spent on the cards themselves. */
+@media (max-width:560px){
+  .carousel-arrow{display:none}
+  .carousel-item{min-width:92px;min-height:80px;padding:10px 12px}
+  .carousel-icon{font-size:23px}
+  .carousel-label{font-size:13px}
+  /* Modest edge padding only. An earlier attempt centred the first/last card
+     with `calc(50vw - …)`, but combined with scroll-snap that opened the rail
+     part-scrolled and cropped "Challenge" to "nge" — a menu should start at
+     its first option. */
+  .carousel-track{padding-inline:10px}
+}
+
+@media (prefers-reduced-motion:reduce){
+  .carousel-viewport{scroll-behavior:auto}
+  .carousel-item{transition:none}
+}
 
 /* Home/mute/shop HUD chrome (and the HUD strip itself) are hidden entirely
    while the full-screen menu is showing (IDEA-021 v2) — body.menu-open is

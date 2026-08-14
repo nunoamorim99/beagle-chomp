@@ -20,3 +20,4 @@ server/vendor
 server/.env
 server/.env.*
 !server/.env.example
+.tmp-screens/
