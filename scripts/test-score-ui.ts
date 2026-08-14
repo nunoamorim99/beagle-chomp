@@ -70,7 +70,7 @@ async function main(): Promise<void> {
 
     await page.goto(BASE_URL, { waitUntil: "networkidle" });
     await page.waitForSelector("#authGate:not(.hidden)", { timeout: 20_000 });
-    await page.click("#goSignup");
+    // IDEA-035: "Create account" is the default tab, so the form is already there.
     await page.waitForSelector("#signupForm");
     await page.fill("#signupUsername", username);
     await page.fill("#signupPassword", "a-decent-password");

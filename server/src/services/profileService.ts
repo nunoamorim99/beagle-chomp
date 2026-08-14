@@ -132,6 +132,23 @@ export async function purchase(
   return toPublicProfile(updated);
 }
 
+// --- settings ---------------------------------------------------------------
+
+/** IDEA-038: the player's control scheme ('swipe' | 'dpad').
+ *
+ *  Stored per ACCOUNT rather than per device: someone who prefers buttons
+ *  prefers them on every phone they sign in from. */
+export async function setControlScheme(
+  userId: string,
+  schemeInput: unknown,
+): Promise<PublicProfile> {
+  if (schemeInput !== "swipe" && schemeInput !== "dpad") {
+    throw new ApiError(400, "VALIDATION_FAILED", "Unknown control scheme.");
+  }
+  const updated = await usersRepo.updateControlScheme(userId, schemeInput);
+  return toPublicProfile(updated);
+}
+
 // --- account deletion -------------------------------------------------------
 
 /** Hard-delete the account. Requires the username as typed confirmation, since

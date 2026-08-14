@@ -55,7 +55,7 @@ import {
   mutateProfileCache,
   isProfileCacheReady,
 } from "./profileCache";
-import { enqueueEquip, enqueuePurchase } from "../net/profileSync";
+import { enqueueEquip, enqueuePurchase, enqueueControlScheme } from "../net/profileSync";
 
 /** The profile shape. Unchanged from the localStorage era so the rest of the
  *  game sees exactly what it always did; the server's own shape is mapped onto
@@ -75,7 +75,12 @@ export interface StoredProfile {
   challengeProgress: number;
   equippedMazeThemeId: string;
   ownedMazeThemeIds: string[];
+  /** IDEA-038: "swipe" (default) or "dpad". Per-account, so a player who
+   *  prefers buttons gets them on every device they sign in from. */
+  controlScheme: ControlScheme;
 }
+
+export type ControlScheme = "swipe" | "dpad";
 
 // ---------------------------------------------------------------------------
 // Validation helpers. Still exported-in-spirit (used by the tests) and still
@@ -122,6 +127,7 @@ export function defaultProfile(): StoredProfile {
     challengeProgress: 0,
     equippedMazeThemeId: DEFAULT_MAZE_THEME_ID,
     ownedMazeThemeIds: [DEFAULT_MAZE_THEME_ID],
+    controlScheme: "swipe",
   };
 }
 
@@ -153,6 +159,18 @@ export function getOwnedEnemySkinIds(): string[] {
 
 export function getOwnedMazeThemeIds(): string[] {
   return [...getProfileCache().ownedMazeThemeIds];
+}
+
+/** IDEA-038. Synchronous like every other read here. */
+export function getControlScheme(): ControlScheme {
+  return getProfileCache().controlScheme;
+}
+
+/** Set the control scheme: mutate locally for an instant UI response, then
+ *  persist against the account in the background. */
+export function setControlScheme(scheme: ControlScheme): void {
+  mutateProfileCache((p) => ({ ...p, controlScheme: scheme }));
+  enqueueControlScheme(scheme);
 }
 
 export function isBeagleSkinOwned(id: string): boolean {

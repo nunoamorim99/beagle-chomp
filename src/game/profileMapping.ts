@@ -95,5 +95,8 @@ export function fromServerProfile(profile: ServerProfile): StoredProfile {
     ownedEnemySkinIds: ownedEnemy,
     ownedMazeThemeIds: ownedThemes,
     challengeProgress: sanitizeCount(profile.challengeProgress, CHALLENGE_LEVEL_COUNT),
+    // Anything unrecognised degrades to the default rather than reaching the
+    // input layer, same defensive posture as the cosmetic ids above.
+    controlScheme: profile.controlScheme === "dpad" ? "dpad" : "swipe",
   };
 }

@@ -16,7 +16,12 @@ import { setToken, ApiError } from "../net/api";
 import { setProfileCache } from "../game/profileCache";
 import { fromServerProfile } from "../game/profileMapping";
 
-type View = "choose" | "signup" | "login" | "recover";
+/** IDEA-035: the gate is now two screens, not four. `auth` is the tabbed
+ *  main screen (Create account / Login, defaulting to Create account, since a
+ *  brand-new player is the common case); `recover` is the rarer path, reached
+ *  from a quiet link below the tabs. */
+type View = "auth" | "recover";
+type Tab = "signup" | "login";
 
 export interface AuthGateHandle {
   /** Show the gate. Resolves with the signed-in username once done. */
@@ -43,7 +48,8 @@ export function attachAuthGate(callbacks: AuthGateCallbacks): AuthGateHandle {
   const root = require<HTMLDivElement>("authGate");
 
   let isOpenState = false;
-  let view: View = "choose";
+  let view: View = "auth";
+  let tab: Tab = "signup";
   let busy = false;
   let error = "";
   let resolveOpen: ((username: string) => void) | null = null;
@@ -96,82 +102,117 @@ export function attachAuthGate(callbacks: AuthGateCallbacks): AuthGateHandle {
     render();
   }
 
-  // --- views ----------------------------------------------------------------
-
-  function renderChoose(): string {
-    return `
-      <div class="auth-card">
-        <h1 class="auth-title">🐶 Beagle Chomp</h1>
-        <p class="auth-sub">Sign in to play, keep your coins, and join the leaderboard.</p>
-        <div class="auth-actions">
-          <button type="button" id="goSignup" class="btn-primary">Create an account</button>
-          <button type="button" id="goLogin" class="btn-secondary">I already have one</button>
-          <button type="button" id="goRecover" class="btn-link">I have a recovery code</button>
-        </div>
-      </div>
-    `;
+  /** Switch tabs on the main screen. Clears any error, since a failure on one
+   *  tab says nothing about the other. */
+  function selectTab(next: Tab): void {
+    if (tab === next) return;
+    tab = next;
+    error = "";
+    render();
   }
 
-  function renderSignup(): string {
-    // The username input's `pattern` is set in JS (see wire()), not here.
-    // Browsers compile that attribute with the RegExp "v" flag, where an
-    // unescaped "-" inside a character class is a syntax error — and writing
-    // the escape in this template literal doesn't survive, because esbuild
-    // normalises the redundant string escape away before the browser sees it.
-    // Assigning the attribute at runtime sidesteps the transform entirely.
+  // --- views ----------------------------------------------------------------
+
+  /** The brand block: app icon, game name, and the one-line reason to sign up.
+   *  This is the first thing a player ever sees, so it leads with identity
+   *  rather than with a form. */
+  function renderBrand(): string {
     return `
-      <div class="auth-card">
-        <h1 class="auth-title">Create an account</h1>
-        <form id="signupForm" class="auth-form" autocomplete="off">
-          <label for="signupUsername">Username</label>
-          <input id="signupUsername" name="username" type="text" required
-                 minlength="3" maxlength="20"
-                 autocapitalize="none" autocorrect="off" spellcheck="false" />
-          <p class="auth-hint">
-            3–20 characters: letters, numbers, hyphens, underscores.
-            <strong>Pick a nickname, not your real name</strong> — it's shown on the leaderboard.
-          </p>
-
-          <label for="signupPassword">Password</label>
-          <input id="signupPassword" name="password" type="password" required
-                 minlength="8" autocomplete="new-password" />
-          <p class="auth-hint">At least 8 characters.</p>
-
-          ${errorHtml()}
-
-          <button type="submit" class="btn-primary">Create account</button>
-          <button type="button" id="backToChoose" class="btn-link">Back</button>
-        </form>
-        <p class="auth-legal">
-          We store a username, a hashed password, a hashed recovery code, your score,
-          coins and unlocked skins — nothing else.
-          <button type="button" id="privacyLink" class="btn-link inline">Privacy notice</button>
+      <div class="auth-brand">
+        <img class="auth-logo" src="./icons/icon-192.png" alt="" width="88" height="88" />
+        <h1 class="auth-title">Beagle Chomp</h1>
+        <p class="auth-sub">
+          Create an account to keep your coins, skins and high score — on any device.
         </p>
       </div>
     `;
   }
 
-  function renderLogin(): string {
+  function renderTabs(): string {
+    const active = (t: Tab) => (tab === t ? "auth-tab is-active" : "auth-tab");
+    return `
+      <div class="auth-tabs" role="tablist">
+        <button type="button" role="tab" id="tabSignup" class="${active("signup")}"
+                aria-selected="${tab === "signup"}">Create account</button>
+        <button type="button" role="tab" id="tabLogin" class="${active("login")}"
+                aria-selected="${tab === "login"}">Login</button>
+      </div>
+    `;
+  }
+
+  function renderSignupForm(): string {
+    // NOTE on the username input's pattern attribute: it is assigned in JS (see
+    // wire()), not written here. Browsers compile that attribute with the
+    // RegExp "v" flag, where an unescaped "-" inside a character class is a
+    // syntax error — and the escape does not survive esbuild, which normalises
+    // the redundant string escape away before the browser sees it.
+    return `
+      <form id="signupForm" class="auth-form" autocomplete="off">
+        <label for="signupUsername">Username</label>
+        <input id="signupUsername" name="username" type="text" required
+               minlength="3" maxlength="20"
+               autocapitalize="none" autocorrect="off" spellcheck="false" />
+        <p class="auth-hint">
+          3–20 characters: letters, numbers, hyphens, underscores.
+          <strong>Pick a nickname, not your real name</strong> — it's shown on the leaderboard.
+        </p>
+
+        <label for="signupPassword">Password</label>
+        <input id="signupPassword" name="password" type="password" required
+               minlength="8" autocomplete="new-password" />
+        <p class="auth-hint">At least 8 characters.</p>
+
+        ${errorHtml()}
+
+        <button type="submit" class="btn-primary">Create account</button>
+      </form>
+    `;
+  }
+
+  function renderLoginForm(): string {
+    return `
+      <form id="loginForm" class="auth-form" autocomplete="off">
+        <label for="loginUsername">Username</label>
+        <input id="loginUsername" name="username" type="text" required
+               autocapitalize="none" autocorrect="off" spellcheck="false" />
+
+        <label for="loginPassword">Password</label>
+        <input id="loginPassword" name="password" type="password" required
+               autocomplete="current-password" />
+
+        ${errorHtml()}
+
+        <button type="submit" class="btn-primary">Login</button>
+      </form>
+    `;
+  }
+
+  /** The tabbed main screen. */
+  function renderAuth(): string {
     return `
       <div class="auth-card">
-        <h1 class="auth-title">Welcome back</h1>
-        <form id="loginForm" class="auth-form" autocomplete="off">
-          <label for="loginUsername">Username</label>
-          <input id="loginUsername" name="username" type="text" required
-                 autocapitalize="none" autocorrect="off" spellcheck="false" />
-
-          <label for="loginPassword">Password</label>
-          <input id="loginPassword" name="password" type="password" required
-                 autocomplete="current-password" />
-
-          ${errorHtml()}
-
-          <button type="submit" class="btn-primary">Sign in</button>
-          <button type="button" id="goRecoverFromLogin" class="btn-link">
-            Forgot your password?
+        ${renderBrand()}
+        ${renderTabs()}
+        <div class="auth-panel">
+          ${tab === "signup" ? renderSignupForm() : renderLoginForm()}
+        </div>
+        <div class="auth-alt">
+          <button type="button" id="goRecover" class="btn-link">
+            Use a recovery code
           </button>
-          <button type="button" id="backToChoose" class="btn-link">Back</button>
-        </form>
+          <p class="auth-alt-hint">
+            ${
+              tab === "login"
+                ? "Forgotten your password? Your recovery code gets you back in."
+                : "Signing in on a new device? Use the code you saved."
+            }
+          </p>
+        </div>
+        <p class="auth-legal">
+          We store a username, a hashed password, a hashed recovery code, your score,
+          coins and unlocked skins — nothing else.
+          <button type="button" id="privacyLink" class="btn-link inline">Privacy notice</button>
+        </p>
       </div>
     `;
   }
@@ -211,7 +252,7 @@ export function attachAuthGate(callbacks: AuthGateCallbacks): AuthGateHandle {
           ${errorHtml()}
 
           <button type="submit" class="btn-primary">Continue</button>
-          <button type="button" id="backToChoose" class="btn-link">Back</button>
+          <button type="button" id="backToAuth" class="btn-link">Back</button>
         </form>
         <p class="auth-legal">
           Your code is used up once it works — we'll show you a new one to save.
@@ -227,20 +268,12 @@ export function attachAuthGate(callbacks: AuthGateCallbacks): AuthGateHandle {
   // --- wiring ---------------------------------------------------------------
 
   function render(): void {
-    root.innerHTML =
-      view === "choose"
-        ? renderChoose()
-        : view === "signup"
-          ? renderSignup()
-          : view === "login"
-            ? renderLogin()
-            : renderRecover();
+    root.innerHTML = view === "auth" ? renderAuth() : renderRecover();
 
-    root.querySelector("#goSignup")?.addEventListener("click", () => go("signup"));
-    root.querySelector("#goLogin")?.addEventListener("click", () => go("login"));
+    root.querySelector("#tabSignup")?.addEventListener("click", () => selectTab("signup"));
+    root.querySelector("#tabLogin")?.addEventListener("click", () => selectTab("login"));
     root.querySelector("#goRecover")?.addEventListener("click", () => go("recover"));
-    root.querySelector("#goRecoverFromLogin")?.addEventListener("click", () => go("recover"));
-    root.querySelector("#backToChoose")?.addEventListener("click", () => go("choose"));
+    root.querySelector("#backToAuth")?.addEventListener("click", () => go("auth"));
     root.querySelector("#privacyLink")?.addEventListener("click", () => callbacks.onShowPrivacy());
 
     // Set here rather than in the markup: see renderSignup's note. The escape
@@ -300,7 +333,8 @@ export function attachAuthGate(callbacks: AuthGateCallbacks): AuthGateHandle {
   return {
     open(): Promise<string> {
       isOpenState = true;
-      view = "choose";
+      view = "auth";
+      tab = "signup"; // a brand-new player is the common case
       error = "";
       busy = false;
       render();

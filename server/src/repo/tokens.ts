@@ -31,7 +31,8 @@ export async function findUserByToken(tokenHash: Buffer): Promise<UserRow | null
             u.challenge_progress, u.equipped_beagle_skin_id,
             u.equipped_enemy_skin_id, u.equipped_maze_theme_id,
             u.owned_beagle_skin_ids, u.owned_enemy_skin_ids,
-            u.owned_maze_theme_ids, u.high_score, u.high_score_at, u.created_at
+            u.owned_maze_theme_ids, u.high_score, u.high_score_at,
+            u.control_scheme, u.created_at
        FROM auth_tokens t
        JOIN users u ON u.id = t.user_id
       WHERE t.token_hash = $1

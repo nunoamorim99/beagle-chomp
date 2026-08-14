@@ -28,6 +28,9 @@ export interface UserRow {
   owned_maze_theme_ids: string[];
   high_score: number;
   high_score_at: Date | null;
+  /** IDEA-038: 'swipe' (default) or 'dpad'. A per-player preference, so it
+   *  follows the account rather than the device. */
+  control_scheme: string;
   created_at: Date;
 }
 
@@ -50,6 +53,7 @@ export interface PublicProfile {
     mazeThemeIds: string[];
   };
   recoveryCodeVersion: number;
+  controlScheme: string;
 }
 
 export interface PublicUser {
@@ -74,6 +78,7 @@ export function toPublicProfile(row: UserRow): PublicProfile {
       mazeThemeIds: row.owned_maze_theme_ids,
     },
     recoveryCodeVersion: row.recovery_code_version,
+    controlScheme: row.control_scheme,
   };
 }
 

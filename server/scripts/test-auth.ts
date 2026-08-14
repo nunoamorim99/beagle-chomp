@@ -24,6 +24,7 @@ import * as usersRepo from "../src/repo/users.js";
 import * as tokensRepo from "../src/repo/tokens.js";
 import { hashToken } from "../src/auth/tokens.js";
 import { ApiError } from "../src/http/errors.js";
+import { BEAGLE_SKINS, MAZE_THEMES } from "../src/catalog.generated.js";
 
 let passed = 0;
 let failed = 0;
@@ -259,11 +260,22 @@ async function main(): Promise<void> {
   await expectApiError("cannot buy without coins", "INSUFFICIENT_COINS", () =>
     profileService.purchase(shopUser.id, "beagle", "cookie"));
 
-  await pool.query(`UPDATE users SET coins = 20 WHERE id = $1`, [shopUser.id]);
+  // Amounts are DERIVED from the real catalog prices rather than hardcoded:
+  // IDEA-012 v2 raised skins 5 -> 25 and themes to 50, which broke the old
+  // fixed numbers here. Deriving them means the next rebalance won't.
+  const skinPrice = BEAGLE_SKINS.find((i) => i.id === "cookie")!.price;
+  const themePrice = MAZE_THEMES.find((i) => i.id === "forest")!.price;
+  // Enough for exactly one skin and one theme, with 5 to spare.
+  const wallet = skinPrice + themePrice + 5;
+  await pool.query(`UPDATE users SET coins = $2 WHERE id = $1`, [shopUser.id, wallet]);
 
   const bought = await profileService.purchase(shopUser.id, "beagle", "cookie");
   ok("purchase grants the item", bought.owned.beagleSkinIds.includes("cookie"));
-  ok("purchase deducts the SERVER's price (5), not a client-supplied one", bought.coins === 15, `coins=${bought.coins}`);
+  ok(
+    "purchase deducts the SERVER's price, not a client-supplied one",
+    bought.coins === wallet - skinPrice,
+    `coins=${bought.coins}, expected ${wallet - skinPrice}`,
+  );
 
   await expectApiError("cannot buy the same thing twice", "ALREADY_OWNED", () =>
     profileService.purchase(shopUser.id, "beagle", "cookie"));
@@ -273,9 +285,13 @@ async function main(): Promise<void> {
     profileService.purchase(shopUser.id, "hats", "cookie"));
 
   const themeBought = await profileService.purchase(shopUser.id, "theme", "forest");
-  ok("theme price (10) charged correctly", themeBought.coins === 5, `coins=${themeBought.coins}`);
+  ok(
+    "theme price charged correctly",
+    themeBought.coins === wallet - skinPrice - themePrice,
+    `coins=${themeBought.coins}, expected ${wallet - skinPrice - themePrice}`,
+  );
 
-  await expectApiError("can't afford a second 10-coin theme", "INSUFFICIENT_COINS", () =>
+  await expectApiError("can't afford a second theme on the change", "INSUFFICIENT_COINS", () =>
     profileService.purchase(shopUser.id, "theme", "city"));
 
   section("Profile — equipping");

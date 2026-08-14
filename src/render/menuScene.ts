@@ -14,6 +14,7 @@
 import * as THREE from "three";
 import { COLORS } from "../game/config";
 import { type BeagleSkin, getEquippedBeagleSkin } from "../game/cosmetics";
+import { type MazeTheme, getEquippedMazeTheme } from "../game/themes";
 import { makeBeagle, applyBeagleSkin, type BeagleParts } from "./characters";
 
 // Vertical-gradient backdrop, the same cheap inward-facing skydome technique
@@ -24,7 +25,7 @@ const BACKDROP_RADIUS = 80;
 const BACKDROP_TOP_COLOR = new THREE.Color(0xcfe9f7);
 const BACKDROP_BOTTOM_COLOR = new THREE.Color(COLORS.bg);
 
-function makeBackdrop(): THREE.Mesh {
+function makeBackdrop(): { mesh: THREE.Mesh; material: THREE.ShaderMaterial } {
   const material = new THREE.ShaderMaterial({
     uniforms: {
       topColor: { value: BACKDROP_TOP_COLOR },
@@ -57,7 +58,7 @@ function makeBackdrop(): THREE.Mesh {
   });
   const mesh = new THREE.Mesh(new THREE.SphereGeometry(BACKDROP_RADIUS, 24, 16), material);
   mesh.renderOrder = -1;
-  return mesh;
+  return { mesh, material };
 }
 
 // Garden-patch decoration colors, reusing board.ts's hedge-bloom palette
@@ -76,7 +77,15 @@ const HEDGE_COLOR = COLORS.wall;
 const GRASS_RIM_COLOR = COLORS.wall;
 const BLOOM_COLORS = [0xf4efe6, 0xf2d43a, 0xe8709a] as const;
 
-function makeGardenPatch(): THREE.Group {
+interface GardenPatch {
+  group: THREE.Group;
+  soilMat: THREE.MeshStandardMaterial;
+  grassMat: THREE.MeshStandardMaterial;
+  hedgeMat: THREE.MeshStandardMaterial;
+  bloomMats: THREE.MeshStandardMaterial[];
+}
+
+function makeGardenPatch(): GardenPatch {
   const g = new THREE.Group();
 
   // Soil disc the beagle stands on — small and grounding, not a diorama
@@ -151,6 +160,7 @@ function makeGardenPatch(): THREE.Group {
   // the middle 3 hedges, alternating colors; the two outer hedges stay bare
   // so the blooms read as sparse accents, not a solid flowery wall.
   const bloomGeo = new THREE.SphereGeometry(0.055, 8, 8);
+  const bloomMats: THREE.MeshStandardMaterial[] = [];
   [1, 2, 3].forEach((hedgeIdx, i) => {
     const hedge = hedgeTopBlooms[hedgeIdx];
     const mat = new THREE.MeshStandardMaterial({
@@ -159,6 +169,7 @@ function makeGardenPatch(): THREE.Group {
       emissive: BLOOM_COLORS[i % BLOOM_COLORS.length],
       emissiveIntensity: 0.25,
     });
+    bloomMats.push(mat);
     const bloom = new THREE.Mesh(bloomGeo, mat);
     bloom.position.set(0, 0.19, 0);
     bloom.castShadow = true;
@@ -173,12 +184,67 @@ function makeGardenPatch(): THREE.Group {
     emissive: BLOOM_COLORS[1],
     emissiveIntensity: 0.25,
   });
+  bloomMats.push(groundBloomMat);
   const groundBloom = new THREE.Mesh(bloomGeo, groundBloomMat);
   groundBloom.position.set(0.55, 0.02, 0.35);
   groundBloom.castShadow = true;
   g.add(groundBloom);
 
-  return g;
+  return { group: g, soilMat, grassMat, hedgeMat, bloomMats };
+}
+
+/**
+ * IDEA-037: re-tint the whole vignette to a maze theme's palette.
+ *
+ * Mutates materials and lights IN PLACE — the same technique applyBoardTheme
+ * uses for the real board, and the reason re-theming is instant and allocates
+ * nothing. The mapping is deliberately literal: the menu's soil/hedge/bloom
+ * stand in for the board's floor/wall/decor, so a theme reads the same here as
+ * it does in a run.
+ */
+function applyTheme(bits: ThemedBits, theme: MazeTheme): void {
+  const p = theme.palette;
+
+  // Sky: the shader dome's two gradient stops.
+  const uniforms = (bits.backdrop as THREE.ShaderMaterial).uniforms;
+  if (uniforms?.topColor && uniforms?.bottomColor) {
+    (uniforms.topColor.value as THREE.Color).setHex(p.backdropTop);
+    (uniforms.bottomColor.value as THREE.Color).setHex(p.bg);
+  }
+
+  bits.soil.color.setHex(p.floor);
+  bits.soil.emissive.setHex(p.floorEmissive);
+  bits.soil.emissiveIntensity = p.floorEmissiveIntensity;
+
+  // The grass rim and hedges both read as the board's walls.
+  for (const mat of [bits.grass, bits.hedge]) {
+    mat.color.setHex(p.wall);
+    mat.emissive.setHex(p.wallEmissive);
+    mat.emissiveIntensity = p.wallEmissiveIntensity;
+  }
+
+  // Blooms cycle the theme's own decor colours. Arcade Night ships an empty
+  // bloom palette (it's deliberately clean/propless), so fall back to the
+  // biscuit colour rather than rendering black dots.
+  const palette = p.bloomColors.length > 0 ? p.bloomColors : [p.biscuit];
+  bits.blooms.forEach((mat, i) => {
+    const hex = palette[i % palette.length];
+    mat.color.setHex(hex);
+    mat.emissive.setHex(hex);
+    mat.emissiveIntensity = p.bloomEmissiveIntensity;
+  });
+
+  // Lighting is most of what makes a theme feel different — Night City's
+  // sodium-amber dusk vs The Garden's daylight.
+  bits.hemi.color.setHex(p.hemiSky);
+  bits.hemi.groundColor.setHex(p.hemiGround);
+  bits.hemi.intensity = p.hemiIntensity;
+
+  bits.key.color.setHex(p.sunColor);
+  bits.key.intensity = p.sunIntensity;
+
+  bits.rim.color.setHex(p.rimColor);
+  bits.rim.intensity = p.rimIntensity;
 }
 
 // Camera framing (coordinator follow-up pass): the original steep top-down
@@ -230,6 +296,21 @@ const CAM_DIR = CAM_POS.clone().sub(CAM_LOOK).normalize();
 // false and dt keeps advancing — see characters.ts's WalkState/moveBlend).
 const TURNTABLE_SPEED = 0.18; // rad/s — slow, smooth full rotation every ~35s
 
+/** IDEA-037: everything in the vignette whose colour comes from the theme.
+ *  Collected once at build time so applyTheme() can mutate materials IN PLACE
+ *  — the same approach applyBoardTheme uses for the real board, which is what
+ *  makes re-theming instant and allocation-free. */
+interface ThemedBits {
+  backdrop: THREE.ShaderMaterial | THREE.MeshBasicMaterial;
+  soil: THREE.MeshStandardMaterial;
+  grass: THREE.MeshStandardMaterial;
+  hedge: THREE.MeshStandardMaterial;
+  blooms: THREE.MeshStandardMaterial[];
+  hemi: THREE.HemisphereLight;
+  key: THREE.DirectionalLight;
+  rim: THREE.DirectionalLight;
+}
+
 export interface MenuScene {
   scene: THREE.Scene;
   camera: THREE.PerspectiveCamera;
@@ -240,6 +321,11 @@ export interface MenuScene {
   /** Recolors the showcase beagle in place (called when the player equips a
    *  new skin from the shop while the menu is showing). */
   setBeagleSkin(skin: BeagleSkin): void;
+  /** IDEA-037: re-tints the whole vignette (sky, soil, hedge, blooms, lights)
+   *  to a maze theme's palette, so the menu shows the theme the player has
+   *  equipped — just as it already shows their equipped beagle skin. Applied
+   *  in place, so it's instant and safe to call while the menu is visible. */
+  setMazeTheme(theme: MazeTheme): void;
   /** Releases the showcase beagle's geometries/materials. Only meaningful if
    *  the whole game is being torn down — the menu scene is otherwise created
    *  once and kept alive for the app's lifetime. */
@@ -254,7 +340,8 @@ export interface MenuScene {
 export function createMenuScene(): MenuScene {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(COLORS.bg);
-  scene.add(makeBackdrop());
+  const backdrop = makeBackdrop();
+  scene.add(backdrop.mesh);
 
   const camera = new THREE.PerspectiveCamera(CAM_FOV, 1, 0.1, 200);
   camera.position.copy(CAM_POS);
@@ -262,7 +349,8 @@ export function createMenuScene(): MenuScene {
 
   // Mirrors scene.ts's daylight rig exactly (hemisphere + warm key + cool
   // rim) so the beagle's coat reads identically in the menu and in-game.
-  scene.add(new THREE.HemisphereLight(0xd8f0ff, 0x4a3a20, 0.65));
+  const hemi = new THREE.HemisphereLight(0xd8f0ff, 0x4a3a20, 0.65);
+  scene.add(hemi);
   const key = new THREE.DirectionalLight(0xfff4e0, 1.1);
   key.position.set(2.5, 4.5, 3);
   key.castShadow = true;
@@ -280,7 +368,26 @@ export function createMenuScene(): MenuScene {
   rim.position.set(-2, 2.5, -2.5);
   scene.add(rim);
 
-  scene.add(makeGardenPatch());
+  const patch = makeGardenPatch();
+  scene.add(patch.group);
+
+  // IDEA-037: everything the theme can re-tint, gathered once.
+  const themed: ThemedBits = {
+    backdrop: backdrop.material,
+    soil: patch.soilMat,
+    grass: patch.grassMat,
+    hedge: patch.hedgeMat,
+    blooms: patch.bloomMats,
+    hemi,
+    key,
+    rim,
+  };
+
+  // Apply the EQUIPPED theme immediately, so the menu shows it on first paint
+  // rather than flashing the garden default. Same reasoning as the equipped
+  // beagle skin just below — and the same IDEA-021 v3 bug class if we didn't
+  // (the profile is guaranteed hydrated before Game is constructed).
+  applyTheme(themed, getEquippedMazeTheme());
 
   let beagleMesh = makeBeagle(getEquippedBeagleSkin());
   scene.add(beagleMesh);
@@ -342,6 +449,9 @@ export function createMenuScene(): MenuScene {
       camera.lookAt(CAM_LOOK);
 
       camera.updateProjectionMatrix();
+    },
+    setMazeTheme(theme: MazeTheme): void {
+      applyTheme(themed, theme);
     },
     setBeagleSkin(skin: BeagleSkin): void {
       applyBeagleSkin(beagleMesh, skin);

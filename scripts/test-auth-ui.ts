@@ -62,12 +62,38 @@ async function main(): Promise<void> {
 
     ok("auth gate is shown on first load", await page.isVisible("#authGate"));
     ok("the main menu is NOT reachable while signed out", !(await page.isVisible("#mainMenu")));
-    ok("sign-up, sign-in and recovery are all offered", (await page.locator("#goSignup, #goLogin, #goRecover").count()) === 3);
+    // IDEA-035: brand block first, then two tabs, with recovery below.
+    ok("the app icon is shown", await page.isVisible(".auth-logo"));
+    ok("the game name is shown", (await page.textContent(".auth-brand .auth-title"))?.includes("Beagle Chomp") === true);
+    ok("both tabs are offered", (await page.locator("#tabSignup, #tabLogin").count()) === 2);
+    ok("Create account is the DEFAULT tab", await page.locator("#tabSignup").evaluate((el) => el.classList.contains("is-active")));
+    ok("the signup form is shown without any click", await page.isVisible("#signupForm"));
+    ok("recovery is offered below the tabs", await page.isVisible("#goRecover"));
+
+    section("Tabs switch between the two forms");
+
+    await page.click("#tabLogin");
+    await page.waitForSelector("#loginForm");
+    ok("Login tab shows the login form", await page.isVisible("#loginForm"));
+    ok("...and hides the signup form", (await page.locator("#signupForm").count()) === 0);
+    ok("Login tab is marked active", await page.locator("#tabLogin").evaluate((el) => el.classList.contains("is-active")));
+
+    await page.click("#tabSignup");
+    await page.waitForSelector("#signupForm");
+    ok("Create account tab comes back", await page.isVisible("#signupForm"));
+    ok("...and hides the login form", (await page.locator("#loginForm").count()) === 0);
+
+    // Recovery is reachable from either tab and returns to the tabbed screen.
+    await page.click("#goRecover");
+    await page.waitForSelector("#recoverForm");
+    ok("recovery opens from the main screen", await page.isVisible("#recoverForm"));
+    await page.click("#backToAuth");
+    await page.waitForSelector("#signupForm");
+    ok("Back returns to the tabs", await page.isVisible(".auth-tabs"));
 
     // --- signup -------------------------------------------------------------
     section("Signup");
 
-    await page.click("#goSignup");
     await page.waitForSelector("#signupForm");
 
     // The privacy notice must be reachable BEFORE handing over a password.

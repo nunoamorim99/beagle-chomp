@@ -49,6 +49,8 @@ import { makeEntity, stepEntity, entityWorld, reverseEntity, type Entity } from 
 import { chooseGhostDir, type Ghost, type GlobalMode } from "./ghostAI";
 import { attachKeyboard } from "../input/keyboard";
 import { attachTouch } from "../input/touch";
+// IDEA-038: the optional on-screen D-pad, an alternative to swipe on phones.
+import { attachDpad, type DpadHandle } from "../input/dpad";
 import { createScene, type SceneRig } from "../render/scene";
 import { createMenuScene, type MenuScene } from "../render/menuScene";
 import { createShopScene, type ShopScene } from "../render/shopScene";
@@ -86,6 +88,10 @@ import {
   getCoins,
   addCoins,
   advanceChallengeProgress,
+  // IDEA-038: the control-scheme preference (swipe vs on-screen D-pad).
+  getControlScheme,
+  setControlScheme,
+  type ControlScheme,
 } from "./profileStore";
 import { getEquippedEnemySkinId, getBeagleSkin } from "./cosmetics";
 
@@ -203,6 +209,7 @@ export class Game {
   // #challengeBtn (see the constructor) instead of the old direct
   // startChallenge(getChallengeProgress()) auto-continue call.
   private readonly levelMap: LevelMapHandle;
+  private readonly dpad: DpadHandle;
   private readonly detachHomeButton: () => void;
   private readonly detachMenuResize: () => void;
   private readonly detachPlayButton: () => void;
@@ -430,6 +437,11 @@ export class Game {
       onThemeChanged: (theme) => {
         this.rig.applySceneTheme(theme);
         applyBoardTheme(this.level.board, this.rig.scene, this.level.grid, theme);
+        // IDEA-037: re-tint the MENU showcase too. The shop sits over the
+        // full-screen menu, so equipping a theme should change the vignette
+        // the player can see right behind the shop panel — exactly the way
+        // onEquipBeagle already recolours the showcase dog.
+        this.menuScene.setMazeTheme(theme);
       },
     });
 
@@ -460,6 +472,9 @@ export class Game {
 
     this.detachKeyboard = attachKeyboard((d) => { this.beagle.queued = d; });
     this.detachTouch = attachTouch(canvas, (d) => { this.beagle.queued = d; });
+    // IDEA-038: the D-pad feeds the SAME queued-direction model as swipe and
+    // the keyboard, so nothing downstream knows or cares which was used.
+    this.dpad = attachDpad(document.body, (d) => { this.beagle.queued = d; });
     this.detachHomeButton = this.attachHomeButton();
 
     // IDEA-021 v2: #playBtn/#menuShopBtn are now static markup in index.html
@@ -593,6 +608,23 @@ export class Game {
     const mainMenu = document.getElementById("mainMenu");
     mainMenu?.classList.add("hidden");
     document.body.classList.remove("menu-open");
+    // Leaving the menu means a run is starting — show the pad if the player
+    // asked for it. (The CSS hides it under every full-screen page anyway, so
+    // this only has to answer "does this player want buttons at all".)
+    this.syncDpadVisibility();
+  }
+
+  /** IDEA-038: the pad is shown only when the player's account says so.
+   *  Called on every transition into play and whenever the setting changes. */
+  private syncDpadVisibility(): void {
+    this.dpad.setVisible(getControlScheme() === "dpad");
+  }
+
+  /** Called by the settings toggle so the pad appears/disappears immediately
+   *  rather than at the next run. */
+  setControlSchemePreference(scheme: ControlScheme): void {
+    setControlScheme(scheme);
+    this.syncDpadVisibility();
   }
 
   /**
@@ -686,6 +718,7 @@ export class Game {
     this.detachChallengeButton();
     this.shop.detach();
     this.levelMap.detach();
+    this.dpad.detach();
     this.menuScene.dispose();
     this.shopScene.dispose();
   }

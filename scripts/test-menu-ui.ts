@@ -40,7 +40,7 @@ async function signUpTo(page: Page): Promise<string> {
   const username = uniqueName();
   await page.goto(BASE_URL, { waitUntil: "networkidle" });
   await page.waitForSelector("#authGate:not(.hidden)", { timeout: 20_000 });
-  await page.click("#goSignup");
+  // IDEA-035: "Create account" is the default tab, so the form is already there.
   await page.waitForSelector("#signupForm");
   await page.fill("#signupUsername", username);
   await page.fill("#signupPassword", "a-decent-password");
@@ -263,6 +263,13 @@ async function main(): Promise<void> {
     ok("the carousel is swipeable on a narrow screen", scrollable);
 
     await deleteAccount(phone, phoneUser);
+
+    section("IDEA-038 — control scheme");
+
+    // The pad must NOT appear for a default (swipe) account: it's an option,
+    // not a replacement.
+    const padWhenSwipe = await phone.locator(".dpad:not(.hidden)").count();
+    ok("no D-pad by default (swipe stays the default)", padWhenSwipe === 0);
 
     section("Console hygiene");
     const real = consoleErrors.filter((e) => !/service worker|sw\.js|workbox|favicon/i.test(e));

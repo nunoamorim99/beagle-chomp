@@ -16,6 +16,7 @@ import {
   equipRemote,
   purchaseRemote,
   fetchProfile,
+  setControlSchemeRemote,
   type EquipPayload,
   type PurchaseKind,
   type ServerProfile,
@@ -145,6 +146,14 @@ async function resyncQuietly(): Promise<void> {
 export function enqueueEquip(payload: EquipPayload): void {
   enqueue(async () => {
     const { profile } = await equipRemote(payload);
+    adopt(profile);
+  });
+}
+
+/** IDEA-038: persist the control scheme. */
+export function enqueueControlScheme(scheme: "swipe" | "dpad"): void {
+  enqueue(async () => {
+    const { profile } = await setControlSchemeRemote(scheme);
     adopt(profile);
   });
 }

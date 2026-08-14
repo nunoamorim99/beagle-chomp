@@ -34,6 +34,19 @@ profileRoutes.patch("/profile/equipped", async (c) => {
   return c.json({ profile });
 });
 
+// --- settings ---------------------------------------------------------------
+
+/** IDEA-038: swipe vs on-screen D-pad. A per-account preference, so it follows
+ *  the player to any device they sign in from. */
+profileRoutes.patch("/profile/settings", async (c) => {
+  const body = await readBody(c);
+  const profile = await profileService.setControlScheme(
+    c.get("user").id,
+    body.controlScheme,
+  );
+  return c.json({ profile });
+});
+
 // --- purchase ---------------------------------------------------------------
 
 /** The client sends only WHAT it wants, never what it costs — the price comes

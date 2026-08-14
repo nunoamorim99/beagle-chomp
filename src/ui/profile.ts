@@ -12,6 +12,7 @@
 
 import { escapeHtml } from "./escape";
 import { getProfileCache } from "../game/profileCache";
+import { getControlScheme, type ControlScheme } from "../game/profileStore";
 import { logout as logoutRemote, deleteAccount } from "../net/endpoints";
 import { clearToken, ApiError } from "../net/api";
 import { flushSync, clearSyncQueue } from "../net/profileSync";
@@ -24,6 +25,10 @@ export interface ProfileHandle {
 }
 
 export interface ProfileCallbacks {
+  /** IDEA-038: switch between swipe and the on-screen D-pad. Routed through
+   *  Game so the pad appears/disappears immediately rather than at the next
+   *  run — the preference itself is persisted against the account. */
+  onControlSchemeChange?: (scheme: ControlScheme) => void;
   /** Sign-out and deletion both end the session, so the app must return to the
    *  auth gate. The caller owns that transition. */
   onSignedOut: () => void;
@@ -48,6 +53,7 @@ export function attachProfile(callbacks: ProfileCallbacks): ProfileHandle {
 
   function render(): void {
     const profile = getProfileCache();
+    const scheme = getControlScheme();
     const owned =
       profile.ownedBeagleSkinIds.length +
       profile.ownedEnemySkinIds.length +
@@ -67,6 +73,25 @@ export function attachProfile(callbacks: ProfileCallbacks): ProfileHandle {
         </dl>
 
         ${error ? `<p class="auth-error" role="alert">${escapeHtml(error)}</p>` : ""}
+
+        <section class="profile-setting">
+          <h2>Controls</h2>
+          <p>How you steer the beagle on a touchscreen.</p>
+          <div class="control-choice" role="group" aria-label="Control scheme">
+            <button type="button" id="controlSwipe"
+                    class="control-option${scheme === "swipe" ? " is-active" : ""}"
+                    aria-pressed="${scheme === "swipe"}">
+              <span class="control-icon" aria-hidden="true">&#128070;</span>
+              <span>Swipe</span>
+            </button>
+            <button type="button" id="controlDpad"
+                    class="control-option${scheme === "dpad" ? " is-active" : ""}"
+                    aria-pressed="${scheme === "dpad"}">
+              <span class="control-icon" aria-hidden="true">&#127918;</span>
+              <span>Buttons</span>
+            </button>
+          </div>
+        </section>
 
         <div class="profile-actions">
           <button type="button" id="profilePrivacyBtn" class="btn-secondary">Privacy notice</button>
@@ -110,6 +135,15 @@ export function attachProfile(callbacks: ProfileCallbacks): ProfileHandle {
     root.querySelector("#profileCloseBtn")?.addEventListener("click", () => close());
     root.querySelector("#profilePrivacyBtn")?.addEventListener("click", () => {
       callbacks.onShowPrivacy();
+    });
+
+    root.querySelector("#controlSwipe")?.addEventListener("click", () => {
+      callbacks.onControlSchemeChange?.("swipe");
+      render();
+    });
+    root.querySelector("#controlDpad")?.addEventListener("click", () => {
+      callbacks.onControlSchemeChange?.("dpad");
+      render();
     });
 
     root.querySelector("#profileSignOutBtn")?.addEventListener("click", () => {

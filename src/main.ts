@@ -131,6 +131,9 @@ async function startApp(): Promise<void> {
       void startApp();
     },
     onShowPrivacy: () => privacy.open(() => profile.open(currentUsername)),
+    // IDEA-038: routed through Game so the pad appears/disappears immediately;
+    // Game persists the preference against the account.
+    onControlSchemeChange: (scheme) => game.setControlSchemePreference(scheme),
   });
 
   // startApp() re-runs on sign-out and on a mid-session 401, so this listener

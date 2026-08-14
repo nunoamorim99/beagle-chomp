@@ -15,7 +15,7 @@ const USER_COLUMNS = `
   recovery_code_version, coins, challenge_progress,
   equipped_beagle_skin_id, equipped_enemy_skin_id, equipped_maze_theme_id,
   owned_beagle_skin_ids, owned_enemy_skin_ids, owned_maze_theme_ids,
-  high_score, high_score_at, created_at
+  high_score, high_score_at, control_scheme, created_at
 `;
 
 function run(client: Executor) {
@@ -210,9 +210,23 @@ export async function purchaseItem(
   return rows[0];
 }
 
+/** IDEA-038: persist the player's control-scheme preference. */
+export async function updateControlScheme(
+  userId: string,
+  scheme: "swipe" | "dpad",
+  client?: Executor,
+): Promise<UserRow> {
+  const { rows } = await run(client)<UserRow>(
+    `UPDATE users SET control_scheme = $2 WHERE id = $1 RETURNING ${USER_COLUMNS}`,
+    [userId, scheme],
+  );
+  return rows[0];
+}
+
 /** Hard delete. Every FK into users is ON DELETE CASCADE, so tokens, game
  *  sessions and rejection logs go with it — "delete my account" leaves nothing
  *  behind, which is what the privacy notice promises. */
+
 export async function deleteUser(userId: string, client?: Executor): Promise<void> {
   await run(client)(`DELETE FROM users WHERE id = $1`, [userId]);
 }

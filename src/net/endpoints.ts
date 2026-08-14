@@ -20,6 +20,8 @@ export interface ServerProfile {
     mazeThemeIds: string[];
   };
   recoveryCodeVersion: number;
+  /** IDEA-038: "swipe" (default) or "dpad". */
+  controlScheme: string;
 }
 
 export interface ServerUser {
@@ -113,6 +115,17 @@ export function purchaseRemote(
   return apiRequest<{ profile: ServerProfile }>("/api/v1/profile/purchase", {
     method: "POST",
     body: { kind, id },
+  });
+}
+
+/** IDEA-038: persist the control-scheme preference against the account, so it
+ *  follows the player to any device. */
+export function setControlSchemeRemote(
+  controlScheme: "swipe" | "dpad",
+): Promise<{ profile: ServerProfile }> {
+  return apiRequest<{ profile: ServerProfile }>("/api/v1/profile/settings", {
+    method: "PATCH",
+    body: { controlScheme },
   });
 }
 
