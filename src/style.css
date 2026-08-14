@@ -44,22 +44,32 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--ink);
 .coin-stat .v{font-size:16px;font-weight:700;color:#ffffff}
 
 /* IDEA-036 v2: the mute/shop/home buttons were a VERTICAL stack down the
-   right edge (top 78/120/162px). That column pushed the maze down and stole
-   ~120px of height — worst on a phone, and worse still with the D-pad
-   ([[IDEA-038]]) occupying the bottom. Laid out as a HORIZONTAL row instead:
-   the same three buttons on one line, giving the board back the vertical
-   space it was losing.
+   right edge (top 78/120/162px) — ~120px of height for three buttons, which
+   pushed the maze down. Worst on a phone, and worse still with the D-pad
+   ([[IDEA-038]]) already occupying the bottom.
+
+   Now a HORIZONTAL row sharing the COIN ROW's line. The coin pill sits on the
+   left at y≈72-91 with the whole right half of that line empty, so putting
+   the buttons there costs the board no extra height at all — the tallest
+   thing on the row is unchanged, and the HUD ends where the stats already
+   ended.
 
    All three share one rule now rather than three near-identical copies —
    they were already visually identical, and keeping them in sync by hand was
    an accident waiting to happen. Positioning is delegated to the flex row. */
 .hud-buttons{
   position:fixed;
-  top:calc(78px + env(safe-area-inset-top));
+  /* On the COIN ROW's line — the right half of it is empty, since the coin
+     pill only reaches x≈101 on a 390px screen. Measured positions: the Lives
+     dogs end at y≈66 and the coin pill occupies 72-91, so 70 puts the buttons
+     level with the coins and clear of the dogs above. Costs the board no
+     extra height: the HUD already reserved this line for the coin pill. */
+  top:calc(70px + env(safe-area-inset-top));
   right:calc(14px + env(safe-area-inset-right));
   z-index:6;
   display:flex;
   flex-direction:row;
+  align-items:center;
   gap:8px;
   /* The row itself must not intercept taps meant for the maze behind it —
      only the buttons opt back in, same as .hud does. */
