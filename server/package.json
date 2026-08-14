@@ -18,7 +18,9 @@
     "test:units": "tsx scripts/test-auth-units.ts",
     "test:db": "tsx scripts/test-auth.ts",
     "test:catalog": "tsx scripts/test-catalog.ts",
-    "test": "npm run test:units && npm run test:catalog"
+    "test": "npm run test:units && npm run test:catalog && npm run test:plausibility",
+    "test:plausibility": "tsx scripts/test-plausibility.ts",
+    "test:sessions": "tsx scripts/test-sessions.ts"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.0",

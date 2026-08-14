@@ -92,6 +92,135 @@ function sliceArray(source: string, constName: string): string {
 const cosmeticsSrc = readFileSync(join(GAME_DIR, "cosmetics.ts"), "utf-8");
 const themesSrc = readFileSync(join(GAME_DIR, "themes.ts"), "utf-8");
 
+// ---------------------------------------------------------------------------
+// Increment 2: the constants the plausibility validator scores runs against.
+//
+// These MUST track the game exactly. If the game rebalances SCORE.biscuit or a
+// maze gains pellets and the server keeps the old numbers, every honest run
+// starts failing validation — a silent, infuriating bug. Generating them (and
+// asserting on them in test-plausibility.ts) turns that into a build failure.
+
+/** Pull a numeric field out of an `export const NAME = { ... }` block. */
+function numberField(source: string, constName: string, field: string): number {
+  const start = source.indexOf(`export const ${constName}`);
+  if (start === -1) throw new Error(`could not find ${constName}`);
+  const scope = source.slice(start, start + 900);
+  const m = new RegExp(`\\b${field}:\\s*([0-9.]+)`).exec(scope);
+  if (!m) throw new Error(`could not find ${constName}.${field}`);
+  return Number(m[1]);
+}
+
+function numberConst(source: string, constName: string): number {
+  const m = new RegExp(`export const ${constName}\\s*=\\s*([0-9.]+)`).exec(source);
+  if (!m) throw new Error(`could not find ${constName}`);
+  return Number(m[1]);
+}
+
+/** `export` is optional: FRUIT_THRESHOLDS is a module-local const in game.ts
+ *  (deliberately, per that file's comment) while the others are exported from
+ *  config.ts. */
+function numberArray(source: string, constName: string): number[] {
+  const m = new RegExp(`(?:export )?const ${constName}[^=]*=\\s*\\[([^\\]]*)\\]`).exec(source);
+  if (!m) throw new Error(`could not find ${constName}`);
+  return m[1]
+    .split(",")
+    .map((s) => Number(s.trim()))
+    .filter((n) => Number.isFinite(n));
+}
+
+const configSrc = readFileSync(join(GAME_DIR, "config.ts"), "utf-8");
+const challengesSrc = readFileSync(join(GAME_DIR, "challenges.ts"), "utf-8");
+// FRUIT_THRESHOLDS lives in game.ts, not config.ts — deliberately, per that
+// file's own comment. The validator still needs it to bound fruit per level.
+const gameSrc = readFileSync(join(GAME_DIR, "game.ts"), "utf-8");
+
+const scoring = {
+  biscuit: numberField(configSrc, "SCORE", "biscuit"),
+  bone: numberField(configSrc, "SCORE", "bone"),
+  fruit: numberField(configSrc, "SCORE", "fruit"),
+  ghostBase: numberField(configSrc, "SCORE", "ghostBase"),
+  beagleSpeed: numberField(configSrc, "SPEEDS", "beagle"),
+  readySeconds: numberField(configSrc, "TIMING", "readySeconds"),
+  deathSeconds: numberField(configSrc, "TIMING", "deathSeconds"),
+  startLives: numberConst(configSrc, "START_LIVES"),
+  coinsPerPoints: numberField(configSrc, "COINS", "perPoints"),
+  coinPickupValue: numberField(configSrc, "COINS", "pickupValue"),
+  livesMilestonePoints: numberField(configSrc, "LIVES", "milestonePoints"),
+};
+
+const coinThresholds = numberArray(configSrc, "COIN_THRESHOLDS");
+const lifeThresholds = numberArray(configSrc, "LIFE_THRESHOLDS");
+const fruitThresholds = numberArray(gameSrc, "FRUIT_THRESHOLDS");
+
+/** Per-maze pellet/bone/fruit counts, derived from the REAL maze data rather
+ *  than hand-copied. These are the hard ceilings MAX-1 and MAX-4 rest on. */
+interface MazeFacts {
+  biscuits: number;
+  bones: number;
+  fruitTiles: number;
+}
+
+const mazesJson = JSON.parse(
+  readFileSync(join(GAME_DIR, "mazes.json"), "utf-8"),
+) as { cols: number; rows: number; mazes: string[][] };
+
+const mazeFacts: MazeFacts[] = mazesJson.mazes.map((rows) => {
+  const flat = rows.join("");
+  const count = (ch: string) => flat.split(ch).length - 1;
+  return { biscuits: count("."), bones: count("o"), fruitTiles: count("F") };
+});
+
+if (mazeFacts.length === 0) {
+  console.error("[sync] no mazes found in mazes.json");
+  process.exit(1);
+}
+for (const [i, facts] of mazeFacts.entries()) {
+  if (facts.biscuits < 50) {
+    console.error(`[sync] maze ${i} has only ${facts.biscuits} biscuits — parse looks wrong`);
+    process.exit(1);
+  }
+}
+
+/** Challenge level modifiers, needed because a challenge run's ghost count and
+ *  speed change both the score ceiling and the time floor. */
+const configFrightSeconds = numberField(configSrc, "TIMING", "frightSeconds");
+
+// Parse ENTRY BY ENTRY. A single regex spanning the whole array is greedy
+// across entries and silently merges levels — the count guard below caught
+// exactly that. Each entry is `mazeIdx: N` followed by its own `modifiers: {…}`.
+const challengeLevels = [
+  ...challengesSrc.matchAll(/mazeIdx:\s*(\d+),\s*\n\s*modifiers:\s*\{([^}]*)\}/g),
+].map((m) => {
+  const mazeIdx = Number(m[1]);
+  const mods = m[2];
+
+  const pick = (field: string): number => {
+    // frightSeconds is written as TIMING.frightSeconds on the levels that don't
+    // shorten it, so resolve that reference rather than failing on it.
+    const ref = new RegExp(`${field}:\\s*TIMING\\.frightSeconds`).exec(mods);
+    if (ref) return configFrightSeconds;
+
+    const num = new RegExp(`${field}:\\s*([0-9.]+)`).exec(mods);
+    if (!num) throw new Error(`challenge level ${mazeIdx}: missing ${field}`);
+    return Number(num[1]);
+  };
+
+  return {
+    mazeIdx,
+    speedMult: pick("speedMult"),
+    ghostCount: pick("ghostCount"),
+    frightSeconds: pick("frightSeconds"),
+  };
+});
+
+if (challengeLevels.length !== 8) {
+  console.error(
+    `[sync] extracted ${challengeLevels.length} challenge levels, expected 8 — ` +
+      `the CHALLENGE_LEVELS format probably changed.`,
+  );
+  process.exit(1);
+}
+
 const beagleSkins = extractIdPricePairs(sliceArray(cosmeticsSrc, "BEAGLE_SKINS"));
 const enemySkins = extractIdPricePairs(sliceArray(cosmeticsSrc, "ENEMY_SKINS"));
 const mazeThemes = extractIdPricePairs(sliceArray(themesSrc, "MAZE_THEMES"));
@@ -173,7 +302,83 @@ export const DEFAULT_MAZE_THEME_ID = ${JSON.stringify(defaults.theme)};
 
 /** Challenge level count — the upper bound on users.challenge_progress.
  *  The sentinel value itself (== this number) means "all levels cleared". */
-export const CHALLENGE_LEVEL_COUNT = 8;
+export const CHALLENGE_LEVEL_COUNT = ${challengeLevels.length};
+
+// ---------------------------------------------------------------------------
+// Scoring + timing constants, mirrored from src/game/config.ts (and
+// FRUIT_THRESHOLDS from game.ts). The plausibility validator scores every
+// submitted run against these, so they MUST track the game: if the game
+// rebalances and the server doesn't, honest runs start getting rejected.
+
+export const SCORING = {
+  biscuit: ${scoring.biscuit},
+  bone: ${scoring.bone},
+  fruit: ${scoring.fruit},
+  ghostBase: ${scoring.ghostBase},
+  /** Tiles per second at speedMult 1. */
+  beagleSpeed: ${scoring.beagleSpeed},
+  readySeconds: ${scoring.readySeconds},
+  deathSeconds: ${scoring.deathSeconds},
+  startLives: ${scoring.startLives},
+  coinsPerPoints: ${scoring.coinsPerPoints},
+  coinPickupValue: ${scoring.coinPickupValue},
+  livesMilestonePoints: ${scoring.livesMilestonePoints},
+} as const;
+
+/** Pellet-eaten counts at which a coin / bonus-life bone / fruit spawns. Each
+ *  fires at most ONCE per level (see pickups.ts's shouldFireThreshold), so the
+ *  array LENGTH is the per-level cap on each pickup. */
+export const COIN_THRESHOLDS = ${JSON.stringify(coinThresholds)} as const;
+export const LIFE_THRESHOLDS = ${JSON.stringify(lifeThresholds)} as const;
+export const FRUIT_THRESHOLDS = ${JSON.stringify(fruitThresholds)} as const;
+
+/** What each maze actually CONTAINS, derived from mazes.json rather than
+ *  hand-copied. These are the hard ceilings the validator rests on: a run
+ *  cannot eat more pellets than exist. */
+export interface MazeFacts {
+  readonly biscuits: number;
+  readonly bones: number;
+  readonly fruitTiles: number;
+}
+
+export const MAZE_FACTS: readonly MazeFacts[] = [
+${mazeFacts
+  .map(
+    (f) =>
+      `  { biscuits: ${f.biscuits}, bones: ${f.bones}, fruitTiles: ${f.fruitTiles} },`,
+  )
+  .join("\n")}
+];
+
+export const MAZE_COUNT = MAZE_FACTS.length;
+
+/** Per-level challenge modifiers. A challenge run's ghost count and speed
+ *  change BOTH the score ceiling and the minimum time, so the validator needs
+ *  them to judge a challenge submission at all. */
+export interface ChallengeLevelFacts {
+  readonly mazeIdx: number;
+  readonly speedMult: number;
+  readonly ghostCount: number;
+  readonly frightSeconds: number;
+}
+
+export const CHALLENGE_LEVELS: readonly ChallengeLevelFacts[] = [
+${challengeLevels
+  .map(
+    (l) =>
+      `  { mazeIdx: ${l.mazeIdx}, speedMult: ${l.speedMult}, ghostCount: ${l.ghostCount}, frightSeconds: ${l.frightSeconds} },`,
+  )
+  .join("\n")}
+];
+
+/** Classic mode's baseline — the explicit modifiers game.ts uses for a classic
+ *  run (CLASSIC_MODIFIERS in challenges.ts). */
+export const CLASSIC_MODIFIERS: ChallengeLevelFacts = {
+  mazeIdx: -1,
+  speedMult: 1,
+  ghostCount: 3,
+  frightSeconds: ${configFrightSeconds},
+};
 `;
 
 mkdirSync(dirname(OUT_FILE), { recursive: true });

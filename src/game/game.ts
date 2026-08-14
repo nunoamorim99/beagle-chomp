@@ -25,6 +25,26 @@ import {
   getChallengeLevel,
   type ChallengeModifiers,
 } from "./challenges";
+// IDEA-020 Increment 2: run telemetry + server-issued session tickets.
+import {
+  createRunTelemetry,
+  recordPellet,
+  recordBone,
+  recordFruit,
+  recordGhost,
+  recordCoin,
+  recordDeath,
+  recordLevelCleared,
+  recordLevelStarted,
+  accumulatePlayTime,
+  type RunTelemetry,
+} from "./runTelemetry";
+import {
+  startSession as startSessionRemote,
+  finishSession as finishSessionRemote,
+} from "../net/endpoints";
+import { replaceProfileCache } from "./profileCache";
+import { fromServerProfile } from "./profileMapping";
 import { makeEntity, stepEntity, entityWorld, reverseEntity, type Entity } from "./movement";
 import { chooseGhostDir, type Ghost, type GlobalMode } from "./ghostAI";
 import { attachKeyboard } from "../input/keyboard";
@@ -190,6 +210,15 @@ export class Game {
   private readonly detachChallengeButton: () => void;
 
   private ghosts: GhostRig[] = [];
+
+  // IDEA-020 Increment 2: what actually happened this run, so the server can
+  // check the reported score against the reported actions. Replaced (not
+  // reset in place) at the start of every run.
+  private telemetry: RunTelemetry = createRunTelemetry();
+  /** The server-issued ticket for the run in progress, or null outside a run.
+   *  Its start time lives on the server, which is what makes the duration
+   *  bounds unforgeable. */
+  private sessionId: string | null = null;
 
   private score = 0;
   private lives = 0;
@@ -453,7 +482,12 @@ export class Game {
       this.livesAwardedFromScore = 0;
       this.hud.setScore(this.score);
       this.hud.setLives(this.lives);
-      this.startLevel(0);
+
+      // The run only starts once the server has issued a ticket for it — the
+      // game is online-only, and a run that can't be recorded shouldn't begin.
+      void this.beginRunSession("classic").then((ok) => {
+        if (ok) this.startLevel(0);
+      });
     };
     playBtn.addEventListener("click", onPlayClick);
     this.detachPlayButton = () => playBtn.removeEventListener("click", onPlayClick);
@@ -676,6 +710,7 @@ export class Game {
     this.level = this.buildLevel(idx % MAZE_COUNT);
 
     this.levelIdx = idx;
+    recordLevelStarted(this.telemetry, idx % MAZE_COUNT);
     const mapNumber = (idx % MAZE_COUNT) + 1;
     const lap = idx >= MAZE_COUNT ? ` ·${Math.floor(idx / MAZE_COUNT) + 1}` : "";
     this.hud.setLevel(`${mapNumber}${lap}`);
@@ -716,6 +751,22 @@ export class Game {
    * classic one — see gameOver()/levelClear()'s challenge branches below).
    */
   private startChallenge(idx: number): void {
+    // Every challenge level is its OWN run and its own session (game.ts panels
+    // between levels; "Next level" is a fresh run, not a continuation). Gating
+    // here rather than at each call site covers all three entry points: the
+    // level map, "Next level", and "Play again" after a loss.
+    const safeIdxForSession = Number.isFinite(idx) ? Math.floor(idx) : 0;
+    const resolvedForSession = Math.max(
+      0,
+      Math.min(safeIdxForSession, CHALLENGE_LEVEL_COUNT - 1),
+    );
+    void this.beginRunSession("challenge", resolvedForSession).then((ok) => {
+      if (ok) this.startChallengeLevel(resolvedForSession);
+    });
+  }
+
+  /** The actual level setup, once a session exists. */
+  private startChallengeLevel(idx: number): void {
     // Same clamp getChallengeLevel itself applies internally (see
     // challenges.ts) — duplicated here (rather than reverse-looking-up the
     // returned level's index) so resolvedIdx is unambiguously "the index
@@ -739,6 +790,7 @@ export class Game {
 
     this.disposeLevel(this.level);
     this.level = this.buildLevel(level.mazeIdx);
+    recordLevelStarted(this.telemetry, level.mazeIdx);
 
     // Small, readable challenge-level HUD label (e.g. "C3") — distinct from
     // classic's "map · lap" label so the player can always tell which mode
@@ -886,11 +938,13 @@ export class Game {
         this.effects.pelletEaten(worldX(tx), worldZ(ty), kind);
         if (kind === "bone") {
           this.score += SCORE.bone;
+          recordBone(this.telemetry);
           this.effects.scorePopup(worldX(tx), worldZ(ty), SCORE.bone);
           this.sound.bone();
           this.triggerFright();
         } else {
           this.score += SCORE.biscuit;
+          recordPellet(this.telemetry);
           this.effects.scorePopup(worldX(tx), worldZ(ty), SCORE.biscuit);
           this.sound.biscuit();
         }
@@ -905,6 +959,7 @@ export class Game {
       clearFruit(this.level.board, this.rig.scene);
       this.fruitTile = null;
       this.score += SCORE.fruit;
+      recordFruit(this.telemetry);
       this.effects.pelletEaten(worldX(tx), worldZ(ty), "biscuit");
       this.effects.scorePopup(worldX(tx), worldZ(ty), SCORE.fruit);
       this.hud.setScore(this.score);
@@ -921,6 +976,7 @@ export class Game {
     if (this.coinTile && this.coinTile.x === tx && this.coinTile.y === ty) {
       this.despawnCoin();
       addCoins(COINS.pickupValue);
+      recordCoin(this.telemetry);
       this.hud.setCoins(getCoins());
       this.effects.pelletEaten(worldX(tx), worldZ(ty), "biscuit");
       this.sound.coin();
@@ -1245,6 +1301,7 @@ export class Game {
           gh.state = "eaten";
           this.ghostEatChain++;
           this.score += SCORE.ghostBase * Math.pow(2, Math.min(this.ghostEatChain - 1, 3));
+          recordGhost(this.telemetry);
           this.hud.setScore(this.score);
           this.maybeAwardCoinsFromScore();
           this.maybeAwardLivesFromScore();
@@ -1278,6 +1335,7 @@ export class Game {
     this.mode = "dying";
     this.stateTimer = TIMING.deathSeconds;
     this.lives--;
+    recordDeath(this.telemetry);
     this.hud.setLives(this.lives);
     const bw = entityWorld(this.beagle);
     this.effects.beagleDied(bw.x, bw.z);
@@ -1286,6 +1344,7 @@ export class Game {
 
   private levelClear(): void {
     this.mode = "levelclear";
+    recordLevelCleared(this.telemetry);
     this.stateTimer = TIMING.readySeconds;
     this.hud.showBanner("Map Cleared!");
     this.effects.levelCleared();
@@ -1324,7 +1383,10 @@ export class Game {
    */
   private challengeLevelComplete(): void {
     this.mode = "over";
+    // Optimistic local advance; the server does the authoritative one only if
+    // the run passes validation (submitRun below adopts whatever it says).
     advanceChallengeProgress(this.challengeIdx);
+    void this.submitRun();
 
     const isLast = this.challengeIdx >= CHALLENGE_LEVEL_COUNT - 1;
     const clearedLevel = getChallengeLevel(this.challengeIdx);
@@ -1384,6 +1446,98 @@ export class Game {
     });
   }
 
+  // ---- Run sessions + score submission (IDEA-020 Increment 2) ----
+
+  /**
+   * Ask the server for a run ticket, and start fresh telemetry.
+   *
+   * Awaited BEFORE a run begins: the game is online-only by design, so a run
+   * that can't be recorded shouldn't start at all. The session's start time is
+   * written by Postgres, which is what makes the server's duration checks
+   * unforgeable — a client can lie about its score but not about how long the
+   * server has known the run was going.
+   *
+   * Returns false if the server couldn't be reached, in which case the caller
+   * must not start the run.
+   */
+  private async beginRunSession(
+    mode: "classic" | "challenge",
+    challengeIdx?: number,
+  ): Promise<boolean> {
+    this.telemetry = createRunTelemetry();
+    this.sessionId = null;
+
+    try {
+      const { sessionId } = await startSessionRemote(mode, challengeIdx);
+      this.sessionId = sessionId;
+      return true;
+    } catch {
+      this.hud.showPanel(
+        '<div class="eyebrow">no connection</div>' +
+        "<h1>Can't start</h1>" +
+        "<p>Beagle Chomp needs a connection so your score and coins are saved. " +
+        "Check your connection and try again.</p>" +
+        '<div class="menu-actions">' +
+        '<button id="connErrMenuBtn" class="btn-secondary">Back to menu</button>' +
+        "</div>",
+      ).querySelector<HTMLButtonElement>("#connErrMenuBtn")
+        ?.addEventListener("click", () => {
+          this.hud.hideCenter();
+          this.quitToMenu();
+        });
+      return false;
+    }
+  }
+
+  /**
+   * Submit the finished run and adopt the server's verdict.
+   *
+   * Everything the server sends back is authoritative: coins are recomputed
+   * there from the accepted score (so a client can't mint currency) and
+   * challenge progress advances only on a validated clear. The local profile
+   * cache is replaced with whatever comes back, which silently corrects any
+   * optimistic drift accumulated during the run.
+   *
+   * Never throws: a run that can't be submitted is disappointing, not fatal,
+   * and the panel is already on screen by the time this resolves.
+   */
+  private async submitRun(): Promise<void> {
+    const sessionId = this.sessionId;
+    if (!sessionId) return;
+
+    // Clear first: whatever happens, this session is spent, and a retry would
+    // hit the replay guard anyway.
+    this.sessionId = null;
+
+    try {
+      const result = await finishSessionRemote(sessionId, {
+        score: this.score,
+        levelsCleared: this.telemetry.levelsCleared,
+        mazeIdxSequence: this.telemetry.mazeIdxSequence,
+        pelletsEaten: this.telemetry.pelletsEaten,
+        bonesEaten: this.telemetry.bonesEaten,
+        fruitEaten: this.telemetry.fruitEaten,
+        ghostsEaten: this.telemetry.ghostsEaten,
+        coinsCollected: this.telemetry.coinsCollected,
+        livesLost: this.telemetry.livesLost,
+        playSeconds: Math.round(this.telemetry.playSeconds),
+      });
+
+      replaceProfileCache(fromServerProfile(result.profile));
+      this.hud.setCoins(result.profile.coins);
+
+      if (!result.accepted) {
+        // Deliberately visible rather than silent. If this ever fires for an
+        // honest run it's a bound that needs loosening, and a player who sees
+        // it can say so — a silently-dropped score would just look like a bug.
+        console.warn(`[score] rejected: ${result.reasonCode}`);
+      }
+    } catch {
+      // Offline, or the session already finished. The run still happened; the
+      // score just isn't recorded.
+    }
+  }
+
   private gameOver(): void {
     this.mode = "over";
     // IDEA-013: the "Play again" button restarts THE SAME challenge level
@@ -1392,6 +1546,12 @@ export class Game {
     // the player back into classic. The panel copy/subtext stays identical
     // either way (only the button's own handler branches).
     const isChallenge = this.gameKind === "challenge";
+
+    // Submit before rendering the panel's handlers: the response carries the
+    // authoritative coins/profile, and the player is reading the panel while
+    // it lands.
+    void this.submitRun();
+
     const panel = this.hud.showPanel(
       '<div class="eyebrow">final score</div>' +
       `<h1>${this.score}</h1>` +
@@ -1497,6 +1657,13 @@ export class Game {
   private quitToMenu(): void {
     if (this.mode === "start") return;
 
+    // Abandon the run's session WITHOUT submitting: a quit isn't a score, and
+    // the run's score is discarded here anyway. The server sweeps sessions
+    // left open (per-user on the next start, and on an interval), so this just
+    // stops the client from later submitting against a run the player walked
+    // away from.
+    this.sessionId = null;
+
     this.hud.hideCenter();
     resetBeagleScale(this.beagleMesh);
 
@@ -1523,6 +1690,9 @@ export class Game {
   // ---- per-mode update (prototype main loop, lines 662-691) ----
 
   private updatePlay(dt: number): void {
+    // Deliberately here rather than in tick(): tick() skips update(dt) while
+    // the shop is open, so wall-clock time would count shop browsing as play.
+    accumulatePlayTime(this.telemetry, dt);
     this.advanceSchedule(dt);
     this.tickCoinLifespan(dt);
     this.tickLifeLifespan(dt);

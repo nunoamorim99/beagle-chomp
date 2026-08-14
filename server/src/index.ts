@@ -21,6 +21,8 @@ import { ApiError } from "./http/errors.js";
 import { healthRoutes } from "./routes/health.js";
 import { authRoutes } from "./routes/auth.js";
 import { profileRoutes } from "./routes/profile.js";
+import { sessionRoutes } from "./routes/sessions.js";
+import { sweepStaleSessions } from "./services/scoreService.js";
 import { APP_VERSION } from "./version.js";
 
 const app = new Hono();
@@ -58,9 +60,11 @@ app.route("/", healthRoutes);
 const v1 = new Hono();
 v1.get("/", (c) => c.json({ api: "beagle-chomp", version: APP_VERSION }));
 v1.route("/auth", authRoutes);
-// profileRoutes declares its own full paths (/profile, /leaderboard) because
-// they share one auth+rate-limit middleware stack but sit at different roots.
+// profileRoutes and sessionRoutes declare their own full paths (/profile,
+// /leaderboard, /sessions/*) because each shares one auth+rate-limit middleware
+// stack across paths that sit at different roots.
 v1.route("/", profileRoutes);
+v1.route("/", sessionRoutes);
 app.route("/api/v1", v1);
 
 // --- JSON-only error handling (STACK.md §2.1) -------------------------------
@@ -103,6 +107,24 @@ const server = serve({ fetch: app.fetch, port: env.PORT }, (info) => {
       `(${env.NODE_ENV}) · CORS: ${env.CORS_ORIGINS.join(", ") || "(none)"}`,
   );
 });
+
+// Abandon runs whose players never came back — a quit-to-menu deliberately
+// never finishes its session (a quit isn't a score), so without this they'd
+// accumulate against the per-user open-session cap and eventually refuse a
+// legitimate new run. startSession also sweeps per-user, so this interval is
+// just housekeeping for players who aren't currently playing.
+const SWEEP_INTERVAL_MS = 10 * 60_000;
+const sweeper = setInterval(() => {
+  void sweepStaleSessions()
+    .then((count) => {
+      if (count > 0) console.log(`[sweep] abandoned ${count} stale session(s)`);
+    })
+    .catch((err: unknown) => {
+      // Housekeeping only: a failed sweep is not worth crashing the API over.
+      console.error("[sweep] failed:", err);
+    });
+}, SWEEP_INTERVAL_MS);
+sweeper.unref();
 
 // Docker sends SIGTERM on `docker stop` and on every Dokploy redeploy. Draining
 // the HTTP server and the pg pool avoids killing in-flight requests mid-write —

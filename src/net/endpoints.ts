@@ -141,3 +141,67 @@ export interface LeaderboardResponse {
 export function fetchLeaderboard(limit = 50): Promise<LeaderboardResponse> {
   return apiRequest<LeaderboardResponse>(`/api/v1/leaderboard?limit=${limit}`);
 }
+
+// --- game sessions (Increment 2) --------------------------------------------
+
+export interface StartSessionResponse {
+  sessionId: string;
+  /** The server's own clock at issue time. Display only — never compare the
+   *  local clock against it for anything load-bearing. */
+  serverTime: string;
+}
+
+export function startSession(
+  mode: "classic" | "challenge",
+  challengeIdx?: number,
+): Promise<StartSessionResponse> {
+  return apiRequest<StartSessionResponse>("/api/v1/sessions/start", {
+    method: "POST",
+    body: mode === "challenge" ? { mode, challengeIdx } : { mode },
+  });
+}
+
+export interface RunSubmissionPayload {
+  score: number;
+  levelsCleared: number;
+  mazeIdxSequence: number[];
+  pelletsEaten: number;
+  bonesEaten: number;
+  fruitEaten: number;
+  ghostsEaten: number;
+  coinsCollected: number;
+  livesLost: number;
+  playSeconds: number;
+}
+
+export interface FinishAccepted {
+  accepted: true;
+  score: number;
+  /** Always false for challenge runs — they're deliberately unranked. */
+  isNewHighScore: boolean;
+  highScore: number;
+  coinsAwarded: number;
+  profile: ServerProfile;
+}
+
+export interface FinishRejected {
+  accepted: false;
+  reasonCode: string;
+  message: string;
+  profile: ServerProfile;
+}
+
+export type FinishResponse = FinishAccepted | FinishRejected;
+
+/** Submit a finished run. A rejection comes back as HTTP 200 with
+ *  `accepted: false` — an implausible score is a normal outcome, not an error,
+ *  so this resolves rather than throwing. */
+export function finishSession(
+  sessionId: string,
+  payload: RunSubmissionPayload,
+): Promise<FinishResponse> {
+  return apiRequest<FinishResponse>(
+    `/api/v1/sessions/${encodeURIComponent(sessionId)}/finish`,
+    { method: "POST", body: payload },
+  );
+}
