@@ -16,30 +16,77 @@ Living backlog of ideas. Two purposes:
 ## 📥 Inbox (raw captures — untriaged)
 > `/idea` appends raw notes here with a date. `/idea-triage` turns them into registered ideas
 > below, then clears them from here. Don't assign IDs in the Inbox.
-- (2026-08-14) Improve the login screen. Have the favicon on the screen and the name of the game
-  below. Then the message we already have, to create an account to keep everything. Then below,
-  the section that has the two buttons — I was thinking more of two TABS, one for creation another
-  for login, like sign in / sign up but with the text "Create account" / "Login". The default is
-  Create account; when the user selects Login we show the login form. Below that, the option to use
-  the recovery code.
-- (2026-08-14) On the home page menu we have "Beagle Chomp" at the top and that's to keep, but
-  above the name we have "three.js · maze chase" — we can remove that. Then still on the home page,
-  the button options: create a CARROUSEL below the beagle with all the options, this way the
-  buttons will look better on the screen. On desktop we should put the beagle a little up (the
-  preview) and the buttons below. On mobile the same, to keep it uniform.
-- (2026-08-14) When a player selects a different theme, on the preview we should see the theme
-  selected — like we already do with the skin of the beagle.
-- (2026-08-14) The pop-up with the message to install the PWA is not responsive: on mobile screens
-  it looks like a rounded button and we can't read the text. Improve this pop-up — maybe put it at
-  the TOP of the screen so it's not above the buttons.
-- (2026-08-14) The prices of the skins and themes: make them a little more expensive. It's too easy
-  to buy a skin. Something like 25 coins for a dog skin, 25 for an enemy skin, and 50 for themes.
-- (2026-08-14) Add the option to have BUTTONS instead of finger movement (swipe) on mobile devices.
-  Some people playing on phones with a not-so-good screen find the gameplay frustrating, so add the
-  option of on-screen buttons.
+_(empty — nothing to triage)_
 
 ## Backlog (open ideas)
-> New registered ideas go here. Next free ID: IDEA-035
+> New registered ideas go here. Next free ID: IDEA-039
+
+### IDEA-035 — Login screen: favicon, title, and Create-account / Login tabs 💡
+- **Priority:** 🟡
+- **Area:** accounts
+- **Registered:** 2026-08-14
+- **Description:** improve the login screen. Put the favicon on the screen with the name of the game
+  below it, then the message we already have about creating an account to keep everything. Below
+  that, instead of the two buttons, two TABS — "Create account" and "Login" — with **Create account
+  as the default**; selecting Login shows the login form. Below the tabs, the option to use a
+  recovery code.
+- **Notes:** first impression of the whole game now that sign-in comes before play ([[IDEA-019]]),
+  so it's the screen every player sees first. The current gate is a three-button "choose" view that
+  branches to separate forms; this replaces that with tabs and makes signing up the default path
+  rather than an equal option — which is right, since a brand-new player is the common case.
+  Recovery stays deliberately below and quieter: it's the rare path. All in `src/ui/auth.ts` (the
+  four views already live in one module for exactly this kind of change) + `style.css`. The favicon
+  art already exists from [[IDEA-007]]. Watch the `#signupUsername` pattern attribute quirk
+  documented in `auth.ts` when moving that markup.
+- **Dependencies:** [[IDEA-019]]
+
+### IDEA-036 — Home menu: drop the eyebrow, carousel the buttons 💡
+- **Priority:** 🟡
+- **Area:** menu
+- **Registered:** 2026-08-14
+- **Description:** on the home menu, keep the "Beagle Chomp" title but **remove the
+  "three.js · maze chase" eyebrow** above it. Then turn the button options into a **carousel below
+  the beagle** so they look better on screen. On desktop, move the beagle preview a little up and
+  put the buttons below it; keep mobile the same way so the two stay uniform.
+- **Notes:** the menu now carries five buttons (Play · Challenge · Shop · Leaderboard · Account)
+  after [[IDEA-019]]/[[IDEA-020]] added two — a stack that was fine at two options and is crowding
+  the showcase at five. A carousel keeps the beagle the hero instead of squeezing it. The eyebrow
+  was a v2.0 framing device ([[IDEA-021]] v2) that has outlived its purpose. `index.html`'s
+  `.menu-actions`, `style.css`, and the portrait camera dolly in `menuScene.ts` if the beagle moves
+  up. Pairs naturally with [[IDEA-037]] — both are menu-screen work.
+- **Dependencies:** —
+
+### IDEA-037 — Show the equipped MAZE THEME on the menu showcase 💡
+- **Priority:** 🟢
+- **Area:** menu
+- **Registered:** 2026-08-14
+- **Description:** when a player selects a different theme, the menu preview should show the
+  selected theme — the same way it already shows the equipped beagle skin.
+- **Notes:** the menu showcase ([[IDEA-021]] v2's `menuScene.ts`) reacts to the equipped SKIN but
+  not the equipped THEME, so a player who buys Night City sees no sign of it until they start a
+  run. Not just a palette swap: `menuScene` builds its own small garden vignette (turf patch, hedge
+  arc, blooms, daytime sky) rather than using `board.ts`, so this means giving it a theme-aware path
+  — likely reusing `ThemePalette` from [[IDEA-026]] for sky/lighting/materials, and deciding what
+  the garden props become under each theme. Also worth checking the equip path updates it LIVE from
+  the shop, the way `setBeagleSkin` already does. Pairs with [[IDEA-036]].
+- **Dependencies:** [[IDEA-026]]
+
+### IDEA-038 — Optional on-screen D-pad for mobile 💡
+- **Priority:** 🟡
+- **Area:** ux
+- **Registered:** 2026-08-14
+- **Description:** add the option to have BUTTONS instead of finger swipes on mobile. Watching
+  people play on phones with a not-so-good screen, the gameplay can be frustrating — so offer
+  on-screen buttons as an alternative.
+- **Notes:** Nuno saw this happen with real players, which is the strongest signal in the backlog.
+  Swipe (`src/input/touch.ts`, [[IDEA-005]]) stays the default; this is an OPTION, so it needs a
+  setting that persists — and since [[IDEA-019]] moved profile state server-side, "control scheme"
+  is a natural new profile field rather than another localStorage key. The d-pad must not cover the
+  maze or fight the safe-area insets, and its buttons feed the same queued-direction model the
+  keyboard and swipe already share (so no gameplay logic changes). Consider auto-suggesting it on
+  small screens rather than hiding it in a menu. The biggest of the current batch and the only one
+  that touches how the game actually plays.
+- **Dependencies:** —
 
 
 
@@ -484,6 +531,14 @@ _(nothing yet)_
 - **Dependencies:** [[IDEA-009]], [[IDEA-010]]
 - **History:**
   - **v1** (2026-07-09) — the storefront: 🛒 HUD button opens a dedicated overlay (own `#shop` container, never fights the Start/GameOver panel) with live coin balance + Beagle/Enemy sections; per-skin cards (coat-color swatches for beagles, icons for enemies) with contextual actions — Equipped / Equip / Buy · 5 🪙 / "Need N more 🪙". Data layer: `price` on both skin registries; `ownedBeagleSkinIds`/`ownedEnemySkinIds` in the profile blob (defaults always owned, defensive load); `buyBeagleSkin`/`buyEnemySkin` (atomic coin-deduct + unlock in one write; refuses already-owned/insufficient/unknown); `equipBeagleSkin`/`equipEnemySkin` now gated on ownership (return boolean); boot fallback if equipped-but-unowned. HUD coin counter syncs live on purchase (`onCoinsChanged`). Responsive desktop + phone (cards stack, ≥44px targets). Verified live end-to-end with real clicks: buy 12→7 🪙, unlock, equip (beagle recolors live), reload persists all. `ui/shop.ts` (new), `ui/skin.ts` (deleted), `cosmetics.ts`, `profileStore.ts`, `game.ts`, `index.html`, `style.css`, `scripts/test-cosmetics.ts`. _(9126a00)_
+- **Queued v2 scope (triaged 2026-08-14):** **raise cosmetic prices** — Nuno, after playing v5.0:
+  "it's too easy to buy a skin". Target **25 coins** for a beagle skin, **25** for an enemy skin,
+  **50** for a maze theme (from today's 5 / 5 / 5–10). One coin is earned per 1,000 points plus
+  4 pickups per level ([[IDEA-016]]/[[IDEA-017]]), so this turns a skin from "one good run" into a
+  real goal. Prices live in `cosmetics.ts` + `themes.ts` — but since [[IDEA-020]] the SERVER charges
+  from `server/src/catalog.generated.ts`, so **`npm run sync` in `server/` must be re-run** or the
+  server keeps charging the old price; `npm run test:catalog` fails on that drift by design.
+  Existing owners are unaffected (ownership is stored, not re-charged).
 
 ### IDEA-016 — Classic mode: earn coins from points ✅
 - **Priority:** 🟡
@@ -661,6 +716,13 @@ _(nothing yet)_
 - **History:**
   - **v1** (2026-07-07) — PWA config, install UX, GitHub Pages deploy workflow. _(a426ced)_
   - **v2** (2026-07-08) — fix: canvas was sized to `viewport × devicePixelRatio` on phones (only the top-left corner was visible). `renderer.setSize(w, h)` now sets the canvas CSS size to the logical viewport while the buffer stays 2× for sharpness. Verified full-maze framing in portrait + landscape. `scene.ts`. _(8226b88)_
+- **Queued v3 scope (triaged 2026-08-14):** the install pop-up **isn't responsive** — Nuno: "on
+  mobile screens it looks like a rounded button and we can't read the text". Fix the install pill's
+  sizing/wrapping so the message is legible on a phone, and **move it to the TOP of the screen** so
+  it stops sitting over the menu buttons. `src/ui/install.ts` + `install.css` (the pill is the
+  Chromium `beforeinstallprompt` path; check the iOS "Add to Home Screen" hint at the same time).
+  Note the menu is being reworked in [[IDEA-036]], so the "not above the buttons" requirement should
+  be settled against that new layout rather than the current one.
 
 ### IDEA-007 — Beagle app icon & favicon artwork ✅
 - **Area:** brand
