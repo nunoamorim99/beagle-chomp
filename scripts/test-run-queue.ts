@@ -90,11 +90,23 @@ async function main(): Promise<void> {
     undefined,
     { timeout: 240_000, polling: 500 },
   );
-  // Foreground retries (700ms + 1400ms) must exhaust before it queues.
+
+  // PERSIST-FIRST: the run must be on disk the moment the panel shows — not
+  // after the retries exhaust. This is what protects the die-and-swipe-the-
+  // app-away player, who never waits around for a backoff schedule.
+  const immediate = await readPending(page);
+  ok(
+    "the run is persisted the instant the game ends",
+    immediate.length === 1,
+    immediate.length,
+  );
+
+  // Then let the foreground retries (700ms + 1400ms) exhaust so the offline
+  // notice appears.
   await page.waitForTimeout(6_000);
 
   const queued = await readPending(page);
-  ok("the run is persisted to localStorage", queued.length === 1, queued.length);
+  ok("still queued after retries exhaust", queued.length === 1, queued.length);
 
   const panelText = (await page.textContent("#center .panel")) ?? "";
   ok(

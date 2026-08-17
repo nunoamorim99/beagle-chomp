@@ -1629,6 +1629,12 @@ export class Game {
           "sent automatically when you're back online.",
         );
         break;
+
+      case "refused":
+        // The server refused the request itself and nothing is queued. Honest
+        // and terse — promising a later delivery here would be false.
+        this.showScoreNotice("This score couldn't be recorded.");
+        break;
     }
   }
 

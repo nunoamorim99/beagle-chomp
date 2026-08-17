@@ -240,6 +240,9 @@ export function finishSession(
 ): Promise<FinishResponse> {
   return apiRequest<FinishResponse>(
     `/api/v1/sessions/${encodeURIComponent(sessionId)}/finish`,
-    { method: "POST", body: payload },
+    // keepalive: if the player closes the tab the moment they die, the
+    // browser is allowed to finish sending this anyway. The persisted run
+    // queue (net/runSubmit.ts) is the guarantee; this is the fast path.
+    { method: "POST", body: payload, keepalive: true },
   );
 }

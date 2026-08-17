@@ -9,15 +9,18 @@
 // something they care about — and phones drop connections constantly (leaving
 // wifi, a lift, a tunnel, the browser backgrounding the tab).
 //
-// THE APPROACH, in order of what it costs the player:
+// THE APPROACH:
 //
-//   1. Retry with backoff. Most failures are transient; three quick attempts
-//      fix them invisibly.
-//   2. If those fail, PERSIST the run to localStorage and keep retrying in the
-//      background — on reconnect, and on the next app boot. The player can
-//      close the tab, and the score still lands.
-//   3. Only if the server gives a considered answer (a validation rejection,
-//      or "already finished") do we stop. Those are decisions, not failures.
+//   1. PERSIST FIRST. The run is written to localStorage synchronously at game
+//      over, before the first network attempt — so dying and swiping the app
+//      away in the same second (the normal rage-quit) cannot lose it.
+//   2. Retry with backoff. Most failures are transient; three quick attempts
+//      fix them invisibly, and success removes the persisted entry.
+//   3. Whatever is still unsent keeps retrying in the background — on
+//      reconnect, on tab re-focus, and at the next app boot.
+//   4. Only a considered answer from the server (a validation rejection,
+//      "already finished", or a refused request) stops the retrying. Those
+//      are decisions, not failures.
 //
 // WHY RETRYING IS SAFE. The server's replay guard (scoreService.finishSession,
 // under a SELECT … FOR UPDATE row lock) accepts a session exactly once and
@@ -78,7 +81,11 @@ export type SubmitOutcome =
   | { kind: "accepted"; result: FinishAccepted }
   | { kind: "rejected"; result: FinishRejected }
   | { kind: "already-finished" }
-  | { kind: "pending" };
+  /** Queued on-device; will be retried until the server answers. */
+  | { kind: "pending" }
+  /** The server refused the request itself (a 4xx). Nothing is queued —
+   *  telling the player it was "saved for later" would be a lie. */
+  | { kind: "refused" };
 
 // --- the durable store ------------------------------------------------------
 
@@ -143,6 +150,8 @@ export function pendingRunCount(): number {
 function isRetryable(err: unknown): boolean {
   if (!(err instanceof ApiError)) return true; // unknown shape: assume transient
   if (err.isNetworkError) return true;
+  // 429 is "not now", not "no" — the background flush retries after cooldown.
+  if (err.status === 429) return true;
   return err.status >= 500;
 }
 
@@ -158,14 +167,24 @@ const sleep = (ms: number): Promise<void> =>
 /**
  * Submit a finished run, retrying transient failures.
  *
+ * PERSISTS BEFORE THE FIRST ATTEMPT — synchronously, so the run is durable on
+ * disk the instant the game ends. The obvious order (try first, persist only
+ * on failure) has a hole exactly where players live: die, swipe the app away
+ * in the same second. The tab dies, the in-flight fetch dies with it, and the
+ * not-yet-persisted run is gone. Persist-first means the worst a killed tab
+ * can do is leave an entry the next boot's flush will send. On success the
+ * entry is removed again; one extra localStorage write per game is free.
+ *
  * Never throws: the caller is a game-over screen, and an exception there would
- * replace a disappointing message with a broken one. Anything unresolved is
- * persisted and reported as "pending".
+ * replace a disappointing message with a broken one. Anything unresolved stays
+ * persisted and is reported as "pending".
  */
 export async function submitRunWithRetry(
   sessionId: string,
   payload: RunSubmissionPayload,
 ): Promise<SubmitOutcome> {
+  enqueue({ sessionId, payload, queuedAt: Date.now(), token: getToken() ?? "" });
+
   for (let attempt = 1; attempt <= FOREGROUND_ATTEMPTS; attempt++) {
     try {
       const result: FinishResponse = await finishSession(sessionId, payload);
@@ -182,10 +201,11 @@ export async function submitRunWithRetry(
 
       if (!isRetryable(err)) {
         // A considered 4xx. Retrying sends the same rejected request again, so
-        // stop — but keep nothing queued, since the server has answered.
+        // drop it — and SAY it was refused. Reporting this as "pending" would
+        // promise a delivery that is never coming.
         dequeue(sessionId);
         console.warn("[run] submit refused:", err);
-        return { kind: "pending" };
+        return { kind: "refused" };
       }
 
       if (attempt === FOREGROUND_ATTEMPTS) break;
@@ -193,8 +213,8 @@ export async function submitRunWithRetry(
     }
   }
 
-  // Out of foreground attempts: persist it and let the background flush win.
-  enqueue({ sessionId, payload, queuedAt: Date.now(), token: getToken() ?? "" });
+  // Out of foreground attempts. Already persisted; the background flush owns
+  // it from here — on reconnect, on tab re-focus, and at the next boot.
   scheduleFlush();
   return { kind: "pending" };
 }

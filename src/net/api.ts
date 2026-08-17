@@ -130,6 +130,11 @@ interface RequestOptions {
   auth?: boolean;
   /** Abort after this long. Keeps a hung connection from freezing the UI. */
   timeoutMs?: number;
+  /** Let the request outlive its page (fetch keepalive). Used by the run
+   *  submit, so closing the tab at game over doesn't kill the score on its
+   *  way out. Best-effort: browsers without it just ignore the flag, and the
+   *  persisted run queue is the real guarantee. */
+  keepalive?: boolean;
 }
 
 const DEFAULT_TIMEOUT_MS = 15_000;
@@ -149,7 +154,13 @@ export async function apiRequest<T>(
 ): Promise<T> {
   assertApiConfigured();
 
-  const { method = "GET", body, auth = true, timeoutMs = DEFAULT_TIMEOUT_MS } = options;
+  const {
+    method = "GET",
+    body,
+    auth = true,
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+    keepalive = false,
+  } = options;
 
   const headers: Record<string, string> = {};
   if (body !== undefined) headers["Content-Type"] = "application/json";
@@ -169,6 +180,7 @@ export async function apiRequest<T>(
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: controller.signal,
+      keepalive,
       // Bearer tokens, not cookies — no credentials to include.
       credentials: "omit",
     });
