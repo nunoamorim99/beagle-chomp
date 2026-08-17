@@ -39,10 +39,10 @@ import {
   accumulatePlayTime,
   type RunTelemetry,
 } from "./runTelemetry";
-import {
-  startSession as startSessionRemote,
-  finishSession as finishSessionRemote,
-} from "../net/endpoints";
+import { startSession as startSessionRemote } from "../net/endpoints";
+// Submitting goes through the durable queue rather than a bare fetch: a run
+// that already happened must not be lost to one dropped packet.
+import { submitRunWithRetry } from "../net/runSubmit";
 import { replaceProfileCache } from "./profileCache";
 import { fromServerProfile } from "./profileMapping";
 import { makeEntity, stepEntity, entityWorld, reverseEntity, type Entity } from "./movement";
@@ -1580,42 +1580,55 @@ export class Game {
     const sessionId = this.sessionId;
     if (!sessionId) return;
 
-    // Clear first: whatever happens, this session is spent, and a retry would
-    // hit the replay guard anyway.
+    // Clear first so a second gameOver() can't submit the same session twice.
     this.sessionId = null;
 
-    try {
-      const result = await finishSessionRemote(sessionId, {
-        score: this.score,
-        levelsCleared: this.telemetry.levelsCleared,
-        mazeIdxSequence: this.telemetry.mazeIdxSequence,
-        pelletsEaten: this.telemetry.pelletsEaten,
-        bonesEaten: this.telemetry.bonesEaten,
-        fruitEaten: this.telemetry.fruitEaten,
-        ghostsEaten: this.telemetry.ghostsEaten,
-        coinsCollected: this.telemetry.coinsCollected,
-        livesLost: this.telemetry.livesLost,
-        playSeconds: Math.round(this.telemetry.playSeconds),
-      });
+    const payload = {
+      score: this.score,
+      levelsCleared: this.telemetry.levelsCleared,
+      mazeIdxSequence: this.telemetry.mazeIdxSequence,
+      pelletsEaten: this.telemetry.pelletsEaten,
+      bonesEaten: this.telemetry.bonesEaten,
+      fruitEaten: this.telemetry.fruitEaten,
+      ghostsEaten: this.telemetry.ghostsEaten,
+      coinsCollected: this.telemetry.coinsCollected,
+      livesLost: this.telemetry.livesLost,
+      playSeconds: Math.round(this.telemetry.playSeconds),
+    };
 
-      replaceProfileCache(fromServerProfile(result.profile));
-      this.hud.setCoins(result.profile.coins);
+    const outcome = await submitRunWithRetry(sessionId, payload);
 
-      if (!result.accepted) {
+    switch (outcome.kind) {
+      case "accepted":
+        replaceProfileCache(fromServerProfile(outcome.result.profile));
+        this.hud.setCoins(outcome.result.profile.coins);
+        break;
+
+      case "rejected":
+        replaceProfileCache(fromServerProfile(outcome.result.profile));
+        this.hud.setCoins(outcome.result.profile.coins);
         // Deliberately visible rather than silent. If this ever fires for an
         // honest run it's a bound that needs loosening, and a player who sees
         // it can say so — a silently-dropped score would just look like a bug.
-        //
-        // It used to be console.warn only, which meant a dropped score was
-        // indistinguishable from "the leaderboard is stuck on my old score"
-        // unless DevTools happened to be open. Now the panel says so.
-        console.warn(`[score] rejected: ${result.reasonCode}`);
-        this.showScoreNotice("That run couldn't be verified, so it wasn't added to the leaderboard.");
-      }
-    } catch {
-      // Offline, or the session already finished. The run still happened; the
-      // score just isn't recorded.
-      this.showScoreNotice("Couldn't reach the server, so this score wasn't saved.");
+        console.warn(`[score] rejected: ${outcome.result.reasonCode}`);
+        this.showScoreNotice(
+          "That run couldn't be verified, so it wasn't added to the leaderboard.",
+        );
+        break;
+
+      case "already-finished":
+        // A retry landed after the first attempt had actually succeeded — the
+        // response was lost, not the score. Nothing was lost, so say nothing.
+        break;
+
+      case "pending":
+        // Still queued: it survives a reload and is retried on the next boot
+        // and whenever the connection returns.
+        this.showScoreNotice(
+          "No connection — this score is saved on your device and will be " +
+          "sent automatically when you're back online.",
+        );
+        break;
     }
   }
 

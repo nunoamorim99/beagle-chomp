@@ -37,6 +37,7 @@ import {
   setUnauthorizedHandler,
   assertApiConfigured,
 } from "./net/api";
+import { initRunSubmitQueue } from "./net/runSubmit";
 import { setProfileCache, clearProfileCache } from "./game/profileCache";
 import { fromServerProfile } from "./game/profileMapping";
 
@@ -123,6 +124,11 @@ async function startApp(): Promise<void> {
   // below — the closure is only ever called on a click, long after that.
   const game = new Game(canvas, () => leaderboard.open());
   game.start();
+
+  // Started only AFTER sign-in: a flush needs the bearer token, and firing it
+  // at the auth gate would just 401 every queued run. Sends anything stranded
+  // by a closed tab or a dead connection last session.
+  initRunSubmitQueue();
 
   // The account screen is wired HERE rather than in game.ts, deliberately: the
   // game layer knows nothing about accounts, and keeping it that way means all
