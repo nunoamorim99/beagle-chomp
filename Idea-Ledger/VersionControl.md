@@ -16,24 +16,7 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
 > lines here roll up into the numbered version below and this section is cleared (hold a line back
 > only if you explicitly choose to).
 
-- (2026-08-14) IDEA-035 v1 — the login screen leads with the app icon and game name, then
-  Create-account / Login tabs (signing up is the default) with the recovery-code option below.
-- (2026-08-14) IDEA-037 v1 — the menu showcase now shows your equipped MAZE THEME, not just your
-  skin: sky, ground, hedges, blooms and lighting all follow the theme you're wearing.
-- (2026-08-14) IDEA-038 v1 — an optional on-screen D-pad for phones, for players who find the swipe
-  gesture fiddly. Swipe stays the default; the choice is saved to your account, so it follows you to
-  any device.
-- (2026-08-14) IDEA-012 v2 — cosmetic prices raised: beagle and enemy skins 5 → **25**, maze themes
-  5–10 → **50**. At 5 coins a skin was about one good run, so nothing in the shop was worth saving
-  for. First price change since the server became authoritative, so it needed a catalog re-sync —
-  the drift test caught all 11 mismatches before they could reach a player.
-- (2026-08-14) IDEA-036 v1 — home menu reworked: the "three.js · maze chase" eyebrow is gone, Play
-  stays a standalone primary button, and the four destinations became a swipeable carousel so the
-  beagle stays the hero of the screen instead of being crowded by five stacked buttons.
-- (2026-08-14) IDEA-006 v3 — the PWA install banner is readable on a phone at last. It was a
-  round-cornered pill anchored to the bottom that deformed into an unreadable lozenge when its text
-  wrapped, directly over the menu buttons. Now a top-pinned banner that stacks properly on narrow
-  screens, with real touch targets, clear of both the buttons and the game's title.
+_(nothing unreleased — v5.1 "Fair Play" was cut on 2026-08-17)_
 
 ## 📌 Planned
 > Forward-looking targets from `/plan-version`. Each is a checklist of IDEAs intended for a
@@ -42,6 +25,45 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
 _(nothing planned yet — v4.0 "New Territory" was fulfilled and cut on 2026-07-12)_
 
 ## Version history
+
+### v5.1 — Fair Play (2026-08-17)
+The settling-in release after v5.0 went full-stack: the scoreboard learned to tell the truth, the
+screens you meet first got their polish, and the shop finally has something worth saving for.
+
+The headline is that **runs stopped going missing**. Players reported scores that never appeared —
+one 16,000-point run showing as an old, lower record — and the cause was the submit itself: a single
+network call with no retry, at the exact moment a player has something they care about, on exactly
+the devices that drop connections. A finished run is now saved to your device before it's even sent,
+and keeps trying until it lands.
+
+- **IDEA-020 v2** — the scoreboard, honestly. Runs are persisted before the first send and retried
+  on reconnect, on tab re-focus and at the next boot, so a dropped connection at game over can't
+  cost you a score; when something does go wrong the game says so instead of leaving you to guess.
+  A new **All runs** tab lists every attempt rather than one row per player — the same player can
+  hold all three medals, and scores that were in the database with nowhere to show finally appear.
+  Plus a "Your best" panel with your rank and the gap to 1st, top 10 with "Show all", your own row
+  pinned in view when you rank below the cut, and a 🏆 button on the game-over panel.
+- **IDEA-035 v1** — the login screen leads with the app icon and game name, then Create-account /
+  Login tabs (signing up is the default) with the recovery-code option below.
+- **IDEA-036 v1** — home menu reworked: the "three.js · maze chase" eyebrow is gone and the
+  destinations became a swipeable carousel — Play included — so the beagle stays the hero of the
+  screen instead of being crowded by five stacked buttons.
+- **IDEA-037 v1** — the menu showcase now shows your equipped MAZE THEME, not just your skin: sky,
+  ground, hedges, blooms and lighting all follow the theme you're wearing.
+- **IDEA-038 v1** — an optional on-screen D-pad for phones, for players who find the swipe gesture
+  fiddly. Swipe stays the default; the choice is saved to your account, so it follows you to any
+  device.
+- **IDEA-012 v2** — cosmetic prices raised: beagle and enemy skins 5 → **25**, maze themes 5–10 →
+  **50**. At 5 coins a skin was about one good run, so nothing in the shop was worth saving for.
+  First price change since the server became authoritative, so it needed a catalog re-sync — the
+  drift test caught all 11 mismatches before they could reach a player.
+- **IDEA-006 v3** — the PWA install banner is readable on a phone at last. It was a round-cornered
+  pill anchored to the bottom that deformed into an unreadable lozenge when its text wrapped,
+  directly over the menu buttons. Now a top-pinned banner that stacks properly on narrow screens,
+  with real touch targets, clear of both the buttons and the game's title.
+
+**Note on the lost scores:** this stops the loss from here on. Runs whose results never reached the
+server before v5.1 are gone — the server can't score what it never received.
 
 ### v5.0 — Signed In (2026-08-14)
 Beagle Chomp stopped being a static offline PWA and became a full-stack game. It now knows who you

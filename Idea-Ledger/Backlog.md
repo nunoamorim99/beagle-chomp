@@ -186,6 +186,53 @@ _(nothing yet)_
     `src/game/runTelemetry.ts` (new), `game.ts`, `src/ui/leaderboard.ts` (new), `main.ts`,
     `index.html`, `style.css`, `scripts/test-{plausibility,sessions,score-ui,leaderboard-ui}.ts`
     (new). _(6b3ef88, c30b690)_
+  - **v2** (2026-08-17) — **runs stopped going missing**, and the board started telling the whole
+    truth. Driven by players reporting scores that never appeared — one 16,000-point run showing as
+    an old, lower record.
+    **The root cause was the submit itself**: a single `fetch` with no retry. One dropped packet at
+    the moment the last life was lost and the run was gone for good — at exactly the moment a player
+    has something they care about, on exactly the devices that drop connections. Worse, profile
+    writes had retried with backoff since v5.0, so the thing players cared most about had the
+    weakest guarantee.
+    Runs are now **persisted to the device before the first network attempt**, synchronously at game
+    over, then retried with backoff and flushed on reconnect, on tab re-focus and at the next boot.
+    The first cut of this persisted only after the retries exhausted (~4s), which still lost the run
+    for anyone who died and swiped the app away — the normal way to leave a game over. Retrying is
+    safe because the server's replay guard already accepts a session exactly once and answers 409 to
+    every later attempt, so a retry after a request that succeeded but lost its RESPONSE cannot
+    double-count. Each queued run stores the token that owns it: without that, signing in as someone
+    else would post it under the new token, the server would answer 404, and a real score would be
+    silently binned. `finishSession` also sends with `keepalive` so a closing tab is allowed to
+    finish the request — a fast path, not the guarantee.
+    **A dropped score is no longer invisible.** The game-over panel says when a run wasn't recorded,
+    distinguishing "saved on your device, will send when you're back online" from "couldn't be
+    recorded" — the old code reported a discarded run as pending, promising a delivery that was
+    never coming. Before this, a lost run was indistinguishable from a broken leaderboard unless
+    DevTools happened to be open.
+    **The board was also hiding real scores.** It showed one row per player, so a player's other
+    runs were invisible even when they were among the best ever posted — Chorizo's 13,840 and 13,040
+    were in the database the whole time with nowhere to show. A second **All runs** tab lists every
+    accepted classic run, one row per attempt, so the same player can hold several places including
+    all three medals. No schema change: `game_sessions` had recorded every attempt all along.
+    Plus: opens at the top 10 with a pinned "Show all"; a "Your best" panel with your score, rank and
+    the gap to 1st; your own row sticks to the bottom when you rank below the cut (it previously sat
+    at row 11, below the fold, defeating the point); own-row matching by user id rather than by
+    comparing usernames; a 🏆 Leaderboard button on the game-over panel (classic only — challenge
+    runs are unranked); and consistent number grouping, since pt-PT left 4-digit scores ungrouped so
+    "7400" sat beside "40 800".
+    **Worth recording honestly:** the original complaint was investigated first and the board turned
+    out to be right — Chorizo's two accepted runs were 9540 and 6680, so the max-write correctly kept
+    9540, and the run that "went missing" had been quit to the menu (which by design never scores).
+    The tests had covered a WORSE later run leaving `high_score` alone but never a BETTER one raising
+    it — the exact direction being reported — so that gap is now pinned through the real submit path.
+    Verified in a real browser through real offline mode: queued while offline, survives a reload,
+    drains on reconnect, lands on the leaderboard, and is not stolen by another account. Confirmed
+    again against production after deploy, with the connection killed mid-run.
+    `src/net/runSubmit.ts` (new), `net/api.ts`, `net/endpoints.ts`, `game.ts`, `main.ts`,
+    `src/ui/leaderboard.ts`, `style.css`, `server/src/repo/{gameSessions,users}.ts`,
+    `services/profileService.ts`, `routes/profile.ts`,
+    `scripts/test-run-queue.ts` (new), `server/scripts/test-{sessions,auth}.ts`.
+    _(c520d6d, 3b70f1d, b52148b, c45040f, bc167f0)_
 
 ### IDEA-019 — Player login & cross-device account recovery ✅
 - **Priority:** 🟡
