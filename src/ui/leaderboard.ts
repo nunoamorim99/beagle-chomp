@@ -19,7 +19,13 @@
 //
 // Follows the attachX(root, callbacks) => handle pattern; no `three` imports.
 
-import { fetchLeaderboard, type LeaderboardEntry } from "../net/endpoints";
+import {
+  fetchLeaderboard,
+  fetchRunBoard,
+  type LeaderboardEntry,
+  type RunBoardEntry,
+  type RunBoardResponse,
+} from "../net/endpoints";
 
 export interface LeaderboardHandle {
   open: () => void;
@@ -31,6 +37,11 @@ export interface LeaderboardHandle {
 export interface LeaderboardCallbacks {
   onClose?: () => void;
 }
+
+/** The two boards. "players" ranks people by their personal best (one row
+ *  each); "runs" ranks individual attempts, so one player can hold several
+ *  places — including more than one podium spot. */
+type BoardTab = "players" | "runs";
 
 /** Group every score the same way.
  *
@@ -63,20 +74,37 @@ const COLLAPSED_ROWS = 10;
  *  a board this size is a few KB and pagination would be machinery for nothing. */
 const FULL_LIMIT = 100;
 
+/** The runs board grows with every game played, not with the player count, so
+ *  it gets a larger page. The server caps this at 200. */
+const RUNS_LIMIT = 200;
+
 export function attachLeaderboard(callbacks: LeaderboardCallbacks = {}): LeaderboardHandle {
   const root = require<HTMLDivElement>("leaderboard");
   let isOpenState = false;
   /** Reset on every open: the board always opens collapsed to the top 10. */
   let showingAll = false;
+  /** Which board is showing. "players" folds each player to their personal
+   *  best; "runs" lists every individual attempt. */
+  let tab: BoardTab = "players";
 
-  /** Build one row with NO innerHTML anywhere near the username. */
-  function buildRow(entry: LeaderboardEntry, isMe: boolean): HTMLElement {
+  /** Build one row with NO innerHTML anywhere near the username.
+   *
+   *  Shared by both tabs: `sub` carries the run date on the all-runs board and
+   *  is omitted on the players board, so the two tabs stay visually identical
+   *  apart from that one line. */
+  function buildRow(
+    entry: { rank: number; username: string; isMe: boolean },
+    score: number,
+    isMe: boolean,
+    sub?: string,
+  ): HTMLElement {
     const row = document.createElement("li");
     row.className = isMe ? "lb-row lb-row-me" : "lb-row";
 
     const rank = document.createElement("span");
     rank.className = "lb-rank";
-    // Medals for the podium; plain numbers below.
+    // Medals for the podium; plain numbers below. On the all-runs board the
+    // same player can legitimately take more than one medal.
     rank.textContent =
       entry.rank === 1 ? "🥇" : entry.rank === 2 ? "🥈" : entry.rank === 3 ? "🥉" : `${entry.rank}`;
 
@@ -85,12 +113,48 @@ export function attachLeaderboard(callbacks: LeaderboardCallbacks = {}): Leaderb
     // textContent, never innerHTML — this is the untrusted string.
     name.textContent = entry.username;
 
-    const score = document.createElement("span");
-    score.className = "lb-score";
-    score.textContent = formatScore(entry.highScore);
+    if (sub) {
+      const when = document.createElement("span");
+      when.className = "lb-when";
+      when.textContent = sub;
+      name.append(when);
+    }
 
-    row.append(rank, name, score);
+    const scoreEl = document.createElement("span");
+    scoreEl.className = "lb-score";
+    scoreEl.textContent = formatScore(score);
+
+    row.append(rank, name, scoreEl);
     return row;
+  }
+
+  /** The Players / All runs switch. Mirrors the auth screen's tab pattern so
+   *  the two screens feel the same. */
+  function buildTabs(): HTMLElement {
+    const bar = document.createElement("div");
+    bar.className = "lb-tabs";
+    bar.setAttribute("role", "tablist");
+
+    const make = (which: BoardTab, label: string): HTMLButtonElement => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.setAttribute("role", "tab");
+      btn.className = tab === which ? "lb-tab is-active" : "lb-tab";
+      btn.setAttribute("aria-selected", String(tab === which));
+      btn.textContent = label;
+      btn.addEventListener("click", () => {
+        if (tab === which) return;
+        tab = which;
+        // Each tab starts collapsed at its own top 10 — carrying an expanded
+        // state across would land the player deep in a list they didn't open.
+        showingAll = false;
+        void load();
+      });
+      return btn;
+    };
+
+    bar.append(make("players", "Players"), make("runs", "All runs"));
+    return bar;
   }
 
   /** `pinned` renders between the header and the scrolling list, so "Your best"
@@ -113,9 +177,12 @@ export function attachLeaderboard(callbacks: LeaderboardCallbacks = {}): Leaderb
     h1.textContent = "🏆 Leaderboard";
     const sub = document.createElement("p");
     sub.className = "lb-sub";
-    // "Personal best" is worth spelling out: each player appears once, with
-    // their best-ever classic run — not their latest.
-    sub.textContent = "Classic mode — each player's personal best";
+    // Spell out which board this is — the difference between "one row per
+    // player" and "one row per run" is exactly what confused people.
+    sub.textContent =
+      tab === "players"
+        ? "Classic mode — each player's personal best"
+        : "Classic mode — every run, best first";
     titles.append(h1, sub);
 
     const closeBtn = document.createElement("button");
@@ -126,6 +193,7 @@ export function attachLeaderboard(callbacks: LeaderboardCallbacks = {}): Leaderb
 
     header.append(titles, closeBtn);
     sheet.append(header);
+    sheet.append(buildTabs());
     if (pinned) sheet.append(pinned);
 
     const body = document.createElement("div");
@@ -274,7 +342,7 @@ export function attachLeaderboard(callbacks: LeaderboardCallbacks = {}): Leaderb
       const list = document.createElement("ol");
       list.className = "lb-list";
       for (const entry of visible) {
-        list.append(buildRow(entry, entry.isMe));
+        list.append(buildRow(entry, entry.highScore, entry.isMe));
       }
       body.append(list);
 
@@ -294,7 +362,7 @@ export function attachLeaderboard(callbacks: LeaderboardCallbacks = {}): Leaderb
 
         const mine = document.createElement("ol");
         mine.className = "lb-list";
-        mine.append(buildRow(me, true));
+        mine.append(buildRow(me, me.highScore, true));
 
         standing.append(divider, mine);
         body.append(standing);
@@ -303,9 +371,154 @@ export function attachLeaderboard(callbacks: LeaderboardCallbacks = {}): Leaderb
     }, buildMyBest(me, top[0]), buildToggle({ top, me, total }));
   }
 
+  /** Short, locale-aware run date — "12 Aug", or "12 Aug 2025" once it's not
+   *  this year, so an old run never reads as a recent one. */
+  function formatRunDate(iso: string): string {
+    const date = new Date(iso);
+    if (Number.isNaN(date.getTime())) return "";
+    const sameYear = date.getFullYear() === new Date().getFullYear();
+    return date.toLocaleDateString(undefined, {
+      day: "numeric",
+      month: "short",
+      ...(sameYear ? {} : { year: "numeric" }),
+    });
+  }
+
+  function renderRuns(data: RunBoardResponse): void {
+    const { runs, myBest } = data;
+
+    shell(
+      (body) => {
+        if (runs.length === 0) {
+          const p = document.createElement("p");
+          p.className = "lb-message";
+          p.textContent = "No runs yet. Play a classic game and you'll be first.";
+          body.append(p);
+          return;
+        }
+
+        const visible = showingAll ? runs : runs.slice(0, COLLAPSED_ROWS);
+
+        const list = document.createElement("ol");
+        list.className = "lb-list";
+        for (const run of visible) {
+          list.append(buildRow(run, run.score, run.isMe, formatRunDate(run.finishedAt)));
+        }
+        body.append(list);
+
+        // Same sticky treatment as the players board: if the player's best run
+        // falls below the cut, keep it on screen rather than making them hunt.
+        if (myBest && !visible.some((r) => r.rank === myBest.rank)) {
+          const standing = document.createElement("div");
+          standing.className = "lb-standing";
+
+          const divider = document.createElement("p");
+          divider.className = "lb-divider";
+          divider.textContent = "···";
+
+          const mine = document.createElement("ol");
+          mine.className = "lb-list";
+          mine.append(
+            buildRow(myBest, myBest.score, true, formatRunDate(myBest.finishedAt)),
+          );
+
+          standing.append(divider, mine);
+          body.append(standing);
+        }
+      },
+      buildRunsMyBest(myBest, runs[0]),
+      buildRunsToggle(data),
+    );
+  }
+
+  /** "Your best run" card for the runs tab — the same shape as the players
+   *  card, reading from a run rather than a personal best. */
+  function buildRunsMyBest(
+    myBest: RunBoardEntry | null,
+    best: RunBoardEntry | undefined,
+  ): HTMLElement {
+    const card = document.createElement("section");
+    card.className = "lb-mine";
+
+    const heading = document.createElement("h2");
+    heading.className = "lb-mine-title";
+    heading.textContent = "Your best run";
+    card.append(heading);
+
+    if (!myBest) {
+      const empty = document.createElement("p");
+      empty.className = "lb-mine-empty";
+      empty.textContent = "No classic runs yet — play one to get on the board.";
+      card.append(empty);
+      return card;
+    }
+
+    const figures = document.createElement("div");
+    figures.className = "lb-mine-figures";
+
+    const scoreBlock = document.createElement("div");
+    scoreBlock.className = "lb-mine-block";
+    const scoreValue = document.createElement("span");
+    scoreValue.className = "lb-mine-value";
+    scoreValue.textContent = formatScore(myBest.score);
+    const scoreLabel = document.createElement("span");
+    scoreLabel.className = "lb-mine-label";
+    scoreLabel.textContent = "your best run";
+    scoreBlock.append(scoreValue, scoreLabel);
+
+    const rankBlock = document.createElement("div");
+    rankBlock.className = "lb-mine-block";
+    const rankValue = document.createElement("span");
+    rankValue.className = "lb-mine-value";
+    rankValue.textContent = `#${myBest.rank}`;
+    const rankLabel = document.createElement("span");
+    rankLabel.className = "lb-mine-label";
+    rankLabel.textContent = "of all runs";
+    rankBlock.append(rankValue, rankLabel);
+
+    figures.append(scoreBlock, rankBlock);
+    card.append(figures);
+
+    if (best && best.score > myBest.score) {
+      const gap = document.createElement("p");
+      gap.className = "lb-mine-gap";
+      gap.textContent = `${formatScore(best.score - myBest.score)} points behind the best run`;
+      card.append(gap);
+    } else if (myBest.rank === 1) {
+      const gap = document.createElement("p");
+      gap.className = "lb-mine-gap lb-mine-leader";
+      gap.textContent = "🏆 Best run on the board.";
+      card.append(gap);
+    }
+
+    return card;
+  }
+
+  function buildRunsToggle(data: RunBoardResponse): HTMLElement | undefined {
+    const { runs, total } = data;
+    if (runs.length === 0 || total <= COLLAPSED_ROWS) return undefined;
+
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "btn-secondary lb-more";
+    btn.textContent = showingAll ? "Show top 10" : `Show all ${total.toLocaleString()}`;
+    btn.addEventListener("click", () => {
+      showingAll = !showingAll;
+      if (showingAll && runs.length < total) void load();
+      else renderRuns(data);
+    });
+    return btn;
+  }
+
   async function load(): Promise<void> {
     renderLoading();
     try {
+      if (tab === "runs") {
+        const data = await fetchRunBoard(RUNS_LIMIT);
+        if (!isOpenState) return;
+        renderRuns(data);
+        return;
+      }
       const { top, me, total } = await fetchLeaderboard(FULL_LIMIT);
       // Guard against a late response landing after the player closed the page.
       if (!isOpenState) return;
@@ -327,6 +540,9 @@ export function attachLeaderboard(callbacks: LeaderboardCallbacks = {}): Leaderb
     open(): void {
       isOpenState = true;
       showingAll = false;
+      // Always open on the players board — it answers "who's winning?", which
+      // is the question the menu button implies.
+      tab = "players";
       root.classList.remove("hidden");
       document.body.classList.add("leaderboard-open");
       void load();

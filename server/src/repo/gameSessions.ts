@@ -111,6 +111,64 @@ export async function countOpenSessions(userId: string): Promise<number> {
   return Number(rows[0].count);
 }
 
+export interface RunEntry {
+  id: string;
+  userId: string;
+  username: string;
+  score: number;
+  finishedAt: Date;
+}
+
+/**
+ * Every ACCEPTED CLASSIC run, best first — the all-attempts board.
+ *
+ * Distinct from users.high_score, which holds one personal best per player.
+ * Here one player can legitimately hold several places (including all three
+ * podium spots), because each row is a single run rather than a person.
+ *
+ * Only 'accepted' rows: a rejected run never counted, and an abandoned one was
+ * quit before the beagle ran out of lives. Only classic, matching the
+ * high-score board — challenge modifiers make scores incomparable.
+ *
+ * Ties break on the EARLIER finish, so a score set first outranks a later
+ * match, and the order never changes between two identical requests.
+ */
+export async function topRuns(limit: number): Promise<RunEntry[]> {
+  const { rows } = await query<{
+    id: string;
+    user_id: string;
+    username: string;
+    accepted_score: number;
+    finished_at: Date;
+  }>(
+    `SELECT s.id, s.user_id, u.username, s.accepted_score, s.finished_at
+       FROM game_sessions s
+       JOIN users u ON u.id = s.user_id
+      WHERE s.status = 'accepted'
+        AND s.mode = 'classic'
+        AND s.accepted_score > 0
+      ORDER BY s.accepted_score DESC, s.finished_at ASC
+      LIMIT $1`,
+    [limit],
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    userId: r.user_id,
+    username: r.username,
+    score: r.accepted_score,
+    finishedAt: r.finished_at,
+  }));
+}
+
+/** How many accepted classic runs exist, for the "show all" affordance. */
+export async function acceptedRunCount(): Promise<number> {
+  const { rows } = await query<{ count: string }>(
+    `SELECT count(*) AS count FROM game_sessions
+      WHERE status = 'accepted' AND mode = 'classic' AND accepted_score > 0`,
+  );
+  return Number(rows[0].count);
+}
+
 /** Mark stale open sessions as abandoned.
  *
  *  Runs before issuing a new session (cheap, and keeps the open-session count

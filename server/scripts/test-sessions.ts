@@ -12,6 +12,7 @@ import { pool, closeDb } from "../src/db.js";
 import * as authService from "../src/services/authService.js";
 import * as scoreService from "../src/services/scoreService.js";
 import * as usersRepo from "../src/repo/users.js";
+import * as profileService from "../src/services/profileService.js";
 import { ApiError } from "../src/http/errors.js";
 import { CHALLENGE_LEVELS } from "../src/catalog.generated.js";
 
@@ -310,6 +311,76 @@ async function main(): Promise<void> {
       ok("but it isn't a new high score", worse.isNewHighScore === false);
       ok("the high score stands", worse.highScore === 3350, worse.highScore);
     }
+
+    // The reported complaint: "I scored more on a later run but the board still
+    // shows my old record." A BETTER run through the real submit path must
+    // raise high_score — the direction the suite did not previously cover.
+    const afterWorse = (await usersRepo.findById(player.id))!;
+    const s3 = await scoreService.startSession(afterWorse, "classic", null);
+    await backdateSession(s3.sessionId, 900);
+    // Items: 550 biscuits + 6 bones + 3 fruit + 5 ghosts ⇒ the score must land
+    // between the all-200 floor (7100) and the all-1600 chain ceiling (14100).
+    const better = await scoreService.finishSession(afterWorse, s3.sessionId, goodRun({
+      score: 8000,
+      mazeIdxSequence: [0, 1, 2],
+      levelsCleared: 3,
+      pelletsEaten: 550,
+      bonesEaten: 6,
+      fruitEaten: 3,
+      ghostsEaten: 5,
+      coinsCollected: 2,
+      livesLost: 2,
+    }));
+
+    ok("a better later run is accepted", better.accepted,
+      better.accepted ? "" : (better as { reasonCode: string }).reasonCode);
+    if (better.accepted) {
+      ok("it IS flagged as a new high score", better.isNewHighScore === true);
+      ok("the returned high score is the new one", better.highScore === 8000, better.highScore);
+    }
+    const afterBetter = (await usersRepo.findById(player.id))!;
+    ok("high_score column really rose", afterBetter.high_score === 8000, afterBetter.high_score);
+  }
+
+  section("All-runs board");
+  {
+    const player = await newUser();
+
+    // Three runs of different scores, all accepted. The scores sit inside the
+    // 4200–7000 window those item counts allow (see the floor/ceiling in
+    // plausibility.ts MAX-5), deliberately out of order so the sort is tested.
+    for (const score of [4500, 6800, 5200]) {
+      const s = await scoreService.startSession(
+        (await usersRepo.findById(player.id))!, "classic", null);
+      await backdateSession(s.sessionId, 600);
+      await scoreService.finishSession(
+        (await usersRepo.findById(player.id))!, s.sessionId,
+        goodRun({
+          score, mazeIdxSequence: [0, 1], levelsCleared: 2,
+          pelletsEaten: 340, bonesEaten: 4, fruitEaten: 2,
+          ghostsEaten: 2, coinsCollected: 1, livesLost: 1,
+        }));
+    }
+
+    const fresh = (await usersRepo.findById(player.id))!;
+    const board = await profileService.runBoard(fresh, "200");
+    const mine = board.runs.filter((r) => r.isMe);
+
+    // The whole point of this board: one player, several rows.
+    ok("every attempt gets its own row", mine.length === 3, mine.length);
+    ok("runs are sorted best first",
+      mine.every((r, i) => i === 0 || mine[i - 1].score >= r.score));
+    ok("the player's best run leads their rows", mine[0]?.score === 6800, mine[0]?.score);
+    ok("myBest points at that run", board.myBest?.score === 6800, board.myBest?.score);
+    ok("ranks are contiguous from 1",
+      board.runs.every((r, i) => r.rank === i + 1));
+    ok("total counts every accepted run", board.total >= 3, board.total);
+
+    // The players board must still fold this same player to ONE row — the
+    // difference between the two boards is the feature.
+    const players = await profileService.leaderboard(fresh, "100");
+    ok("the players board still shows one row per player",
+      players.top.filter((e) => e.isMe).length === 1);
   }
 
   // --- cleanup --------------------------------------------------------------

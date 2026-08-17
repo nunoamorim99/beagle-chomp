@@ -79,3 +79,14 @@ profileRoutes.get("/leaderboard", async (c) => {
   );
   return c.json(result);
 });
+
+/** Every accepted classic RUN, one row per attempt — so a player can hold
+ *  several places, podium included. Separate from /leaderboard, which folds
+ *  each player down to their personal best. */
+profileRoutes.get("/leaderboard/runs", async (c) => {
+  const result = await profileService.runBoard(
+    c.get("user"),
+    c.req.query("limit"),
+  );
+  return c.json(result);
+});

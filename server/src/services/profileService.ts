@@ -10,6 +10,7 @@
 import { withTransaction } from "../db.js";
 import * as usersRepo from "../repo/users.js";
 import * as tokensRepo from "../repo/tokens.js";
+import * as sessionsRepo from "../repo/gameSessions.js";
 import {
   toPublicProfile,
   type PublicProfile,
@@ -228,4 +229,59 @@ export async function leaderboard(
   }
 
   return { top, me, total };
+}
+
+// --- all-attempts board -----------------------------------------------------
+
+export interface RunBoardEntry {
+  rank: number;
+  username: string;
+  score: number;
+  finishedAt: string;
+  isMe: boolean;
+}
+
+export interface RunBoardResponse {
+  runs: RunBoardEntry[];
+  /** Total accepted classic runs, so the client knows if "show all" reveals
+   *  anything beyond the page it already has. */
+  total: number;
+  /** The player's own best single run, even when it falls outside the page. */
+  myBest: RunBoardEntry | null;
+}
+
+/**
+ * Every accepted classic RUN, best first — one row per attempt.
+ *
+ * The same player can hold several rows, podium included: these are runs, not
+ * people. That is the whole difference from `leaderboard()` above, which folds
+ * each player down to their single personal best.
+ */
+export async function runBoard(
+  row: UserRow,
+  limitInput: unknown,
+): Promise<RunBoardResponse> {
+  const parsed = Number(limitInput);
+  const limit = Number.isFinite(parsed)
+    ? Math.min(Math.max(Math.floor(parsed), 1), 200)
+    : 50;
+
+  const [entries, total] = await Promise.all([
+    sessionsRepo.topRuns(limit),
+    sessionsRepo.acceptedRunCount(),
+  ]);
+
+  const runs = entries.map((entry, idx) => ({
+    rank: idx + 1,
+    username: entry.username,
+    score: entry.score,
+    finishedAt: entry.finishedAt.toISOString(),
+    isMe: entry.userId === row.id,
+  }));
+
+  // The player's best run may sit outside the page, so the UI can still show
+  // where they stand without loading the whole board.
+  const myBest = runs.find((entry) => entry.isMe) ?? null;
+
+  return { runs, total, myBest };
 }

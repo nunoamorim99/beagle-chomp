@@ -159,6 +159,27 @@ export function fetchLeaderboard(limit = 50): Promise<LeaderboardResponse> {
   return apiRequest<LeaderboardResponse>(`/api/v1/leaderboard?limit=${limit}`);
 }
 
+/** One row per RUN rather than per player, so the same player can appear
+ *  several times — including holding more than one podium place. */
+export interface RunBoardEntry {
+  rank: number;
+  username: string;
+  score: number;
+  /** ISO timestamp of when the run ended. */
+  finishedAt: string;
+  isMe: boolean;
+}
+
+export interface RunBoardResponse {
+  runs: RunBoardEntry[];
+  total: number;
+  myBest: RunBoardEntry | null;
+}
+
+export function fetchRunBoard(limit = 50): Promise<RunBoardResponse> {
+  return apiRequest<RunBoardResponse>(`/api/v1/leaderboard/runs?limit=${limit}`);
+}
+
 // --- game sessions (Increment 2) --------------------------------------------
 
 export interface StartSessionResponse {

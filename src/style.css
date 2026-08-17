@@ -977,6 +977,21 @@ button.recovery-copy{padding:8px 14px;font-size:14px;flex:0 0 auto}
    see the rest of the board is always in view. */
 .lb-more{flex:0 0 auto;margin-top:12px;align-self:center}
 
+/* Players / All runs. Two genuinely different boards: one row per PLAYER
+   (personal best) vs one row per RUN, where the same player can hold several
+   places including more than one medal. */
+.lb-tabs{display:flex;gap:6px;flex:0 0 auto;margin-bottom:12px;
+  background:rgba(0,0,0,.28);border-radius:10px;padding:4px}
+.lb-tab{flex:1;padding:8px 10px;border:0;border-radius:8px;cursor:pointer;
+  background:transparent;color:var(--muted);font:inherit;font-size:14px;
+  font-weight:600;transition:background .15s,color .15s}
+.lb-tab:hover{color:var(--ink)}
+.lb-tab.is-active{background:rgba(232,162,61,.18);color:var(--accent)}
+
+/* The run date, under the player's name on the all-runs board. */
+.lb-when{display:block;font-size:12px;font-weight:400;color:var(--muted);
+  margin-top:1px}
+
 /* Appended to the game-over panel when a score didn't reach the board — a
    rejected run or a failed submit. Previously console-only, which made a
    dropped score look like a broken leaderboard. */
