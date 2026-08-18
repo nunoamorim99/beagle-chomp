@@ -11,6 +11,7 @@ import { withTransaction } from "../db.js";
 import * as usersRepo from "../repo/users.js";
 import * as tokensRepo from "../repo/tokens.js";
 import * as sessionsRepo from "../repo/gameSessions.js";
+import { boardCacheGet, boardCacheSet, invalidateBoardCache } from "./boardCache.js";
 import {
   toPublicProfile,
   type PublicProfile,
@@ -178,6 +179,10 @@ export async function deleteAccount(
     await tokensRepo.deleteAllTokensForUser(row.id, client);
     await usersRepo.deleteUser(row.id, client);
   });
+
+  // "Hard delete" is a privacy promise — the account must vanish from the
+  // boards NOW, not up to 15 seconds later when the cache expires.
+  invalidateBoardCache();
 }
 
 // --- leaderboard ------------------------------------------------------------
@@ -202,10 +207,20 @@ export async function leaderboard(
     ? Math.min(Math.max(Math.floor(parsed), 1), 100)
     : 50;
 
-  const [entries, total] = await Promise.all([
-    usersRepo.topScores(limit),
-    usersRepo.rankedPlayerCount(),
-  ]);
+  // The cache holds RAW repo rows only — everything player-specific (isMe,
+  // me) is derived below, per request, so one cached board serves every
+  // viewer without ever leaking one player's highlight to another.
+  type PlayersBoardData = { entries: usersRepo.LeaderboardEntry[]; total: number };
+  let data = boardCacheGet<PlayersBoardData>("players", limit);
+  if (!data) {
+    const [entries, total] = await Promise.all([
+      usersRepo.topScores(limit),
+      usersRepo.rankedPlayerCount(),
+    ]);
+    data = { entries, total };
+    boardCacheSet("players", limit, data);
+  }
+  const { entries, total } = data;
 
   // Identify the player's own row by ID, not by username. Matching on the
   // display string worked only by accident of usernames being unique, and it
@@ -266,10 +281,19 @@ export async function runBoard(
     ? Math.min(Math.max(Math.floor(parsed), 1), 200)
     : 50;
 
-  const [entries, total] = await Promise.all([
-    sessionsRepo.topRuns(limit),
-    sessionsRepo.acceptedRunCount(),
-  ]);
+  // Same shape as the players board: raw rows cached, isMe/myBest derived
+  // per request.
+  type RunsBoardData = { entries: sessionsRepo.RunEntry[]; total: number };
+  let data = boardCacheGet<RunsBoardData>("runs", limit);
+  if (!data) {
+    const [entries, total] = await Promise.all([
+      sessionsRepo.topRuns(limit),
+      sessionsRepo.acceptedRunCount(),
+    ]);
+    data = { entries, total };
+    boardCacheSet("runs", limit, data);
+  }
+  const { entries, total } = data;
 
   const runs = entries.map((entry, idx) => ({
     rank: idx + 1,

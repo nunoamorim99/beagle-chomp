@@ -20,6 +20,7 @@
 import { pool, closeDb } from "../src/db.js";
 import * as authService from "../src/services/authService.js";
 import * as profileService from "../src/services/profileService.js";
+import { __resetBoardCache } from "../src/services/boardCache.js";
 import * as usersRepo from "../src/repo/users.js";
 import * as tokensRepo from "../src/repo/tokens.js";
 import { hashToken } from "../src/auth/tokens.js";
@@ -319,6 +320,17 @@ async function main(): Promise<void> {
   ok("unranked player gets me=null", emptyBoard.me === null);
 
   await pool.query(`UPDATE users SET high_score = 12345, high_score_at = now() WHERE id = $1`, [lbUser.id]);
+
+  // The raw-SQL write above bypasses the services, so no cache invalidation
+  // fired — which makes it the perfect probe that the board cache EXISTS:
+  // the cached TOP LIST must still be the pre-write board (no row for this
+  // player). Note `me` is NOT a valid probe here: it is derived per-request
+  // from the fresh user row precisely so the cache can be shared between
+  // viewers — the row list is the only part that is actually cached.
+  const stale = await profileService.leaderboard((await usersRepo.findById(lbUser.id))!, undefined);
+  ok("the board is cached (raw-SQL write not in the cached rows)", !stale.top.some((e) => e.isMe));
+
+  __resetBoardCache();
   const ranked = await profileService.leaderboard((await usersRepo.findById(lbUser.id))!, undefined);
   ok("ranked player appears in me", ranked.me?.highScore === 12345);
   ok("ranked player appears in the top list", ranked.top.some((e) => e.username === lbUser.username));
@@ -342,6 +354,7 @@ async function main(): Promise<void> {
   // board shows each player's best — this pins that down.
   await pool.query(`UPDATE users SET high_score = GREATEST(high_score, $2), high_score_at = now() WHERE id = $1`,
     [lbUser.id, 99999]);
+  __resetBoardCache();
   const improved = await profileService.leaderboard((await usersRepo.findById(lbUser.id))!, "100");
   ok("a better score replaces the earlier one", improved.me?.highScore === 99999);
   ok(
@@ -352,6 +365,7 @@ async function main(): Promise<void> {
   // And a WORSE later run must not overwrite the best.
   await pool.query(`UPDATE users SET high_score = GREATEST(high_score, $2) WHERE id = $1`,
     [lbUser.id, 500]);
+  __resetBoardCache();
   const kept = await profileService.leaderboard((await usersRepo.findById(lbUser.id))!, "100");
   ok("a worse later score does not lower the best", kept.me?.highScore === 99999);
 

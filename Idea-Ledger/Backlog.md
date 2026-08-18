@@ -19,10 +19,31 @@ Living backlog of ideas. Two purposes:
 _(empty — nothing to triage)_
 
 ## Backlog (open ideas)
-> New registered ideas go here. Next free ID: IDEA-039
+> New registered ideas go here. Next free ID: IDEA-040
 
-
-
+### IDEA-039 — Server scale hygiene: metrics, session retention, Redis threshold 💡
+- **Priority:** 🟡
+- **Area:** backend
+- **Registered:** 2026-08-18
+- **Description:** the "later" items from the load-readiness assessment — the server should be
+  prepared for a big group of requests before that traffic actually arrives. Three pieces, in the
+  order they'll matter:
+  1. **Request timing metrics** — a cheap per-request duration log (p95 per route is enough). Right
+     now the first real bottleneck would be diagnosed by player complaint rather than by graph.
+     Do this one FIRST, before any traffic push — it's what tells us when the other two are due.
+  2. **`game_sessions` retention** — the table grows with every run ever played, forever. The
+     All-runs board only reads accepted classic runs (now index-covered), but at some volume old
+     rows deserve archiving or summarising. Not urgent at today's scale; the metrics say when.
+  3. **Redis** — rate limits and the board cache are in-memory and per-process, which is CORRECT
+     for one container (STACK.md §6 defers Redis deliberately). The moment the API runs a second
+     replica, limits halve and cache invalidation stops crossing processes — that's the trigger,
+     not before.
+- **Notes:** registered from the 2026-08-18 assessment after the sweeper fix. What was done
+  immediately instead (P1+P2, [[IDEA-020]] v4): the partial index for the All-runs query and the
+  15-second board cache. What was assessed as fine without changes: rate limiting keyed on
+  CF-Connecting-IP, the once-a-day token-touch throttle, argon2's natural 4-at-a-time threadpool
+  ceiling, pool sizing, and the static frontend living entirely on Cloudflare's edge.
+- **Dependencies:** —
 
 ### IDEA-028 — Challenge twist: moving walls / maze changes mid-level 💡
 - **Priority:** 🟢
@@ -271,6 +292,23 @@ _(nothing yet)_
     mean "already answered".
     `server/src/services/scoreService.ts`, `repo/gameSessions.ts`, `validation/plausibility.ts`
     (exports `MAX_RUN_HOURS`), `index.ts`, `scripts/test-sessions.ts`.
+  - **v4** (2026-08-18) — load-readiness (P1+P2 of the scale assessment; the "later" items are
+    [[IDEA-039]]). **P1:** the All-runs query had no supporting index — EXPLAIN showed a
+    sequential scan + sort over `game_sessions`, a table that grows with every run ever played,
+    executed on every board open. Migration 003 adds a partial index matching the query's exact
+    predicate and sort (`accepted_score DESC, finished_at ASC` where accepted+classic), so the
+    planner walks it top-down and stops at LIMIT; the count query rides the same index. **P2:** a
+    15-second in-memory board cache in the service layer — the seam `db.ts` reserved for exactly
+    this. The cache holds RAW rows only; the "that's you" highlight is derived per request, so one
+    cached board serves every viewer without leaking one player's highlight to another. Immediate
+    invalidation on the two events that change the boards: a classic accept (fired AFTER the
+    transaction commits, so the game-over 🏆 button always shows the run just played) and account
+    deletion (hard delete is a privacy promise — no 15-second ghost rows). Challenge accepts leave
+    the cache alone (unranked). Pinned by a cache-existence probe in the DB tests (a raw-SQL score
+    write must NOT appear in the cached rows) plus `__resetBoardCache()` for tests that bypass the
+    services. 245 server checks green.
+    `server/migrations/003_run_board_index.sql` (new), `src/services/boardCache.ts` (new),
+    `services/{profileService,scoreService}.ts`, `scripts/test-auth.ts`.
 
 ### IDEA-019 — Player login & cross-device account recovery ✅
 - **Priority:** 🟡

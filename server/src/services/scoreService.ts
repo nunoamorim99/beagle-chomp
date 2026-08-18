@@ -21,6 +21,7 @@ import * as usersRepo from "../repo/users.js";
 import { toPublicProfile, type PublicProfile, type UserRow } from "../repo/types.js";
 import { ApiError } from "../http/errors.js";
 import { validateRun, MAX_RUN_HOURS, type RunSubmission } from "../validation/plausibility.js";
+import { invalidateBoardCache } from "./boardCache.js";
 import { CHALLENGE_LEVELS, CHALLENGE_LEVEL_COUNT } from "../catalog.generated.js";
 
 /** A run quit mid-game never finishes its session (a quit isn't a score), so
@@ -151,7 +152,13 @@ export async function finishSession(
 ): Promise<FinishResult> {
   const submission = readSubmission(body);
 
-  return withTransaction(async (client) => {
+  // Captured inside the transaction, acted on AFTER it commits: invalidating
+  // mid-transaction would let a concurrent board read re-fill the cache with
+  // pre-commit data, and the player opening the board from the game-over
+  // panel would not see the run they just finished.
+  let acceptedClassic = false;
+
+  const result = await withTransaction(async (client) => {
     const session = await sessionsRepo.findSessionForUpdate(sessionId, user.id, client);
 
     // Also covers another user's session id — indistinguishable from a
@@ -260,6 +267,11 @@ export async function finishSession(
 
     const fresh = (await usersRepo.findById(user.id, client)) ?? user;
 
+    // Every accepted classic run changes the boards: a new row on All-runs,
+    // and possibly a new personal best on Players. Challenge runs touch
+    // neither (unranked), so they leave the cache alone.
+    acceptedClassic = isClassic;
+
     return {
       accepted: true as const,
       score: submission.score,
@@ -269,6 +281,9 @@ export async function finishSession(
       profile: toPublicProfile(fresh),
     };
   });
+
+  if (acceptedClassic) invalidateBoardCache();
+  return result;
 }
 
 /** Global sweeper for sessions belonging to players who never came back.

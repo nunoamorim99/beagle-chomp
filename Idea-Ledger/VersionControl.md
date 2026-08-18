@@ -16,6 +16,11 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
 > lines here roll up into the numbered version below and this section is cleared (hold a line back
 > only if you explicitly choose to).
 
+- (2026-08-18) IDEA-020 v4 — load-readiness for the score server: a partial index for the All-runs
+  board query (was a sequential scan over a table that grows with every run ever played) and a
+  15-second board cache with immediate invalidation on classic accepts and account deletion — a
+  crowd opening the leaderboard now costs one query per 15 s instead of one per viewer. The rest of
+  the scale assessment is registered as IDEA-039 for later.
 - (2026-08-18) IDEA-020 v3 — the actual root cause of the lost scores: the session sweeper was
   killing runs still being played (any open session older than 10 minutes — but classic is endless,
   and a 40,000-point run takes ~20). Fixed twice over: the sweep threshold now derives from the
