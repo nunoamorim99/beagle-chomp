@@ -4,9 +4,16 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
     <meta name="theme-color" content="#0b0b16" />
+    <!-- The standard name first; Chrome deprecated the apple-prefixed one and
+         warns about it in the console. The apple- version stays because older
+         iOS Safari still only understands that spelling, and it is what makes
+         an installed Beagle Chomp open without browser chrome on iPhone. -->
+    <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <!-- Relative paths so they resolve under the GitHub Pages subpath (matches vite base: "./"). -->
+    <!-- Relative paths, matching vite's base: "./". Originally for the GitHub
+         Pages subpath; since v5.0 the site is served from the root of
+         beaglechomp.nunoamorim.dev, where relative paths work just as well. -->
     <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png" />
     <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png" />
     <link rel="apple-touch-icon" href="./favicon-180.png" />
