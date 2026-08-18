@@ -122,6 +122,41 @@ _(nothing yet)_
     `services/profileService.ts`, `routes/profile.ts`, `validation/plausibility.ts`,
     `scripts/sync-game-constants.ts`, and six test scripts.
     _(9bc0438, d227d17, a1ba99a, 77661eb, cd5947a, a309175, d284a0c)_
+  - **v2** (2026-08-18) — **the tutorial rewritten as a pop-up carousel**, after Nuno played v1
+    and reported the right problem: coaching captions arriving mid-chase *distract* rather than
+    teach. A player being hunted has no attention left for a caption. So everything moved to five
+    slides shown BEFORE the first run, and nothing appears during play any more (`tutorialCoach.ts`
+    and `ui/tutorial.ts` were deleted outright rather than left dead).
+    **The illustrations are the live game, not pictures.** Each slide stages a real subject through
+    the existing `shopScene` — the player's own equipped beagle, their enemy skin, their maze theme
+    (whose diorama already carries a biscuit trail and a bone), and the golden bone. That needed no
+    new rendering at all: `game.ts` already renders `shopScene` through the one renderer while the
+    shop is open, so the tutorial rides the same branch. Chosen over pre-rendered PNGs precisely
+    because images go stale silently — this project has been bitten by that class of drift three
+    times (the editor-residue hazard, the maze harness, the `tokens.ts` column list). `makeLifeBone`
+    was exported from `board.ts` for the golden-bone slide, so the least familiar pickup in the game
+    is shown as the exact mesh the player must recognise mid-run.
+    Slides step one at a time with Next/Back/dots rather than scrolling sideways, because sliding
+    HTML across a stationary 3D subject would be a permanent alignment fight. Input gestures are the
+    one thing 3D cannot show, so slide 1 carries a flat CSS diagram — keys, swipe arc or D-pad.
+    **Two copy errors fixed, both caught by a human playing rather than by any check.** "Chain all
+    four in one bone" was wrong on 14 of the 18 levels in a lap: the life is granted when the chain
+    equals THAT LEVEL's ghost count (3 in stages 1-2, 4 in stage 3, 1 on a bonus map), so the copy
+    now says "every enemy" and a test asserts no slide ever names a number. And movement copy told
+    desktop players to "swipe anywhere"; it now follows the DEVICE via
+    `matchMedia("(pointer: coarse)")` — a capability check, never a UA sniff — while swipe-vs-D-pad
+    still comes from the account.
+    The tutorial also moved AHEAD of `beginRunSession()`: a session is timestamped when the server
+    issues it, so opening it first burned the player's run clock while they read. And the account
+    screen's button became **"View tutorial"**, opening the carousel immediately rather than setting
+    a flag and promising tips "next game" — a delayed, invisible effect for someone who just wanted
+    to check a rule.
+    42 content assertions (device copy for all three input cases, the no-ghost-count rule, full
+    coverage of the brief) plus a browser pass over the real flow. 584 game checks green.
+    `src/ui/{tutorialSlides,tutorialCarousel,profile}.ts` (first two new),
+    `src/render/{shopScene,board}.ts`, `src/game/game.ts`, `src/main.ts`, `index.html`, `style.css`,
+    `scripts/test-tutorial-carousel.ts` (new, replacing `test-tutorial.ts`),
+    `scripts/test-tutorial-ui.ts`. _(1b02d5c)_
 
 ### IDEA-035 — Login screen: favicon, title, and Create-account / Login tabs ✅
 - **Priority:** 🟡

@@ -147,7 +147,7 @@ async function main(): Promise<void> {
     await page.waitForTimeout(200);
   }
   await page.click(".tut-next");
-  await page.waitForSelector("#tutorial.hidden", { timeout: 15_000 });
+  await page.waitForSelector("#tutorial", { state: "hidden", timeout: 15_000 });
   ok("the carousel closes", await page.$(".tut-card") === null);
 
   await page.waitForFunction(
@@ -196,7 +196,7 @@ async function main(): Promise<void> {
     await page.waitForTimeout(180);
   }
   await page.click(".tut-next");
-  await page.waitForSelector("#tutorial.hidden", { timeout: 15_000 });
+  await page.waitForSelector("#tutorial", { state: "hidden", timeout: 15_000 });
   await page.waitForTimeout(800);
   ok("a replay does not start a run", (await gameMode(page)) !== "play", await gameMode(page));
   ok("and it stays learned", await tutorialPersisted(page));

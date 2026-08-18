@@ -16,16 +16,20 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
 > lines here roll up into the numbered version below and this section is cleared (hold a line back
 > only if you explicitly choose to).
 
-- (2026-08-18) IDEA-040 v1 — the game got three times bigger: **15 maps in three stages of five**,
+- (2026-08-18) IDEA-040 v1+v2 — the game got three times bigger: **15 maps in three stages of five**,
   each stage closed by a **bonus map** (wide open, one enemy, no white bones) worth enough biscuits
   to earn a life. Stage 3 adds a **fourth enemy** — with the mazes deliberately left at normal
   tightness, so the extra enemy IS the added difficulty. Past map 15 the whole cycle repeats at four
   enemies, and clearing a full lap at that difficulty earns a **"Top Dog"** congratulation without
-  ending the run. Also a **first-run tutorial** that coaches rather than lectures: short tips appear
-  as each thing becomes relevant during a real game — how to steer, what biscuits and fruit are
-  worth, that enemies are only edible after a white bone, and the three ways to earn a life. It
-  remembers per ACCOUNT, so it never repeats on another device, and can be replayed from the
-  account screen.
+  ending the run. Also a **how-to-play tutorial**: five slides shown before your first game, each
+  illustrated with the LIVE game — your own equipped beagle, your enemy skin, your maze theme, and
+  the golden bone — so nothing in it can drift out of step with what you actually see. It covers
+  steering (in the words that match your device), what biscuits and fruit are worth, that enemies
+  are only edible after a white bone, and the three ways to earn a life. It remembers per ACCOUNT,
+  so it never repeats on another device, and **"View tutorial" on the account screen reopens it any
+  time**.
+  _(v1 shipped this as coaching tips during play; v2 replaced them with the carousel after
+  playtesting showed captions mid-chase distract rather than teach. Nothing appears during play.)_
 - (2026-08-18) IDEA-020 v4 — load-readiness for the score server: a partial index for the All-runs
   board query (was a sequential scan over a table that grows with every run ever played) and a
   15-second board cache with immediate invalidation on classic accepts and account deletion — a
