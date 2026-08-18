@@ -100,6 +100,23 @@ export async function finishSession(
   else await query(sql, params);
 }
 
+/** Retire the user's oldest open session, so hitting the open-session cap
+ *  recycles a zombie instead of refusing the player a new run. Harmless even
+ *  when the retired session turns out to be live on another device: an
+ *  abandoned session is resurrected if its finish ever arrives
+ *  (scoreService.finishSession). */
+export async function abandonOldestOpenSession(userId: string): Promise<void> {
+  await query(
+    `UPDATE game_sessions
+        SET status = 'abandoned', finished_at = now()
+      WHERE id = (SELECT id FROM game_sessions
+                   WHERE user_id = $1 AND status = 'open'
+                   ORDER BY started_at ASC
+                   LIMIT 1)`,
+    [userId],
+  );
+}
+
 /** How many sessions this user has left open. Used to refuse a player who is
  *  stockpiling session ids to finish later with inflated scores. */
 export async function countOpenSessions(userId: string): Promise<number> {

@@ -233,6 +233,44 @@ _(nothing yet)_
     `services/profileService.ts`, `routes/profile.ts`,
     `scripts/test-run-queue.ts` (new), `server/scripts/test-{sessions,auth}.ts`.
     _(c520d6d, 3b70f1d, b52148b, c45040f, bc167f0)_
+  - **v3** (2026-08-18) — **the ACTUAL root cause of the lost scores, found and fixed** after the
+    bug survived v5.1: a 40,000-point, 20-minute run vanished with no message the day after "Fair
+    Play" shipped. Nuno's theory — "could the session expire during a long run?" — was exactly
+    right.
+    **The session sweeper was killing live games.** `STALE_SESSION_MINUTES = 10`: every 10 minutes
+    the server marked ANY open session older than 10 minutes as `abandoned`, written to garbage-
+    collect quit runs — but classic mode is endless, and 10 minutes is not "stale", it's a player
+    doing well. Past that line the eventual finish landed on a dead session, the server answered
+    409 SESSION_ALREADY_FINISHED, and the client — correctly, for the meaning 409 was supposed to
+    have — treated it as "already submitted" and said nothing. No rejection logged, no notice, no
+    trace. **The better the run, the more certain the loss**, which is why the reports were always
+    big scores: 16,000 (~7-11 min), then 40,000 (~20 min).
+    **v2's conclusion corrected:** it recorded Chorizo's missing run as "quit to the menu, by
+    design". Wrong. Both of Chorizo's `abandoned` rows carry finished_at **16:39:18.864664 —
+    identical to the microsecond** — one sweeper batch UPDATE, ~11 minutes after the sessions
+    started. The 16,000 run was still being played when the sweeper killed it. (Also honestly:
+    v5.1's durable-submit work was real but aimed at the wrong failure — network loss — so it
+    couldn't have fixed this; the 409 path was its silent-success case.)
+    **The fix is two independent defences, so no future tuning can reintroduce the bug:**
+    (1) the sweep threshold is now DERIVED from the validator's own SESSION_TOO_OLD bound
+    (`MAX_RUN_HOURS * 60` = 4 h, newly exported so the two can't diverge) — the only age at which
+    an open session is provably not a finishable run is the age the validator would refuse anyway;
+    (2) **resurrection** — `abandoned` is now a housekeeping guess, not a verdict: a finish
+    arriving on a swept session within the validator window is judged normally and scores fully
+    (started_at is still on the row, so elapsed-time validation is untouched). Only `accepted` and
+    `rejected` are terminal, keeping the replay guard airtight. The sweep can now be arbitrarily
+    wrong and still never cost a score.
+    Consequence handled: with a 4-hour sweep, the old open-session cap ("4th run refused") would
+    have locked out anyone who quit 3 runs in an afternoon — the cap now retires the player's
+    oldest open session instead of refusing, same anti-stockpiling property, and even a wrongly
+    retired live run is saved by resurrection.
+    Pinned by 7 new session tests: a 20-minute-old open session survives the sweep; a 5-hour-old
+    one doesn't; a swept 25-minute run is resurrected by its finish and banks its score; a
+    resurrected session still can't be finished twice; the cap recycles without ever refusing.
+    58/58 sessions, 710 checks across all suites. Client untouched — after this, 409 really does
+    mean "already answered".
+    `server/src/services/scoreService.ts`, `repo/gameSessions.ts`, `validation/plausibility.ts`
+    (exports `MAX_RUN_HOURS`), `index.ts`, `scripts/test-sessions.ts`.
 
 ### IDEA-019 — Player login & cross-device account recovery ✅
 - **Priority:** 🟡

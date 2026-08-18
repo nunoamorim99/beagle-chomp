@@ -110,9 +110,14 @@ const server = serve({ fetch: app.fetch, port: env.PORT }, (info) => {
 
 // Abandon runs whose players never came back — a quit-to-menu deliberately
 // never finishes its session (a quit isn't a score), so without this they'd
-// accumulate against the per-user open-session cap and eventually refuse a
-// legitimate new run. startSession also sweeps per-user, so this interval is
-// just housekeeping for players who aren't currently playing.
+// accumulate forever.
+//
+// The THRESHOLD (in scoreService) is 4 hours, matching the validator's
+// SESSION_TOO_OLD bound — an open session younger than that might be a run
+// still being played, and sweeping one mid-game was the bug that silently ate
+// every score over ~10 minutes. The interval below is only how often the GC
+// looks, not how old a session must be; and even a wrongly swept session is
+// recoverable, because a finish resurrects it (see finishSession).
 const SWEEP_INTERVAL_MS = 10 * 60_000;
 const sweeper = setInterval(() => {
   void sweepStaleSessions()

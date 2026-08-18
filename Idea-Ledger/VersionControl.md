@@ -16,7 +16,13 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
 > lines here roll up into the numbered version below and this section is cleared (hold a line back
 > only if you explicitly choose to).
 
-_(nothing unreleased — v5.1 "Fair Play" was cut on 2026-08-17)_
+- (2026-08-18) IDEA-020 v3 — the actual root cause of the lost scores: the session sweeper was
+  killing runs still being played (any open session older than 10 minutes — but classic is endless,
+  and a 40,000-point run takes ~20). Fixed twice over: the sweep threshold now derives from the
+  validator's 4-hour bound so they can't diverge, and a swept session is **resurrected** if its
+  finish arrives — the sweep can be arbitrarily wrong and still never cost a score. The open-session
+  cap now recycles the oldest session instead of refusing, so quitting three runs can't lock anyone
+  out.
 
 ## 📌 Planned
 > Forward-looking targets from `/plan-version`. Each is a checklist of IDEAs intended for a

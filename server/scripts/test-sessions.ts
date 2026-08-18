@@ -108,24 +108,95 @@ async function main(): Promise<void> {
   await expectApiError("can't start a locked challenge level", "LEVEL_LOCKED", () =>
     scoreService.startSession(user, "challenge", 5));
 
-  section("Open-session cap");
+  section("Open-session cap recycles, never refuses");
   {
     const capUser = await newUser();
+    const first = await scoreService.startSession(capUser, "classic", null);
     await scoreService.startSession(capUser, "classic", null);
     await scoreService.startSession(capUser, "classic", null);
-    await scoreService.startSession(capUser, "classic", null);
-    await expectApiError("a 4th concurrent run is refused", "TOO_MANY_OPEN_SESSIONS", () =>
-      scoreService.startSession(capUser, "classic", null));
 
-    // Stale sessions are swept when a new one is requested, so a player who
-    // quit three times isn't locked out of playing again.
-    await pool.query(
-      `UPDATE game_sessions SET started_at = now() - interval '30 minutes'
-        WHERE user_id = $1 AND status = 'open'`,
+    // A 4th start must NOT lock the player out — quitting three runs in an
+    // afternoon is normal play, and the sweep now (correctly) waits 4 hours.
+    // Instead the oldest open session is retired to make room.
+    const fourth = await scoreService.startSession(capUser, "classic", null);
+    ok("a 4th run is allowed at the cap", typeof fourth.sessionId === "string");
+
+    const { rows: capState } = await pool.query<{ status: string }>(
+      `SELECT status FROM game_sessions WHERE id = $1`,
+      [first.sessionId],
+    );
+    ok("…by retiring the OLDEST open session", capState[0]?.status === "abandoned", capState[0]?.status);
+
+    const openNow = await pool.query<{ count: string }>(
+      `SELECT count(*) AS count FROM game_sessions WHERE user_id = $1 AND status = 'open'`,
       [capUser.id],
     );
-    const afterSweep = await scoreService.startSession(capUser, "classic", null);
-    ok("stale sessions are swept, so a new run is allowed", typeof afterSweep.sessionId === "string");
+    ok("still at most 3 open sessions (no stockpiling)", Number(openNow.rows[0].count) === 3,
+      openNow.rows[0].count);
+  }
+
+  section("The sweeper must never outrun a live game");
+  {
+    // THE 40,000-POINT BUG. The sweeper ran at 10 minutes and marked any older
+    // open session 'abandoned' — but classic mode is endless, and a good run
+    // takes 20+. The mid-game sweep turned the eventual finish into a 409 the
+    // client rightly treats as "already submitted": a silent, untraceable
+    // loss. Two independent defences, both pinned here.
+    const player = await newUser();
+
+    // Defence 1: the threshold. A 20-minute-old open session is a live game,
+    // not garbage — the global sweep must leave it alone.
+    const live = await scoreService.startSession(player, "classic", null);
+    await backdateSession(live.sessionId, 20 * 60);
+    await scoreService.sweepStaleSessions();
+    const { rows: liveRows } = await pool.query<{ status: string }>(
+      `SELECT status FROM game_sessions WHERE id = $1`, [live.sessionId]);
+    ok("a 20-minute-old open session survives the sweep", liveRows[0]?.status === "open",
+      liveRows[0]?.status);
+
+    // …but a session older than any finishable run is genuinely dead.
+    await backdateSession(live.sessionId, 5 * 3600);
+    const sweptCount = await scoreService.sweepStaleSessions();
+    const { rows: deadRows } = await pool.query<{ status: string }>(
+      `SELECT status FROM game_sessions WHERE id = $1`, [live.sessionId]);
+    ok("a 5-hour-old open session is swept", deadRows[0]?.status === "abandoned", deadRows[0]?.status);
+    ok("the sweep reports what it took", sweptCount >= 1, sweptCount);
+
+    // Defence 2: resurrection. Even if a session HAS been swept (any cause:
+    // an old threshold, the cap retiring it, a clock skew), a finish arriving
+    // within the validator's window must still score. The sweep is a guess
+    // that the player left; the finish is proof they didn't.
+    const fresh = (await usersRepo.findById(player.id))!;
+    const run = await scoreService.startSession(fresh, "classic", null);
+    await backdateSession(run.sessionId, 25 * 60); // a 25-minute game
+    await pool.query(
+      `UPDATE game_sessions SET status = 'abandoned', finished_at = now() WHERE id = $1`,
+      [run.sessionId],
+    );
+
+    const result = await scoreService.finishSession(fresh, run.sessionId, goodRun({
+      score: 8000,
+      mazeIdxSequence: [0, 1, 2],
+      levelsCleared: 3,
+      pelletsEaten: 550,
+      bonesEaten: 6,
+      fruitEaten: 3,
+      ghostsEaten: 5,
+      coinsCollected: 2,
+      livesLost: 2,
+      playSeconds: 1400,
+    }));
+    ok("a swept session is resurrected by its finish", result.accepted,
+      result.accepted ? "" : (result as { reasonCode: string }).reasonCode);
+    const afterResurrect = (await usersRepo.findById(player.id))!;
+    ok("…and the score is fully banked", afterResurrect.high_score === 8000,
+      afterResurrect.high_score);
+
+    // The replay guard is untouched: a resurrected-and-accepted session is
+    // terminal exactly like a normally accepted one.
+    await expectApiError("a resurrected session still can't be finished twice",
+      "SESSION_ALREADY_FINISHED", () =>
+        scoreService.finishSession(afterResurrect, run.sessionId, goodRun()));
   }
 
   // --- accepting a good run -------------------------------------------------

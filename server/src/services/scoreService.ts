@@ -20,12 +20,21 @@ import * as sessionsRepo from "../repo/gameSessions.js";
 import * as usersRepo from "../repo/users.js";
 import { toPublicProfile, type PublicProfile, type UserRow } from "../repo/types.js";
 import { ApiError } from "../http/errors.js";
-import { validateRun, type RunSubmission } from "../validation/plausibility.js";
+import { validateRun, MAX_RUN_HOURS, type RunSubmission } from "../validation/plausibility.js";
 import { CHALLENGE_LEVELS, CHALLENGE_LEVEL_COUNT } from "../catalog.generated.js";
 
 /** A run quit mid-game never finishes its session (a quit isn't a score), so
- *  stale ones are swept rather than lingering against the open-session cap. */
-const STALE_SESSION_MINUTES = 10;
+ *  stale ones are swept rather than lingering against the open-session cap.
+ *
+ *  DERIVED from the validator's own ceiling, never hand-tuned. This was 10
+ *  minutes once, and that number silently ate every good run: an open session
+ *  older than 10 minutes is USUALLY a player still playing — classic mode is
+ *  endless, and a 40,000-point run takes ~20. The sweeper would kill the
+ *  session mid-game, the finish would land on a dead session, and the client
+ *  read the 409 as "already submitted" — silence all the way down. The only
+ *  age at which an open session is PROVABLY not a finishable run is the point
+ *  where the validator would refuse it anyway (SESSION_TOO_OLD). */
+const STALE_SESSION_MINUTES = MAX_RUN_HOURS * 60;
 
 /** Enough for a couple of tabs or a reconnect; low enough that stockpiling
  *  session ids to finish later isn't practical. */
@@ -68,13 +77,16 @@ export async function startSession(
 
   await sessionsRepo.abandonStaleSessions(user.id, STALE_SESSION_MINUTES);
 
+  // At the cap, retire the player's OLDEST open session instead of refusing.
+  // Refusing used to be survivable when the sweep ran at 10 minutes; at the
+  // 4-hour sweep it would mean "quit three runs and you're locked out for the
+  // afternoon". Retiring keeps the same security property — a farmer still
+  // can't hold more than MAX_OPEN_SESSIONS ids — and can never cost a real
+  // run: even if the retired session WAS live on another device, its finish
+  // is resurrected below.
   const open = await sessionsRepo.countOpenSessions(user.id);
   if (open >= MAX_OPEN_SESSIONS) {
-    throw new ApiError(
-      409,
-      "TOO_MANY_OPEN_SESSIONS",
-      "You already have a run in progress. Finish it before starting another.",
-    );
+    await sessionsRepo.abandonOldestOpenSession(user.id);
   }
 
   const session = await sessionsRepo.createSession(user.id, mode, challengeIdx);
@@ -148,9 +160,23 @@ export async function finishSession(
       throw new ApiError(404, "NOT_FOUND", "That run wasn't found.");
     }
 
-    // The replay guard. The row lock above is what makes it airtight.
-    if (session.status !== "open") {
+    // The replay guard. The row lock above is what makes it airtight. Only a
+    // CONSIDERED verdict is terminal: 'accepted' (already scored — a retry
+    // must not double-count) and 'rejected' (already judged implausible).
+    if (session.status === "accepted" || session.status === "rejected") {
       throw new ApiError(409, "SESSION_ALREADY_FINISHED", "That run was already submitted.");
+    }
+
+    // RESURRECTION: 'abandoned' is a housekeeping label, not a verdict — the
+    // sweeper's guess that the player wasn't coming back. A finish arriving
+    // now proves the guess wrong, and everything needed to judge the run
+    // (started_at, mode, challenge_idx) is still on the row. This is the
+    // second line of defence behind the sweep threshold: whatever the sweeper
+    // does, a real finish can always still score. Before this, a sweep that
+    // outpaced a live run turned its finish into a 409 the client rightly
+    // reads as "already submitted" — a silent loss with no trace anywhere.
+    if (session.status === "abandoned") {
+      console.log(`[finish] resurrecting swept session ${sessionId} for user ${user.id}`);
     }
 
     // Duration from the SERVER's clock at both ends — the number the client

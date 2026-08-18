@@ -79,8 +79,14 @@ export type ValidationResult =
 
 /** No run legitimately lasts this long. A larger elapsed time means a session id
  *  was created and stashed, then finished much later to make an absurd score
- *  look like it had time to happen. */
-const MAX_RUN_HOURS = 4;
+ *  look like it had time to happen.
+ *
+ *  EXPORTED because the session sweeper must never run AHEAD of this bound:
+ *  any open session younger than this might be a run still being played, and
+ *  sweeping it mid-game was exactly the bug that silently ate every score over
+ *  ~10 minutes (v5.1 era). Deriving the sweeper's threshold from this constant
+ *  makes that divergence structurally impossible. */
+export const MAX_RUN_HOURS = 4;
 
 /** Slack on the time floor, for clock skew and frame-time jitter. The floor is
  *  already generous (see minLevelSeconds), so this only has to absorb noise. */
