@@ -152,6 +152,9 @@ async function startApp(): Promise<void> {
     // IDEA-038: routed through Game so the pad appears/disappears immediately;
     // Game persists the preference against the account.
     onControlSchemeChange: (scheme) => game.setControlSchemePreference(scheme),
+    // IDEA-040 v2: the tutorial is a first-class screen now, openable any time
+    // rather than only before a first run.
+    onShowTutorial: () => game.openTutorial(),
   });
 
   // startApp() re-runs on sign-out and on a mid-session 401, so this listener

@@ -29,7 +29,7 @@ import { COLORS } from "../game/config";
 import { type BeagleSkin } from "../game/cosmetics";
 import { getMazeTheme, type MazeTheme } from "../game/themes";
 import { makeBeagle, makeEnemy, applyBeagleSkin, type BeagleParts } from "./characters";
-import { makePropById } from "./board";
+import { makePropById, makeLifeBone } from "./board";
 
 // Same cheap inward-facing skydome technique as menuScene.ts's own
 // makeBackdrop (itself a copy of scene.ts's) — kept as a third small copy
@@ -519,7 +519,7 @@ const DIORAMA_TURNTABLE_SPEED = 0.14;
 /** Kind of hero currently staged. "theme" (IDEA-026) uses its own camera rig
  *  (DIORAMA_CAM_*) and turntable speed, and hides the garden-patch vignette
  *  (the diorama brings its own floor/walls) — see resize()/showTheme below. */
-type HeroKind = "beagle" | "enemy" | "theme";
+type HeroKind = "beagle" | "enemy" | "theme" | "pickup";
 
 export interface ShopScene {
   scene: THREE.Scene;
@@ -547,6 +547,11 @@ export interface ShopScene {
    *  garden-patch vignette (the diorama brings its own ground) — see the
    *  showTheme implementation below for exactly what toggles. */
   showTheme(themeId: string): void;
+  /** IDEA-040 v2: stages the GOLDEN BONE (the bonus-life pickup) as the hero,
+   *  for the tutorial's "earning more lives" slide. Uses board.ts's real
+   *  makeLifeBone, scaled up and floated above the garden patch, so the player
+   *  is shown the exact mesh they need to recognise mid-run. */
+  showGoldenBone(): void;
   /** Releases the current hero's + patch's geometries/materials. Only
    *  meaningful if the whole game is being torn down — the shop scene is
    *  otherwise created once and kept alive for the app's lifetime. */
@@ -773,6 +778,24 @@ export function createShopScene(): ShopScene {
     showEnemy(skinId: string): void {
       const next = makeEnemy(skinId, ENEMY_PREVIEW_COLOR);
       setHero(next, "enemy");
+      restoreAtmosphere();
+    },
+    showGoldenBone(): void {
+      // Wrapped in a group so the turntable spins the wrapper while the bone
+      // keeps its own tilt — a bone spinning flat-on reads as a blob, angled
+      // it reads as a bone.
+      const wrapper = new THREE.Group();
+      const bone = makeLifeBone();
+      // makeLifeBone ALREADY carries a 1.6 internal scale, so this multiplier
+      // compounds with it: 1.15 here lands the bone at roughly a beagle's
+      // width, which is what this camera framing is built for. (2.1 overflowed
+      // the frame entirely.) Lifted clear of the patch so it reads as a pickup
+      // rather than something lying in the grass.
+      bone.scale.multiplyScalar(1.15);
+      bone.position.y = 0.44;
+      bone.rotation.set(0.32, 0, 0.22);
+      wrapper.add(bone);
+      setHero(wrapper, "pickup");
       restoreAtmosphere();
     },
     showTheme(themeId: string): void {

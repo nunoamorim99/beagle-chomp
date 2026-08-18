@@ -12,7 +12,7 @@
 
 import { escapeHtml } from "./escape";
 import { getProfileCache } from "../game/profileCache";
-import { getControlScheme, setTutorialDone, type ControlScheme } from "../game/profileStore";
+import { getControlScheme, type ControlScheme } from "../game/profileStore";
 import { logout as logoutRemote, deleteAccount } from "../net/endpoints";
 import { clearToken, ApiError } from "../net/api";
 import { flushSync, clearSyncQueue } from "../net/profileSync";
@@ -29,6 +29,9 @@ export interface ProfileCallbacks {
    *  Game so the pad appears/disappears immediately rather than at the next
    *  run — the preference itself is persisted against the account. */
   onControlSchemeChange?: (scheme: ControlScheme) => void;
+  /** Opens the how-to-play carousel. Wired in main.ts, like the rest of the
+   *  account screen's callbacks. */
+  onShowTutorial?: () => void;
   /** Sign-out and deletion both end the session, so the app must return to the
    *  auth gate. The caller owns that transition. */
   onSignedOut: () => void;
@@ -94,10 +97,10 @@ export function attachProfile(callbacks: ProfileCallbacks): ProfileHandle {
         </section>
 
         <section class="profile-setting">
-          <h2>Tips</h2>
-          <p>The short coaching tips shown during your first game.</p>
+          <h2>How to play</h2>
+          <p>A quick refresher on biscuits, bones and staying alive.</p>
           <button type="button" id="replayTutorialBtn" class="btn-secondary">
-            Show tips again next game
+            View tutorial
           </button>
         </section>
 
@@ -154,13 +157,12 @@ export function attachProfile(callbacks: ProfileCallbacks): ProfileHandle {
       render();
     });
 
-    root.querySelector("#replayTutorialBtn")?.addEventListener("click", (e) => {
-      setTutorialDone(false);
-      // Confirm in place rather than closing the screen — the tips appear on
-      // the NEXT game, so there is nothing to look at yet.
-      const btn = e.currentTarget as HTMLButtonElement;
-      btn.textContent = "Tips will show next game ✓";
-      btn.disabled = true;
+    root.querySelector("#replayTutorialBtn")?.addEventListener("click", () => {
+      // Opens the carousel there and then. The older version only set
+      // tutorial_done back to false and promised tips "next game" — a delayed,
+      // invisible effect for someone who wanted to check a rule now.
+      close();
+      callbacks.onShowTutorial?.();
     });
 
     root.querySelector("#profileSignOutBtn")?.addEventListener("click", () => {

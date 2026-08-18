@@ -211,8 +211,12 @@ const matGoldBone = new THREE.MeshStandardMaterial({
  * flat white, so it's unmistakably a special pickup at a glance and never
  * confusable with a white maze-floor bone. Local origin stays centered (like
  * makeBone/makeCoin) so it sits right at whatever position spawnLife sets.
+ *
+ * EXPORTED for the tutorial's "earning more lives" slide (IDEA-040 v2), which
+ * stages this exact mesh rather than a picture of one — so the thing the
+ * player is told to look for is the thing they will actually see.
  */
-function makeLifeBone(): THREE.Group {
+export function makeLifeBone(): THREE.Group {
   const g = new THREE.Group();
   const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.34, 10), matGoldBone);
   shaft.rotation.z = Math.PI / 2;

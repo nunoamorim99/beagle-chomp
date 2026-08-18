@@ -149,6 +149,13 @@
          escaped-and-hopefully-correct. -->
     <div class="hidden" id="leaderboard"></div>
 
+    <!-- IDEA-040 tutorial v2: the how-to-play carousel. Same "full-screen page
+         rendered entirely by its own src/ui module" pattern as #shop and
+         #leaderboard. Deliberately transparent above the card so the live 3D
+         illustration (rendered behind by game.ts, via shopScene) shows
+         through. Opened before the first run, and any time from Account. -->
+    <div class="hidden" id="tutorial"></div>
+
     <!-- Shown while the boot flow checks a stored token, and if the API can't
          be reached (the game is online-only by design). -->
     <div class="hidden" id="boot"></div>

@@ -59,15 +59,10 @@ import { attachTouch } from "../input/touch";
 // IDEA-038: the optional on-screen D-pad, an alternative to swipe on phones.
 import { attachDpad, type DpadHandle } from "../input/dpad";
 import {
-  createCoach,
-  coachEvent,
-  coachTick,
-  coachComplete,
-  coachStop,
-  type CoachState,
-  type CoachEvent,
-} from "./tutorialCoach";
-import { attachTutorial, type TutorialHandle } from "../ui/tutorial";
+  attachTutorialCarousel,
+  type TutorialCarouselHandle,
+} from "../ui/tutorialCarousel";
+import type { TutorialStage } from "../ui/tutorialSlides";
 import { createScene, type SceneRig } from "../render/scene";
 import { createMenuScene, type MenuScene } from "../render/menuScene";
 import { createShopScene, type ShopScene } from "../render/shopScene";
@@ -112,7 +107,12 @@ import {
   setControlScheme,
   type ControlScheme,
 } from "./profileStore";
-import { getEquippedEnemySkinId, getBeagleSkin } from "./cosmetics";
+import {
+  getEquippedEnemySkinId,
+  getEquippedBeagleSkin,
+  getBeagleSkin,
+} from "./cosmetics";
+import { getEquippedMazeThemeId } from "./themes";
 
 // Scatter-corner targets per ghost personality (prototype section 7,
 // GHOST_DEFS): rose/chaser -> top-right, teal/ambusher -> top-left,
@@ -337,10 +337,9 @@ export class Game {
   // new-game sites as coinsAwardedFromScore.
   private livesAwardedFromScore = 0;
 
-  // IDEA-040: the first-run coach. Both null unless this player has never been
-  // taught — see maybeStartTutorial().
-  private coach: CoachState | null = null;
-  private tutorialUi: TutorialHandle | null = null;
+  // IDEA-040 v2: the how-to-play carousel. Shown before the first run, and
+  // re-openable any time from the account screen.
+  private readonly tutorial: TutorialCarouselHandle;
 
   /** Opens the leaderboard. Injected by main.ts rather than imported, because
    *  the game layer knows nothing about accounts or the network — same reason
@@ -361,6 +360,17 @@ export class Game {
     this.rig = createScene(canvas);
     this.menuScene = createMenuScene();
     this.shopScene = createShopScene();
+    // IDEA-040 v2: the how-to-play carousel. Its illustrations are staged
+    // through shopScene, so it shows the player's own equipped cosmetics.
+    this.tutorial = attachTutorialCarousel({
+      onStage: (stage) => this.stageTutorial(stage),
+      readInput: () => ({
+        // A capability check, not a user-agent guess: what matters is whether
+        // this device has a coarse pointer, not what it calls itself.
+        coarsePointer: window.matchMedia?.("(pointer: coarse)").matches === true,
+        scheme: getControlScheme(),
+      }),
+    });
     this.hud = createHud(document.body);
     // Constructed eagerly (cheap — just an AudioContext + a gain node); it
     // starts (or can start) "suspended" per the browser autoplay policy until
@@ -538,12 +548,13 @@ export class Game {
 
       // The run only starts once the server has issued a ticket for it — the
       // game is online-only, and a run that can't be recorded shouldn't begin.
-      void this.beginRunSession("classic").then((ok) => {
-        if (!ok) return;
-        // IDEA-040: coach a first-time player through their first run. No-op
-        // for anyone whose account already has tutorial_done.
-        this.maybeStartTutorial();
-        this.startLevel(0);
+      // IDEA-040 v2: teach first, THEN start the run — the session clock
+      // starts server-side the moment it is issued, so reading must not
+      // count against it. No-op for anyone who has seen the tutorial.
+      this.withTutorial(() => {
+        void this.beginRunSession("classic").then((ok) => {
+          if (ok) this.startLevel(0);
+        });
       });
     };
     playBtn.addEventListener("click", onPlayClick);
@@ -809,7 +820,6 @@ export class Game {
     // A bonus level announces itself, so the drop to one enemy and the open
     // layout read as a deliberate reward rather than a glitch.
     this.hud.showBanner(plan.isBonus ? "Bonus!" : "Ready!");
-    this.coachSay("levelStarted");
   }
 
   // ---- Challenge Mode level flow (IDEA-013) ----
@@ -1030,14 +1040,12 @@ export class Game {
         if (kind === "bone") {
           this.score += SCORE.bone;
           recordBone(this.telemetry);
-          this.coachSay("boneEaten");
           this.effects.scorePopup(worldX(tx), worldZ(ty), SCORE.bone);
           this.sound.bone();
           this.triggerFright();
         } else {
           this.score += SCORE.biscuit;
           recordPellet(this.telemetry);
-          this.coachSay("biscuitEaten");
           this.effects.scorePopup(worldX(tx), worldZ(ty), SCORE.biscuit);
           this.sound.biscuit();
         }
@@ -1046,7 +1054,6 @@ export class Game {
         this.maybeAwardLivesFromScore();
         // Mentioning the 5,000-point life is meaningless at 30 points; wait
         // until the number on screen is big enough to feel within reach.
-        if (this.score >= 1000) this.coachSay("scoreProgress");
         if (this.level.pellets.size <= 0) this.levelClear();
       }
     }
@@ -1280,7 +1287,6 @@ export class Game {
 
     this.level.nextLifeThresholdIdx++;
     this.lifeTile = tile;
-    this.coachSay("goldenBoneSpawned");
     this.lifeTimer = LIVES.pickupLifespanSeconds;
     spawnLife(this.level.board, this.rig.scene, tile.x, tile.y);
   }
@@ -1355,7 +1361,6 @@ export class Game {
       const tile = this.level.fruitTiles[(Math.random() * this.level.fruitTiles.length) | 0];
       this.level.nextFruitThresholdIdx++;
       this.fruitTile = tile;
-      this.coachSay("fruitSpawned");
       spawnFruit(this.level.board, this.rig.scene, tile.x, tile.y);
     }
   }
@@ -1408,7 +1413,6 @@ export class Game {
           // incremented above, so the first ghost eaten has chain=1 here ->
           // pass chain-1=0, matching the exponent math on the two lines above.
           this.sound.eatGhost(this.ghostEatChain - 1);
-          this.coachSay("ghostEaten");
           // IDEA-018: "perfect fright" bonus life — a chain reaching the
           // level's full ghost count within one fright window means every
           // ghost currently in play was eaten before it ran out.
@@ -1441,79 +1445,41 @@ export class Game {
     this.sound.death();
   }
 
-  // ---- IDEA-040 first-run tutorial ----
+  // ---- IDEA-040 v2: the how-to-play carousel ----
 
   /**
-   * Begin coaching if this player has never been taught.
+   * Show the tutorial if this player has never seen it, then run `then()`.
    *
-   * Called from the Play button rather than the constructor: the profile is
-   * hydrated by then, and a returning player must never see it. Idempotent.
+   * Called BEFORE beginRunSession(), deliberately: a session is timestamped
+   * the moment the server issues it, so opening the tutorial first would burn
+   * the player's run clock while they read.
    */
-  private maybeStartTutorial(): void {
-    if (this.coach || getTutorialDone()) return;
-
-    this.coach = createCoach();
-    this.tutorialUi = attachTutorial({
-      onSkip: () => this.finishTutorial(),
+  private withTutorial(then: () => void): void {
+    if (getTutorialDone()) {
+      then();
+      return;
+    }
+    this.tutorial.open({
+      onDone: () => {
+        setTutorialDone(true);
+        then();
+      },
     });
   }
 
-  /** Report something the coach might have a lesson about. Cheap no-op once
-   *  the player has been taught, which is the common case. */
-  private coachSay(event: CoachEvent): void {
-    if (!this.coach) return;
-    coachEvent(this.coach, event, getControlScheme());
+  /** Open the tutorial on demand (the account screen's "View tutorial"). */
+  openTutorial(): void {
+    this.tutorial.open();
   }
 
-  /** Advance the caption clock and render whatever is current. */
-  private tickCoach(dt: number): void {
-    if (!this.coach || !this.tutorialUi) return;
-
-    const tip = coachTick(this.coach, dt);
-    if (tip) this.tutorialUi.show(tip.text);
-    else this.tutorialUi.clear();
-
-    // The bone lesson is the one that needs to arrive BEFORE the player acts,
-    // so it fires on proximity rather than on eating one. Only worth scanning
-    // while that lesson is still outstanding.
-    if (!this.coach.seen.has("bone")) this.checkNearBone();
-
-    if (coachComplete(this.coach)) this.finishTutorial();
-  }
-
-  /** Fire the bone lesson once a bone is close enough to be the obvious next
-   *  thing the player will reach. */
-  private checkNearBone(): void {
-    const NEAR_TILES = 4;
-    // Read-only: eatPellet() is what reports a kind, but it also removes the
-    // mesh, so the grid is the safe place to ask "is there a bone here?".
-    // Only the handful of frames before the lesson fires ever run this.
-    for (const key of this.level.pellets) {
-      const comma = key.indexOf(",");
-      const bx = Number(key.slice(0, comma));
-      const by = Number(key.slice(comma + 1));
-      if (this.level.grid.charAt(bx, by) !== "o") continue;
-      if (Math.abs(bx - this.beagle.tx) + Math.abs(by - this.beagle.ty) <= NEAR_TILES) {
-        this.coachSay("nearBone");
-        return;
-      }
-    }
-  }
-
-  /**
-   * End coaching and remember it, so it never runs again on any device.
-   *
-   * Called on Skip, on every lesson being delivered, and when a run ends —
-   * a player who died mid-tutorial has still seen enough, and re-coaching
-   * them on every retry would be nagging.
-   */
-  private finishTutorial(): void {
-    if (!this.coach) return;
-    coachStop(this.coach);
-    this.coach = null;
-    this.tutorialUi?.detach();
-    this.tutorialUi = null;
-    if (!getTutorialDone()) setTutorialDone(true);
+  /** Stage the 3D subject for a tutorial slide, reusing the shop's scene —
+   *  the same meshes the shop shows, so the player sees their OWN equipped
+   *  beagle, enemy and theme rather than a generic picture. */
+  private stageTutorial(stage: TutorialStage): void {
+    if (stage === "beagle") this.shopScene.showBeagle(getEquippedBeagleSkin());
+    else if (stage === "enemy") this.shopScene.showEnemy(getEquippedEnemySkinId());
+    else if (stage === "goldenBone") this.shopScene.showGoldenBone();
+    else this.shopScene.showTheme(getEquippedMazeThemeId());
   }
 
   private levelClear(): void {
@@ -1799,7 +1765,6 @@ export class Game {
 
   private gameOver(): void {
     this.clearPause();
-    this.finishTutorial();
     this.mode = "over";
     // IDEA-013: the "Play again" button restarts THE SAME challenge level
     // when the run that just ended was a challenge run, rather than always
@@ -1982,7 +1947,6 @@ export class Game {
    * rest, so setScalar to the same value is a no-op).
    */
   private quitToMenu(): void {
-    this.finishTutorial();
     if (this.mode === "start") return;
 
     // Always clear pause on the way out: otherwise the NEXT run would start
@@ -2025,7 +1989,6 @@ export class Game {
     // Deliberately here rather than in tick(): tick() skips update(dt) while
     // the shop is open, so wall-clock time would count shop browsing as play.
     accumulatePlayTime(this.telemetry, dt);
-    this.tickCoach(dt);
     this.advanceSchedule(dt);
     this.tickCoinLifespan(dt);
     this.tickLifeLifespan(dt);
@@ -2170,7 +2133,11 @@ export class Game {
     // Resumes exactly where the player left off on close: nothing here
     // mutates any game-state timer, it just doesn't advance it for as long
     // as shopOpen stays true.
-    if (this.shopOpen) {
+    // The tutorial stages its illustrations through shopScene too, so it
+    // renders through the same branch — one renderer, one scene at a time.
+    // Ordered first so opening it from the menu shows the illustration rather
+    // than the menu vignette behind the card.
+    if (this.shopOpen || this.tutorial.isOpen()) {
       this.shopScene.update(dt);
       this.rig.renderer.render(this.shopScene.scene, this.shopScene.camera);
       this.rafHandle = requestAnimationFrame(this.tick);

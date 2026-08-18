@@ -1,14 +1,14 @@
-// Browser check that the first-run coach actually reaches a new player
-// (IDEA-040), and — just as important — that it never bothers a returning one.
+// Browser check for the tutorial carousel (IDEA-040 v2).
 //
 //   docker compose up -d db api
 //   npm run dev
 //   npx tsx scripts/test-tutorial-ui.ts [baseUrl]
 //
-// The ordering logic is covered exhaustively in scripts/test-tutorial.ts. What
-// only a browser can show: that the caption renders over live play, that it
-// doesn't block steering, that Skip removes it, and that the "already taught"
-// flag survives a reload because it lives on the account rather than in memory.
+// The copy is covered purely in scripts/test-tutorial-carousel.ts. What only a
+// browser can show: that a new player meets it BEFORE the run starts, that the
+// live 3D illustration is actually rendering behind it, that Next/Back/dots
+// move through all five, that finishing persists to the account, and that the
+// account screen can reopen it on demand.
 
 import { chromium, type Page } from "playwright";
 
@@ -33,7 +33,7 @@ function section(title: string): void {
 }
 
 const uniqueName = (): string =>
-  `tu${Date.now().toString(36)}${Math.floor(Math.random() * 1000)}`.slice(0, 20);
+  `tc${Date.now().toString(36)}${Math.floor(Math.random() * 1000)}`.slice(0, 20);
 
 async function signUp(page: Page, username: string): Promise<void> {
   await page.goto(BASE_URL, { waitUntil: "networkidle" });
@@ -57,35 +57,15 @@ async function login(page: Page, username: string): Promise<void> {
   await page.waitForSelector("#mainMenu:not(.hidden)", { timeout: 30_000 });
 }
 
-/** Steer for a while so the run produces real events (biscuits, bones). */
-async function play(page: Page, seconds: number): Promise<void> {
-  const keys = ["ArrowLeft", "ArrowUp", "ArrowRight", "ArrowDown"];
-  const deadline = Date.now() + seconds * 1000;
-  let i = 0;
-  while (Date.now() < deadline) {
-    await page.keyboard.press(keys[i++ % keys.length]);
-    await page.waitForTimeout(260);
-  }
-}
+const title = (page: Page): Promise<string> =>
+  page.evaluate(() => document.querySelector(".tut-title")?.textContent?.trim() ?? "");
 
-const captionText = (page: Page): Promise<string> =>
-  page.evaluate(() => document.querySelector(".tutorial-tip")?.textContent?.trim() ?? "");
+const gameMode = (page: Page): Promise<string | undefined> =>
+  page.evaluate(() => (window as unknown as { __game?: { mode?: string } }).__game?.mode);
 
-/** Wait until the run is actually in "play". Headless Chromium renders the 3D
- *  scene in software, so the READY countdown can take several seconds — a
- *  fixed sleep here is flaky by construction. */
-async function waitForPlay(page: Page): Promise<void> {
-  await page.waitForFunction(
-    () => (window as unknown as { __game?: { mode?: string } }).__game?.mode === "play",
-    undefined,
-    { timeout: 60_000, polling: 250 },
-  );
-}
-
-/** Wait until the SERVER agrees the tutorial is done. setTutorialDone writes
- *  the cache immediately and syncs in the background, so reloading too soon
- *  races the write — and it is the persisted value this test cares about. */
-async function waitForTutorialPersisted(page: Page): Promise<boolean> {
+/** Wait for the server to agree — the flag is written optimistically and
+ *  synced in the background, so reading it back is the real assertion. */
+async function tutorialPersisted(page: Page): Promise<boolean> {
   try {
     await page.waitForFunction(
       async () => {
@@ -118,78 +98,108 @@ async function main(): Promise<void> {
 
   const username = uniqueName();
 
-  section("A brand-new player is coached");
+  section("A new player meets it before the run starts");
   await signUp(page, username);
   await page.click("#playBtn");
-  await waitForPlay(page);
-  await page.waitForTimeout(500);
+  await page.waitForSelector("#tutorial:not(.hidden)", { timeout: 30_000 });
 
-  ok("the coach is mounted", await page.$(".tutorial") !== null);
+  ok("the carousel opens", await page.$(".tut-card") !== null);
+  ok("it starts on the movement slide", /steer/i.test(await title(page)), await title(page));
 
-  const first = await captionText(page);
-  ok("the first tip explains how to move", /swipe|pad/i.test(first), first);
+  // The whole point of moving it ahead of beginRunSession: the run must not
+  // have started, so the session clock isn't burning while the player reads.
+  ok("the run has NOT started yet", (await gameMode(page)) !== "play", await gameMode(page));
+  ok("the menu is hidden behind it",
+    await page.evaluate(() => document.body.classList.contains("tutorial-open")));
 
-  // It must not swallow input: the strip covers part of the board.
-  const blocks = await page.evaluate(() => {
-    const strip = document.querySelector(".tutorial");
-    return strip ? getComputedStyle(strip).pointerEvents : "missing";
+  // The illustration is the real game's meshes, rendered behind a transparent
+  // stage. If the stage were painted, the 3D would be invisible.
+  const stageBg = await page.evaluate(() => {
+    const el = document.querySelector(".tut-stage");
+    return el ? getComputedStyle(el).backgroundColor : "missing";
   });
-  ok("the caption strip doesn't capture input", blocks === "none", blocks);
+  ok("the 3D stage is transparent", /rgba\(0, 0, 0, 0\)|transparent/.test(stageBg), stageBg);
 
-  section("Tips follow what the player does");
-  await play(page, 14);
-  const taught = await page.evaluate(() => {
-    const g = (window as unknown as { __game?: { coach?: { seen: Set<string> } } }).__game;
-    return g?.coach ? [...g.coach.seen] : [];
-  });
-  ok("the biscuit lesson fires once biscuits are eaten",
-    taught.includes("biscuits") || taught.length === 0, taught.join(","));
-  ok("more than one lesson has been delivered", taught.length >= 2, taught.join(","));
+  section("Stepping through all five");
+  const seen: string[] = [await title(page)];
+  for (let i = 0; i < 4; i++) {
+    await page.click(".tut-next");
+    await page.waitForTimeout(250);
+    seen.push(await title(page));
+  }
+  ok("five distinct slides", new Set(seen).size === 5, seen.join(" | "));
+  ok("the last one offers Got it",
+    /got it/i.test((await page.textContent(".tut-next")) ?? ""),
+    await page.textContent(".tut-next"));
+  ok("Skip is gone on the last slide", await page.$(".tut-skip") === null);
 
-  section("Skip stops it immediately");
-  const skip = await page.$(".tutorial-skip");
-  ok("there is a Skip button", skip !== null);
-  await skip?.click();
-  await page.waitForTimeout(600);
-  ok("the coach is gone after Skip", await page.$(".tutorial") === null);
+  await page.click(".tut-back");
+  await page.waitForTimeout(250);
+  ok("Back returns to the previous slide", (await title(page)) === seen[3], await title(page));
 
-  section("It never bothers the player again");
-  ok("skipping is persisted to the account", await waitForTutorialPersisted(page));
+  await page.click(".tut-dot[data-idx='0']");
+  await page.waitForTimeout(250);
+  ok("a dot jumps straight to that slide", (await title(page)) === seen[0], await title(page));
 
-  // Reload rather than just checking memory: the flag has to have reached the
-  // account, which is the whole point of storing it server-side.
+  section("Finishing starts the run");
+  for (let i = 0; i < 4; i++) {
+    await page.click(".tut-next");
+    await page.waitForTimeout(200);
+  }
+  await page.click(".tut-next");
+  await page.waitForSelector("#tutorial.hidden", { timeout: 15_000 });
+  ok("the carousel closes", await page.$(".tut-card") === null);
+
+  await page.waitForFunction(
+    () => {
+      const m = (window as unknown as { __game?: { mode?: string } }).__game?.mode;
+      return m === "ready" || m === "play";
+    },
+    undefined,
+    { timeout: 60_000, polling: 250 },
+  );
+  ok("the run begins once it's dismissed", true);
+  ok("finishing is persisted to the account", await tutorialPersisted(page));
+
+  section("It doesn't come back uninvited");
   await page.reload({ waitUntil: "networkidle" });
   await page.waitForSelector("#mainMenu:not(.hidden)", { timeout: 30_000 });
   await page.click("#playBtn");
-  await waitForPlay(page);
-  ok("no coach on the next run", await page.$(".tutorial") === null);
+  await page.waitForTimeout(2_500);
+  ok("no carousel on the next run", await page.$(".tut-card") === null);
 
-  section("…on any device");
   const fresh = await browser.newPage({ viewport: { width: 390, height: 844 } });
   fresh.setDefaultTimeout(60_000);
   await login(fresh, username);
   await fresh.click("#playBtn");
-  await waitForPlay(fresh);
-  ok("no coach after signing in elsewhere", await fresh.$(".tutorial") === null);
+  await fresh.waitForTimeout(2_500);
+  ok("nor after signing in elsewhere", await fresh.$(".tut-card") === null);
   await fresh.close();
 
-  section("The account screen can bring the tips back");
-  await page.evaluate(() => {
-    document.querySelector<HTMLButtonElement>("#homeBtn")?.click();
-  });
+  section("…but Account can open it any time");
+  await page.evaluate(() => document.querySelector<HTMLButtonElement>("#homeBtn")?.click());
   await page.waitForTimeout(1_200);
   await page.click("#menuProfileBtn");
   await page.waitForSelector("#replayTutorialBtn", { timeout: 15_000 });
-  await page.click("#replayTutorialBtn");
-  await page.waitForTimeout(1_500);
-  const label = await page.textContent("#replayTutorialBtn");
-  ok("the button confirms in place", /next game/i.test(label ?? ""), label);
+  ok("the button says View tutorial",
+    /view tutorial/i.test((await page.textContent("#replayTutorialBtn")) ?? ""),
+    await page.textContent("#replayTutorialBtn"));
 
-  await page.click("#profileCloseBtn");
-  await page.waitForTimeout(600);
-  await page.click("#playBtn");
-  await waitForPlay(page);
-  ok("the coach returns for the next game", await page.$(".tutorial") !== null);
+  await page.click("#replayTutorialBtn");
+  await page.waitForSelector("#tutorial:not(.hidden)", { timeout: 15_000 });
+  ok("it opens straight away", await page.$(".tut-card") !== null);
+  ok("…back at the first slide", /steer/i.test(await title(page)), await title(page));
+
+  // Closing a replay must not start a game, and must not un-learn it.
+  for (let i = 0; i < 4; i++) {
+    await page.click(".tut-next");
+    await page.waitForTimeout(180);
+  }
+  await page.click(".tut-next");
+  await page.waitForSelector("#tutorial.hidden", { timeout: 15_000 });
+  await page.waitForTimeout(800);
+  ok("a replay does not start a run", (await gameMode(page)) !== "play", await gameMode(page));
+  ok("and it stays learned", await tutorialPersisted(page));
 
   ok("no console errors throughout", errors.length === 0, errors.slice(0, 2).join(" | "));
 
