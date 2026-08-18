@@ -47,6 +47,11 @@ function buildBanner(message: string, buttonLabel: string | null): {
   const el = document.createElement("div");
   el.className = "install-hint";
   el.innerHTML =
+    // The app icon, so the banner reads as "this thing you're playing" rather
+    // than an anonymous browser prompt. icon-192 is already in the PWA
+    // precache, so it costs no extra request.
+    '<img class="install-hint__icon" src="./icons/icon-192.png" alt="" ' +
+    'width="40" height="40" decoding="async" />' +
     `<span class="install-hint__text">${message}</span>` +
     (buttonLabel ? `<button type="button" class="install-hint__action">${buttonLabel}</button>` : "") +
     '<button type="button" class="install-hint__dismiss" aria-label="Dismiss">&times;</button>';
@@ -84,7 +89,12 @@ export function initInstallPrompt(): void {
     e.preventDefault();
     deferredPrompt = e as BeforeInstallPromptEvent;
     teardown();
-    banner = buildBanner("Install Beagle Chomp for offline play", "Install");
+    // NOT "for offline play": since v5.0 the game needs a connection (sign-in
+    // before play, server-validated scores), so promising offline play would be
+    // a straight lie. What installing actually gives you is the full screen,
+    // with no browser chrome — which is what the manifest's display:standalone
+    // delivers.
+    banner = buildBanner("Install Beagle Chomp for full-screen play", "Install");
     banner.button?.addEventListener("click", () => {
       const prompt = deferredPrompt;
       if (!prompt) return;

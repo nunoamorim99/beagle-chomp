@@ -63,22 +63,45 @@ async function deleteAccount(page: Page, username: string): Promise<void> {
   await page.waitForSelector("#authGate:not(.hidden)", { timeout: 15_000 });
 }
 
-/** Inject the install banner directly. `beforeinstallprompt` can't be fired
- *  from a test, and this check is about the banner's LAYOUT, not its trigger. */
+/** Show the REAL install banner by dispatching a synthetic
+ *  `beforeinstallprompt` — headless Chromium never fires one itself.
+ *
+ *  Deliberately not hand-built markup any more: the previous version pasted
+ *  its own copy of the banner HTML, so it exercised the stylesheet but not
+ *  install.ts, and silently drifted out of step with the real wording. */
 async function showInstallBanner(page: Page): Promise<void> {
   await page.evaluate(() => {
-    const el = document.createElement("div");
-    el.className = "install-hint";
-    el.innerHTML =
-      '<span class="install-hint__text">Install Beagle Chomp for full-screen play and a home-screen icon.</span>' +
-      '<button type="button" class="install-hint__action">Install</button>' +
-      '<button type="button" class="install-hint__dismiss" aria-label="Dismiss">&times;</button>';
-    document.body.appendChild(el);
-    // install.ts sets this when it mounts the real banner; the menu's title
-    // block shifts down out from under it in CSS.
-    document.body.classList.add("install-open");
+    const e = new Event("beforeinstallprompt") as Event & {
+      prompt?: () => Promise<void>;
+      userChoice?: Promise<unknown>;
+    };
+    e.prompt = () => Promise.resolve();
+    e.userChoice = Promise.resolve({ outcome: "dismissed", platform: "web" });
+    window.dispatchEvent(e);
   });
   await page.waitForSelector(".install-hint");
+}
+
+/** The banner's promise has to stay true. It claimed "offline play" from v1.0
+ *  until v5.2 — which stopped being true at v5.0, when sign-in before play and
+ *  server-validated scores made the game online-only. */
+async function checkInstallCopy(page: Page): Promise<void> {
+  section("Install banner — what it promises");
+  const text = await page.evaluate(
+    () => document.querySelector(".install-hint__text")?.textContent ?? "",
+  );
+  ok("the banner does NOT promise offline play", !/offline/i.test(text), text);
+  ok("it names the app", /beagle chomp/i.test(text), text);
+
+  const icon = await page.evaluate(() => {
+    const img = document.querySelector<HTMLImageElement>(".install-hint__icon");
+    if (!img) return null;
+    const ib = img.getBoundingClientRect();
+    const tb = document.querySelector(".install-hint__text")?.getBoundingClientRect();
+    return { loaded: img.naturalWidth > 0, leftOfText: tb ? ib.right <= tb.left + 1 : false };
+  });
+  ok("the app icon is shown", icon?.loaded === true);
+  ok("…to the left of the message", icon?.leftOfText === true);
 }
 
 async function checkMenu(page: Page, label: string): Promise<void> {
@@ -150,6 +173,7 @@ async function checkInstallBanner(page: Page, label: string): Promise<void> {
   section(`${label} — install banner`);
 
   await showInstallBanner(page);
+  await checkInstallCopy(page);
 
   const banner = await page.locator(".install-hint").boundingBox();
   const viewport = page.viewportSize();

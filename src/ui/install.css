@@ -38,6 +38,16 @@
   pointer-events:auto;
 }
 
+/* The app icon. Decorative — alt="" keeps a screen reader on the message,
+   which already names the app. */
+.install-hint__icon{
+  flex:0 0 auto;
+  width:40px;
+  height:40px;
+  border-radius:9px;
+  display:block;
+}
+
 .install-hint__text{
   font-size:14px;
   line-height:1.45;
@@ -91,20 +101,37 @@
 @media (max-width:460px){
   .install-hint{
     display:grid;
-    grid-template-columns:1fr auto;
-    gap:10px 8px;
+    /* Three columns now: icon, message, dismiss. The action still gets its own
+       full-width row underneath.
+
+           ┌────┬──────────────────┬───┐
+           │ 🐶 │ message text…    │ ✕ │
+           ├────┴──────────────────┴───┤
+           │        [ Install ]        │
+           └───────────────────────────┘
+    */
+    grid-template-columns:auto 1fr auto;
+    gap:10px 10px;
     padding:12px;
     align-items:start;
   }
-  .install-hint__text{
+  .install-hint__icon{
     grid-column:1;
+    grid-row:1;
+    width:36px;
+    height:36px;
+    /* Optically aligned with the first line of text rather than the box top. */
+    margin-top:6px;
+  }
+  .install-hint__text{
+    grid-column:2;
     grid-row:1;
     font-size:13.5px;
     /* Vertically centre against the 44px dismiss target next to it. */
     padding-top:10px;
   }
   .install-hint__dismiss{
-    grid-column:2;
+    grid-column:3;
     grid-row:1;
   }
   .install-hint__action{
