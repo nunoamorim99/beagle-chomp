@@ -85,6 +85,19 @@ export const MAZE_FACTS: readonly MazeFacts[] = [
   { biscuits: 200, bones: 4, fruitTiles: 2 },
   { biscuits: 198, bones: 4, fruitTiles: 2 },
   { biscuits: 176, bones: 4, fruitTiles: 2 },
+  { biscuits: 187, bones: 4, fruitTiles: 2 },
+  { biscuits: 187, bones: 4, fruitTiles: 2 },
+  { biscuits: 190, bones: 4, fruitTiles: 2 },
+  { biscuits: 186, bones: 4, fruitTiles: 2 },
+  { biscuits: 190, bones: 4, fruitTiles: 2 },
+  { biscuits: 194, bones: 4, fruitTiles: 2 },
+  { biscuits: 193, bones: 4, fruitTiles: 2 },
+  { biscuits: 193, bones: 4, fruitTiles: 2 },
+  { biscuits: 190, bones: 4, fruitTiles: 2 },
+  { biscuits: 188, bones: 4, fruitTiles: 2 },
+  { biscuits: 256, bones: 4, fruitTiles: 2 },
+  { biscuits: 270, bones: 4, fruitTiles: 2 },
+  { biscuits: 248, bones: 4, fruitTiles: 2 },
 ];
 
 export const MAZE_COUNT = MAZE_FACTS.length;
