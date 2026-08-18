@@ -271,6 +271,31 @@ for (const [kind, id] of Object.entries(defaults)) {
 const fmt = (entries: Array<{ id: string; price: number }>) =>
   entries.map((e) => `  { id: ${JSON.stringify(e.id)}, price: ${e.price} },`).join("\n");
 
+// --- progression (IDEA-040) --------------------------------------------------
+//
+// The validator sizes each level's score ceiling from that level's GHOST COUNT,
+// so it must agree with the game about which level has how many enemies. Pull
+// the numbers out of the real progression.ts rather than restating them here:
+// a hand-copied "3" that should have become a "4" would reject honest stage-3
+// runs, which is the failure mode that cost players real scores in v5.0-v5.1.
+const progressionSrc = readFileSync(join(GAME_DIR, "progression.ts"), "utf-8");
+
+function progressionConst(name: string): number {
+  const match = new RegExp(`export const ${name}\\s*=\\s*([0-9]+)`).exec(progressionSrc);
+  if (!match) {
+    console.error(`[sync] could not find ${name} in progression.ts — has it been renamed?`);
+    process.exit(1);
+  }
+  return Number(match[1]);
+}
+
+const MAPS_PER_STAGE = progressionConst("MAPS_PER_STAGE");
+const STAGE_COUNT = progressionConst("STAGE_COUNT");
+const GHOSTS_STAGE_1_2 = progressionConst("GHOSTS_STAGE_1_2");
+const GHOSTS_STAGE_3 = progressionConst("GHOSTS_STAGE_3");
+const GHOSTS_BONUS_FIRST_LAP = progressionConst("GHOSTS_BONUS_FIRST_LAP");
+const GHOSTS_BONUS_LATER_LAPS = progressionConst("GHOSTS_BONUS_LATER_LAPS");
+
 const out = `// GENERATED FILE — DO NOT EDIT.
 // Produced by server/scripts/sync-game-constants.ts from src/game/cosmetics.ts
 // and src/game/themes.ts. Run \`npm run sync\` in server/ to regenerate.
@@ -379,6 +404,68 @@ export const CLASSIC_MODIFIERS: ChallengeLevelFacts = {
   ghostCount: 3,
   frightSeconds: ${configFrightSeconds},
 };
+
+// --- classic progression (IDEA-040) ------------------------------------------
+//
+// Mirrors src/game/progression.ts. The constants below are EXTRACTED from that
+// file by the sync script, and scripts/test-catalog.ts asserts planLevel() here
+// agrees with the game's planLevel() on every level of the first four laps.
+//
+// The validator needs this because a level's score ceiling depends on how many
+// ghosts it had: a 4-ghost stage-3 level can legitimately yield far more points
+// than a 3-ghost one. Sizing every level at 3 would reject honest runs.
+
+export const MAPS_PER_STAGE = ${MAPS_PER_STAGE};
+export const STAGE_COUNT = ${STAGE_COUNT};
+export const LEVELS_PER_LAP = ${STAGE_COUNT * (MAPS_PER_STAGE + 1)};
+export const MAPS_PER_LAP = ${STAGE_COUNT * MAPS_PER_STAGE};
+export const BONUS_MAZE_START = ${STAGE_COUNT * MAPS_PER_STAGE};
+export const GHOSTS_STAGE_1_2 = ${GHOSTS_STAGE_1_2};
+export const GHOSTS_STAGE_3 = ${GHOSTS_STAGE_3};
+export const GHOSTS_BONUS_FIRST_LAP = ${GHOSTS_BONUS_FIRST_LAP};
+export const GHOSTS_BONUS_LATER_LAPS = ${GHOSTS_BONUS_LATER_LAPS};
+
+export interface LevelPlan {
+  readonly mazeIdx: number;
+  readonly ghostCount: number;
+  readonly isBonus: boolean;
+  readonly mapNumber: number | null;
+  readonly lap: number;
+  readonly stage: number;
+}
+
+export function planLevel(levelIdx: number): LevelPlan {
+  const safeIdx = Number.isFinite(levelIdx) && levelIdx > 0 ? Math.floor(levelIdx) : 0;
+
+  const lap = Math.floor(safeIdx / LEVELS_PER_LAP) + 1;
+  const withinLap = safeIdx % LEVELS_PER_LAP;
+
+  const stageIdx = Math.floor(withinLap / (MAPS_PER_STAGE + 1));
+  const withinStage = withinLap % (MAPS_PER_STAGE + 1);
+  const isBonus = withinStage === MAPS_PER_STAGE;
+
+  if (isBonus) {
+    return {
+      mazeIdx: BONUS_MAZE_START + stageIdx,
+      ghostCount: lap === 1 ? GHOSTS_BONUS_FIRST_LAP : GHOSTS_BONUS_LATER_LAPS,
+      isBonus: true,
+      mapNumber: null,
+      lap,
+      stage: stageIdx + 1,
+    };
+  }
+
+  const mapIdx = stageIdx * MAPS_PER_STAGE + withinStage;
+
+  return {
+    mazeIdx: mapIdx,
+    ghostCount: lap > 1 || stageIdx === STAGE_COUNT - 1 ? GHOSTS_STAGE_3 : GHOSTS_STAGE_1_2,
+    isBonus: false,
+    mapNumber: mapIdx + 1,
+    lap,
+    stage: stageIdx + 1,
+  };
+}
 `;
 
 mkdirSync(dirname(OUT_FILE), { recursive: true });

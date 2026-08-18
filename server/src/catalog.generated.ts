@@ -118,3 +118,65 @@ export const CLASSIC_MODIFIERS: ChallengeLevelFacts = {
   ghostCount: 3,
   frightSeconds: 7,
 };
+
+// --- classic progression (IDEA-040) ------------------------------------------
+//
+// Mirrors src/game/progression.ts. The constants below are EXTRACTED from that
+// file by the sync script, and scripts/test-catalog.ts asserts planLevel() here
+// agrees with the game's planLevel() on every level of the first four laps.
+//
+// The validator needs this because a level's score ceiling depends on how many
+// ghosts it had: a 4-ghost stage-3 level can legitimately yield far more points
+// than a 3-ghost one. Sizing every level at 3 would reject honest runs.
+
+export const MAPS_PER_STAGE = 5;
+export const STAGE_COUNT = 3;
+export const LEVELS_PER_LAP = 18;
+export const MAPS_PER_LAP = 15;
+export const BONUS_MAZE_START = 15;
+export const GHOSTS_STAGE_1_2 = 3;
+export const GHOSTS_STAGE_3 = 4;
+export const GHOSTS_BONUS_FIRST_LAP = 1;
+export const GHOSTS_BONUS_LATER_LAPS = 2;
+
+export interface LevelPlan {
+  readonly mazeIdx: number;
+  readonly ghostCount: number;
+  readonly isBonus: boolean;
+  readonly mapNumber: number | null;
+  readonly lap: number;
+  readonly stage: number;
+}
+
+export function planLevel(levelIdx: number): LevelPlan {
+  const safeIdx = Number.isFinite(levelIdx) && levelIdx > 0 ? Math.floor(levelIdx) : 0;
+
+  const lap = Math.floor(safeIdx / LEVELS_PER_LAP) + 1;
+  const withinLap = safeIdx % LEVELS_PER_LAP;
+
+  const stageIdx = Math.floor(withinLap / (MAPS_PER_STAGE + 1));
+  const withinStage = withinLap % (MAPS_PER_STAGE + 1);
+  const isBonus = withinStage === MAPS_PER_STAGE;
+
+  if (isBonus) {
+    return {
+      mazeIdx: BONUS_MAZE_START + stageIdx,
+      ghostCount: lap === 1 ? GHOSTS_BONUS_FIRST_LAP : GHOSTS_BONUS_LATER_LAPS,
+      isBonus: true,
+      mapNumber: null,
+      lap,
+      stage: stageIdx + 1,
+    };
+  }
+
+  const mapIdx = stageIdx * MAPS_PER_STAGE + withinStage;
+
+  return {
+    mazeIdx: mapIdx,
+    ghostCount: lap > 1 || stageIdx === STAGE_COUNT - 1 ? GHOSTS_STAGE_3 : GHOSTS_STAGE_1_2,
+    isBonus: false,
+    mapNumber: mapIdx + 1,
+    lap,
+    stage: stageIdx + 1,
+  };
+}

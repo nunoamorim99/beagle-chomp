@@ -24,6 +24,7 @@ import {
   MAZE_COUNT,
   CHALLENGE_LEVELS,
   CLASSIC_MODIFIERS,
+  planLevel,
   COIN_THRESHOLDS,
   LIFE_THRESHOLDS,
   FRUIT_THRESHOLDS,
@@ -38,6 +39,7 @@ export type RejectionReason =
   | "SCORE_ITEM_MISMATCH"
   | "LIVES_IMPOSSIBLE"
   | "CHALLENGE_MAZE_MISMATCH"
+  | "LEVEL_PLAN_MISMATCH"
   | "LEVEL_LOCKED"
   | "SESSION_TOO_OLD"
   | "MALFORMED_SUBMISSION";
@@ -50,6 +52,24 @@ export interface RunSubmission {
    *  number of levels played (cleared + the one in progress when the run
    *  ended), which is what every per-level bound multiplies by. */
   mazeIdxSequence: number[];
+  /**
+   * The 0-based CLASSIC LEVEL INDEX of every level played, in order — parallel
+   * to mazeIdxSequence (IDEA-040).
+   *
+   * Needed because a level's score ceiling depends on its ghost count, which
+   * varies by level: stage 3 has 4 ghosts, a bonus level has 1. Sizing a
+   * 4-ghost level at 3 would reject an honest run.
+   *
+   * Untrusted like everything else here — it is CHECKED against planLevel(),
+   * which independently derives the maze each level index must use. Claiming a
+   * 4-ghost level index while playing a 3-ghost maze fails LEVEL_PLAN_MISMATCH.
+   *
+   * OPTIONAL for backward compatibility: a client from before IDEA-040 (or a
+   * run queued on a device before the update) omits it, and the validator falls
+   * back to the classic 3-ghost assumption. Those runs are all stage 1-2, where
+   * 3 is the correct count anyway, so no queued run is lost by the deploy.
+   */
+  levelIdxSequence?: number[];
   pelletsEaten: number;
   bonesEaten: number;
   fruitEaten: number;
@@ -253,10 +273,64 @@ export function validateRun(input: RunSubmission, ctx: RunContext): ValidationRe
     }
   }
 
+  // --- IDEA-040: resolve each level's ghost count ---------------------------
+  //
+  // Classic levels no longer all have 3 ghosts: stage 3 has 4, a bonus level
+  // has 1 (2 from lap 2). The ceiling must be sized per level, or an honest
+  // stage-3 run is rejected for scoring more than a 3-ghost level could.
+  //
+  // levelIdxSequence is untrusted, so it is not believed — it is CHECKED:
+  // planLevel() independently says which maze each level index must use, and a
+  // claim that disagrees is refused. That makes "claim a 4-ghost level, play a
+  // 3-ghost maze" impossible rather than merely unlikely.
+  const levelIdxSequence = input.levelIdxSequence;
+  let ghostCounts: number[];
+
+  if (ctx.mode === "classic" && Array.isArray(levelIdxSequence) && levelIdxSequence.length > 0) {
+    if (levelIdxSequence.length !== input.mazeIdxSequence.length) {
+      return {
+        accepted: false,
+        reasonCode: "LEVEL_PLAN_MISMATCH",
+        detail: { ...detail, reason: "levelIdxSequence length differs from mazeIdxSequence" },
+      };
+    }
+
+    ghostCounts = [];
+    for (let i = 0; i < levelIdxSequence.length; i++) {
+      const levelIdx = levelIdxSequence[i];
+      if (!Number.isInteger(levelIdx) || levelIdx < 0) {
+        return {
+          accepted: false,
+          reasonCode: "MALFORMED_SUBMISSION",
+          detail: { ...detail, field: "levelIdxSequence", levelIdx },
+        };
+      }
+
+      const plan = planLevel(levelIdx);
+      if (plan.mazeIdx !== input.mazeIdxSequence[i]) {
+        return {
+          accepted: false,
+          reasonCode: "LEVEL_PLAN_MISMATCH",
+          detail: {
+            ...detail,
+            position: i,
+            levelIdx,
+            claimedMaze: input.mazeIdxSequence[i],
+            expectedMaze: plan.mazeIdx,
+          },
+        };
+      }
+      ghostCounts.push(plan.ghostCount);
+    }
+  } else {
+    // Pre-IDEA-040 client, or challenge mode: one fixed count for the run.
+    ghostCounts = input.mazeIdxSequence.map(() => mods.ghostCount);
+  }
+
   // --- MAX-1: per-level score ceiling ---------------------------------------
   let scoreCeiling = 0;
-  for (const mazeIdx of input.mazeIdxSequence) {
-    scoreCeiling += maxLevelScore(mazeIdx, mods.ghostCount);
+  for (let i = 0; i < input.mazeIdxSequence.length; i++) {
+    scoreCeiling += maxLevelScore(input.mazeIdxSequence[i], ghostCounts[i]);
   }
   if (input.score > scoreCeiling) {
     return {
@@ -284,7 +358,11 @@ export function validateRun(input: RunSubmission, ctx: RunContext): ValidationRe
     ["fruitEaten", input.fruitEaten, maxFruit],
     ["coinsCollected", input.coinsCollected, maxCoins],
     // A ghost is only edible during a fright window, and each bone opens one.
-    ["ghostsEaten", input.ghostsEaten, input.bonesEaten * mods.ghostCount],
+    // Bounded by the LARGEST ghost count across the levels played: a run that
+    // reached stage 3 could have eaten 4 per fright there, and attributing
+    // bones to levels would need per-level bone counts the client doesn't send.
+    // Generous by design — MAX-1 is the bound that actually binds.
+    ["ghostsEaten", input.ghostsEaten, input.bonesEaten * Math.max(...ghostCounts)],
   ];
   for (const [field, actual, max] of itemChecks) {
     if (actual > max) {

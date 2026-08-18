@@ -427,6 +427,126 @@ section("Coin awards — recomputed server-side, never trusted");
   ok("a tiny run earns 0 coins", result.accepted && result.coinsAwarded === 0, result.accepted ? result.coinsAwarded : result.reasonCode);
 }
 
+section("IDEA-040 — per-level ghost counts");
+
+// THE assertion this whole design exists for: a legitimate stage-3 run scores
+// more than three ghosts could ever yield, and must still be ACCEPTED. Sizing
+// every level at 3 ghosts would reject it — the failure that cost real players
+// their scores in v5.0-v5.1, which is why the server derives the count itself.
+{
+  // Level 12 is map 11 (stage 3, 4 ghosts) on maze 10. Only 5 mazes exist
+  // today, so use a stage-1 level and check the ARITHMETIC difference instead:
+  // the same maze, scored at 3 ghosts vs 4, has two different ceilings.
+  const at3 = maxLevelScore(0, 3);
+  const at4 = maxLevelScore(0, 4);
+  ok("a 4-ghost level has a higher ceiling than a 3-ghost one", at4 > at3, `${at3} vs ${at4}`);
+
+  // A score between the two ceilings: impossible at 3 ghosts, fine at 4.
+  const between = at3 + Math.floor((at4 - at3) / 2);
+
+  const asStage1 = validateRun(
+    makeRun({
+      score: between,
+      mazeIdxSequence: [0],
+      levelIdxSequence: [0], // map 1 — 3 ghosts
+      pelletsEaten: 175, bonesEaten: 4, fruitEaten: 2, ghostsEaten: 12,
+      coinsCollected: 0, livesLost: 0,
+    }),
+    classicCtx({ elapsedServerSeconds: 600 }),
+  );
+  ok(
+    "a 4-ghost score on a 3-ghost level is REJECTED",
+    !asStage1.accepted && asStage1.reasonCode === "LEVEL_SCORE_CAP_EXCEEDED",
+    asStage1.accepted ? "accepted" : asStage1.reasonCode,
+  );
+}
+
+// A claimed level index must match the maze actually played.
+{
+  const result = validateRun(
+    makeRun({
+      mazeIdxSequence: [4],      // maze 4
+      levelIdxSequence: [0],      // but level 0 is maze 0
+      pelletsEaten: 100, bonesEaten: 2, fruitEaten: 1, ghostsEaten: 2,
+    }),
+    classicCtx({ elapsedServerSeconds: 600 }),
+  );
+  ok(
+    "claiming a level index that doesn't match the maze is rejected",
+    !result.accepted && result.reasonCode === "LEVEL_PLAN_MISMATCH",
+    result.accepted ? "accepted" : result.reasonCode,
+  );
+}
+
+{
+  const result = validateRun(
+    makeRun({
+      mazeIdxSequence: [0, 1],
+      levelIdxSequence: [0],  // wrong length
+      pelletsEaten: 100, bonesEaten: 2, fruitEaten: 1, ghostsEaten: 2,
+    }),
+    classicCtx({ elapsedServerSeconds: 600 }),
+  );
+  ok(
+    "a levelIdxSequence of the wrong length is rejected",
+    !result.accepted && result.reasonCode === "LEVEL_PLAN_MISMATCH",
+    result.accepted ? "accepted" : result.reasonCode,
+  );
+}
+
+{
+  const result = validateRun(
+    makeRun({
+      mazeIdxSequence: [0],
+      levelIdxSequence: [-1],
+      pelletsEaten: 100, bonesEaten: 2, fruitEaten: 1, ghostsEaten: 2,
+    }),
+    classicCtx({ elapsedServerSeconds: 600 }),
+  );
+  ok(
+    "a negative level index is malformed",
+    !result.accepted && result.reasonCode === "MALFORMED_SUBMISSION",
+    result.accepted ? "accepted" : result.reasonCode,
+  );
+}
+
+// BACKWARD COMPATIBILITY: a client from before IDEA-040 sends no
+// levelIdxSequence at all. Those runs must still validate exactly as they did,
+// or the deploy would reject every run already queued on a player's device.
+{
+  const legacy = validateRun(
+    makeRun({
+      mazeIdxSequence: [0, 1, 2],
+      pelletsEaten: 500, bonesEaten: 8, fruitEaten: 4, ghostsEaten: 10,
+      coinsCollected: 2, livesLost: 2,
+    }),
+    classicCtx({ elapsedServerSeconds: 900 }),
+  );
+  ok(
+    "a submission with no levelIdxSequence still validates (old client)",
+    legacy.accepted,
+    legacy.accepted ? "" : legacy.reasonCode,
+  );
+}
+
+// A correctly-claimed multi-level run across a stage boundary.
+{
+  const result = validateRun(
+    makeRun({
+      mazeIdxSequence: [0, 1, 2, 3, 4],
+      levelIdxSequence: [0, 1, 2, 3, 4],
+      pelletsEaten: 700, bonesEaten: 12, fruitEaten: 6, ghostsEaten: 20,
+      coinsCollected: 4, livesLost: 2,
+    }),
+    classicCtx({ elapsedServerSeconds: 1500 }),
+  );
+  ok(
+    "an honest 5-level stage-1 run with level indices is accepted",
+    result.accepted,
+    result.accepted ? "" : result.reasonCode,
+  );
+}
+
 console.log(`\n${"-".repeat(60)}`);
 console.log(`PLAUSIBILITY: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
