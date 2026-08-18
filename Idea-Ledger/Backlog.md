@@ -19,7 +19,7 @@ Living backlog of ideas. Two purposes:
 _(empty — nothing to triage)_
 
 ## Backlog (open ideas)
-> New registered ideas go here. Next free ID: IDEA-040
+> New registered ideas go here. Next free ID: IDEA-041
 
 ### IDEA-039 — Server scale hygiene: metrics, session retention, Redis threshold 💡
 - **Priority:** 🟡
@@ -63,6 +63,65 @@ _(nothing yet)_
 
 ## Delivered ✅
 > Already in production. Do NOT delete. Each keeps its version history.
+
+### IDEA-040 — 15 maps in three stages, bonus levels, and a first-run tutorial ✅
+- **Priority:** 🔴
+- **Area:** modes · onboarding
+- **Registered:** 2026-08-18
+- **Description:** more maps — five wasn't enough once Nuno hit 41,000 points and had played the
+  whole pool three times. Fifteen maps in three groups of five, each group followed by a BONUS map
+  (few walls, one enemy) as a reward and a chance to earn lives. Stage 3 adds a fourth enemy. After
+  map 15 the cycle repeats at four enemies for good, and clearing a full lap at that difficulty
+  earns a congratulation. Plus a tutorial the first time someone plays, teaching the swipe, the
+  value of biscuits and fruit, the three ways to earn a life, and that enemies are only edible
+  after a white bone.
+- **Notes:** **Stage 3's mazes are deliberately NOT widened for the 4th enemy** (Nuno, 2026-08-18:
+  "the idea to add one more enemy is exactly that, improve the difficult so lets keep the maze just
+  add the enemy") — opening the corridors up would refund the difficulty the extra enemy exists to
+  add. If stage 3 ever proves too punishing the lever is `progression.ts`, never the geometry.
+  Bonus numbering sits BETWEEN map numbers, so the maps stay 1–15 and a lap is 18 levels.
+- **Dependencies:** [[IDEA-020]] (the validator had to learn per-level ghost counts first)
+- **History:**
+  - **v1** (2026-08-18) — the whole progression, the 13 new mazes, and the coached tutorial.
+    **`planLevel()` is the one place progression is decided** (`src/game/progression.ts`, pure):
+    which maze, how many enemies, what the HUD says. Everything else reads from it, and the SERVER
+    vendors a generated copy — because a level's score ceiling depends on its ghost count, and a
+    4-ghost stage-3 level legitimately out-scores what a 3-ghost one could. Sizing every level at 3
+    would have rejected honest runs, which is exactly the failure that cost real players their
+    scores in v5.0–v5.1. Generated rather than hand-copied, with the catalog drift test
+    cross-checking 72 levels; verified the guard bites by deliberately breaking it twice.
+    Submissions now carry `levelIdxSequence`, which is CHECKED rather than trusted — the server
+    re-derives each level's maze from it and refuses a mismatch (`LEVEL_PLAN_MISMATCH`). Absent for
+    older clients, which fall back to the 3-ghost assumption, so no queued run was lost by the
+    deploy.
+    **13 new mazes** (5 stage-2, 5 stage-3, 3 bonus), all passing the validator and the sim.
+    Bonus maps carry 248–270 biscuits against ~190, so banking the 5,000 for a life is realistic.
+    **Every maze now shares one byte-identical ghost pen.** Nine had drifted, including one whose
+    pen had no side walls at all — a ghost stepped out through what looked like a solid roof, which
+    is what Nuno saw on the first bonus map. Bonus maps also lost their white bones: a fright
+    window there means eating the lone enemy for a free life on top of an already generous haul,
+    and the golden bone already covers earning a life.
+    **The tutorial coaches rather than lectures** (`tutorialCoach.ts`, pure + `ui/tutorial.ts`).
+    Each tip fires when its subject is on screen; the game never pauses; the strip cannot swallow a
+    swipe; Skip is always there. `tutorial_done` lives on the account (migration 004) so learning
+    on a phone doesn't mean being re-taught on a laptop, and existing players were backfilled as
+    taught. The account screen can bring the tips back.
+    Two bugs found by testing rather than reading: `repo/tokens.ts` keeps its own column list for
+    the token JOIN, so `tutorial_done` reached `/api/v1/profile` but not `/auth/me` — the tutorial
+    silently replayed for players who had finished it (now guarded by comparing the two row
+    shapes); and `:has(.dpad)` matched the pad element even while hidden, lifting the caption 190px
+    onto the board for every swipe player.
+    Also worth recording: the throwaway harness used to iterate on maze drafts let the beagle
+    REVERSE, which the real sim bot forbids. That one difference invented dead-ends, and four
+    mazes were "fixed" that were never broken — caught only because the same harness flagged two
+    SHIPPED mazes as failing too.
+    571 game + 30 browser-UI + 310 server checks.
+    `src/game/{progression,tutorialCoach,runTelemetry,game,profileStore,profileMapping}.ts`,
+    `src/ui/{tutorial,profile}.ts`, `src/net/{endpoints,profileSync}.ts`, `src/game/mazes.json`,
+    `style.css`, `server/migrations/004_tutorial_done.sql`, `server/src/repo/{users,tokens,types}.ts`,
+    `services/profileService.ts`, `routes/profile.ts`, `validation/plausibility.ts`,
+    `scripts/sync-game-constants.ts`, and six test scripts.
+    _(9bc0438, d227d17, a1ba99a, 77661eb, cd5947a, a309175, d284a0c)_
 
 ### IDEA-035 — Login screen: favicon, title, and Create-account / Login tabs ✅
 - **Priority:** 🟡
