@@ -20,6 +20,7 @@ import {
   GHOSTS_BONUS_FIRST_LAP,
   GHOSTS_BONUS_LATER_LAPS,
 } from "../src/game/progression";
+import { MAZES } from "../src/game/mazes";
 
 let passed = 0;
 let failed = 0;
@@ -167,6 +168,71 @@ ok("a negative index falls back to level 0", planLevel(-5).mapNumber === 1);
 ok("a fractional index floors", planLevel(3.7).mapNumber === 4, planLevel(3.7).mapNumber);
 ok("NaN falls back to level 0", planLevel(Number.NaN).mapNumber === 1);
 ok("a very deep level still resolves", planLevel(10_000).ghostCount === GHOSTS_STAGE_3);
+
+section("Every maze shares one identical ghost pen");
+// A ghost may walk '=', '-' and 'G'. If the pen is not sealed on every side
+// except its door, ghosts leave through what LOOKS to the player like a solid
+// wall — which is exactly what happened on the first bonus map, and on three
+// other mazes nobody had reached yet. The pen is fixed geometry, so the
+// simplest guarantee is that every maze carries byte-identical rows here.
+{
+  const PEN = { 8: "##-##", 9: "#=G=#", 10: "#####" } as const;
+  const offenders: string[] = [];
+
+  MAZES.forEach((rows, i) => {
+    for (const [y, block] of Object.entries(PEN)) {
+      const actual = rows[Number(y)].slice(7, 12);
+      if (actual !== block) offenders.push(`maze ${i} row ${y}: "${actual}" != "${block}"`);
+    }
+    // The shared pen-front floor sits directly above the door, and there is
+    // exactly one of it — a stray ':' elsewhere is a beagle-walkable hole in
+    // whatever wall it landed in.
+    const colons = rows.join("").split(":").length - 1;
+    if (colons !== 1) offenders.push(`maze ${i} has ${colons} ':' tiles, expected 1`);
+    if (rows[7][9] !== ":") offenders.push(`maze ${i} row 7 col 9 is "${rows[7][9]}", expected ":"`);
+  });
+
+  ok(
+    "all 18 mazes carry the identical pen block",
+    offenders.length === 0,
+    offenders.slice(0, 3).join(" | "),
+  );
+
+  // Ghost spawn and beagle spawn must exist exactly once each, or resetActors
+  // silently falls back to a default tile.
+  const spawnProblems: string[] = [];
+  MAZES.forEach((rows, i) => {
+    const joined = rows.join("");
+    const g = joined.split("G").length - 1;
+    const p = joined.split("P").length - 1;
+    if (g !== 1) spawnProblems.push(`maze ${i}: ${g} ghost spawns`);
+    if (p !== 1) spawnProblems.push(`maze ${i}: ${p} beagle spawns`);
+  });
+  ok("every maze has exactly one G and one P", spawnProblems.length === 0,
+    spawnProblems.join(" | "));
+}
+
+section("Bonus maps carry no bones");
+// A bone opens a fright window; on a bonus level that means eating the lone
+// enemy for a free life on top of an already generous point haul. The golden
+// bone (a life pickup) already covers earning a life there.
+{
+  const bonusMazes = [15, 16, 17];
+  const withBones = bonusMazes.filter((i) => MAZES[i].join("").includes("o"));
+  ok("no bonus map contains a white bone", withBones.length === 0, withBones.join(","));
+
+  const numbered = Array.from({ length: 15 }, (_, i) => i);
+  const wrongCount = numbered.filter(
+    (i) => (MAZES[i].join("").match(/o/g) ?? []).length !== 4,
+  );
+  ok("every numbered map still has 4 bones", wrongCount.length === 0, wrongCount.join(","));
+
+  // planLevel must actually route bonus levels to those mazes, or the rule
+  // above protects the wrong maps.
+  const bonusPlanned = [5, 11, 17].map((idx) => planLevel(idx).mazeIdx);
+  ok("bonus levels map to mazes 15/16/17",
+    bonusPlanned.join(",") === "15,16,17", bonusPlanned.join(","));
+}
 
 console.log(`\n${"-".repeat(60)}`);
 console.log(`PROGRESSION: ${passed} passed, ${failed} failed`);
