@@ -30,6 +30,11 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
   time**.
   _(v1 shipped this as coaching tips during play; v2 replaced them with the carousel after
   playtesting showed captions mid-chase distract rather than teach. Nothing appears during play.)_
+- (2026-08-18) IDEA-020 v5 — **the last cause of the missing scores, found and fixed**: the
+  game-over panel's "Play again" never opened a server session, so every replay was discarded in
+  silence — a player who died once and pressed the obvious button never scored again. Both entry
+  points now go through one path that opens the session before the run can start. This is why every
+  diagnostic came back empty: with no session, nothing ever reached the server to be logged.
 - (2026-08-18) IDEA-020 v4 — load-readiness for the score server: a partial index for the All-runs
   board query (was a sequential scan over a table that grows with every run ever played) and a
   15-second board cache with immediate invalidation on classic accepts and account deletion — a

@@ -403,6 +403,32 @@ _(nothing yet)_
     services. 245 server checks green.
     `server/migrations/003_run_board_index.sql` (new), `src/services/boardCache.ts` (new),
     `services/{profileService,scoreService}.ts`, `scripts/test-auth.ts`.
+  - **v5** (2026-08-18) — **the last cause of the missing scores: "Play again" never opened a
+    server session.** Reported as a 19,000-point run vanishing on a freshly wiped database, and
+    confirmed by Nuno reproducing it.
+    `beginRunSession()` was called from exactly two places — the Play button and challenge mode.
+    The game-over panel's "Play again" called `startLevel(0)` directly, bypassing it. So the replay
+    had no session id, and `submitRun()` bails on its FIRST line when that is null — before any
+    notice, rejection log, or trace. Every classic run started with "Play again" was discarded in
+    silence. A player who died once and pressed the obvious button never scored again. It also
+    skipped the telemetry reset `beginRunSession` performs, so a replay counted the previous run's
+    pellets on top of its own.
+    **This is why three rounds of diagnostics came back empty.** With no session, nothing reaches
+    the server at all: there is no rejection to log and no abandoned row to find. Production
+    confirmed it — 0 rejections, 0 accepted-but-unrecorded, and only THREE session rows total, with
+    the 19,000 run among none of them. The absence was the evidence.
+    It survived this long because the sweeper bug (v3) masked it: long runs died to the sweeper,
+    short ones to this, both silent and identical from outside. Fixing the sweeper removed the
+    noisier cause and left this exposed — which is why it read as "the bug came back" on a database
+    where every run was a new account pressing Play again.
+    Both entry points now route through one `startClassicRun()` that resets the counters, opens the
+    session, and only then starts map 1 — making the failure structurally impossible rather than
+    fixing this one instance.
+    New `scripts/test-replay-session.ts` presses "Play again", which **no test had ever done** —
+    precisely why it hid. Verified the test actually bites: reintroducing the old call fails it with
+    "session id — null" and telemetry showing `levels:2`, the exact pollution described. 7/7 with
+    the fix. Verified live by Nuno: replays now reach the leaderboard.
+    `src/game/game.ts`, `scripts/test-replay-session.ts` (new). _(1671e3a)_
 
 ### IDEA-019 — Player login & cross-device account recovery ✅
 - **Priority:** 🟡
