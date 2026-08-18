@@ -27,6 +27,12 @@ export interface RunTelemetry {
   /** The resolved maze index of every level played, in order. Its length is the
    *  number of levels played, which bounds every per-level check server-side. */
   mazeIdxSequence: number[];
+  /** IDEA-040: the 0-based CLASSIC LEVEL index of each level played, parallel
+   *  to mazeIdxSequence. The server needs it because a level's score ceiling
+   *  depends on its ghost count (stage 3 has 4, a bonus level 1), and it
+   *  re-derives the maze from this index to check the two agree. Empty for
+   *  challenge runs, which carry their own fixed modifiers. */
+  levelIdxSequence: number[];
 }
 
 export function createRunTelemetry(): RunTelemetry {
@@ -40,6 +46,7 @@ export function createRunTelemetry(): RunTelemetry {
     levelsCleared: 0,
     playSeconds: 0,
     mazeIdxSequence: [],
+    levelIdxSequence: [],
   };
 }
 
@@ -77,9 +84,17 @@ export function recordLevelCleared(t: RunTelemetry): void {
   t.levelsCleared++;
 }
 
-/** Called when a level starts, with the maze index it resolved to. */
-export function recordLevelStarted(t: RunTelemetry, mazeIdx: number): void {
+/**
+ * Called when a level starts, with the maze index it resolved to.
+ *
+ * `levelIdx` is the 0-based CLASSIC level index (IDEA-040) and is omitted for
+ * challenge runs, whose modifiers come from CHALLENGE_LEVELS rather than the
+ * classic progression. The two arrays stay parallel: the server pairs them by
+ * position to check each claimed level really uses the maze it says.
+ */
+export function recordLevelStarted(t: RunTelemetry, mazeIdx: number, levelIdx?: number): void {
   t.mazeIdxSequence.push(mazeIdx);
+  if (levelIdx !== undefined) t.levelIdxSequence.push(levelIdx);
 }
 
 /**

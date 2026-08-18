@@ -23,7 +23,8 @@
     "test:leaderboard-ui": "tsx scripts/test-leaderboard-ui.ts",
     "test:menu-ui": "tsx scripts/test-menu-ui.ts",
     "test:run-queue": "tsx scripts/test-run-queue.ts",
-    "test:progression": "tsx scripts/test-progression.ts"
+    "test:progression": "tsx scripts/test-progression.ts",
+    "test:progression-ui": "tsx scripts/test-progression-ui.ts"
   },
   "dependencies": {
     "three": "^0.169.0"

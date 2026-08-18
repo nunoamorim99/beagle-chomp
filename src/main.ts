@@ -130,6 +130,15 @@ async function startApp(): Promise<void> {
   // by a closed tab or a dead connection last session.
   initRunSubmitQueue();
 
+  // DEV ONLY — never in a production bundle. `import.meta.env.DEV` is a Vite
+  // compile-time constant, so this whole block is dead-code-eliminated from
+  // `npm run build` output. It exists so scripts/test-progression-ui.ts can
+  // jump straight to level 18 instead of playing eighteen maps, and shipping
+  // it would hand every player a level skip.
+  if (import.meta.env.DEV) {
+    (window as unknown as { __game: Game }).__game = game;
+  }
+
   // The account screen is wired HERE rather than in game.ts, deliberately: the
   // game layer knows nothing about accounts, and keeping it that way means all
   // of IDEA-019 stays out of the game loop.

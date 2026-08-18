@@ -203,6 +203,10 @@ export interface RunSubmissionPayload {
   score: number;
   levelsCleared: number;
   mazeIdxSequence: number[];
+  /** IDEA-040: the classic level index of each level played, parallel to
+   *  mazeIdxSequence. The server derives each level's ghost count from it (and
+   *  checks the maze matches). Omitted for challenge runs. */
+  levelIdxSequence?: number[];
   pelletsEaten: number;
   bonesEaten: number;
   fruitEaten: number;

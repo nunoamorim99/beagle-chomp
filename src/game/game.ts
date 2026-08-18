@@ -14,7 +14,14 @@
 // respawn), fruit bonuses, lives/collisions, and level progression across
 // the two validated mazes (looping, with a lap indicator).
 import { Grid, COLS, ROWS, worldX, worldZ, type Vec2 } from "./grid";
-import { MAZES, MAZE_COUNT } from "./mazes";
+import { MAZES } from "./mazes";
+import {
+  planLevel,
+  levelLabel,
+  completesMaxDifficultyLap,
+  MAPS_PER_LAP,
+  GHOSTS_STAGE_3,
+} from "./progression";
 import { SPEEDS, SCORE, TIMING, COLORS, COINS, COIN_THRESHOLDS, LIVES, LIFE_THRESHOLDS } from "./config";
 import { coinsDueFromScore } from "./coins";
 import { shouldFireThreshold } from "./pickups";
@@ -649,17 +656,13 @@ export class Game {
    * startLevel, startChallenge) are responsible for removing the old ones
    * first so nothing leaks across levels.
    *
-   * `mazeIdx` is the ALREADY-RESOLVED index into MAZES (0..MAZE_COUNT-1) —
-   * this method itself does no modulo/lap math. That resolution is entirely
-   * the caller's job (IDEA-013 refactor): startLevel (classic) resolves it
-   * as `idx % MAZE_COUNT` so an ever-increasing classic level index loops
-   * through the maze pool with laps, exactly as before this refactor;
-   * startChallenge (Challenge Mode) resolves it as the fixed
-   * `CHALLENGE_LEVELS[idx].mazeIdx`, which is never subject to any lap
-   * arithmetic. Splitting the resolution out here is what keeps classic's
-   * own behavior byte-for-byte identical: `buildLevel(idx % MAZE_COUNT)`
-   * from startLevel computes exactly the same maze this method used to pick
-   * internally via `MAZES[idx % MAZE_COUNT]`.
+   * `mazeIdx` is the ALREADY-RESOLVED index into MAZES — this method itself
+   * does no progression or lap math. That resolution is entirely the caller's
+   * job: startLevel (classic) takes it from `planLevel(idx).mazeIdx`
+   * (IDEA-040), and startChallenge takes the fixed
+   * `CHALLENGE_LEVELS[idx].mazeIdx`. Keeping the resolution outside means one
+   * builder serves both modes and neither can accidentally inherit the
+   * other's level maths.
    */
   private buildLevel(mazeIdx: number): LevelAssets {
     const grid = new Grid(MAZES[mazeIdx]);
@@ -741,32 +744,50 @@ export class Game {
   // ---- level flow (prototype startLevel, line 419) ----
 
   /**
-   * CLASSIC MODE level flow — unchanged behavior from before IDEA-013.
-   * `idx` is the ever-increasing classic level index (0-based, loops through
-   * MAZES with a lap indicator once idx >= MAZE_COUNT — see mapNumber/lap
-   * below). Always resolves gameKind/activeModifiers to the classic baseline
-   * before building, so calling this can never leave a stray challenge
-   * modifier active (defence in depth alongside the Play button handler and
-   * quitToMenu(), which already set these explicitly at every classic entry
-   * point).
+   * CLASSIC MODE level flow.
+   *
+   * `idx` is the ever-increasing classic level index (0-based). Everything
+   * about the level — maze, enemy count, HUD label — comes from
+   * planLevel(idx) (IDEA-040): 15 numbered maps in three stages of five, a
+   * bonus level after each stage, a 4th enemy from stage 3 onward, and the
+   * whole 18-level cycle repeating at 4 enemies from lap 2.
+   *
+   * gameKind is always reset to classic here, so calling this can never leave
+   * a stray challenge modifier active (defence in depth alongside the Play
+   * button handler and quitToMenu, which set it explicitly too).
    */
   private startLevel(idx: number): void {
     this.gameKind = "classic";
-    this.activeModifiers = CLASSIC_MODIFIERS;
+
+    // IDEA-040: which maze and how many enemies now come from planLevel()
+    // rather than `idx % MAZE_COUNT` with a fixed ghost count. Stage 3 has a
+    // 4th enemy, a bonus level has 1 (2 from lap 2), and from lap 2 every
+    // numbered map runs at 4.
+    const plan = planLevel(idx);
+
+    // Classic's baseline with only the ghost count overridden — speed and
+    // fright stay exactly as classic has always played them, so the extra
+    // enemy is the ONLY thing that changes (the whole point of stage 3).
+    this.activeModifiers =
+      plan.ghostCount === CLASSIC_MODIFIERS.ghostCount
+        ? CLASSIC_MODIFIERS
+        : { ...CLASSIC_MODIFIERS, ghostCount: plan.ghostCount as 3 | 4 | 5 };
 
     this.disposeLevel(this.level);
-    this.level = this.buildLevel(idx % MAZE_COUNT);
+    this.level = this.buildLevel(plan.mazeIdx);
 
     this.levelIdx = idx;
-    recordLevelStarted(this.telemetry, idx % MAZE_COUNT);
-    const mapNumber = (idx % MAZE_COUNT) + 1;
-    const lap = idx >= MAZE_COUNT ? ` ·${Math.floor(idx / MAZE_COUNT) + 1}` : "";
-    this.hud.setLevel(`${mapNumber}${lap}`);
+    // The server validates against the LEVEL index (it re-derives the maze
+    // itself), so record both — see runTelemetry / plausibility.ts.
+    recordLevelStarted(this.telemetry, plan.mazeIdx, idx);
+    this.hud.setLevel(levelLabel(idx));
 
     this.resetActors();
     this.mode = "ready";
     this.stateTimer = TIMING.readySeconds;
-    this.hud.showBanner("Ready!");
+    // A bonus level announces itself, so the drop to one enemy and the open
+    // layout read as a deliberate reward rather than a glitch.
+    this.hud.showBanner(plan.isBonus ? "Bonus!" : "Ready!");
   }
 
   // ---- Challenge Mode level flow (IDEA-013) ----
@@ -1399,6 +1420,39 @@ export class Game {
     this.sound.levelClear();
   }
 
+  /**
+   * IDEA-040: every one of the 15 maps cleared at full difficulty — 4 enemies
+   * throughout, which is how the cycle runs from lap 2 onward.
+   *
+   * The run CONTINUES afterwards: classic is endless by design, and ending it
+   * here would punish the best players by capping their score. This is a
+   * congratulation, not a game over.
+   */
+  private maxDifficultyCleared(): void {
+    this.mode = "levelclear";
+    // Hold the panel until the player dismisses it, rather than letting the
+    // state machine advance underneath them.
+    this.stateTimer = Number.POSITIVE_INFINITY;
+
+    const panel = this.hud.showPanel(
+      '<div class="eyebrow">maximum difficulty</div>' +
+      "<h1>🏆 Top Dog</h1>" +
+      `<p>You cleared all ${MAPS_PER_LAP} maps with ${GHOSTS_STAGE_3} enemies on the pack. ` +
+      "That's every map this game has, at its hardest — there's nothing left to " +
+      "throw at you.</p>" +
+      `<p>Score so far: <strong>${this.score}</strong></p>` +
+      '<div class="menu-actions">' +
+      '<button id="keepGoingBtn">Keep going</button>' +
+      "</div>",
+    );
+
+    panel.querySelector<HTMLButtonElement>("#keepGoingBtn")?.addEventListener("click", () => {
+      this.sound.resume();
+      this.hud.hideCenter();
+      this.startLevel(this.levelIdx + 1);
+    });
+  }
+
   // ---- Challenge Mode level-complete panel (IDEA-013) ----
 
   /**
@@ -1979,6 +2033,10 @@ export class Game {
           // auto-advance to the next map. Classic's own branch
           // (`startLevel(this.levelIdx + 1)`) is completely unchanged.
           if (this.gameKind === "challenge") this.challengeLevelComplete();
+          // IDEA-040: clearing the last level of a lap at full difficulty
+          // (every numbered map at 4 enemies, i.e. lap 2 onward) is the
+          // ceiling of the game — celebrate it, then carry on.
+          else if (completesMaxDifficultyLap(this.levelIdx)) this.maxDifficultyCleared();
           else this.startLevel(this.levelIdx + 1);
         }
         break;
