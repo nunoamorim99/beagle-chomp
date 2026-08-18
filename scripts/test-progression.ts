@@ -232,6 +232,23 @@ section("Bonus maps carry no bones");
   const bonusPlanned = [5, 11, 17].map((idx) => planLevel(idx).mazeIdx);
   ok("bonus levels map to mazes 15/16/17",
     bonusPlanned.join(",") === "15,16,17", bonusPlanned.join(","));
+
+  // On a bonus map the pen sits alone in an open field, so any wall tile
+  // touching it reads as a lump fused to the side of the house rather than
+  // part of a maze. (Numbered maps deliberately embed the pen in their walls,
+  // so this only applies to the three bonus maps.)
+  const stubs: string[] = [];
+  for (const i of bonusMazes) {
+    const rows = MAZES[i];
+    for (const y of [8, 9, 10]) {
+      for (const x of [6, 12]) if (rows[y][x] === "#") stubs.push(`maze ${i} (${x},${y})`);
+    }
+    for (const x of [7, 8, 9, 10, 11]) {
+      if (rows[7][x] === "#") stubs.push(`maze ${i} (${x},7)`);
+      if (rows[11][x] === "#") stubs.push(`maze ${i} (${x},11)`);
+    }
+  }
+  ok("the pen stands free on every bonus map", stubs.length === 0, stubs.join(" "));
 }
 
 console.log(`\n${"-".repeat(60)}`);

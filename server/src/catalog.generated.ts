@@ -95,8 +95,8 @@ export const MAZE_FACTS: readonly MazeFacts[] = [
   { biscuits: 193, bones: 4, fruitTiles: 2 },
   { biscuits: 190, bones: 4, fruitTiles: 2 },
   { biscuits: 186, bones: 4, fruitTiles: 2 },
-  { biscuits: 260, bones: 0, fruitTiles: 2 },
-  { biscuits: 269, bones: 0, fruitTiles: 2 },
+  { biscuits: 262, bones: 0, fruitTiles: 2 },
+  { biscuits: 270, bones: 0, fruitTiles: 2 },
   { biscuits: 248, bones: 0, fruitTiles: 2 },
 ];
 
