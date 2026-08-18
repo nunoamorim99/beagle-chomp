@@ -373,6 +373,7 @@ console.log("\n=== profileMapping.ts (server profile -> StoredProfile) ===");
     },
     recoveryCodeVersion: 2,
     controlScheme: "swipe",
+    tutorialDone: false,
   });
 
   check("maps coins through", mapped.coins === 42);
@@ -391,6 +392,7 @@ console.log("\n=== profileMapping.ts (server profile -> StoredProfile) ===");
     owned: { beagleSkinIds: ["bagel"], enemySkinIds: ["ghost"], mazeThemeIds: ["garden"] },
     recoveryCodeVersion: 1,
     controlScheme: "swipe",
+    tutorialDone: false,
   });
   check("falls back to the default when equipped is not owned", unowned.equippedBeagleSkinId === DEFAULT_BEAGLE_SKIN_ID);
 
@@ -767,6 +769,7 @@ console.log("\n=== profileStore.ts buy success + atomicity (pure, in-process pro
     equippedMazeThemeId: DEFAULT_MAZE_THEME_ID,
     ownedMazeThemeIds: [DEFAULT_MAZE_THEME_ID],
     controlScheme: "swipe",
+    tutorialDone: false,
   };
 
   const price = getBeagleSkinPrice("cookie");
@@ -1116,6 +1119,7 @@ console.log("\n=== profileStore.ts challengeProgress: pure read-modify-write sem
     equippedMazeThemeId: DEFAULT_MAZE_THEME_ID,
     ownedMazeThemeIds: [DEFAULT_MAZE_THEME_ID],
     controlScheme: "swipe",
+    tutorialDone: false,
   };
   const mergedProgressOnly: StoredProfile = { ...existing, challengeProgress: 4 };
   check("read-modify-write preserves skin/owned/coins fields when only challengeProgress changes", (

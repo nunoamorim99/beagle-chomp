@@ -17,14 +17,15 @@
     "test:editor:board": "tsx scripts/test-editor-board.ts",
     "test:editor:props": "tsx scripts/test-editor-props.ts",
     "test:editor": "npm run test:editor:character && npm run test:editor:board && npm run test:editor:props",
-    "test": "npm run validate && npm run sim && npm run test:cosmetics && npm run test:progression",
+    "test": "npm run validate && npm run sim && npm run test:cosmetics && npm run test:progression && npm run test:tutorial",
     "test:auth-ui": "tsx scripts/test-auth-ui.ts",
     "test:score-ui": "tsx scripts/test-score-ui.ts",
     "test:leaderboard-ui": "tsx scripts/test-leaderboard-ui.ts",
     "test:menu-ui": "tsx scripts/test-menu-ui.ts",
     "test:run-queue": "tsx scripts/test-run-queue.ts",
     "test:progression": "tsx scripts/test-progression.ts",
-    "test:progression-ui": "tsx scripts/test-progression-ui.ts"
+    "test:progression-ui": "tsx scripts/test-progression-ui.ts",
+    "test:tutorial": "tsx scripts/test-tutorial.ts"
   },
   "dependencies": {
     "three": "^0.169.0"

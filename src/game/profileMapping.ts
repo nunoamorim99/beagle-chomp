@@ -98,5 +98,6 @@ export function fromServerProfile(profile: ServerProfile): StoredProfile {
     // Anything unrecognised degrades to the default rather than reaching the
     // input layer, same defensive posture as the cosmetic ids above.
     controlScheme: profile.controlScheme === "dpad" ? "dpad" : "swipe",
+    tutorialDone: profile.tutorialDone === true,
   };
 }

@@ -17,6 +17,7 @@ import {
   purchaseRemote,
   fetchProfile,
   setControlSchemeRemote,
+  setTutorialDoneRemote,
   type EquipPayload,
   type PurchaseKind,
   type ServerProfile,
@@ -154,6 +155,13 @@ export function enqueueEquip(payload: EquipPayload): void {
 export function enqueueControlScheme(scheme: "swipe" | "dpad"): void {
   enqueue(async () => {
     const { profile } = await setControlSchemeRemote(scheme);
+    adopt(profile);
+  });
+}
+
+export function enqueueTutorialDone(done: boolean): void {
+  enqueue(async () => {
+    const { profile } = await setTutorialDoneRemote(done);
     adopt(profile);
   });
 }

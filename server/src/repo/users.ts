@@ -15,7 +15,7 @@ const USER_COLUMNS = `
   recovery_code_version, coins, challenge_progress,
   equipped_beagle_skin_id, equipped_enemy_skin_id, equipped_maze_theme_id,
   owned_beagle_skin_ids, owned_enemy_skin_ids, owned_maze_theme_ids,
-  high_score, high_score_at, control_scheme, created_at
+  high_score, high_score_at, control_scheme, tutorial_done, created_at
 `;
 
 function run(client: Executor) {
@@ -219,6 +219,19 @@ export async function updateControlScheme(
   const { rows } = await run(client)<UserRow>(
     `UPDATE users SET control_scheme = $2 WHERE id = $1 RETURNING ${USER_COLUMNS}`,
     [userId, scheme],
+  );
+  return rows[0];
+}
+
+/** IDEA-040: remember that the player has been through the first-run coach. */
+export async function updateTutorialDone(
+  userId: string,
+  done: boolean,
+  client?: Executor,
+): Promise<UserRow> {
+  const { rows } = await run(client)<UserRow>(
+    `UPDATE users SET tutorial_done = $2 WHERE id = $1 RETURNING ${USER_COLUMNS}`,
+    [userId, done],
   );
   return rows[0];
 }

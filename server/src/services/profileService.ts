@@ -151,6 +151,19 @@ export async function setControlScheme(
   return toPublicProfile(updated);
 }
 
+/** IDEA-040: mark the first-run tutorial finished (or replay it from the
+ *  account screen by setting it back to false). */
+export async function setTutorialDone(
+  userId: string,
+  doneInput: unknown,
+): Promise<PublicProfile> {
+  if (typeof doneInput !== "boolean") {
+    throw new ApiError(400, "VALIDATION_FAILED", "tutorialDone must be true or false.");
+  }
+  const updated = await usersRepo.updateTutorialDone(userId, doneInput);
+  return toPublicProfile(updated);
+}
+
 // --- account deletion -------------------------------------------------------
 
 /** Hard-delete the account. Requires the username as typed confirmation, since

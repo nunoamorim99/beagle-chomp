@@ -12,7 +12,7 @@
 
 import { escapeHtml } from "./escape";
 import { getProfileCache } from "../game/profileCache";
-import { getControlScheme, type ControlScheme } from "../game/profileStore";
+import { getControlScheme, setTutorialDone, type ControlScheme } from "../game/profileStore";
 import { logout as logoutRemote, deleteAccount } from "../net/endpoints";
 import { clearToken, ApiError } from "../net/api";
 import { flushSync, clearSyncQueue } from "../net/profileSync";
@@ -93,6 +93,14 @@ export function attachProfile(callbacks: ProfileCallbacks): ProfileHandle {
           </div>
         </section>
 
+        <section class="profile-setting">
+          <h2>Tips</h2>
+          <p>The short coaching tips shown during your first game.</p>
+          <button type="button" id="replayTutorialBtn" class="btn-secondary">
+            Show tips again next game
+          </button>
+        </section>
+
         <div class="profile-actions">
           <button type="button" id="profilePrivacyBtn" class="btn-secondary">Privacy notice</button>
           <button type="button" id="profileSignOutBtn" class="btn-secondary">Sign out</button>
@@ -144,6 +152,15 @@ export function attachProfile(callbacks: ProfileCallbacks): ProfileHandle {
     root.querySelector("#controlDpad")?.addEventListener("click", () => {
       callbacks.onControlSchemeChange?.("dpad");
       render();
+    });
+
+    root.querySelector("#replayTutorialBtn")?.addEventListener("click", (e) => {
+      setTutorialDone(false);
+      // Confirm in place rather than closing the screen — the tips appear on
+      // the NEXT game, so there is nothing to look at yet.
+      const btn = e.currentTarget as HTMLButtonElement;
+      btn.textContent = "Tips will show next game ✓";
+      btn.disabled = true;
     });
 
     root.querySelector("#profileSignOutBtn")?.addEventListener("click", () => {

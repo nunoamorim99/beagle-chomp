@@ -312,6 +312,26 @@ async function main(): Promise<void> {
   );
   ok("multiple slots equip together", multi.equipped.beagleSkinId === "bagel" && multi.equipped.mazeThemeId === "forest");
 
+  section("A token lookup returns the SAME columns as a direct lookup");
+  // repo/tokens.ts spells out its own column list for the JOIN, separate from
+  // users.ts's USER_COLUMNS. When tutorial_done was added to one and not the
+  // other, /auth/me silently dropped the field — the boot flow then read it as
+  // undefined and re-ran the first-run tutorial for players who had finished
+  // it. Nothing crashed; it just quietly misbehaved. Comparing the two shapes
+  // turns the next such omission into a failing test.
+  {
+    const viaId = await usersRepo.findById(signed.user.id);
+    const viaToken = await tokensRepo.findUserByToken(hashToken(signed.token));
+    const idKeys = Object.keys(viaId ?? {}).sort();
+    const tokenKeys = Object.keys(viaToken ?? {}).sort();
+    const missing = idKeys.filter((k) => !tokenKeys.includes(k));
+    ok(
+      "the token JOIN selects every user column",
+      missing.length === 0,
+      missing.length ? `missing from tokens.ts: ${missing.join(", ")}` : undefined,
+    );
+  }
+
   // --- leaderboard ----------------------------------------------------------
   section("Leaderboard (classic mode only)");
 

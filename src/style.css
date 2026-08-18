@@ -1096,3 +1096,73 @@ body.paused .dpad{display:none}
   .dpad-btn{transition:none}
   .dpad-btn:active{transform:none}
 }
+
+/* ---------------------------------------------------------------------- */
+/* IDEA-040: the first-run coach — captions over LIVE play.
+
+   Never blocks the game: the strip is pointer-events:none so a swipe that
+   starts on top of a caption still steers the beagle, and only the Skip
+   button takes clicks. */
+
+.tutorial{
+  position:fixed;
+  left:50%;
+  transform:translateX(-50%);
+  bottom:calc(18px + env(safe-area-inset-bottom));
+  z-index:14;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:8px;
+  width:min(420px,calc(100vw - 32px));
+  pointer-events:none;
+}
+/* Clear of the D-pad when the player uses one — same width the pad reserves
+   (see .dpad), so the caption sits just above it rather than under a thumb.
+   `:not(.hidden)` matters: the pad element is always in the DOM and merely
+   hidden for swipe players, so matching `.dpad` alone would push the caption
+   190px up the screen and straight over the board for everyone. */
+body:has(.dpad:not(.hidden)) .tutorial{
+  bottom:calc(18px + min(46vw,190px) + 16px + env(safe-area-inset-bottom));
+}
+
+.tutorial-tip{
+  margin:0;
+  padding:11px 16px;
+  border-radius:12px;
+  background:rgba(16,16,30,.9);
+  border:1px solid rgba(232,162,61,.45);
+  color:var(--ink);
+  font-size:14px;
+  line-height:1.45;
+  text-align:center;
+  box-shadow:0 10px 26px rgba(0,0,0,.4);
+  /* Fades rather than popping — a caption appearing mid-chase should not read
+     as something the player must react to. */
+  opacity:0;
+  transform:translateY(6px);
+  transition:opacity .25s ease,transform .25s ease;
+}
+.tutorial-tip.is-visible{opacity:1;transform:none}
+
+.tutorial-skip{
+  pointer-events:auto;
+  border:0;
+  border-radius:999px;
+  padding:6px 14px;
+  background:rgba(0,0,0,.45);
+  color:var(--muted);
+  font:inherit;
+  font-size:12px;
+  cursor:pointer;
+}
+.tutorial-skip:hover{color:var(--ink)}
+
+/* The coach has no business on top of a panel or the pause banner. */
+body.paused .tutorial,
+body.shop-open .tutorial,
+body.leaderboard-open .tutorial{display:none}
+
+@media (prefers-reduced-motion:reduce){
+  .tutorial-tip{transition:none}
+}

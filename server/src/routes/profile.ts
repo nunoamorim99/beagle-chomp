@@ -8,6 +8,7 @@ import * as profileService from "../services/profileService.js";
 import { requireAuth, type AuthVars } from "../http/auth-middleware.js";
 import { rateLimit } from "../http/rate-limit.js";
 import { readBody } from "../http/body.js";
+import { ApiError } from "../http/errors.js";
 
 export const profileRoutes = new Hono<{ Variables: AuthVars }>();
 
@@ -40,10 +41,20 @@ profileRoutes.patch("/profile/equipped", async (c) => {
  *  the player to any device they sign in from. */
 profileRoutes.patch("/profile/settings", async (c) => {
   const body = await readBody(c);
-  const profile = await profileService.setControlScheme(
-    c.get("user").id,
-    body.controlScheme,
-  );
+  const userId = c.get("user").id;
+
+  // Both settings share one endpoint and each is optional, so a client can
+  // send either without clobbering the other.
+  let profile = null;
+  if (body.controlScheme !== undefined) {
+    profile = await profileService.setControlScheme(userId, body.controlScheme);
+  }
+  if (body.tutorialDone !== undefined) {
+    profile = await profileService.setTutorialDone(userId, body.tutorialDone);
+  }
+  if (profile === null) {
+    throw new ApiError(400, "VALIDATION_FAILED", "No settings supplied.");
+  }
   return c.json({ profile });
 });
 

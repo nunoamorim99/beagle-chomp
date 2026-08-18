@@ -22,6 +22,8 @@ export interface ServerProfile {
   recoveryCodeVersion: number;
   /** IDEA-038: "swipe" (default) or "dpad". */
   controlScheme: string;
+  /** IDEA-040: false until the first-run tutorial is finished or skipped. */
+  tutorialDone: boolean;
 }
 
 export interface ServerUser {
@@ -126,6 +128,17 @@ export function setControlSchemeRemote(
   return apiRequest<{ profile: ServerProfile }>("/api/v1/profile/settings", {
     method: "PATCH",
     body: { controlScheme },
+  });
+}
+
+/** IDEA-040: remember the tutorial is done, so it never replays on another
+ *  device — or set it false from the account screen to see it again. */
+export function setTutorialDoneRemote(
+  tutorialDone: boolean,
+): Promise<{ profile: ServerProfile }> {
+  return apiRequest<{ profile: ServerProfile }>("/api/v1/profile/settings", {
+    method: "PATCH",
+    body: { tutorialDone },
   });
 }
 

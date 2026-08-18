@@ -55,7 +55,12 @@ import {
   mutateProfileCache,
   isProfileCacheReady,
 } from "./profileCache";
-import { enqueueEquip, enqueuePurchase, enqueueControlScheme } from "../net/profileSync";
+import {
+  enqueueEquip,
+  enqueuePurchase,
+  enqueueControlScheme,
+  enqueueTutorialDone,
+} from "../net/profileSync";
 
 /** The profile shape. Unchanged from the localStorage era so the rest of the
  *  game sees exactly what it always did; the server's own shape is mapped onto
@@ -78,6 +83,8 @@ export interface StoredProfile {
   /** IDEA-038: "swipe" (default) or "dpad". Per-account, so a player who
    *  prefers buttons gets them on every device they sign in from. */
   controlScheme: ControlScheme;
+  /** IDEA-040: false until the first-run tutorial is finished or skipped. */
+  tutorialDone: boolean;
 }
 
 export type ControlScheme = "swipe" | "dpad";
@@ -128,6 +135,7 @@ export function defaultProfile(): StoredProfile {
     equippedMazeThemeId: DEFAULT_MAZE_THEME_ID,
     ownedMazeThemeIds: [DEFAULT_MAZE_THEME_ID],
     controlScheme: "swipe",
+    tutorialDone: false,
   };
 }
 
@@ -171,6 +179,16 @@ export function getControlScheme(): ControlScheme {
 export function setControlScheme(scheme: ControlScheme): void {
   mutateProfileCache((p) => ({ ...p, controlScheme: scheme }));
   enqueueControlScheme(scheme);
+}
+
+/** IDEA-040: has this player already been coached through the basics? */
+export function getTutorialDone(): boolean {
+  return getProfileCache().tutorialDone;
+}
+
+export function setTutorialDone(done: boolean): void {
+  mutateProfileCache((p) => ({ ...p, tutorialDone: done }));
+  enqueueTutorialDone(done);
 }
 
 export function isBeagleSkinOwned(id: string): boolean {

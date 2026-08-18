@@ -31,6 +31,7 @@ export interface UserRow {
   /** IDEA-038: 'swipe' (default) or 'dpad'. A per-player preference, so it
    *  follows the account rather than the device. */
   control_scheme: string;
+  tutorial_done: boolean;
   created_at: Date;
 }
 
@@ -54,6 +55,8 @@ export interface PublicProfile {
   };
   recoveryCodeVersion: number;
   controlScheme: string;
+  /** IDEA-040: false until the player finishes (or skips) the first-run coach. */
+  tutorialDone: boolean;
 }
 
 export interface PublicUser {
@@ -79,6 +82,7 @@ export function toPublicProfile(row: UserRow): PublicProfile {
     },
     recoveryCodeVersion: row.recovery_code_version,
     controlScheme: row.control_scheme,
+    tutorialDone: row.tutorial_done,
   };
 }
 
