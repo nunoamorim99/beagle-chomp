@@ -25,7 +25,8 @@
     "test:run-queue": "tsx scripts/test-run-queue.ts",
     "test:progression": "tsx scripts/test-progression.ts",
     "test:progression-ui": "tsx scripts/test-progression-ui.ts",
-    "test:tutorial": "tsx scripts/test-tutorial-carousel.ts"
+    "test:tutorial": "tsx scripts/test-tutorial-carousel.ts",
+    "test:replay-session": "tsx scripts/test-replay-session.ts"
   },
   "dependencies": {
     "three": "^0.169.0"

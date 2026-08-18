@@ -538,24 +538,10 @@ export class Game {
       // before clicking Play).
       this.sound.resume();
       this.hideMenu();
-      const fresh = createInitialGameState();
-      this.score = fresh.score;
-      this.lives = fresh.lives;
-      this.coinsAwardedFromScore = 0;
-      this.livesAwardedFromScore = 0;
-      this.hud.setScore(this.score);
-      this.hud.setLives(this.lives);
-
-      // The run only starts once the server has issued a ticket for it — the
-      // game is online-only, and a run that can't be recorded shouldn't begin.
       // IDEA-040 v2: teach first, THEN start the run — the session clock
       // starts server-side the moment it is issued, so reading must not
       // count against it. No-op for anyone who has seen the tutorial.
-      this.withTutorial(() => {
-        void this.beginRunSession("classic").then((ok) => {
-          if (ok) this.startLevel(0);
-        });
-      });
+      this.withTutorial(() => this.startClassicRun());
     };
     playBtn.addEventListener("click", onPlayClick);
     this.detachPlayButton = () => playBtn.removeEventListener("click", onPlayClick);
@@ -1633,6 +1619,35 @@ export class Game {
    * Returns false if the server couldn't be reached, in which case the caller
    * must not start the run.
    */
+  /**
+   * The ONE way a classic run may begin. Resets the run-scoped counters, opens
+   * a SERVER SESSION, and only then starts map 1.
+   *
+   * Both entry points must come through here. "Play again" used to call
+   * startLevel(0) directly, which skipped beginRunSession entirely — so the
+   * replay had no session id, submitRun() bailed at its first line, and the
+   * run was never recorded. Silently: no notice, no rejection log, nothing.
+   * A player who died once and pressed the obvious button then lost every
+   * subsequent run. Routing both paths through one method is what stops that
+   * class of bug rather than just this instance of it.
+   */
+  private startClassicRun(): void {
+    const fresh = createInitialGameState();
+    this.score = fresh.score;
+    this.lives = fresh.lives;
+    this.coinsAwardedFromScore = 0;
+    this.livesAwardedFromScore = 0;
+    this.hud.setScore(this.score);
+    this.hud.setLives(this.lives);
+
+    // beginRunSession also resets telemetry — the other half of what the old
+    // replay path skipped, which left the new run counting the old one's
+    // pellets on top of its own.
+    void this.beginRunSession("classic").then((ok) => {
+      if (ok) this.startLevel(0);
+    });
+  }
+
   private async beginRunSession(
     mode: "classic" | "challenge",
     challengeIdx?: number,
@@ -1811,14 +1826,9 @@ export class Game {
         this.startChallenge(this.challengeIdx);
         return;
       }
-      const fresh = createInitialGameState();
-      this.score = fresh.score;
-      this.lives = fresh.lives;
-      this.coinsAwardedFromScore = 0;
-      this.livesAwardedFromScore = 0;
-      this.hud.setScore(this.score);
-      this.hud.setLives(this.lives);
-      this.startLevel(0);
+      // Through startClassicRun, NOT startLevel(0): a replay needs its own
+      // server session or it can never be submitted.
+      this.startClassicRun();
     });
 
     const gameOverMenuBtn = panel.querySelector<HTMLButtonElement>("#gameOverMenuBtn");
