@@ -16,48 +16,7 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
 > lines here roll up into the numbered version below and this section is cleared (hold a line back
 > only if you explicitly choose to).
 
-- (2026-08-25) IDEA-039 v1 — **the API now measures itself.** Every request is timed and a
-  p95-per-route table lands in the log every 10 minutes, with immediate warnings for any slow
-  request and for any SQL statement over 200 ms — which is, deliberately, the exact threshold the
-  stack doc names as the trigger for adding Redis. So the two pieces that were left for "later"
-  now have real evidence to fire on instead of a hunch, and Redis stays deferred until that
-  evidence appears. `GET /metrics` serves the same data as JSON, and does not exist at all unless
-  a token is configured. Also: abandoned game sessions are now cleaned up after 90 days — only
-  abandoned ones, never a scored run and never a rejection's audit trail, which is what the
-  leaderboard history and the anti-cheat log are made of. At today's volume it deletes nothing,
-  by design. **No deploy configuration needed** — every new setting has a working default.
-
-- (2026-08-18) IDEA-040 v1+v2 — the game got three times bigger: **15 maps in three stages of five**,
-  each stage closed by a **bonus map** (wide open, one enemy, no white bones) worth enough biscuits
-  to earn a life. Stage 3 adds a **fourth enemy** — with the mazes deliberately left at normal
-  tightness, so the extra enemy IS the added difficulty. Past map 15 the whole cycle repeats at four
-  enemies, and clearing a full lap at that difficulty earns a **"Top Dog"** congratulation without
-  ending the run. Also a **how-to-play tutorial**: five slides shown before your first game, each
-  illustrated with the LIVE game — your own equipped beagle, your enemy skin, your maze theme, and
-  the golden bone — so nothing in it can drift out of step with what you actually see. It covers
-  steering (in the words that match your device), what biscuits and fruit are worth, that enemies
-  are only edible after a white bone, and the three ways to earn a life. It remembers per ACCOUNT,
-  so it never repeats on another device, and **"View tutorial" on the account screen reopens it any
-  time**.
-  _(v1 shipped this as coaching tips during play; v2 replaced them with the carousel after
-  playtesting showed captions mid-chase distract rather than teach. Nothing appears during play.)_
-- (2026-08-18) IDEA-020 v5 — **the last cause of the missing scores, found and fixed**: the
-  game-over panel's "Play again" never opened a server session, so every replay was discarded in
-  silence — a player who died once and pressed the obvious button never scored again. Both entry
-  points now go through one path that opens the session before the run can start. This is why every
-  diagnostic came back empty: with no session, nothing ever reached the server to be logged.
-- (2026-08-18) IDEA-020 v4 — load-readiness for the score server: a partial index for the All-runs
-  board query (was a sequential scan over a table that grows with every run ever played) and a
-  15-second board cache with immediate invalidation on classic accepts and account deletion — a
-  crowd opening the leaderboard now costs one query per 15 s instead of one per viewer. The rest of
-  the scale assessment is registered as IDEA-039 for later.
-- (2026-08-18) IDEA-020 v3 — the actual root cause of the lost scores: the session sweeper was
-  killing runs still being played (any open session older than 10 minutes — but classic is endless,
-  and a 40,000-point run takes ~20). Fixed twice over: the sweep threshold now derives from the
-  validator's 4-hour bound so they can't diverge, and a swept session is **resurrected** if its
-  finish arrives — the sweep can be arbitrarily wrong and still never cost a score. The open-session
-  cap now recycles the oldest session instead of refusing, so quitting three runs can't lock anyone
-  out.
+_(nothing unreleased — all shipped work is in v6.0 below)_
 
 ## 📌 Planned
 > Forward-looking targets from `/plan-version`. Each is a checklist of IDEAs intended for a
@@ -66,6 +25,61 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
 _(nothing planned yet — v4.0 "New Territory" was fulfilled and cut on 2026-07-12)_
 
 ## Version history
+
+### v6.0 — The Long Walk (2026-08-25)
+The release where the walk got long. Five maps had become three laps of the same ground, so the
+game grew to **fifteen maps in three stages**, each stage closing with a wide-open **bonus map**
+generous enough to win a life back. Stage 3 brings a **fourth enemy** — and the mazes were
+deliberately NOT widened to make room, because opening the corridors would refund the difficulty
+the extra enemy exists to add. Past map 15 the cycle repeats at four enemies for good, and clearing
+a full lap at that difficulty earns a **"Top Dog"** without ending the run.
+
+New players no longer have to work it out mid-chase: a **tutorial** now runs before the first game,
+illustrated with the LIVE game — your own beagle, your enemy skin, your maze theme — so it can never
+drift out of step with what you actually see. It remembers per account, and the account screen can
+bring it back.
+
+The other half of this release is quieter and, for anyone who lost a score, more important: **runs
+stopped disappearing.** Three separate causes were found and fixed — the sweeper killing games that
+were still being played, a leaderboard query that scanned the whole table, and finally the plainest
+one of all, "Play again" never opening a session, so every replay after your first death was
+discarded in silence. The server also **learned to measure itself**, so the next bottleneck shows up
+on a graph rather than in a complaint.
+
+- **IDEA-040 v1+v2** — the game got three times bigger: 15 maps in three stages of five, each stage
+  closed by a bonus map (wide open, one enemy, no white bones) worth enough biscuits to earn a life.
+  Stage 3 adds a fourth enemy with the maze geometry left alone. Past map 15 the cycle repeats at
+  four enemies, and a full lap at that difficulty earns a "Top Dog" congratulation. Plus the
+  how-to-play tutorial: five slides before your first game, drawn with the live game, covering
+  steering in the words that match your device, what biscuits and fruit are worth, that enemies are
+  only edible after a white bone, and the three ways to earn a life. Remembered per ACCOUNT, so it
+  never repeats on another device, and "View tutorial" on the account screen reopens it any time.
+  _(v1 shipped this as coaching tips during play; v2 replaced them with the carousel after
+  playtesting showed captions mid-chase distract rather than teach. Nothing appears during play.)_
+- **IDEA-020 v5** — the last cause of the missing scores: the game-over panel's "Play again" never
+  opened a server session, so every replay was discarded in silence — a player who died once and
+  pressed the obvious button never scored again. Both entry points now go through one path that
+  opens the session before the run can start. This is why every diagnostic came back empty: with no
+  session, nothing ever reached the server to be logged.
+- **IDEA-020 v4** — load-readiness for the score server: a partial index for the All-runs board
+  query (was a sequential scan over a table that grows with every run ever played) and a 15-second
+  board cache with immediate invalidation on classic accepts and account deletion — a crowd opening
+  the leaderboard now costs one query per 15 s instead of one per viewer.
+- **IDEA-020 v3** — the actual root cause of the lost scores: the session sweeper was killing runs
+  still being played (any open session older than 10 minutes — but classic is endless, and a
+  40,000-point run takes ~20). Fixed twice over: the sweep threshold now derives from the
+  validator's 4-hour bound so they can't diverge, and a swept session is resurrected if its finish
+  arrives — the sweep can be arbitrarily wrong and still never cost a score. The open-session cap
+  now recycles the oldest session instead of refusing, so quitting three runs can't lock anyone out.
+- **IDEA-039 v1** — the API now measures itself. Every request is timed and a p95-per-route table
+  lands in the log every 10 minutes, with immediate warnings for any slow request and for any SQL
+  statement over 200 ms — deliberately the exact threshold the stack doc names as the trigger for
+  adding Redis, so that decision now waits on evidence rather than a hunch. `GET /metrics` serves
+  the same data as JSON and does not exist at all unless a token is configured. Abandoned game
+  sessions are also cleaned up after 90 days — only abandoned ones, never a scored run and never a
+  rejection's audit trail, which is what the leaderboard history and the anti-cheat log are made of.
+  At today's volume it deletes nothing, by design.
+
 
 ### v5.1 — Fair Play (2026-08-17)
 The settling-in release after v5.0 went full-stack: the scoreboard learned to tell the truth, the
