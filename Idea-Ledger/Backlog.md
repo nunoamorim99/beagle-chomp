@@ -19,9 +19,70 @@ Living backlog of ideas. Two purposes:
 _(empty — nothing to triage)_
 
 ## Backlog (open ideas)
-> New registered ideas go here. Next free ID: IDEA-041
+> New registered ideas go here. Next free ID: IDEA-042
 
-### IDEA-039 — Server scale hygiene: metrics, session retention, Redis threshold 💡
+### IDEA-028 — Challenge twist: moving walls / maze changes mid-level 💡
+- **Priority:** 🟢
+- **Area:** modes
+- **Registered:** 2026-07-12
+- **Description:** a challenge level where the maze changes after a few seconds or the walls move
+  around mid-level — the twist from the original challenge-mode vision that got deferred.
+- **Notes:** deferred from [[IDEA-013]] v1 (captured 2026-07-11). The hard part: LIVE grid
+  mutation with validator-grade guarantees ([[IDEA-001]]) — connectivity, pellet reachability, pen
+  exit, and never crushing/trapping an entity mid-move; the render layer needs walls that animate
+  in/out. Would slot into `challenges.ts` as a new modifier level (a C9, or replacing a mid-ladder
+  level) and appear on the level map ([[IDEA-014]]).
+- **Dependencies:** —
+
+## In progress 🔨
+### IDEA-025 v3 — The editor saves REAL source, not an override block 🔨
+- **Priority:** 🔴
+- **Area:** tooling
+- **Registered:** 2026-08-25
+- **Description:** (Nuno) "My idea of building this editor was to understand better the three.js
+  library... looking at the files makes it a little bit difficult, with the editor I can see the
+  piece of code I'm editing and that allows me to understand better what I'm making. But having this
+  editor which looks like a Blender interface and then when I hit save the things don't save is
+  frustrating. The editor should allow me to edit and then on saving the corresponding files should
+  be saved and updated without losing anything — like I was actually changing code." Today Save
+  appends a generated `// --- Character Editor edits ---` block before the builder's `return g;`
+  instead of editing the part's real definition, so the file reads as a definition followed by
+  layers of corrections, blocks stack across sessions, and a deliberate change is indistinguishable
+  from stray experiment residue.
+- **Notes:** iteration on the delivered [[IDEA-025]] (ships as its **v3**). What Save must do
+  instead: rewrite the real lines — move the haunch and line 188's `haunch.position.set(...)`
+  changes; delete a part and its `const` block goes. Nothing appended, no markers, the file stays
+  hand-written. This also retires the [[editor-residue-hazard]] at the root (it has bitten three
+  times, most recently `545d5cc`) — and folds in Nuno's **intentional** chest+haunch removal as
+  clean source (confirmed 2026-08-25: the beagle looks better without them, so the LOOK does not
+  change, only how it's expressed). The source panel should show a live **diff of what Save will
+  write**: that's the learning surface the whole editor exists for — drag a part, watch the exact
+  three.js line change. Sibling of [[IDEA-041]].
+- **Dependencies:** —
+
+### IDEA-041 — Editor controls that edit values the runtime overwrites 🔨
+- **Priority:** 🔴
+- **Area:** tooling
+- **Registered:** 2026-08-25
+- **Description:** parts of the character editor are convincing-looking controls wired to nothing.
+  Rotate an ear, the tail, a leg or the jaw and Save writes the line correctly — then the game
+  overwrites it 60 times a second, so it can never survive. Recolour the coat and the skin system
+  resets it. This is a large share of "I hit save and it doesn't save": the editor is letting you
+  edit values that aren't the source of truth, which is the opposite of what it was built for.
+- **Notes:** found 2026-08-25 while diagnosing Nuno's frustration with saving. Concretely:
+  `characters.ts:1270-1279` (`syncToEntity`) writes `tail.rotation.y`, `earL/earR.rotation.x`, all
+  four `legs[].rotation.x` and `jaw.rotation.x` every frame; `applyBeagleSkin`
+  (`characters.ts:459`) sets all 4 coat material colours from `skin.coat`. Fix: route each control
+  to its TRUE owner (coat colour to the skin def in `cosmetics.ts`; an animated joint's rest pose to
+  the constant inside the animation formula) or, where routing isn't sensible, disable the control
+  and say WHY in the inspector — "driven by `syncToEntity` each frame" is itself a three.js lesson,
+  which suits [[IDEA-025]]'s learning goal. Sibling of the v3 save work.
+- **Dependencies:** —
+
+## Delivered ✅
+> Already in production. Do NOT delete. Each keeps its version history.
+
+### IDEA-039 — Server scale hygiene: metrics, session retention, Redis threshold ✅
 - **Priority:** 🟡
 - **Area:** backend
 - **Registered:** 2026-08-18
@@ -43,26 +104,54 @@ _(empty — nothing to triage)_
   15-second board cache. What was assessed as fine without changes: rate limiting keyed on
   CF-Connecting-IP, the once-a-day token-touch throttle, argon2's natural 4-at-a-time threadpool
   ceiling, pool sizing, and the static frontend living entirely on Cloudflare's edge.
+
+  **2026-08-25, on scope:** built as pieces 1 and 2. Piece 3 (Redis) was deliberately NOT built —
+  costed first at Nuno's request. It is the one item STACK.md §6 lists under "do NOT add unless I
+  ask", and with a single container it is a strict downgrade: it replaces an in-process Map lookup
+  with a network hop, adds a failure mode (Redis down → fail open and drop rate limiting, or fail
+  closed and lock every player out?), and spends ~64–128 MB of the CX23's RAM — which is the very
+  budget §6 names as the trigger for a second VPS. Both of its real triggers (a second replica; a
+  query measurably over ~200 ms) are now INSTRUMENTED rather than guessed at, by the p95 table and
+  the `[slow-query]` line respectively. Piece 2 was worth doing now only because it costs €0 and
+  can be made safe by construction; the measured growth rate is ~250 bytes per run played, i.e.
+  ~9 MB/year at 100 runs/day, so a 90-day window deletes nothing today on purpose.
 - **Dependencies:** —
-
-### IDEA-028 — Challenge twist: moving walls / maze changes mid-level 💡
-- **Priority:** 🟢
-- **Area:** modes
-- **Registered:** 2026-07-12
-- **Description:** a challenge level where the maze changes after a few seconds or the walls move
-  around mid-level — the twist from the original challenge-mode vision that got deferred.
-- **Notes:** deferred from [[IDEA-013]] v1 (captured 2026-07-11). The hard part: LIVE grid
-  mutation with validator-grade guarantees ([[IDEA-001]]) — connectivity, pellet reachability, pen
-  exit, and never crushing/trapping an entity mid-move; the render layer needs walls that animate
-  in/out. Would slot into `challenges.ts` as a new modifier level (a C9, or replacing a mid-ladder
-  level) and appear on the level map ([[IDEA-014]]).
-- **Dependencies:** —
-
-## In progress 🔨
-_(nothing yet)_
-
-## Delivered ✅
-> Already in production. Do NOT delete. Each keeps its version history.
+- **History:**
+  - **v1** (2026-08-25) — the API now measures itself, and the two deferred pieces have real
+    triggers instead of hunches. **Every request is timed by the OUTERMOST middleware**, so the
+    number is what a player actually waits for — CORS, the body cap, auth, argon2, the pool wait,
+    the query, serialisation. A p95-per-route table goes to the container log every 10 minutes
+    (silent when the window saw no traffic, so an idle API never trains anyone to ignore the log),
+    a `[slow]` line fires immediately for any single request over 1s, and `GET /metrics` serves the
+    same data as JSON — **404ing entirely unless `METRICS_TOKEN` is set**, with a wrong token
+    getting the same 404 rather than a 401 that would confirm it exists. Cost is two `Date.now()`
+    calls and one array write per request; memory is bounded by construction at 64 route keys ×
+    512 samples (~256 KB) no matter the uptime.
+    **`[slow-query]` sits at 200 ms deliberately** — that is STACK.md §6's own wording for the
+    Redis trigger, so the trigger is now instrumented rather than guessed. It covers transaction
+    statements too, via a proxied client: purchases and recovery-code consumption never pass
+    through `query()`, which would have left the hole exactly where the heaviest work happens.
+    Statement text only, never params — those carry usernames and token hashes.
+    **Retention deletes only `abandoned` sessions** past 90 days. The status filter IS the safety
+    argument: `accepted` rows ARE the All-runs board, and deleting a `rejected` row cascades away
+    its `score_rejections` audit entry — proven by deliberately removing the filter and watching
+    the audit log go to ZERO. At ~250 bytes per run played it deletes nothing at today's volume,
+    on purpose.
+    **Two bugs found by testing rather than reading.** `routePath(c, -1)` already includes the
+    mount prefix, so the first draft keyed every route as `/api/v1/api/v1/...`. Worse: with two
+    sub-apps mounted at the SAME prefix each declaring its own `use("*")` stack, the real handler
+    sits in the MIDDLE of `matchedRoutes` and a sibling's wildcard sorts last — so `.at(-1)` filed
+    `/api/v1/profile`, the leaderboard and every login under `(unmatched)`. The unit tests passed
+    happily; only curling a running server exposed it, because a test app with ONE sub-app cannot
+    reproduce the shape. The tests now build the real shape, and all four new guards were verified
+    to fail loudly before being restored.
+    **Redis was costed and deliberately NOT built** — see Notes.
+    584 game + 56 metrics + 55 catalog + 58 plausibility + 43 auth-unit + 96 auth-db + 67 session
+    checks pass. No Dokploy change required: every new variable has a working default.
+    `server/src/http/{metrics,metrics-middleware}.ts`, `server/src/routes/metrics.ts`,
+    `server/src/{db,env,index}.ts`, `server/src/repo/gameSessions.ts`,
+    `server/src/services/scoreService.ts`, `server/scripts/test-metrics.ts`,
+    `server/scripts/test-sessions.ts`, `server/.env.example`, `server/README.md`, `CLAUDE.md`.
 
 ### IDEA-040 — 15 maps in three stages, bonus levels, and a first-run tutorial ✅
 - **Priority:** 🔴
