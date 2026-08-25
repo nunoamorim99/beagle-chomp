@@ -16,6 +16,17 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
 > lines here roll up into the numbered version below and this section is cleared (hold a line back
 > only if you explicitly choose to).
 
+- (2026-08-25) IDEA-039 v1 — **the API now measures itself.** Every request is timed and a
+  p95-per-route table lands in the log every 10 minutes, with immediate warnings for any slow
+  request and for any SQL statement over 200 ms — which is, deliberately, the exact threshold the
+  stack doc names as the trigger for adding Redis. So the two pieces that were left for "later"
+  now have real evidence to fire on instead of a hunch, and Redis stays deferred until that
+  evidence appears. `GET /metrics` serves the same data as JSON, and does not exist at all unless
+  a token is configured. Also: abandoned game sessions are now cleaned up after 90 days — only
+  abandoned ones, never a scored run and never a rejection's audit trail, which is what the
+  leaderboard history and the anti-cheat log are made of. At today's volume it deletes nothing,
+  by design. **No deploy configuration needed** — every new setting has a working default.
+
 - (2026-08-18) IDEA-040 v1+v2 — the game got three times bigger: **15 maps in three stages of five**,
   each stage closed by a **bonus map** (wide open, one enemy, no white bones) worth enough biscuits
   to earn a life. Stage 3 adds a **fourth enemy** — with the mazes deliberately left at normal

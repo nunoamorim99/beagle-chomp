@@ -38,6 +38,12 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v5.
   Its constants are GENERATED from the real game modules by `server/scripts/sync-game-constants.ts`
   — so **after changing `config.ts`, `mazes.json` or `challenges.ts`, run `npm run sync` in
   `server/`**, or honest runs will start being rejected. `npm run test:catalog` fails on drift.
+- **The API measures itself** (IDEA-039): every request is timed by the outermost middleware and a
+  p95-per-route table goes to the container log every 10 minutes, with `GET /metrics` for the JSON
+  form (only exists when `METRICS_TOKEN` is set). Route labels are Hono's matched PATTERN, never
+  the raw path — see `server/src/http/metrics.ts` and `server/README.md` § Observability. The
+  `[slow-query]` line at 200 ms is deliberately STACK.md §6's own Redis trigger, so **Redis stays
+  deferred until that line actually appears, or a second replica exists** — not on a hunch.
 - **Pure logic** (`src/game/*`): `mazes.json`+`mazes.ts` (two **validated** mazes —
   connected, all pellets reachable, ghosts can leave the pen), `grid.ts` (tiles, tunnel
   wrap, walkability), `movement.ts` (tile-stepping model), `ghostAI.ts` (targeting with a

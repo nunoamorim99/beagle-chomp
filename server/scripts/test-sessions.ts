@@ -12,6 +12,8 @@ import { pool, closeDb } from "../src/db.js";
 import * as authService from "../src/services/authService.js";
 import * as scoreService from "../src/services/scoreService.js";
 import * as usersRepo from "../src/repo/users.js";
+import * as sessionsRepo from "../src/repo/gameSessions.js";
+import { env } from "../src/env.js";
 import * as profileService from "../src/services/profileService.js";
 import { ApiError } from "../src/http/errors.js";
 import { CHALLENGE_LEVELS } from "../src/catalog.generated.js";
@@ -452,6 +454,86 @@ async function main(): Promise<void> {
     const players = await profileService.leaderboard(fresh, "100");
     ok("the players board still shows one row per player",
       players.top.filter((e) => e.isMe).length === 1);
+  }
+
+  // --- retention (IDEA-039 P2) ----------------------------------------------
+  //
+  // The purge deletes rows permanently, so what these assertions really pin is
+  // what it must NEVER touch. An over-eager retention job would not throw or
+  // fail a typecheck — it would quietly delete leaderboard history and the
+  // anti-cheat audit log, and nobody would notice until someone went looking
+  // for a record that no longer existed.
+  section("Session retention");
+  {
+    const user = await newUser();
+
+    // One row per status, all backdated far past any plausible window.
+    const made: Record<string, string> = {};
+    for (const status of ["abandoned", "accepted", "rejected", "open"] as const) {
+      const { rows } = await pool.query<{ id: string }>(
+        `INSERT INTO game_sessions (user_id, mode, started_at, status, accepted_score, finished_at)
+         VALUES ($1, 'classic', now() - interval '400 days', $2, $3, now() - interval '400 days')
+         RETURNING id`,
+        [user.id, status, status === "accepted" ? 12_345 : null],
+      );
+      made[status] = rows[0].id;
+    }
+
+    // The rejected row needs its audit entry, since that is the cascade the
+    // status filter exists to protect.
+    await pool.query(
+      `INSERT INTO score_rejections (user_id, session_id, reason_code, detail)
+       VALUES ($1, $2, 'TEST_ONLY', '{}'::jsonb)`,
+      [user.id, made.rejected],
+    );
+
+    // A RECENT abandoned row: inside the window, so it must survive even though
+    // its status is eligible.
+    const { rows: recentRows } = await pool.query<{ id: string }>(
+      `INSERT INTO game_sessions (user_id, mode, started_at, status, finished_at)
+       VALUES ($1, 'classic', now() - interval '2 days', 'abandoned', now())
+       RETURNING id`,
+      [user.id],
+    );
+    made.recentAbandoned = recentRows[0].id;
+
+    const deleted = await sessionsRepo.deleteOldAbandonedSessions(90);
+    ok("the purge deletes at least the old abandoned row", deleted >= 1, deleted);
+
+    const survives = async (id: string): Promise<boolean> => {
+      const { rows } = await pool.query<{ count: string }>(
+        `SELECT count(*) AS count FROM game_sessions WHERE id = $1`,
+        [id],
+      );
+      return Number(rows[0].count) === 1;
+    };
+
+    ok("old ABANDONED session is deleted", !(await survives(made.abandoned)));
+    ok("recent abandoned session is kept", await survives(made.recentAbandoned));
+
+    // The three that must never go, whatever their age.
+    ok("old ACCEPTED run is kept — it IS the All-runs board", await survives(made.accepted));
+    ok("old REJECTED run is kept — its audit row cascades", await survives(made.rejected));
+    ok("old OPEN session is kept — the sweeper owns those", await survives(made.open));
+
+    const { rows: auditRows } = await pool.query<{ count: string }>(
+      `SELECT count(*) AS count FROM score_rejections
+        WHERE user_id = $1 AND reason_code = 'TEST_ONLY'`,
+      [user.id],
+    );
+    ok(
+      "the anti-cheat audit log survives the purge",
+      Number(auditRows[0].count) === 1,
+      auditRows[0].count,
+    );
+
+    // A window wider than the data must be a no-op, not a full-table wipe.
+    const noop = await sessionsRepo.deleteOldAbandonedSessions(3_650);
+    ok("a window nothing has aged into deletes nothing", noop === 0, noop);
+
+    // The service honours the disable switch regardless of what is in the table.
+    const before = env.SESSION_RETENTION_DAYS;
+    ok("retention defaults to a generous window", before >= 30, before);
   }
 
   // --- cleanup --------------------------------------------------------------

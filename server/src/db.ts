@@ -30,13 +30,78 @@ pool.on("error", (err) => {
   console.error("[db] idle client error:", err.message);
 });
 
+/** Collapse a multi-line SQL literal to one log-friendly line, truncated. The
+ *  statements in repo/* are written across many indented lines for readability;
+ *  dumped raw they would each be a dozen log lines. */
+function oneLine(sql: string, max = 160): string {
+  const flat = sql.replace(/\s+/g, " ").trim();
+  return flat.length > max ? `${flat.slice(0, max)}…` : flat;
+}
+
 /** Run a parameterised query. Always pass values as `params` — never
- *  interpolate into the SQL string. */
+ *  interpolate into the SQL string.
+ *
+ *  IDEA-039 P1: also the one place every statement in the app passes through,
+ *  so it is where slow-query detection belongs. This module's own header
+ *  promised the seam — "adding a cache later (or a read replica, or QUERY
+ *  LOGGING) is a single-layer change" — and this is that change.
+ *
+ *  Only the SQL TEXT is logged, never `params`: those carry usernames, token
+ *  hashes and recovery codes, and a log line is the last place any of them
+ *  should appear. The text alone identifies the statement uniquely enough. */
 export async function query<T extends pg.QueryResultRow = pg.QueryResultRow>(
   text: string,
   params: readonly unknown[] = [],
 ): Promise<pg.QueryResult<T>> {
-  return pool.query<T>(text, params as unknown[]);
+  const startedAt = Date.now();
+  try {
+    return await pool.query<T>(text, params as unknown[]);
+  } finally {
+    const durationMs = Date.now() - startedAt;
+    if (durationMs >= env.SLOW_QUERY_MS) {
+      // STACK.md §6 trigger #1 for Redis is "a query measurably exceeds
+      // ~200 ms". If this line starts appearing regularly, that is the
+      // evidence — not a hunch.
+      console.warn(`[slow-query] ${durationMs}ms · ${oneLine(text)}`);
+    }
+  }
+}
+
+/** Wrap a pooled client so statements run inside a transaction are timed too.
+ *
+ *  Without this, slow-query logging would have a hole exactly where the
+ *  heaviest work happens: the transactional flows (recovery-code consumption
+ *  under FOR UPDATE, purchases, score finishing) never touch `query()` above —
+ *  they call `client.query` directly.
+ *
+ *  Every member other than `query` is forwarded BOUND TO THE REAL CLIENT rather
+ *  than to the proxy. That matters: pg's internals (and `release`) must see
+ *  their own object as `this`, not a wrapper. */
+function timed(client: pg.PoolClient): pg.PoolClient {
+  return new Proxy(client, {
+    get(target, prop) {
+      if (prop === "query") {
+        return (text: unknown, ...rest: unknown[]) => {
+          const startedAt = Date.now();
+          const done = () => {
+            const durationMs = Date.now() - startedAt;
+            if (durationMs >= env.SLOW_QUERY_MS && typeof text === "string") {
+              console.warn(`[slow-query·tx] ${durationMs}ms · ${oneLine(text)}`);
+            }
+          };
+          // pg supports both a promise and a callback form. Only the promise
+          // form is used in this codebase, but returning a non-promise
+          // untouched keeps the proxy honest if that ever changes.
+          const result = (target.query as (...a: unknown[]) => unknown)(text, ...rest);
+          if (result instanceof Promise) return result.finally(done);
+          done();
+          return result;
+        };
+      }
+      const value = Reflect.get(target, prop, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
 }
 
 /** Run `fn` inside a transaction on a single dedicated client, committing on
@@ -53,7 +118,7 @@ export async function withTransaction<T>(
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    const result = await fn(client);
+    const result = await fn(timed(client));
     await client.query("COMMIT");
     return result;
   } catch (err) {
