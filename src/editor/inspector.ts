@@ -22,14 +22,16 @@ import {
 } from "./editLog";
 import { buildPrimitiveGeometry } from "./codegen";
 import { BEAGLE_SKINS } from "../game/cosmetics";
-import { CHARACTERS, type EnemyColorKey } from "./registry";
+import { CHARACTERS, BEAGLE_MODES, ENEMY_MODES, type EnemyColorKey, type AnimMode } from "./registry";
+import { runtimeOwnerFor, shortNote, type Channel } from "./runtimeOwned";
 
 export interface EditorState {
   characterId: string;
   beagleSkinId: string;
   enemyColor: EnemyColorKey;
   turntable: boolean;
-  idle: boolean;
+  /** Which animation the viewport is playing — see registry.ts's AnimMode. */
+  animation: AnimMode;
   grid: boolean;
   highlight: boolean;
 }
@@ -39,7 +41,7 @@ export interface InspectorCallbacks {
   onSkin(id: string): void;
   onEnemyColor(key: EnemyColorKey): void;
   onTurntable(on: boolean): void;
-  onIdle(on: boolean): void;
+  onAnimation(mode: AnimMode): void;
   onGrid(on: boolean): void;
   onHighlight(on: boolean): void;
   onAddPart(kind: PrimKind, name: string): void;
@@ -54,6 +56,9 @@ export interface MaterialSnapshot {
 
 export interface SelectionContext {
   log: EditLog;
+  /** The builder this character comes from ("makeBeagle", "makeGhost", …) —
+   *  IDEA-041 uses it to look up which channels the runtime owns. */
+  builderName: string;
   /** Resolves a mesh's material to its friendly-name info (shared-awareness). */
   materialFor(mesh: THREE.Mesh): MaterialInfo | undefined;
   /** The added-part record when the selection was created in the editor. */
@@ -73,8 +78,8 @@ export interface SelectionContext {
 
 export interface Inspector {
   setSelection(node: PartNode | null, ctx: SelectionContext | null): void;
-  /** Reflects the idle checkbox when main auto-pauses it on selection. */
-  setIdleChecked(on: boolean): void;
+  /** Reflects the dropdown when main auto-pauses on selection. */
+  setAnimation(mode: AnimMode): void;
   /** Shows the skin dropdown for the beagle, the team color for enemies. */
   setCharacterMode(isBeagle: boolean): void;
   /** Re-reads every bound value into the widgets (after undo/redo/nudge). */
@@ -125,7 +130,12 @@ export function createInspector(
     .onChange((key: EnemyColorKey) => cb.onEnemyColor(key));
 
   gui.add(state, "turntable").onChange((on: boolean) => cb.onTurntable(on));
-  const idleCtrl = gui.add(state, "idle").name("idle animation").onChange((on: boolean) => cb.onIdle(on));
+  // Animation preview. Enemies get the two state looks as well, so a
+  // frightened or eaten enemy can be inspected without playing a whole game.
+  let animCtrl = gui
+    .add(state, "animation", [...BEAGLE_MODES])
+    .name("animation")
+    .onChange((m: AnimMode) => cb.onAnimation(m));
   gui.add(state, "grid").onChange((on: boolean) => cb.onGrid(on));
   gui
     .add(state, "highlight")
@@ -200,12 +210,43 @@ export function createInspector(
         .onFinishChange(commit("scale"));
     }
 
-    folder.add(o, "visible").onChange(() => {
+    const visibleCtrl = folder.add(o, "visible").onChange(() => {
       ctx.log.touchVisible(node);
       ctx.onEdit();
       ctx.onVisibleCommitted(node, committedVisible, o.visible);
       committedVisible = o.visible;
     });
+
+    // IDEA-041: a control the RUNTIME overwrites is disabled and labelled with
+    // what drives it. Previously these accepted an edit, saved it correctly,
+    // and were overwritten on the next frame — which read as "saving is
+    // broken". The label doubles as the three.js lesson the editor exists to
+    // teach: this value is animated, so it belongs in the animation, not here.
+    const markRuntimeOwned = (
+      target: { title(t: string): unknown; domElement: HTMLElement; controllers?: unknown[] },
+      channel: Channel,
+      label: string,
+    ): void => {
+      const owned = runtimeOwnerFor(ctx.builderName, node.varName, channel);
+      if (!owned) return;
+      target.title(`${label} 🔒 ${shortNote(owned)}`);
+      target.domElement.classList.add("runtime-owned");
+      target.domElement.title = owned.owner
+        ? `${owned.reason}\n\nChange it in: ${owned.owner}`
+        : owned.reason;
+      for (const c of (target.controllers ?? []) as Array<{ disable(): void }>) c.disable();
+    };
+
+    markRuntimeOwned(pos, "position", "position");
+    markRuntimeOwned(rot, "rotation", "rotation");
+    markRuntimeOwned(scl, "scale", "scale");
+
+    const ownedVisible = runtimeOwnerFor(ctx.builderName, node.varName, "visible");
+    if (ownedVisible) {
+      visibleCtrl.name(`visible 🔒 ${shortNote(ownedVisible)}`).disable();
+      visibleCtrl.domElement.title = ownedVisible.reason;
+      visibleCtrl.domElement.classList.add("runtime-owned");
+    }
 
     // Material — edits the REAL (possibly shared) material, exactly like the
     // real code does; the folder title teaches that sharing.
@@ -232,7 +273,7 @@ export function createInspector(
           }
         };
         const proxy = { color: `#${info.material.color.getHexString()}` };
-        matFolder
+        const colorCtrl = matFolder
           .addColor(proxy, "color")
           .onChange((value: string) => {
             info.material.color.set(value);
@@ -240,6 +281,20 @@ export function createInspector(
             ctx.onEdit();
           })
           .onFinishChange(commitMat);
+
+        // IDEA-041: the beagle's coat colours belong to the equipped SKIN and
+        // the enemies' to their state/base colour — both reset at runtime, so
+        // colouring here could never stick. The control stays LIVE (previewing
+        // a colour is genuinely useful) but says where the value really lives,
+        // and the save path refuses it with the same explanation.
+        const ownedColor = runtimeOwnerFor(ctx.builderName, info.varName, "color");
+        if (ownedColor) {
+          colorCtrl.name(`color 🔒 preview only`);
+          colorCtrl.domElement.classList.add("runtime-owned");
+          colorCtrl.domElement.title = ownedColor.owner
+            ? `${ownedColor.reason}\n\nChange it in: ${ownedColor.owner}`
+            : ownedColor.reason;
+        }
         matFolder
           .add(info.material, "roughness", 0, 1, 0.01)
           .onChange(() => {
@@ -294,9 +349,9 @@ export function createInspector(
       selectionFolder = null;
       if (node && ctx) buildSelectionFolder(node, ctx);
     },
-    setIdleChecked(on: boolean): void {
-      state.idle = on;
-      idleCtrl.updateDisplay();
+    setAnimation(mode: AnimMode): void {
+      state.animation = mode;
+      animCtrl.updateDisplay();
     },
     setCharacterMode(isBeagle: boolean): void {
       if (isBeagle) {
@@ -306,6 +361,17 @@ export function createInspector(
         skinCtrl.hide();
         colorCtrl.show();
       }
+      // Only enemies have frightened/eaten looks, so the dropdown offers them
+      // only there. lil-gui's .options() DESTROYS the controller and returns a
+      // fresh one, so the handler has to be re-attached and the reference kept
+      // — otherwise setAnimation() below would be updating a dead widget.
+      const modes = isBeagle ? BEAGLE_MODES : ENEMY_MODES;
+      if (!modes.includes(state.animation)) state.animation = "idle";
+      animCtrl = animCtrl
+        .options([...modes])
+        .name("animation")
+        .onChange((m: AnimMode) => cb.onAnimation(m));
+      animCtrl.setValue(state.animation);
     },
     refreshDisplays(): void {
       gui.controllersRecursive().forEach((c) => c.updateDisplay());

@@ -354,3 +354,15 @@ body {
 .code-comment {
   color: #6a9955;
 }
+
+/* IDEA-041: a control the runtime overwrites — disabled or preview-only, with
+   the reason in its tooltip. Dimmed and marked so it reads as "not yours to
+   set here" rather than as a control that quietly does nothing. */
+.runtime-owned > .title,
+.runtime-owned .name {
+  color: #c9a227;
+  font-style: italic;
+}
+.runtime-owned {
+  border-left: 2px solid #c9a227;
+}

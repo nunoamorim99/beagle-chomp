@@ -9,7 +9,7 @@
 import "./editor.css";
 import * as THREE from "three";
 import { createStage } from "./stage";
-import { getCharacter, disposeGroup, ENEMY_COLORS, type CharacterDef } from "./registry";
+import { getCharacter, disposeGroup, ENEMY_COLORS, type CharacterDef, type AnimMode } from "./registry";
 import { buildPartList, createPartTreeView, type PartNode } from "./partTree";
 import {
   EditLog,
@@ -20,7 +20,8 @@ import {
   type Vec3Tuple,
 } from "./editLog";
 import { generateCode, buildPrimitiveGeometry, GEOMETRY_DEFAULTS } from "./codegen";
-import { generateFullFile } from "./fileExport";
+import { generateFullFile, applyEditsInPlace } from "./fileExport";
+import { applyGhostState } from "../render/characters";
 import { saveEditorFile } from "./saveFile";
 import { History } from "./history";
 import {
@@ -133,7 +134,7 @@ const state: EditorState = {
   beagleSkinId: DEFAULT_BEAGLE_SKIN_ID,
   enemyColor: "rose",
   turntable: false, // you orbit the camera yourself now (drag the viewport)
-  idle: true,
+  animation: "idle",
   grid: false,
   highlight: true,
 };
@@ -189,18 +190,30 @@ function materialForMesh(mesh: THREE.Mesh): MaterialInfo | undefined {
   return materialByUuid.get(mat.uuid);
 }
 
-// --- idle / authored pose ---
-function setIdle(on: boolean): void {
-  state.idle = on;
-  inspector.setIdleChecked(on);
-  if (!on && group) {
-    // Snap idle-driven channels back to authored values (baseline + user
-    // edits) instead of freezing mid-wag — the GUI and codegen then read the
-    // pose the user actually authored.
-    for (const object of def.idleTargets(group)) {
-      const node = nodeByObject.get(object);
-      if (node) log.restoreAuthoredTransform(node);
-    }
+// --- animation preview / authored pose ---
+function setAnimation(mode: AnimMode): void {
+  state.animation = mode;
+  inspector.setAnimation(mode);
+  // Restore unconditionally on "off" rather than only when something WAS
+  // playing: lil-gui writes the bound property before it calls onChange, so by
+  // the time this runs `state.animation` already reads "off" and any
+  // was-it-playing test is guaranteed false. Restoring twice is harmless — it
+  // just re-applies the authored pose over itself.
+  if (mode === "off" && group) {
+    // Snap every animated channel back to authored values (baseline + user
+    // edits) instead of freezing mid-stride — the GUI and codegen then read the
+    // pose the user actually authored, not wherever the animation happened to
+    // leave it. This restores ALL nodes rather than a per-character list of
+    // "idle targets": the real animation touches far more than the old
+    // hand-rolled idle did (hem pieces, skirt scale, pupil pivots, six legs),
+    // and a list would be one more thing to keep in sync with characters.ts.
+    // ORDER MATTERS. applyGhostState runs FIRST: it restores visibility and
+    // material colour ("eaten" hides every child but the eyes), but it also
+    // writes the pupil dart — so running it last would re-rotate the pupils
+    // straight after the restore had just centred them, which is exactly the
+    // bug where an "off" preview still showed the eyes glancing sideways.
+    if (def.isEnemy) applyGhostState(group, "chase", { x: 0, y: 0 });
+    for (const node of nodes) log.restoreAuthoredTransform(node);
   }
 }
 
@@ -209,7 +222,7 @@ function select(node: PartNode | null): void {
   selected = node;
   tree.setSelected(node?.path ?? null);
   highlighter.set(state.highlight ? node : null);
-  if (node && state.idle && def.idle) setIdle(false); // hold still while editing
+  if (node && state.animation !== "off") setAnimation("off"); // hold still while editing
   inspector.setSelection(node, node ? selectionContext() : null);
   sourceView.markVar(node && !node.isAutoNamed && !node.isAdded ? node.varName : null);
 }
@@ -217,6 +230,9 @@ function select(node: PartNode | null): void {
 function selectionContext() {
   return {
     log,
+    // IDEA-041: the inspector needs to know which builder this character comes
+    // from to look up the channels the runtime overwrites.
+    builderName: def.builderName,
     materialFor: materialForMesh,
     addedRecord: selected ? log.findAddedPart(selected.object) : undefined,
     onEdit: updateGenerated,
@@ -503,7 +519,7 @@ const inspector = createInspector(charGuiHost, state, {
     updateGenerated();
   },
   onTurntable: (on) => stage.setTurntable(on),
-  onIdle: (on) => setIdle(on),
+  onAnimation: (mode) => setAnimation(mode),
   onGrid: (on) => stage.setGrid(on),
   // Hide the pink wireframe to judge the result cleanly; selection itself
   // (tree row, controls, code marker) stays active.
@@ -560,7 +576,7 @@ stage.onFrame((_dt, t) => {
   // highlighter itself is already empty in board mode since select(null) ran
   // on the way in, but the explicit gate documents the intent either way).
   if (mode === "character") {
-    if (group && state.idle && def.idle) def.idle(group, t);
+    if (group && state.animation !== "off") def.animate(group, state.animation, _dt);
     highlighter.update();
   }
   // IDEA-034: the empty-slot marker PULSE (see boardPlacement.ts's
@@ -615,24 +631,122 @@ copyFileBtn.addEventListener("click", () => {
     .then(() => flash(copyFileBtn, "Copied ✓ paste over characters.ts", true));
 });
 
-// IDEA-032: "Save to characters.ts" — the SAFE path. Writes the complete
-// generated file straight to disk via the dev-only middleware, so the user
-// never copy-pastes it into the wrong place (which stacked edit blocks and
-// shipped a broken beagle — see editor-residue-hazard). Falls back to a clear
-// "use Copy full file" message if the dev endpoint isn't reachable.
+// IDEA-025 v3: "Save to characters.ts" now edits the REAL definitions.
+// Moving the haunch changes the haunch's own `position.set(...)` line;
+// deleting a part removes its `const` block and its comment. Nothing is
+// appended, so the file keeps reading like code someone wrote and the
+// editor-residue hazard has no way to recur.
+//
+// IDEA-032 (the dev-only /__save-file middleware) still does the writing —
+// what changed is WHAT gets written. Anything that cannot be expressed as an
+// edit to a real line (a mirrored part built inside a loop, a coat colour the
+// equipped skin owns, a node with no variable name) is REPORTED, never
+// silently dropped and never faked as an override block.
+function saveReportText(report: ReturnType<typeof applyEditsInPlace>, saved: boolean): string {
+  const lines: string[] = [];
+  lines.push(
+    saved
+      ? `// Saved to src/render/characters.ts — ${report.applied.length} change(s) written`
+      : `// NOT saved — nothing could be written to src/render/characters.ts`,
+  );
+  if (report.applied.length > 0) {
+    lines.push("//", "// Written in place:");
+    for (const what of report.applied) lines.push(`//   ✓ ${what}`);
+  }
+  if (report.blocked.length > 0) {
+    lines.push("//", `// NOT saved (${report.blocked.length}) — these need a decision:`);
+    for (const b of report.blocked) {
+      lines.push(`//   ✗ ${b.what}`);
+      for (const chunk of b.reason.match(/.{1,72}(\s|$)/g) ?? [b.reason]) {
+        lines.push(`//       ${chunk.trim()}`);
+      }
+    }
+  }
+  return lines.join("\n");
+}
+
+// Writing characters.ts makes Vite hot-reload this page (the editor imports
+// that very module, twice — as code and as ?raw). That reload is GOOD: the
+// workbench comes back rebuilt from the file that is now on disk, which is the
+// honest confirmation that the save landed, and it re-baselines the EditLog so
+// edits can never stack. What the reload used to destroy was the FEEDBACK —
+// the button flash and the report, gone in a blink, which is a large part of
+// why saving felt like nothing happened. So the report is stashed just before
+// the write and re-shown on the way back up.
+const SAVE_REPORT_KEY = "beagle-editor:last-save-report";
+const SAVE_REPORT_TTL_MS = 15_000;
+
+function stashSaveReport(text: string, flashText: string, ok: boolean): void {
+  try {
+    window.sessionStorage.setItem(
+      SAVE_REPORT_KEY,
+      JSON.stringify({ text, flashText, ok, at: Date.now() }),
+    );
+  } catch {
+    // Dev-only convenience; a browser refusing sessionStorage just means the
+    // report is lost to the reload, exactly as before.
+  }
+}
+
+function restorePendingSaveReport(): void {
+  let raw: string | null = null;
+  try {
+    raw = window.sessionStorage.getItem(SAVE_REPORT_KEY);
+    if (raw) window.sessionStorage.removeItem(SAVE_REPORT_KEY);
+  } catch {
+    return;
+  }
+  if (!raw) return;
+  try {
+    const saved = JSON.parse(raw) as { text: string; flashText: string; ok: boolean; at: number };
+    if (Date.now() - saved.at > SAVE_REPORT_TTL_MS) return; // a stale tab, not this save
+    renderGenerated(saved.text);
+    flash(saveFileBtn, saved.flashText, saved.ok);
+  } catch {
+    /* malformed — nothing to show */
+  }
+}
+
 saveFileBtn.addEventListener("click", () => {
   if (log.isEmpty) {
     flash(saveFileBtn, "No edits yet", false);
     return;
   }
-  const full = generateFullFile(log, def.builderName);
-  if (!full) {
-    flash(saveFileBtn, "Failed — use Copy edits", false);
+  const report = applyEditsInPlace(log, def.builderName);
+
+  if (report.applied.length === 0) {
+    // Everything was blocked — say so loudly rather than writing an unchanged
+    // file and flashing a green tick over it. No write, so no reload either.
+    flash(saveFileBtn, `Nothing saved — ${report.blocked.length} blocked ↓`, false);
+    renderGenerated(saveReportText(report, false));
     return;
   }
-  void saveEditorFile("src/render/characters.ts", full).then((r) => {
-    if (r.ok) flash(saveFileBtn, "Saved ✓ characters.ts", true);
-    else flash(saveFileBtn, "Save failed — use Copy full file", false);
+
+  const n = report.applied.length;
+  const flashText =
+    report.blocked.length > 0
+      ? `Saved ${n} ✓ · ${report.blocked.length} not saved ↓`
+      : `Saved ✓ ${n} change(s)`;
+  const text = saveReportText(report, true);
+
+  // Stashed BEFORE the write: the hot-reload that the write triggers can tear
+  // this page down before the promise below ever resolves.
+  stashSaveReport(text, flashText, report.blocked.length === 0);
+
+  void saveEditorFile("src/render/characters.ts", report.src).then((r) => {
+    if (!r.ok) {
+      try {
+        window.sessionStorage.removeItem(SAVE_REPORT_KEY);
+      } catch {
+        /* nothing to clear */
+      }
+      flash(saveFileBtn, "Save failed — use Copy full file", false);
+      return;
+    }
+    // Still alive (no reload yet) — show it now too, so the feedback is
+    // immediate whether or not HMR gets to us.
+    flash(saveFileBtn, flashText, report.blocked.length === 0);
+    renderGenerated(text);
   });
 });
 
@@ -2198,5 +2312,76 @@ window.__propsTestHook = {
   livePartEditCount: () => propPartLog.edits.size + propPartLog.added.length,
 };
 
+// TEST-SUPPORT ONLY: same rationale as __boardTestHook / __propsTestHook
+// above, scoped to the character workbench's animation preview. A suite cannot
+// assert "the walk cycle is actually moving the legs" from the DOM — the whole
+// thing happens on a canvas — and pixel-diffing a render would be far more
+// brittle than reading the transform the animation just wrote. Dev-only by the
+// same construction as the rest of /editor/ (never a rollup input).
+declare global {
+  interface Window {
+    __charTestHook?: {
+      /** Euler angles of a named part, or null when it isn't in this model. */
+      partRotation(name: string): { x: number; y: number; z: number } | null;
+      partPosition(name: string): { x: number; y: number; z: number } | null;
+      partScale(name: string): { x: number; y: number; z: number } | null;
+      /** Whether a named part currently renders (applyGhostState's "eaten"
+       *  hides everything but the eyes, and hides via ANCESTORS too — so this
+       *  walks up the chain rather than reading the part's own flag). */
+      partVisible(name: string): boolean | null;
+      /** Body material colour as a hex number — frightened turns it blue. */
+      bodyColor(): number | null;
+      /** A part's material opacity — the eaten "spirit" drops it below 1. */
+      partOpacity(name: string): number | null;
+      animation(): string;
+    };
+  }
+}
+
+function findPart(name: string): THREE.Object3D | null {
+  if (!group) return null;
+  let found: THREE.Object3D | null = null;
+  group.traverse((o) => {
+    if (!found && o.name === name) found = o;
+  });
+  return found;
+}
+
+window.__charTestHook = {
+  partRotation: (name) => {
+    const o = findPart(name);
+    return o ? { x: o.rotation.x, y: o.rotation.y, z: o.rotation.z } : null;
+  },
+  partPosition: (name) => {
+    const o = findPart(name);
+    return o ? { x: o.position.x, y: o.position.y, z: o.position.z } : null;
+  },
+  partScale: (name) => {
+    const o = findPart(name);
+    return o ? { x: o.scale.x, y: o.scale.y, z: o.scale.z } : null;
+  },
+  partVisible: (name) => {
+    let o = findPart(name) as THREE.Object3D | null;
+    if (!o) return null;
+    while (o) {
+      if (!o.visible) return false;
+      o = o.parent;
+    }
+    return true;
+  },
+  partOpacity: (name) => {
+    const o = findPart(name);
+    if (!(o instanceof THREE.Mesh)) return null;
+    const mat = Array.isArray(o.material) ? o.material[0] : o.material;
+    return (mat as THREE.MeshStandardMaterial).opacity;
+  },
+  bodyColor: () => {
+    const mat = group?.userData.bodyMat as THREE.MeshStandardMaterial | undefined;
+    return mat ? mat.color.getHex() : null;
+  },
+  animation: () => state.animation,
+};
+
 // --- go ---
 buildCharacter();
+restorePendingSaveReport();

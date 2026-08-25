@@ -130,7 +130,9 @@ export function buildPrimitiveGeometry(
   }
 }
 
-function addedPartLines(part: AddedPartRecord): string[] {
+/** Exported for the in-place save (sourceRewrite.applyEditLog): a new part
+ *  is genuinely new code, so it is INSERTED — these are the lines to insert. */
+export function addedPartLines(part: AddedPartRecord): string[] {
   const { name, object, material } = part;
   const lines: string[] = [
     `// new part: ${name} (${part.kind}) attached to ${part.parentVar}`,
