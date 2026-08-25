@@ -207,6 +207,56 @@ export async function abandonStaleSessions(
   return res.rowCount ?? 0;
 }
 
+/**
+ * Delete ABANDONED sessions older than `days`. Returns how many went.
+ *
+ * IDEA-039 P2. The table grows by one row per run ever started, forever
+ * (~250 bytes with its index entries), and the vast majority of those rows are
+ * abandoned ones: every quit-to-menu deliberately never finishes, and the
+ * sweeper turns each into an abandoned row that nothing will ever read again.
+ *
+ * THE STATUS FILTER IS THE WHOLE SAFETY ARGUMENT. Three statuses must survive:
+ *
+ *   'accepted'  — these ARE the All-runs leaderboard (topRuns above reads every
+ *                 accepted classic run of all time). Deleting old ones would
+ *                 silently delete leaderboard history, including records nobody
+ *                 can ever set again.
+ *   'rejected'  — score_rejections.session_id is ON DELETE CASCADE, so deleting
+ *                 a rejected session also deletes its row from the anti-cheat
+ *                 audit log that migration 001 exists to keep. The audit log
+ *                 must outlive the session that produced it.
+ *   'open'      — a run possibly still being played. The sweeper (not this)
+ *                 decides when an open session is stale.
+ *
+ * Why deleting an abandoned row is safe: an abandoned session CAN be
+ * resurrected by a late finish (scoreService.finishSession), but only inside
+ * MAX_RUN_HOURS = 4 hours — past that the validator rejects it as
+ * SESSION_TOO_OLD regardless. So any window measured in days is already orders
+ * of magnitude beyond the last moment the row could have mattered.
+ *
+ * Deletes in a bounded batch rather than one big statement: an unbounded DELETE
+ * over a table this size would hold locks and bloat WAL in a single spike, on a
+ * VPS that shares its RAM with everything else (STACK.md §3.2). Housekeeping
+ * should be invisible; if there is more to do it happens on the next pass.
+ */
+export async function deleteOldAbandonedSessions(
+  days: number,
+  batchLimit = 5_000,
+): Promise<number> {
+  const res = await query(
+    `DELETE FROM game_sessions
+      WHERE id IN (
+        SELECT id FROM game_sessions
+         WHERE status = 'abandoned'
+           AND started_at < now() - ($1 || ' days')::interval
+         ORDER BY started_at ASC
+         LIMIT $2
+      )`,
+    [String(days), batchLimit],
+  );
+  return res.rowCount ?? 0;
+}
+
 /** Log a rejected submission. The brief: "Reject implausible submissions rather
  *  than silently clamping them. Log rejections."
  *

@@ -53,7 +53,9 @@ src/
   db.ts             pg Pool, query(), withTransaction(), pingDb()
   version.ts        APP_VERSION, reported by /health
   http/             cors.ts · errors.ts (the ApiError envelope)
-  routes/           health.ts   (+ auth, profile, sessions, leaderboard later)
+                    metrics.ts — pure, framework-free request timings
+                    metrics-middleware.ts — the Hono half of the above
+  routes/           health.ts · metrics.ts (+ auth, profile, sessions, leaderboard)
   repo/             the ONLY place SQL lives (STACK.md §2.7)   [Increment 1]
   services/         business logic between routes and repos     [Increment 1]
   auth/             hash.ts · tokens.ts · recoveryCode.ts       [Increment 1]
@@ -123,6 +125,66 @@ UptimeRobot both see a real failure instead of a false green.
 Per `STACK.md` §10, this is the low-stakes app that proves the orange-cloud + Origin
 Certificate method **before** História's irreplaceable data migrates. Confirm step 7
 returns JSON over HTTPS before moving on.
+
+## Observability (IDEA-039)
+
+Every request is timed by the outermost middleware, so the number covers what a
+player actually waits for — CORS, auth, argon2, the pool wait, the query, and
+serialisation.
+
+**In the log** (Dokploy → the service's Logs tab):
+
+```
+[metrics] last 10.0m — 1841 req lifetime, 3 slow
+[metrics] route                             n      p50      p95      max  4xx/5xx
+[metrics] GET /api/v1/leaderboard         412    1.0ms    4.0ms   31.0ms  0/0
+[metrics] POST /api/v1/auth/login          38  188.0ms  241.0ms  502.0ms  6/0
+[slow] POST /api/v1/sessions/:id/finish took 1204ms (status 200)
+[slow-query] 243ms · SELECT s.id, s.user_id, u.username, s.accepted_score …
+```
+
+Route labels are Hono's matched PATTERN, never the raw path, so a session uuid
+can never mint a metrics bucket. Unmatched paths (scanners probing `/.env`,
+`/wp-admin`) share one `(unmatched)` bucket. Nothing is logged for a window with
+no traffic.
+
+`[slow-query]` uses a 200 ms threshold on purpose: STACK.md §6 names "a query
+measurably exceeds ~200 ms" as one of the two triggers for adding Redis. If that
+line starts appearing regularly, the trigger has fired — and until it does,
+Redis stays deferred. The other trigger is a second replica, which is also what
+would make the in-memory rate limiter and board cache per-process.
+
+**As JSON**: `GET /metrics`, unversioned like `/health`. It only exists when
+`METRICS_TOKEN` is set; without it the path 404s like any unknown one, and a
+wrong token gets the same 404 rather than a 401 that would confirm it exists.
+
+```bash
+curl -H "Authorization: Bearer $METRICS_TOKEN" https://beaglechomp-api.nunoamorim.dev/metrics
+```
+
+Bounded memory by construction: at most 64 route keys × 512 samples (~256 KB),
+regardless of uptime or traffic. Per request the cost is two `Date.now()` calls
+and one array write.
+
+### Session retention
+
+The sweeper interval also purges `game_sessions` rows that have been
+**abandoned** for longer than `SESSION_RETENTION_DAYS` (default 90).
+
+Only `abandoned` rows are ever eligible, and that filter is the entire safety
+argument — `scripts/test-sessions.ts` pins it:
+
+| Status | Kept? | Why |
+|---|---|---|
+| `abandoned` | deleted past the window | A quit-to-menu. Nothing reads it again; past 4 hours (`MAX_RUN_HOURS`) it cannot even be resurrected by a late finish. |
+| `accepted` | **forever** | These ARE the All-runs leaderboard. |
+| `rejected` | **forever** | `score_rejections.session_id` is `ON DELETE CASCADE` — deleting one deletes its anti-cheat audit row. |
+| `open` | **forever** | Possibly a live run; the sweeper decides when it is stale. |
+
+At today's volume (~250 bytes per run played, including index entries) the purge
+deletes nothing and is meant to. The p95 table above is what says when it — or
+archiving `accepted` rows, which this deliberately does NOT do — actually
+matters.
 
 ## Notes
 

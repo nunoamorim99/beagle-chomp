@@ -16,6 +16,7 @@
 //     the leaderboard to whoever grinds the hardest challenge level.
 
 import { withTransaction, query } from "../db.js";
+import { env } from "../env.js";
 import * as sessionsRepo from "../repo/gameSessions.js";
 import * as usersRepo from "../repo/users.js";
 import { toPublicProfile, type PublicProfile, type UserRow } from "../repo/types.js";
@@ -297,4 +298,23 @@ export async function sweepStaleSessions(): Promise<number> {
     [String(STALE_SESSION_MINUTES)],
   );
   return res.rowCount ?? 0;
+}
+
+/**
+ * IDEA-039 P2: delete abandoned sessions past the retention window.
+ *
+ * Ordering matters and is not accidental — index.ts runs the SWEEP first and
+ * this second. The sweep is what turns a quit-to-menu into an 'abandoned' row;
+ * running the purge before it would leave the newest quits un-aged for a full
+ * cycle. Harmless either way, but the intent is "age it, then eventually
+ * collect it".
+ *
+ * Returns the number deleted. `SESSION_RETENTION_DAYS=0` disables it entirely,
+ * and at today's volume a 90-day window deletes nothing at all — which is the
+ * intended behaviour, not a bug. See repo.deleteOldAbandonedSessions for why
+ * only 'abandoned' rows are ever eligible.
+ */
+export async function purgeOldSessions(): Promise<number> {
+  if (env.SESSION_RETENTION_DAYS <= 0) return 0;
+  return sessionsRepo.deleteOldAbandonedSessions(env.SESSION_RETENTION_DAYS);
 }

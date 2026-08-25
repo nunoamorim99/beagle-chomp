@@ -42,6 +42,41 @@ const EnvSchema = z.object({
   TOKEN_TTL_DAYS: z.coerce.number().int().positive().default(90),
 
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
+
+  // --- IDEA-039 P1: request timing ------------------------------------------
+
+  /** How often the p95-per-route table is written to the container log. */
+  METRICS_LOG_INTERVAL_MIN: z.coerce.number().int().positive().default(10),
+
+  /** A single request at or above this is logged the moment it finishes,
+   *  instead of waiting for the next flush. 1000 ms rather than something
+   *  tighter because a legitimate login spends real time in argon2 by design
+   *  (auth/hash.ts) — a 200 ms threshold here would cry wolf on every sign-in.
+   *  The p95 table, not this warning, is what shows a route drifting. */
+  SLOW_REQUEST_MS: z.coerce.number().int().positive().default(1000),
+
+  /** A single SQL statement at or above this is logged (text only, never
+   *  params). 200 ms deliberately: STACK.md §6 names "a query measurably
+   *  exceeds ~200 ms" as one of the two triggers for adding Redis, so this is
+   *  the line that tells us the trigger fired rather than us guessing. */
+  SLOW_QUERY_MS: z.coerce.number().int().positive().default(200),
+
+  /** Bearer token for GET /metrics. UNSET (the default) means the endpoint does
+   *  not exist at all — it 404s exactly like any unknown path, so nothing about
+   *  the API's internals is advertised until you deliberately turn it on. */
+  METRICS_TOKEN: z.string().min(16, "METRICS_TOKEN must be at least 16 characters").optional(),
+
+  // --- IDEA-039 P2: game_sessions retention ---------------------------------
+
+  /** Days an ABANDONED session is kept before deletion. 0 disables the purge.
+   *
+   *  Only 'abandoned' rows are ever eligible — see repo/gameSessions.ts
+   *  deleteOldAbandonedSessions for why 'accepted' and 'rejected' must not be.
+   *  90 days is absurdly generous next to the 4-hour window in which an
+   *  abandoned session could still be resurrected by a late finish
+   *  (MAX_RUN_HOURS), which is the point: at today's volume this deletes
+   *  nothing, and it starts working on its own if volume ever arrives. */
+  SESSION_RETENTION_DAYS: z.coerce.number().int().min(0).default(90),
 });
 
 function parseEnv() {
