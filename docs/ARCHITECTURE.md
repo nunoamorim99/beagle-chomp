@@ -45,6 +45,72 @@ every surface picks up the shared ramp automatically. `roughness`/`metalness` do
 not exist on a toon material; the editor asks (`roughnessOf`, `hasEmissive`)
 before offering a control for a channel a given model may not have.
 
+## Board surfaces (IDEA-043, IDEA-044)
+Every theme's walls and floor wear a **procedurally drawn** surface — canvas at
+runtime, never an image file, because this is a PWA that precaches everything
+onto a phone. Two modules, and the difference between them is the point.
+
+`wallTexture.ts` is **tile-local and cached**. Walls are one `InstancedMesh` of
+unit boxes, so every tile shows the full 0..1 of the texture: the pattern must
+tile seamlessly (each shape is drawn at nine wrapped offsets) and one 128px
+canvas serves the whole maze for the session.
+
+`floorTexture.ts` is **grid-derived and uncached**. The floor is a single
+`PlaneGeometry(COLS+2, ROWS+2)` with plain 0..1 UVs, so tile `(tx,ty)` lands at
+canvas `((tx+1.5)*S, (ty+1.5)*S)` — the `+1.5` being the one-tile apron plus a
+half-tile to the centre — and the maze can be *painted into the texture*. That
+is what lets the garden's stepping stones, the park's gravel walk and the road's
+lane markings follow the corridors instead of repeating per tile. Every pattern
+is expressed in terms of `K = S/16` — feature sizes scale with K, scatter counts
+with K² — so `S` can be raised for crisper shapes without restyling any surface;
+it went 16 → 32 when the garden's stones became ellipses and needed the fidelity.
+
+Because it depends on the grid **and** the palette, it is rebuilt on every
+theme/level change and the outgoing texture disposed in `syncBoardMaterials`; a
+cache keyed by kind alone would paint level 1's corridors into level 2's floor.
+
+The floor also breaks two of the wall module's rules, both for the same reason —
+**a `map` multiplies, so it can only darken**:
+- The wall textures are luminance-only near white, leaving `palette.wall` in
+  charge of hue. The floor textures **carry real colour**, because multiply
+  caps a marking at the material's own brightness: Night City's floor is
+  `0x3a3640`, so a `grey(1)` lane stripe rendered at 0.22 luminance and was
+  invisible. Instead each floor texture bakes `palette.floor` in as its ground,
+  and `board.ts` sets `matFloor.color` to **white** so the tint is not applied
+  twice. The same freedom is what makes the park's lawn green over a tan palette.
+- The texture is assigned to **`emissiveMap` as well as `map`**. Floor palettes
+  carry a flat emissive lift added *after* the multiply, which washed the pattern
+  out on the dark themes; driving the emissive with the same texture makes the
+  dark parts of the pattern dim the lift too.
+
+Both kinds are editable from the board editor (Walls ▸ *surface*, Floor ▸
+*ground*) and — the part with no compiler behind it — must be emitted by
+`boardCodegen.ts`, which writes palette fields explicitly. A field the writer
+does not know about is silently dropped from every saved theme;
+`scripts/test-board-surfaces.ts` fails if any `ThemePalette` key is missing from it.
+
+## Editor tabs and the two "mesh" modes
+`/editor/` has four tabs. **Character** and **Pickups** are the same code path:
+one registry of builder defs, each carrying `builderName` + `sourceFile`, driven
+through the shared part tree / inspector / codegen / source view / save. Board
+and Props are different — they generate whole files from their own data models
+rather than rewriting statements in place.
+
+Adding a mesh tab is therefore: a registry list, a mode string, a button. The
+three things that must move together, or the tab half-works:
+- `SavableFile` (saveFile.ts) **and** `EDITOR_SAVABLE_FILES` (vite.config.ts) —
+  the dev save endpoint 403s anything not in both.
+- `EDITOR_SOURCES` (sources.ts) — the `?raw` text the source panel shows and
+  the save path rewrites. Keyed by `SavableFile` so a file the editor can read
+  is necessarily one it can write.
+- The mesh-mode gates in main.ts (`meshMode`, the keyboard handler's early
+  return, the picking/highlight accessors). Both bugs the Pickups tab shipped
+  with in its first run were a missed gate: the props library rendered into the
+  part tree, and arrow-key nudges did nothing so Save said "No edits yet".
+
+A builder must be `export`ed and its parts `.name`d — `findFunctionRange` looks
+for `export function <name>(`, and the tree/save address parts by name.
+
 ## Coordinate system
 Grid tile `(tx, ty)` maps to world:
 ```

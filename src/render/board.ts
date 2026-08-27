@@ -36,6 +36,8 @@ import {
   type PropPrimKind,
 } from "../game/props";
 import { toon } from "./toon";
+import { wallTextureFor } from "./wallTexture";
+import { floorTextureFor } from "./floorTexture";
 
 export const WALL_H = 1;
 
@@ -160,7 +162,7 @@ function hash01(x: number, y: number, seed: number): number {
 }
 
 /** A dog bone built from a cylinder shaft + four sphere "knuckles". */
-function makeBone(): THREE.Group {
+export function makeBone(): THREE.Group {
   const g = new THREE.Group();
   // Emissive warmed and strengthened (0x554a2a/0.25 -> 0x6a5730/0.4) to match
   // the biscuit's softly-lit-treat read at the new exposure/lighting.
@@ -171,16 +173,19 @@ function makeBone(): THREE.Group {
     emissiveIntensity: 0.4,
   });
   const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.34, 10), white);
+  shaft.name = "shaft";
+  shaft.scale.set(0.7, 1, 1);
   shaft.rotation.z = Math.PI / 2;
   g.add(shaft);
   const knuckles: Array<[number, number]> = [
-    [-0.2, 0.09],
-    [-0.2, -0.09],
-    [0.2, 0.09],
-    [0.2, -0.09],
+    [-0.2, 0.08],
+    [-0.2, -0.08],
+    [0.2, 0.08],
+    [0.2, -0.08],
   ];
   knuckles.forEach(([x, z]) => {
     const k = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 10), white);
+    k.name = `knuckle${x < 0 ? "L" : "R"}${z < 0 ? "B" : "F"}`;
     k.position.set(x, 0, z);
     g.add(k);
   });
@@ -220,16 +225,19 @@ const matGoldBone = toon({
 export function makeLifeBone(): THREE.Group {
   const g = new THREE.Group();
   const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.34, 10), matGoldBone);
+  shaft.name = "shaft";
+  shaft.scale.set(0.7, 1.15, 1);
   shaft.rotation.z = Math.PI / 2;
   g.add(shaft);
   const knuckles: Array<[number, number]> = [
-    [-0.2, 0.09],
-    [-0.2, -0.09],
-    [0.2, 0.09],
-    [0.2, -0.09],
+    [-0.2, 0.08],
+    [-0.2, -0.08],
+    [0.2, 0.08],
+    [0.2, -0.08],
   ];
   knuckles.forEach(([x, z]) => {
     const k = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 10), matGoldBone);
+    k.name = `knuckle${x < 0 ? "L" : "R"}${z < 0 ? "B" : "F"}`;
     k.position.set(x, 0, z);
     g.add(k);
   });
@@ -258,6 +266,7 @@ export function makeFruit(): THREE.Group {
       emissiveIntensity: 0.5,
     }),
   );
+  apple.name = "apple";
   g.add(apple);
   // Leaf gets a faint green emissive too (was none) — subtle, just enough
   // that it doesn't look like a flat unlit cutout next to the glowing apple.
@@ -269,6 +278,7 @@ export function makeFruit(): THREE.Group {
       emissiveIntensity: 0.3,
     }),
   );
+  leaf.name = "leaf";
   leaf.position.set(0.06, 0.22, 0);
   leaf.scale.set(1.4, 0.5, 0.8);
   g.add(leaf);
@@ -317,23 +327,27 @@ export function makeCoin(): THREE.Group {
   const g = new THREE.Group();
 
   const body = new THREE.Mesh(geoCoinBody, matCoinBody);
+  body.name = "body";
   body.rotation.z = Math.PI / 2; // flat faces point along X/-X, edge faces the camera-ish view
   body.castShadow = true;
   g.add(body);
 
   const rim = new THREE.Mesh(geoCoinRim, matCoinRim);
+  rim.name = "rim";
   rim.rotation.y = Math.PI / 2; // ring wraps the coin's circumference, matching the body's orientation
   rim.castShadow = true;
   g.add(rim);
 
   // Small emboss discs, one per face, sitting just proud of the body surface.
   const embossFront = new THREE.Mesh(geoCoinEmboss, matCoinRim);
+  embossFront.name = "embossFront";
   embossFront.rotation.z = Math.PI / 2;
   embossFront.position.x = 0.03;
   embossFront.castShadow = true;
   g.add(embossFront);
 
   const embossBack = new THREE.Mesh(geoCoinEmboss, matCoinRim);
+  embossBack.name = "embossBack";
   embossBack.rotation.z = Math.PI / 2;
   embossBack.position.x = -0.03;
   embossBack.castShadow = true;
@@ -354,7 +368,7 @@ export function makeCoin(): THREE.Group {
  */
 export function buildBoard(scene: THREE.Object3D, grid: Grid): Board {
   const theme = getEquippedMazeTheme();
-  syncBoardMaterials(theme.palette);
+  syncBoardMaterials(theme.palette, grid);
 
   const pelletMeshes = new Map<string, PelletMesh>();
   let pelletsLeft = 0;
@@ -429,14 +443,50 @@ function buildWallTopDecor(scene: THREE.Object3D, grid: Grid, theme: MazeTheme):
  * by buildBoard (fresh level) and applyBoardTheme (mid-run re-theme) so the
  * two can never drift.
  */
-function syncBoardMaterials(palette: ThemePalette): void {
+function syncBoardMaterials(palette: ThemePalette, grid: Grid): void {
   matWall.color.set(palette.wall);
   matWall.emissive.set(palette.wallEmissive);
   matWall.emissiveIntensity = palette.wallEmissiveIntensity;
+  // The theme's SURFACE (hedge / sand / brick / none). Swapping a map between
+  // null and a texture changes the shader program three compiles for this
+  // material, so `needsUpdate` is required — without it the first themed board
+  // renders untextured and only picks the pattern up on some unrelated later
+  // recompile. Only flagged when the map actually changed, since a needless
+  // recompile stalls the frame.
+  const wallMap = wallTextureFor(palette.wallTexture);
+  if (matWall.map !== wallMap) {
+    matWall.map = wallMap;
+    matWall.needsUpdate = true;
+  }
 
-  matFloor.color.set(palette.floor);
+  // matFloor.color is set BELOW, once the ground texture is known — a textured
+  // floor carries the palette colour inside the canvas and must stay white.
   matFloor.emissive.set(palette.floorEmissive);
   matFloor.emissiveIntensity = palette.floorEmissiveIntensity;
+  // The theme's GROUND. Unlike the wall texture this is grid-derived — a
+  // garden path, a park's gravel walk and a road's markings all follow the
+  // corridors — so it cannot be cached by kind and must be rebuilt whenever
+  // the level or the theme changes. The outgoing one is disposed here because
+  // nothing else owns it: leaking one canvas texture per level would grow all
+  // through a run.
+  const nextFloor = floorTextureFor(palette.floorTexture, grid, palette.floor);
+  if (matFloor.map !== nextFloor) {
+    matFloor.map?.dispose();
+    matFloor.map = nextFloor;
+    // ALSO the emissive map, and this is what makes the pattern visible at
+    // all. Every floor palette carries a flat emissive lift (~0.3), which is
+    // added AFTER the map multiplies the colour — so on the dark floors
+    // (city 0.22 luminance, forest 0.22, arcade 0.07) that constant swamped
+    // the pattern and the first pass rendered as a plain surface. Driving the
+    // emissive with the same texture means the dark parts of the pattern dim
+    // the lift too, and the contrast survives.
+    matFloor.emissiveMap = nextFloor;
+    matFloor.needsUpdate = true;
+  }
+  // A floor texture bakes palette.floor in as its own ground, so the material
+  // must NOT tint it a second time — that would square the colour and drag
+  // every surface back down towards black.
+  matFloor.color.set(nextFloor ? 0xffffff : palette.floor);
 
   matBiscuit.color.set(palette.biscuit);
   matBiscuit.emissive.set(palette.biscuitEmissive);
@@ -1526,7 +1576,7 @@ export function buildWallDecor(scene: THREE.Object3D, theme: MazeTheme): THREE.G
  * leaving city's hand-placed lamps for garden's density blooms) never leaks.
  */
 export function applyBoardTheme(board: Board, scene: THREE.Object3D, grid: Grid, theme: MazeTheme): void {
-  syncBoardMaterials(theme.palette);
+  syncBoardMaterials(theme.palette, grid);
 
   board.hedgeDecor.forEach((entry) => {
     if (entry instanceof THREE.Group) {

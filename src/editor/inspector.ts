@@ -22,7 +22,7 @@ import {
 } from "./editLog";
 import { buildPrimitiveGeometry } from "./codegen";
 import { BEAGLE_SKINS } from "../game/cosmetics";
-import { CHARACTERS, BEAGLE_MODES, ENEMY_MODES, type EnemyColorKey, type AnimMode } from "./registry";
+import { CHARACTERS, BEAGLE_MODES, type EnemyColorKey, type AnimMode } from "./registry";
 import { runtimeOwnerFor, shortNote, type Channel } from "./runtimeOwned";
 import {
   isEditableMaterial,
@@ -93,7 +93,10 @@ export interface Inspector {
   /** Reflects the dropdown when main auto-pauses on selection. */
   setAnimation(mode: AnimMode): void;
   /** Shows the skin dropdown for the beagle, the team color for enemies. */
-  setCharacterMode(isBeagle: boolean): void;
+  setCharacterMode(isBeagle: boolean, modes?: readonly AnimMode[], isPickup?: boolean): void;
+  /** Repoints the top dropdown at a different registry (Character vs Pickups)
+   *  and selects `id` within it. */
+  setRegistry(defs: readonly { id: string; label: string }[], id: string): void;
   /** Re-reads every bound value into the widgets (after undo/redo/nudge). */
   refreshDisplays(): void;
 }
@@ -123,11 +126,19 @@ export function createInspector(
   const gui = new GUI({ container, title: "Character Editor" });
 
   // --- global controls ---
-  const characterOptions: Record<string, string> = {};
-  for (const c of CHARACTERS) characterOptions[c.label] = c.id;
-  gui.add(state, "characterId", characterOptions).name("character").onChange((id: string) => {
-    cb.onCharacter(id);
-  });
+  // The dropdown's CONTENTS depend on the active tab — characters in Character
+  // mode, maze pickups in Pickups mode — so the controller is kept and rebuilt
+  // rather than created once. lil-gui's `.options()` destroys and replaces the
+  // controller, so the handle has to be reassigned and the handler re-bound.
+  const optionsFor = (defs: readonly { id: string; label: string }[]): Record<string, string> => {
+    const out: Record<string, string> = {};
+    for (const d of defs) out[d.label] = d.id;
+    return out;
+  };
+  let characterCtrl = gui
+    .add(state, "characterId", optionsFor(CHARACTERS))
+    .name("character")
+    .onChange((id: string) => cb.onCharacter(id));
 
   const skinOptions: Record<string, string> = {};
   for (const s of BEAGLE_SKINS) skinOptions[s.name] = s.id;
@@ -412,19 +423,37 @@ export function createInspector(
       state.animation = mode;
       animCtrl.updateDisplay();
     },
-    setCharacterMode(isBeagle: boolean): void {
-      if (isBeagle) {
-        skinCtrl.show();
-        colorCtrl.hide();
-      } else {
-        skinCtrl.hide();
-        colorCtrl.show();
+    setRegistry(defs: readonly { id: string; label: string }[], id: string): void {
+      state.characterId = id;
+      characterCtrl = characterCtrl
+        .options(optionsFor(defs))
+        .name("character")
+        .onChange((next: string) => cb.onCharacter(next));
+      characterCtrl.setValue(id);
+      characterCtrl.updateDisplay();
+    },
+    setCharacterMode(
+      isBeagle: boolean,
+      modes: readonly AnimMode[] = BEAGLE_MODES,
+      isPickup = false,
+    ): void {
+      // A pickup is neither: a bone has no coat skin and no team colour, so it
+      // gets neither control rather than an inert one (IDEA-041's rule).
+      skinCtrl.show(isBeagle && !isPickup);
+      colorCtrl.show(!isBeagle && !isPickup);
+      // Likewise the animation dropdown: nothing in the game moves a pickup's
+      // sub-parts, so a one-entry "off" dropdown would be a widget that can
+      // never do anything.
+      if (isPickup) {
+        animCtrl.hide();
+        state.animation = "off";
+        cb.onAnimation("off");
+        return;
       }
-      // Only enemies have frightened/eaten looks, so the dropdown offers them
-      // only there. lil-gui's .options() DESTROYS the controller and returns a
-      // fresh one, so the handler has to be re-attached and the reference kept
-      // — otherwise setAnimation() below would be updating a dead widget.
-      const modes = isBeagle ? BEAGLE_MODES : ENEMY_MODES;
+      animCtrl.show();
+      // lil-gui's .options() DESTROYS the controller and returns a fresh one,
+      // so the handler has to be re-attached and the reference kept —
+      // otherwise setAnimation() below would be updating a dead widget.
       if (!modes.includes(state.animation)) state.animation = "idle";
       animCtrl = animCtrl
         .options([...modes])

@@ -10,6 +10,8 @@ import { OX, OZ } from "../game/grid";
 import { type GhostState } from "../game/ghostAI";
 import { getBeagleSkin } from "../game/cosmetics";
 import { COLORS } from "../game/config";
+import { makeBone, makeLifeBone, makeFruit, makeCoin } from "../render/board";
+import { type SavableFile } from "./saveFile";
 
 /**
  * What the viewport is showing. "off" holds the authored pose so parts can be
@@ -85,8 +87,12 @@ export interface BuildOptions {
 export interface CharacterDef {
   id: string;
   label: string;
-  /** Builder function name in characters.ts — drives the source view. */
+  /** Builder function name — drives the source view and the save path. */
   builderName: string;
+  /** Which file that builder lives in. Characters are in characters.ts; the
+   *  maze pickups are in board.ts. Both panels and Save read this rather than
+   *  assuming a single file. */
+  sourceFile: SavableFile;
   isBeagle: boolean;
   build(opts: BuildOptions): THREE.Group;
   /** Drives one frame of the REAL game animation for `mode`. */
@@ -95,14 +101,22 @@ export interface CharacterDef {
   modes: readonly AnimMode[];
   /** True for everything applyGhostState applies to. */
   isEnemy: boolean;
+  /** A maze item rather than a creature: no skin, no team colour, no walk
+   *  cycle, and authored centred on the origin because the GAME places it. */
+  isPickup: boolean;
 }
+
+const CHARACTERS_FILE: SavableFile = "src/render/characters.ts";
+const BOARD_FILE: SavableFile = "src/render/board.ts";
 
 function enemyDef(id: string, label: string, builderName: string): CharacterDef {
   return {
     id,
     label,
     builderName,
+    sourceFile: CHARACTERS_FILE,
     isBeagle: false,
+    isPickup: false,
     isEnemy: true,
     modes: ENEMY_MODES,
     build: (opts) => makeEnemy(id, ENEMY_COLORS[opts.enemyColor]),
@@ -115,7 +129,9 @@ export const CHARACTERS: readonly CharacterDef[] = [
     id: "beagle",
     label: "Beagle",
     builderName: "makeBeagle",
+    sourceFile: CHARACTERS_FILE,
     isBeagle: true,
+    isPickup: false,
     isEnemy: false,
     modes: BEAGLE_MODES,
     build: (opts) => makeBeagle(getBeagleSkin(opts.beagleSkinId)),
@@ -127,8 +143,61 @@ export const CHARACTERS: readonly CharacterDef[] = [
   enemyDef("ladybug", "Ladybug", "makeLadybug"),
 ];
 
+/**
+ * The maze PICKUPS — the same kind of thing as a character, from the editor's
+ * point of view: a builder that returns a Group of primitives, with a real
+ * function name in a real file that Save can rewrite in place.
+ *
+ * They get their own tab rather than joining the character dropdown because
+ * they are a different kind of object to reason about (no skin, no team
+ * colour, no walk cycle), but they reuse every piece of machinery behind it —
+ * part tree, inspector, generated code, source view, save.
+ *
+ * `animate` is a no-op and `modes` is ["off"]: nothing in the game moves a
+ * pickup's sub-parts, so offering an animation dropdown here would be a
+ * control wired to nothing, which is exactly what IDEA-041 is about.
+ */
+const PICKUP_MODES: readonly AnimMode[] = ["off"];
+
+function pickupDef(
+  id: string,
+  label: string,
+  builderName: string,
+  build: () => THREE.Group,
+): CharacterDef {
+  return {
+    id,
+    label,
+    builderName,
+    sourceFile: BOARD_FILE,
+    isBeagle: false,
+    isPickup: true,
+    isEnemy: false,
+    modes: PICKUP_MODES,
+    build,
+    animate: () => {},
+  };
+}
+
+export const PICKUPS: readonly CharacterDef[] = [
+  pickupDef("bone", "Power bone", "makeBone", makeBone),
+  pickupDef("lifeBone", "Bonus-life bone", "makeLifeBone", makeLifeBone),
+  pickupDef("fruit", "Fruit", "makeFruit", makeFruit),
+  pickupDef("coin", "Coin", "makeCoin", makeCoin),
+];
+
 export function getCharacter(id: string): CharacterDef {
   return CHARACTERS.find((c) => c.id === id) ?? CHARACTERS[0];
+}
+
+export function getPickup(id: string): CharacterDef {
+  return PICKUPS.find((p) => p.id === id) ?? PICKUPS[0];
+}
+
+/** Looks an editable up in EITHER registry — used by anything that just needs
+ *  the def for whatever is currently selected, without caring which tab. */
+export function getEditable(id: string): CharacterDef {
+  return CHARACTERS.find((c) => c.id === id) ?? PICKUPS.find((p) => p.id === id) ?? CHARACTERS[0];
 }
 
 /** menuScene.ts's dispose pattern: release geometries + materials of a group

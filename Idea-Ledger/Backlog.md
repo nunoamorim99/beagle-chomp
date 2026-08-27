@@ -19,7 +19,7 @@ Living backlog of ideas. Two purposes:
 _(empty — nothing to triage)_
 
 ## Backlog (open ideas)
-> New registered ideas go here. Next free ID: IDEA-042
+> New registered ideas go here. Next free ID: IDEA-045
 
 ### IDEA-028 — Challenge twist: moving walls / maze changes mid-level 💡
 - **Priority:** 🟢
@@ -802,6 +802,61 @@ _(empty — nothing to triage)_
 - **History:**
   - **v1** (2026-07-11) — the shop became a full-screen character-select page: header (back · title · live 🪙 balance), 🐶/👾 tabs, a LIVE 3D hero turntable (new `render/shopScene.ts`, same garden-vignette language as the menu showcase; hero swaps rebuild + dispose cleanly; enemies previewed in team rose) and a card rail/list. Desktop puts all chrome in a RIGHT SIDE PANEL (tabs → vertical card list → info+action pinned at bottom) so the 3D stage stays clean — owner-requested layout; phone keeps the stacked layout (one DOM, `display:contents` + `order` responsive switch). Opening the shop now PAUSES a mid-run game (full-screen page; the old overlay let ghosts hunt you invisibly). Buy/equip data layer from [[IDEA-012]] reused unchanged. Verified live: tabs, hero swaps, real buy+equip (coins deduct, persists), can't-afford state, pause/resume, desktop+phone, zero errors; build+tests green. `shopScene.ts` (new), `shop.ts`, `game.ts`, `index.html`, `style.css`. _(83d1c12)_
 
+
+### IDEA-044 — Themed floor surfaces, painted from the maze grid ✅
+- **Priority:** 🟡
+- **Area:** render
+- **Registered:** 2026-08-27
+- **Description:** (Nuno) "Now let's work on the floor. On the Garden we can make the surface look
+  like a stone path resembling a neatly arranged or well-tended garden. On the Deep Forest, stick
+  with the forest interior and make the floor look like a patch of earth. On the Sunny Beach the
+  floor should look like sand. On the City Park, recreate city parks where there's grass on the
+  ground but a gravel path — which in this case would be placed underneath the cookies where the
+  beagle will walk, while the rest is covered in grass. On the Night City we can make a road, with
+  white dash stripes."
+- **Notes:** the other half of [[IDEA-043]], and a materially harder one: half of what a floor
+  should show follows the CORRIDORS, not the tile. Affordable only because the floor is a single
+  `PlaneGeometry(COLS+2, ROWS+2)` with plain 0..1 UVs, so tile `(tx,ty)` lands at a known canvas
+  pixel and painting the maze into the texture is ordinary 2D drawing.
+- **Dependencies:** [[IDEA-043]], [[IDEA-026]]
+- **History:**
+  - **v1** (2026-08-27) — `ThemePalette` gained a `floorTexture` kind and `src/render/floorTexture.ts` paints it from the live `Grid`: **stone** (garden — a trail of rounded stepping stones through a tended lawn, each well under half a tile across so grass shows in the gaps, seated with a shallow contact shadow and specked with darker mineral; the first pass laid continuous flagstones and read as a patio, so Nuno asked for rounded rocks, more space and grass), **earth** (deep forest — clods lighter AND darker than the ground, plus dry-ochre leaf litter), **sand** (beach — wind ripples drawn as a shadow line with a lit crest above it, over fine grain), **parkGrass** (city park — a green lawn with a gravel walk NARROWER than the corridor, 0.46 of a tile, so grass shows along both verges and the biscuits sit on the path), **road** (night city — asphalt lanes with a dashed centre line, junctions deliberately left clear), **flat** (arcade night unchanged). Two findings drove the whole design and are written into the module header. First, the textures had to carry COLOUR, unlike the wall ones: a `map` multiplies the material colour, so the brightest thing a luminance map can produce is the material's own colour — Night City's floor is `0x3a3640`, so a "white" lane marking painted as `grey(1)` still rendered at 0.22 luminance and was invisible. The floor texture therefore bakes `palette.floor` in as its own ground and `board.ts` holds the material at white so the tint is not applied twice; that also buys real hue changes, which is how the park's lawn is green over a tan palette. Second, every floor palette carries a flat emissive lift added AFTER the multiply, which swamped the pattern on the dark themes — so the same texture also drives `emissiveMap`, and the dark parts of the pattern dim the lift with it. Grid-derived means deliberately UNCACHED (a cache keyed by kind alone would paint level 1's corridors into level 2's floor) with the outgoing texture disposed on every theme change. Editable from the board editor's Floor folder (new "ground" dropdown, routed through `onDecorChange` because it needs the live grid); the floor-colour picker was rebound to the palette and rebuilds on finish, since the material is now held at white. New committed suite `scripts/test-board-surfaces.ts` (`npm run test:board-surfaces`, 56 checks, in the main `npm run test` chain) — its core check is that `boardCodegen` emits EVERY declared `ThemePalette` field, which is the silent failure mode both this idea and [[IDEA-043]] had to dodge by hand; it was mutation-tested to confirm it actually fails when a field is dropped. Texture resolution is `S = 32` px/tile (672x736, ~1.9 MB, one live at a time) with every pattern written in terms of `K = S/16` — feature sizes scale with K, scatter counts with K squared — so raising it for the garden's ellipses left the other five surfaces pixel-identical. `floorTexture.ts` (new), `themes.ts`, `board.ts`, `boardInspector.ts`, `boardCodegen.ts`, `package.json`.
+
+### IDEA-043 — Themed wall surfaces (hedge / sand / brick) ✅
+- **Priority:** 🟡
+- **Area:** render
+- **Registered:** 2026-08-27
+- **Description:** (Nuno) "We have themes and each theme has a concept but the wall looks a solid
+  piece of plastic on all of them. My idea is we can give some texture on the theme wall — per
+  example on the garden, Deep Forest and City Park the wall could look more like a maze of shrubs.
+  On the Sunny Beach the wall could look more like blocks of sand. On the Night City the wall could
+  look like actually brick walls."
+- **Notes:** a theme's concept was only ever carried by its COLOURS, so six themes were the same
+  moulded box in six tints. Solved with procedural canvas textures rather than image assets —
+  the project ships no texture files and is a PWA, so every KB is precached onto a phone.
+- **Dependencies:** [[IDEA-026]]
+- **History:**
+  - **v1** (2026-08-27) — `ThemePalette` gained a `wallTexture` kind and `src/render/wallTexture.ts` draws each one to a 128px canvas at runtime: **hedge** (garden, deep forest, city park — three passes of leaf clumps with a sparse near-black gap pass, which is what makes it read as foliage you can see INTO rather than mottled paint), **sand** (beach — soft horizontal bedding plus fine grain), **brick** (night city — running bond with recessed mortar), **flat** (arcade night keeps its clean neon). Three rules the module holds to, each written down with its failure mode: generated-not-shipped; luminance-only averaging near white, because the map MULTIPLIES `palette.wall` and a mid-grey texture would darken every theme's tuned colour; and seamless, because walls are one InstancedMesh of unit boxes so every tile shows the full 0..1 and a non-tiling pattern would turn the maze into a visible grid of stamps. Editable live from the board editor's Walls folder (new "surface" dropdown) and — the part that would have silently broken — EMITTED by `boardCodegen`, which writes palette fields explicitly, so without it saving a theme would have quietly dropped the field. Also fixed a genuinely stale check while in there: `test-editor-board`'s round-trip pinned Arcade Night's price at 5 and had been failing on every run since [[IDEA-012]] v2 raised themes to 50; it now derives the price from the real theme, and that suite is fully green for the first time in a while. `wallTexture.ts` (new), `themes.ts`, `board.ts`, `boardInspector.ts`, `boardCodegen.ts`, `scripts/test-editor-board.ts`.
+
+### IDEA-042 — Editor tab for the maze pickups (bones, fruit, coin) ✅
+- **Priority:** 🟡
+- **Area:** tooling
+- **Registered:** 2026-08-27
+- **Description:** (Nuno) "I was thinking to now improve the bones of the game. And for that
+  create on the editor a tab to manage this kind of components, like bones, fruits." The maze
+  pickups had no editing surface at all — the beagle, the enemies, the board and the props each
+  had one, but the bone (the thing that turns the ghosts edible, i.e. the most important object
+  in the game after the dog) could only be changed by hand-editing board.ts.
+- **Notes:** scoped with Nuno to a MESH WORKBENCH over all four pickups (not spawn/balance
+  tuning, which is a different kind of panel — sliders over config.ts, still unbuilt). The design
+  finding that made it cheap: Character mode's machinery is not character-specific. Part tree,
+  inspector, codegen, source view and save-in-place all work off a builder def, so Pickups is the
+  same code path with a different registry and `sourceFile`. Sibling of [[IDEA-025]] v3 and
+  [[IDEA-041]] — it inherits both (Save writes real source; inert controls are hidden rather than
+  shown wired to nothing).
+- **Dependencies:** [[IDEA-025]]
+- **History:**
+  - **v1** (2026-08-27) — a fourth `/editor/` tab, **Pickups**, editing the power bone, bonus-life bone, fruit and coin exactly as Character mode edits a dog: pick one, click a part, nudge/scale/rotate/recolour it live, and 💾 Save rewrites the real declaration in `src/render/board.ts`. Built by GENERALISING rather than duplicating — `CharacterDef` gained `sourceFile`, and `sourceView`/`fileExport` now read the raw text through a new `sources.ts` lookup instead of a hard-coded `characters.ts?raw`, so both tabs share one implementation and the tab inherits every future Character-mode improvement. Supporting changes: `makeBone` exported (the parser needs `export function <name>(`), all four builders' parts `.name`d (`shaft`, `knuckleLF`…, `apple`/`leaf`, `body`/`rim`/`emboss*`) so the tree is readable and Save can address them, `board.ts` added to BOTH save allow-lists, and the Save button now names the file it will actually write. Pickups correctly show no skin, no team colour and no animation dropdown (nothing in the game moves a pickup's sub-parts — an "off"-only dropdown would be exactly the dead control [[IDEA-041]] is about). Two bugs found and fixed by the new suite before shipping: the mode fell through to the props branch so the PROP LIBRARY rendered into the part tree, and the arrow-key nudge was gated on `mode === "character"` so Save reported "No edits yet". New committed suite `scripts/test-editor-pickups.ts` (`npm run test:editor:pickups`, 30 checks incl. a real write-and-restore of board.ts); build + all suites green. `registry.ts`, `sources.ts` (new), `sourceView.ts`, `fileExport.ts`, `inspector.ts`, `main.ts`, `saveFile.ts`, `board.ts`, `editor/index.html`, `vite.config.ts`, `package.json`.
 
 ### IDEA-025 — In-project 3D character editor (dev-only /editor/ page) ✅
 - **Priority:** 🟡

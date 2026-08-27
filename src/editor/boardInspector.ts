@@ -57,6 +57,8 @@ import { type BoardSlotId } from "./boardTree";
 import type { WorkingTheme, WorkingPropPlacement, WorkingWallDecorPlacement } from "./boardCodegen";
 import { propOptionsFor, type PlacementSelection } from "./boardPlacement";
 import { MAZE_THEMES } from "../game/themes";
+import { wallTextureFor, type WallTextureKind } from "../render/wallTexture";
+import { type FloorTextureKind } from "../render/floorTexture";
 
 const MAX_BLOOM_COLORS = 4;
 const DEFAULT_NEW_BLOOM_COLOR = 0xffffff;
@@ -369,20 +371,53 @@ export function createBoardInspector(
       .add(wall, "emissiveIntensity", 0, 2, 0.01)
       .name("emissive intensity")
       .onChange((v: number) => { p.wallEmissiveIntensity = v; });
+    // The wall's SURFACE — a procedural texture generated in code
+    // (src/render/wallTexture.ts), not an asset. Swapping it live needs
+    // `needsUpdate`: changing a map between null and a texture changes the
+    // shader program, and without the flag the board keeps rendering with the
+    // old one until some unrelated recompile.
+    folder
+      .add({ wallTexture: p.wallTexture }, "wallTexture", ["flat", "hedge", "sand", "brick"])
+      .name("surface")
+      .onChange((v: WallTextureKind) => {
+        p.wallTexture = v;
+        const next = wallTextureFor(v);
+        if (wall.map !== next) {
+          wall.map = next;
+          wall.needsUpdate = true;
+        }
+      });
   }
 
   function buildFloorFolder(theme: WorkingTheme, floor: THREE.MeshStandardMaterial): void {
     const folder = gui.addFolder("Floor");
     folders.floor = folder;
     const p = theme.palette;
+    // Bound to the PALETTE, not to floor.color: when a ground texture is on the
+    // material is held at white and the tint lives in the canvas, so writing
+    // the material here would be painted over on the next rebuild. Rebuilding
+    // on finish rather than on change keeps a colour drag cheap.
     folder
-      .addColor(colorProxy(floor.color), "color")
+      .addColor({ color: "#" + p.floor.toString(16).padStart(6, "0") }, "color")
       .name("floor color")
-      .onChange((v: string) => { p.floor = new THREE.Color(v).getHex(); });
+      .onChange((v: string) => { p.floor = new THREE.Color(v).getHex(); })
+      .onFinishChange(() => cb.onDecorChange());
     folder
       .addColor(colorProxy(floor.emissive), "color")
       .name("floor emissive")
       .onChange((v: string) => { p.floorEmissive = new THREE.Color(v).getHex(); });
+    // The GROUND surface. Unlike the wall's, this one is painted from the maze
+    // grid (garden path / park gravel walk / road markings all follow the
+    // corridors), so it cannot be rebuilt from the palette alone — it goes
+    // through onDecorChange, which re-runs applyBoardTheme with the live grid.
+    folder
+      .add({ floorTexture: p.floorTexture }, "floorTexture",
+        ["flat", "stone", "earth", "sand", "parkGrass", "road"])
+      .name("ground")
+      .onChange((v: FloorTextureKind) => {
+        p.floorTexture = v;
+        cb.onDecorChange();
+      });
     folder
       .add(floor, "emissiveIntensity", 0, 2, 0.01)
       .name("emissive intensity")

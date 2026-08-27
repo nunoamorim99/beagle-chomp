@@ -42,6 +42,7 @@ import { createServer, type ViteDevServer } from "vite";
 import { chromium, type Browser, type Page } from "playwright";
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { MAZE_THEMES } from "../src/game/themes";
 
 let failures = 0;
 function check(label: string, cond: boolean): void {
@@ -796,7 +797,18 @@ async function run(): Promise<void> {
       };
       check("emitted entry parses as valid JS", parsed !== null && typeof parsed === "object");
       check("parsed entry keeps the edited floor value (0x123456)", parsed.palette.floor === 0x123456);
-      check("parsed entry's id/name/price match Arcade Night", parsed.id === "classic" && parsed.name === "Arcade Night" && parsed.price === 5);
+      // Price is read from the REAL theme rather than hard-coded. It was
+      // pinned at 5 and had been failing on every run since IDEA-012 v2
+      // raised maze themes to 50 — a red check nobody could act on, which
+      // is how a suite stops being read at all. What this line is actually
+      // for is that codegen ROUND-TRIPS identity, not what the price is.
+      const classicTheme = MAZE_THEMES.find((t) => t.id === "classic");
+      check(
+        "parsed entry's id/name/price match Arcade Night",
+        parsed.id === "classic" &&
+          parsed.name === "Arcade Night" &&
+          parsed.price === classicTheme?.price,
+      );
       check("parsed entry's placements is an array with exactly 1 entry", Array.isArray(parsed.placements) && parsed.placements.length === 1);
       check("parsed placement keeps the edited offset (0.2)", parsed.placements[0]?.offset[0] === 0.2);
       check("parsed placement keeps the edited scale (1.3)", parsed.placements[0]?.scale === 1.3);

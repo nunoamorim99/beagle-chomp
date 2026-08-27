@@ -14,6 +14,9 @@
 // coats are BeagleSkins, enemy forms are EnemySkins, and the pickups (bones,
 // fruit, coin, golden bone) keep their fixed identity colors in every theme
 // so their gameplay meaning stays instantly readable.
+import { type WallTextureKind } from "../render/wallTexture";
+import { type FloorTextureKind } from "../render/floorTexture";
+
 
 /** Every color/lighting slot a maze theme controls. All colors are hex
  *  numbers (0xRRGGBB) like config.ts's COLORS; intensities/chances are plain
@@ -30,9 +33,29 @@ export interface ThemePalette {
 
   // --- board materials (board.ts) ---
   wall: number;
+  /**
+   * Which procedural SURFACE the walls wear (src/render/wallTexture.ts).
+   *
+   * A theme's concept was only ever carried by its colours, so a hedge maze, a
+   * beach and a night city were the same moulded box in three tints. This is
+   * the slot that lets a theme say what its walls are MADE of.
+   *
+   * The texture is luminance-only and multiplies `wall` below, so it carves
+   * relief into the theme's colour rather than replacing it — changing this
+   * never changes a theme's hue.
+   */
+  wallTexture: WallTextureKind;
   wallEmissive: number;
   wallEmissiveIntensity: number;
   floor: number;
+  /**
+   * Which procedural GROUND the floor wears (src/render/floorTexture.ts).
+   *
+   * Unlike the wall surface, several of these are painted FROM THE MAZE GRID —
+   * a garden path, a park's gravel walk and a road's lane markings all follow
+   * the corridors rather than tiling uniformly.
+   */
+  floorTexture: FloorTextureKind;
   floorEmissive: number;
   floorEmissiveIntensity: number;
   biscuit: number;
@@ -133,9 +156,11 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
       bg: 0x9ecbe8,
       backdropTop: 0xcfe9f7,
       wall: 0x3f8f3a,
+      wallTexture: "hedge",
       wallEmissive: 0x0e2a0e,
       wallEmissiveIntensity: 0.2,
       floor: 0x6b4a2f,
+      floorTexture: "stone",
       floorEmissive: 0x2a1a0c,
       floorEmissiveIntensity: 0.3,
       biscuit: 0xf0cf8e,
@@ -202,9 +227,11 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
       bg: 0x0b0b16,
       backdropTop: 0x232348,
       wall: 0x2b2b6b,
+      wallTexture: "flat",
       wallEmissive: 0x14143a,
       wallEmissiveIntensity: 0.72,
       floor: 0x111120,
+      floorTexture: "flat",
       floorEmissive: 0x0a0a18,
       floorEmissiveIntensity: 0.3,
       biscuit: 0xe3b778,
@@ -240,9 +267,11 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
       bg: 0x87a998,
       backdropTop: 0xc8dcc8,
       wall: 0x2e6b34,
+      wallTexture: "hedge",
       wallEmissive: 0x0a2210,
       wallEmissiveIntensity: 0.25,
       floor: 0x4a3524,
+      floorTexture: "earth",
       floorEmissive: 0x1e1408,
       floorEmissiveIntensity: 0.3,
       biscuit: 0xf0cf8e,
@@ -318,9 +347,11 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
       bg: 0xa8d8ef,
       backdropTop: 0xd8f0fa,
       wall: 0xd4b078,
+      wallTexture: "sand",
       wallEmissive: 0x4a3a18,
       wallEmissiveIntensity: 0.15,
       floor: 0x9a8258,
+      floorTexture: "sand",
       floorEmissive: 0x3a2e14,
       floorEmissiveIntensity: 0.25,
       biscuit: 0xf8f0e2,
@@ -379,9 +410,11 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
       bg: 0x9ecbe8,
       backdropTop: 0xd4ecfa,
       wall: 0x5aa348,
+      wallTexture: "hedge",
       wallEmissive: 0x143a12,
       wallEmissiveIntensity: 0.2,
       floor: 0x8a7a5e,
+      floorTexture: "parkGrass",
       floorEmissive: 0x342c1c,
       floorEmissiveIntensity: 0.28,
       biscuit: 0xf0cf8e,
@@ -464,9 +497,11 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
       bg: 0x332a52,
       backdropTop: 0x5a4a88,
       wall: 0x7a7480,
+      wallTexture: "brick",
       wallEmissive: 0x3a5aaa,
       wallEmissiveIntensity: 0.28,
       floor: 0x3a3640,
+      floorTexture: "road",
       floorEmissive: 0x1c1a20,
       floorEmissiveIntensity: 0.3,
       biscuit: 0xf4d060,

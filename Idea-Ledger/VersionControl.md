@@ -16,6 +16,14 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
 > lines here roll up into the numbered version below and this section is cleared (hold a line back
 > only if you explicitly choose to).
 
+- (2026-08-27) IDEA-044 v1 — themed floor surfaces, painted from the maze grid: a trail of
+  stepping stones through the garden's lawn, forest earth, beach sand, a park lawn with a
+  gravel walk under the biscuits, and night-city asphalt with dashed lane markings.
+- (2026-08-27) IDEA-043 v1 — themed wall surfaces: hedges, packed sand and brickwork, drawn
+  procedurally at runtime so each theme's walls finally look like what the theme is about.
+- (2026-08-27) IDEA-042 v1 — the editor grew a **Pickups** tab: the power bone, bonus-life
+  bone, fruit and coin are now editable exactly like a character, with Save writing real
+  source into board.ts. Built by generalising Character mode rather than copying it.
 - (2026-08-27) IDEA-024 v2 — the game went cel-shaded: every lit surface on one shared 3-step toon
   ramp, tone mapping off so the bands stay crisp, the shipped beagle kept with broader ears and a
   thicker tail, and a per-part shading dropdown in the character editor.

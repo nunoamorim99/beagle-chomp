@@ -20,6 +20,9 @@ import { resolve, normalize } from "node:path";
 // (editor-residue-hazard) — the editor now writes the whole file itself.
 const EDITOR_SAVABLE_FILES = [
   "src/render/characters.ts",
+  // The maze pickups (bone, life bone, fruit, coin) are built here, and the
+  // editor's Pickups tab edits them exactly as it edits a character.
+  "src/render/board.ts",
   "src/game/themes.ts",
   "src/game/props.ts",
 ] as const;

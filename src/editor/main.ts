@@ -9,7 +9,16 @@
 import "./editor.css";
 import * as THREE from "three";
 import { createStage } from "./stage";
-import { getCharacter, disposeGroup, ENEMY_COLORS, type CharacterDef, type AnimMode } from "./registry";
+import {
+  getCharacter,
+  getPickup,
+  disposeGroup,
+  ENEMY_COLORS,
+  CHARACTERS,
+  PICKUPS,
+  type CharacterDef,
+  type AnimMode,
+} from "./registry";
 import { buildPartList, createPartTreeView, type PartNode } from "./partTree";
 import {
   EditLog,
@@ -122,6 +131,7 @@ const editorApp = byId<HTMLDivElement>("editorApp");
 const modeCharacterBtn = byId<HTMLButtonElement>("modeCharacterBtn");
 const modeBoardBtn = byId<HTMLButtonElement>("modeBoardBtn");
 const modePropsBtn = byId<HTMLButtonElement>("modePropsBtn");
+const modePickupsBtn = byId<HTMLButtonElement>("modePickupsBtn");
 const viewportHint = byId<HTMLDivElement>("viewportHint");
 // IDEA-033: Props mode's second tree pane (the selected prop's own component
 // list) — see editor/index.html's own note on why this is a SEPARATE DOM
@@ -321,16 +331,39 @@ function buildCharacter(): void {
   select(null);
   history.clear(); // old entries point at the outgoing character's objects
   if (group) disposeGroup(group);
-  def = getCharacter(state.characterId);
+  // Which registry depends on the tab: Character mode edits characters.ts,
+  // Pickups mode edits the maze items in board.ts. Everything below is
+  // identical for both — the part tree, inspector, generated code, source
+  // panel and Save all work off the def, not off a hard-coded file.
+  def = mode === "pickups" ? getPickup(state.characterId) : getCharacter(state.characterId);
   group = def.build(state);
   stage.contentRoot.rotation.y = 0;
   stage.contentRoot.add(group);
+  // Pickups are authored centred on the ORIGIN, because in the game
+  // spawnBone/spawnFruit/spawnCoin set their height when they place them.
+  // Dropped straight onto the editor's ground plane that leaves every one of
+  // them half sunk through the floor, with the bottom half unreachable.
+  //
+  // So the preview LIFTS the item until it rests on the ground. This is a
+  // display-only offset on the group's own transform — the geometry the game
+  // receives is untouched, and the offset is never written by Save (it lives
+  // on the root, which is not an editable part).
+  if (def.isPickup) {
+    group.updateMatrixWorld(true);
+    const bounds = new THREE.Box3().setFromObject(group);
+    if (Number.isFinite(bounds.min.y)) group.position.y = -bounds.min.y;
+  }
   log = new EditLog();
   refreshParts();
   log.snapshot(nodes, materials);
-  inspector.setCharacterMode(def.isBeagle);
-  sourceView.showBuilder(def.builderName);
-  codeTitle.textContent = `${def.builderName}() — src/render/characters.ts`;
+  inspector.setCharacterMode(def.isBeagle, def.modes, def.isPickup);
+  sourceView.showBuilder(def.builderName, def.sourceFile);
+  // The button names the file it will actually write — it said "characters.ts"
+  // on every tab, which is a lie the moment a second file is editable.
+  const shortFile = def.sourceFile.split("/").pop() ?? def.sourceFile;
+  saveFileBtn.textContent = `💾 Save to ${shortFile}`;
+  saveFileBtn.title = `Write your edits straight into ${def.sourceFile} (dev server only). The safe way — no copy-paste.`;
+  codeTitle.textContent = `${def.builderName}() — ${def.sourceFile}`;
   updateGenerated();
 }
 
@@ -547,7 +580,7 @@ const inspector = createInspector(charGuiHost, state, {
 attachPicking(
   canvas,
   stage.camera,
-  () => (mode === "character" ? group : null),
+  () => (mode === "character" || mode === "pickups" ? group : null),
   (object) => nodeByObject.get(object),
   (node) => select(node),
 );
@@ -587,7 +620,7 @@ stage.onFrame((_dt, t) => {
   // hidden character's tail/ears every frame while board mode is active (the
   // highlighter itself is already empty in board mode since select(null) ran
   // on the way in, but the explicit gate documents the intent either way).
-  if (mode === "character") {
+  if (mode === "character" || mode === "pickups") {
     if (group && state.animation !== "off") def.animate(group, state.animation, _dt);
     highlighter.update();
   }
@@ -633,7 +666,7 @@ copyFileBtn.addEventListener("click", () => {
     flash(copyFileBtn, "No edits yet", false);
     return;
   }
-  const full = generateFullFile(log, def.builderName);
+  const full = generateFullFile(log, def.builderName, def.sourceFile);
   if (!full) {
     flash(copyFileBtn, "Failed — use Copy edits", false);
     return;
@@ -724,7 +757,7 @@ saveFileBtn.addEventListener("click", () => {
     flash(saveFileBtn, "No edits yet", false);
     return;
   }
-  const report = applyEditsInPlace(log, def.builderName);
+  const report = applyEditsInPlace(log, def.builderName, def.sourceFile);
 
   if (report.applied.length === 0) {
     // Everything was blocked — say so loudly rather than writing an unchanged
@@ -745,7 +778,7 @@ saveFileBtn.addEventListener("click", () => {
   // this page down before the promise below ever resolves.
   stashSaveReport(text, flashText, report.blocked.length === 0);
 
-  void saveEditorFile("src/render/characters.ts", report.src).then((r) => {
+  void saveEditorFile(def.sourceFile, report.src).then((r) => {
     if (!r.ok) {
       try {
         window.sessionStorage.removeItem(SAVE_REPORT_KEY);
@@ -832,9 +865,14 @@ window.addEventListener(
     // `history`, neither of which board mode touches). Board mode has no
     // undo (see the "--- board mode ---" block's note), so letting Ctrl+Z
     // through here would silently undo a STALE character edit invisibly —
-    // guard the entire handler behind character mode instead of trying to
+    // guard the entire handler behind the MESH modes instead of trying to
     // thread a mode check through every branch below.
-    if (mode !== "character") return;
+    //
+    // Pickups mode is included because it drives the very same `selected`,
+    // `history` and `log` as Character mode — it is the same machinery over a
+    // different registry. Excluding it left the tab with a part tree you could
+    // select in but not nudge, and Save reporting "No edits yet".
+    if (mode !== "character" && mode !== "pickups") return;
     const active = document.activeElement;
     const inTextField = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement;
     const key = e.key.toLowerCase();
@@ -1029,7 +1067,11 @@ window.addEventListener(
 // binary directly, so none of them need editing for a third mode to slot in
 // safely — see setMode below (rewritten as a real 3-way switch) for the one
 // place that DID need updating.
-type Mode = "character" | "board" | "props";
+// "pickups" is a second CHARACTER-shaped mode: same panes, same machinery,
+// different registry and source file. It is a separate tab rather than more
+// entries in the character dropdown because a bone has no skin, no team
+// colour and no walk cycle — different things to reason about, same tools.
+type Mode = "character" | "pickups" | "board" | "props";
 let mode: Mode = "character";
 
 // IDEA-030/031: onTreeSelect now branches on WHICH KIND of row was clicked —
@@ -2031,22 +2073,38 @@ function setMode(next: Mode): void {
   mode = next;
 
   modeCharacterBtn.classList.toggle("active", next === "character");
+  modePickupsBtn.classList.toggle("active", next === "pickups");
   modeBoardBtn.classList.toggle("active", next === "board");
   modePropsBtn.classList.toggle("active", next === "props");
+  // Pickups is a character-shaped mode: it keeps the part tree, the lil-gui
+  // pane and the bottom code panel. Only the registry and the source file
+  // differ, so it deliberately does NOT get board/props's two-row layout.
+  const meshMode = next === "character" || next === "pickups";
   // Board mode and Props mode share the same "no bottom code panel" layout
   // (see editor.css's `#editorApp.mode-board, #editorApp.mode-props` rule) —
   // both classes are applied/removed together so either non-character mode
   // gets the two-row grid.
   editorApp.classList.toggle("mode-board", next === "board");
   editorApp.classList.toggle("mode-props", next === "props");
-  treePaneTitle.textContent = next === "character" ? "Parts" : next === "board" ? "Board slots" : "Prop library";
-  charGuiHost.hidden = next !== "character";
+  treePaneTitle.textContent = meshMode ? "Parts" : next === "board" ? "Board slots" : "Prop library";
+  charGuiHost.hidden = !meshMode;
   boardGuiHost.hidden = next !== "board";
   propsGuiHost.hidden = next !== "props";
-  byId<HTMLElement>("codePane").style.display = next === "character" ? "" : "none";
+  byId<HTMLElement>("codePane").style.display = meshMode ? "" : "none";
   // IDEA-034/033: swap the viewport hint's text to match whichever keyboard
   // story is actually live in the new mode.
   viewportHint.textContent = next === "board" ? HINT_BOARD : next === "props" ? HINT_PROPS : HINT_CHARACTER;
+  // Entering a mesh mode: repoint the dropdown at that tab's registry and
+  // rebuild, so the viewport shows something from the list actually on show.
+  if (meshMode) {
+    const defs = next === "pickups" ? PICKUPS : CHARACTERS;
+    if (!defs.some((d) => d.id === state.characterId)) {
+      inspector.setRegistry(defs, defs[0].id);
+      buildCharacter();
+    } else {
+      inspector.setRegistry(defs, state.characterId);
+    }
+  }
   // IDEA-033: the "Components" sub-tree only makes sense in Props mode —
   // toggled alongside every other mode-scoped pane above.
   propsPartTreeContainer.hidden = next !== "props";
@@ -2074,7 +2132,11 @@ function setMode(next: Mode): void {
     selectPropPart(null);
   }
 
-  if (next === "character") {
+  // Pickups shares this branch with Character: same part tree, same
+  // selection, same camera framing. Falling through to the props branch
+  // instead rendered the PROP LIBRARY into the part tree, which is what the
+  // first run of the new tab did.
+  if (meshMode) {
     if (group) group.visible = true;
     boardStage.setVisible(false);
     refreshParts(); // re-render #partTree with the character's own rows
@@ -2127,6 +2189,7 @@ function setMode(next: Mode): void {
 modeCharacterBtn.addEventListener("click", () => setMode("character"));
 modeBoardBtn.addEventListener("click", () => setMode("board"));
 modePropsBtn.addEventListener("click", () => setMode("props"));
+modePickupsBtn.addEventListener("click", () => setMode("pickups"));
 
 // TEST-SUPPORT ONLY: a minimal, explicitly-typed read hook for
 // scripts/test-editor-board.ts's Playwright suite — the numbers the brief
