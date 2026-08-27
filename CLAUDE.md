@@ -48,7 +48,25 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v6.
   connected, all pellets reachable, ghosts can leave the pen), `grid.ts` (tiles, tunnel
   wrap, walkability), `movement.ts` (tile-stepping model), `ghostAI.ts` (targeting with a
   dead-end-safe fallback), `state.ts` + `game.ts` (loop + state machine, the integration point).
-- **Render layer** (`src/render/*`): `scene.ts`, `board.ts`, `characters.ts`, `effects.ts`.
+- **Render layer** (`src/render/*`): `scene.ts`, `board.ts`, `characters.ts`,
+  `effects.ts`, plus `toon.ts` — the shared 3-step cel ramp.
+- **The whole scene is CEL-SHADED** (IDEA-024 v2): every lit surface is a
+  `MeshToonMaterial` on the one gradient from `src/render/toon.ts`, and the
+  renderer runs with `NoToneMapping` — a filmic curve re-compresses the ramp's
+  bands and undoes the point of it. Build materials with `toon({...})`, never
+  `new THREE.MeshStandardMaterial`; `roughness`/`metalness` do not exist on a
+  toon material. The eye glint is the one deliberate exception: it is
+  `MeshBasicMaterial` (unlit), because a toon ramp quantises a highlight into
+  the same band as everything else facing the light and it stops reading as a
+  catchlight.
+- **The character editor knows about it**: `isEditableMaterial` accepts every
+  model its new `shading` dropdown can produce (toon/standard/phong/lambert/
+  basic), and controls for channels a given model lacks — `roughness`,
+  `emissive` — are omitted rather than shown wired to nothing (IDEA-041's rule).
+- **`preview/index.html`** — a dev-only page at `/preview/` (`npm run dev`) that
+  renders the real `makeBeagle()` with orbit controls, six preset camera angles
+  (`?view=`) and part isolation (`?solo=`). Not a rollup input, so it never
+  ships (same construction as `/editor/`).
 - **Input / UI / PWA**: `src/input/{touch,keyboard}.ts`, `src/ui/{hud,sound,install}.ts`,
   `public/icons/*` (192, 512, 512-maskable).
 - **Tests**: `scripts/validate-maze.ts`, `scripts/sim-logic.ts` — import the real modules.

@@ -100,8 +100,11 @@ export function createStage(canvas: HTMLCanvasElement): Stage {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 0.92;
+  // Matches the game's renderer exactly (scene.ts): NO tone mapping, so the
+  // cel ramp's three bands land where the gradient texture put them. The
+  // editor showing a filmic-graded version of a toon character would be the
+  // editor lying about what ships.
+  renderer.toneMapping = THREE.NoToneMapping;
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(COLORS.bg);

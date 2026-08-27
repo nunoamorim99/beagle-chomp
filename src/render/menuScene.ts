@@ -16,6 +16,7 @@ import { COLORS } from "../game/config";
 import { type BeagleSkin, getEquippedBeagleSkin } from "../game/cosmetics";
 import { type MazeTheme, getEquippedMazeTheme } from "../game/themes";
 import { makeBeagle, applyBeagleSkin, type BeagleParts } from "./characters";
+import { toon } from "./toon";
 
 // Vertical-gradient backdrop, the same cheap inward-facing skydome technique
 // as scene.ts's makeBackdrop (kept as its own small copy here rather than an
@@ -79,10 +80,10 @@ const BLOOM_COLORS = [0xf4efe6, 0xf2d43a, 0xe8709a] as const;
 
 interface GardenPatch {
   group: THREE.Group;
-  soilMat: THREE.MeshStandardMaterial;
-  grassMat: THREE.MeshStandardMaterial;
-  hedgeMat: THREE.MeshStandardMaterial;
-  bloomMats: THREE.MeshStandardMaterial[];
+  soilMat: THREE.MeshToonMaterial;
+  grassMat: THREE.MeshToonMaterial;
+  hedgeMat: THREE.MeshToonMaterial;
+  bloomMats: THREE.MeshToonMaterial[];
 }
 
 function makeGardenPatch(): GardenPatch {
@@ -94,9 +95,9 @@ function makeGardenPatch(): GardenPatch {
   // cheaper trick reads just as soft: keep it a flat cylinder but ring its
   // edge with a thin grass-green torus so the rim reads as turf rather than
   // a hard-edged mud disc dropped on the ground.
-  const soilMat = new THREE.MeshStandardMaterial({
+  const soilMat = toon({
     color: COLORS.floor,
-    roughness: 1,
+
     emissive: 0x2a1a0c,
     emissiveIntensity: 0.3,
   });
@@ -105,9 +106,9 @@ function makeGardenPatch(): GardenPatch {
   soil.receiveShadow = true;
   g.add(soil);
 
-  const grassMat = new THREE.MeshStandardMaterial({
+  const grassMat = toon({
     color: GRASS_RIM_COLOR,
-    roughness: 0.6,
+
     emissive: COLORS.wallEmissive,
     emissiveIntensity: 0.2,
   });
@@ -121,10 +122,10 @@ function makeGardenPatch(): GardenPatch {
   // Much smaller than the old 0.9x0.5x0.5 monoliths, spaced in a gentle
   // symmetric arc, and pulled back far enough that the dog reads clearly in
   // front of them (never overlapping/cropped).
-  const hedgeMat = new THREE.MeshStandardMaterial({
+  const hedgeMat = toon({
     color: HEDGE_COLOR,
-    roughness: 0.5,
-    metalness: 0.1,
+
+
     emissive: COLORS.wallEmissive,
     emissiveIntensity: 0.2,
   });
@@ -160,12 +161,12 @@ function makeGardenPatch(): GardenPatch {
   // the middle 3 hedges, alternating colors; the two outer hedges stay bare
   // so the blooms read as sparse accents, not a solid flowery wall.
   const bloomGeo = new THREE.SphereGeometry(0.055, 8, 8);
-  const bloomMats: THREE.MeshStandardMaterial[] = [];
+  const bloomMats: THREE.MeshToonMaterial[] = [];
   [1, 2, 3].forEach((hedgeIdx, i) => {
     const hedge = hedgeTopBlooms[hedgeIdx];
-    const mat = new THREE.MeshStandardMaterial({
+    const mat = toon({
       color: BLOOM_COLORS[i % BLOOM_COLORS.length],
-      roughness: 0.5,
+
       emissive: BLOOM_COLORS[i % BLOOM_COLORS.length],
       emissiveIntensity: 0.25,
     });
@@ -178,9 +179,9 @@ function makeGardenPatch(): GardenPatch {
 
   // One small ground-level bloom accent near the dog's feet, off to one
   // side so it doesn't compete with the beagle's own silhouette.
-  const groundBloomMat = new THREE.MeshStandardMaterial({
+  const groundBloomMat = toon({
     color: BLOOM_COLORS[1],
-    roughness: 0.5,
+
     emissive: BLOOM_COLORS[1],
     emissiveIntensity: 0.25,
   });
@@ -302,10 +303,10 @@ const TURNTABLE_SPEED = 0.18; // rad/s — slow, smooth full rotation every ~35s
  *  makes re-theming instant and allocation-free. */
 interface ThemedBits {
   backdrop: THREE.ShaderMaterial | THREE.MeshBasicMaterial;
-  soil: THREE.MeshStandardMaterial;
-  grass: THREE.MeshStandardMaterial;
-  hedge: THREE.MeshStandardMaterial;
-  blooms: THREE.MeshStandardMaterial[];
+  soil: THREE.MeshToonMaterial;
+  grass: THREE.MeshToonMaterial;
+  hedge: THREE.MeshToonMaterial;
+  blooms: THREE.MeshToonMaterial[];
   hemi: THREE.HemisphereLight;
   key: THREE.DirectionalLight;
   rim: THREE.DirectionalLight;
@@ -389,11 +390,15 @@ export function createMenuScene(): MenuScene {
   // (the profile is guaranteed hydrated before Game is constructed).
   applyTheme(themed, getEquippedMazeTheme());
 
+  // The menu's dog SITS, tongue out — this is the one surface where the player
+  // is looking at the character rather than steering it, so it gets the hero
+  // model (smooth segment counts, inverted-hull outline) and the sitting pose.
+  // The maze keeps the cheap standing model; `makeBeagle` is that one.
   let beagleMesh = makeBeagle(getEquippedBeagleSkin());
   scene.add(beagleMesh);
 
   // The idle-animation path (syncToEntity in characters.ts) reads an Entity's
-  // dir/facing/tx/ty via entityWorld() to place the model — but the showcase
+  // dir/facing/tx/ty via entityWorld() to place the model â€” but the showcase
   // beagle isn't a real game Entity stepping around a grid, it just stands at
   // the origin forever. Rather than fabricate a fake Entity (and pull in
   // movement.ts's Entity/entityWorld machinery for a mesh that never moves),
@@ -402,7 +407,7 @@ export function createMenuScene(): MenuScene {
   // animateBeagleParts already implements for the stopped case, applied to
   // this mesh's own userData.parts. Kept intentionally simple/local rather
   // than reusing syncToEntity, since the showcase has no facing/position to
-  // sync — only the idle life matters here.
+  // sync â€” only the idle life matters here.
   let idleT = 0;
   let turntableAngle = 0;
 
@@ -418,8 +423,8 @@ export function createMenuScene(): MenuScene {
     // branch, kept as small local literals since that function isn't
     // exported (it's an internal helper keyed off syncToEntity's WalkState).
     const tailWag = Math.sin(idleT * 1.8) * 0.4;
-    const earSwayL = Math.sin(idleT * 0.9) * 0.08 + Math.sin(idleT * 0.31 * Math.PI * 2) * 0.05;
-    const earSwayR = Math.sin(idleT * 0.9 + 1.1) * 0.08 + Math.sin(idleT * 0.31 * Math.PI * 2 + 1.1) * 0.05;
+    const earSwayL = -0.22 + Math.sin(idleT * 0.9) * 0.08 + Math.sin(idleT * 0.31 * Math.PI * 2) * 0.05;
+    const earSwayR = -0.22 + Math.sin(idleT * 0.9 + 1.1) * 0.08 + Math.sin(idleT * 0.31 * Math.PI * 2 + 1.1) * 0.05;
     parts.tail.rotation.y = tailWag;
     parts.earL.rotation.x = earSwayL;
     parts.earR.rotation.x = earSwayR;

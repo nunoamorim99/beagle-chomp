@@ -16,7 +16,9 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
 > lines here roll up into the numbered version below and this section is cleared (hold a line back
 > only if you explicitly choose to).
 
-_(nothing unreleased — all shipped work is in v6.0 below)_
+- (2026-08-27) IDEA-024 v2 — the game went cel-shaded: every lit surface on one shared 3-step toon
+  ramp, tone mapping off so the bands stay crisp, the shipped beagle kept with broader ears and a
+  thicker tail, and a per-part shading dropdown in the character editor.
 
 ## 📌 Planned
 > Forward-looking targets from `/plan-version`. Each is a checklist of IDEAs intended for a

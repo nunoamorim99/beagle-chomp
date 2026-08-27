@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Beagle preview</title>
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #eae6df; }
+      canvas { display: block; }
+      #hud {
+        position: fixed; left: 12px; top: 12px; z-index: 10;
+        font: 600 12px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
+        color: #2a1a12; background: #ffffffcc; padding: 10px 12px;
+        border-radius: 8px; box-shadow: 0 2px 10px #0002; white-space: pre;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="hud"></div>
+    <script type="module">
+      // Dev-only viewer for the REAL beagle — it calls the shipped builder, so
+      // what you see here is what the game builds. Never a rollup input, so it
+      // never ships (same construction as /editor/).
+      import * as THREE from "three";
+      import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+      import { makeBeagle } from "/src/render/characters.ts";
+
+      // ---- URL knobs, so the screenshot harness can drive this page ----
+      //   ?view=side|front|back|34|top|face  ?anim=0|1  ?grid=0|1  ?hud=0|1
+      //   ?solo=<partName>   isolates one sub-tree for close inspection
+      const q = new URLSearchParams(location.search);
+      const view = q.get("view") ?? "34";
+      const animate = q.get("anim") !== "0";
+      const showHud = q.get("hud") !== "0";
+
+      const renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+      renderer.setSize(innerWidth, innerHeight);
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      // Matches the game (scene.ts): NO tone mapping, or the cel ramp's three
+      // bands get re-compressed into a gradient and this page would be lying
+      // about how the model actually looks.
+      renderer.toneMapping = THREE.NoToneMapping;
+      document.body.appendChild(renderer.domElement);
+
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0xeae6df);
+
+      const key = new THREE.DirectionalLight(0xfff4e2, 2.1);
+      key.position.set(2.6, 4.2, 3.0);
+      key.castShadow = true;
+      key.shadow.mapSize.set(1024, 1024);
+      key.shadow.camera.near = 0.5;
+      key.shadow.camera.far = 14;
+      const sc = key.shadow.camera;
+      sc.left = -2.5; sc.right = 2.5; sc.top = 2.5; sc.bottom = -2.5;
+      sc.updateProjectionMatrix();
+      scene.add(key);
+      scene.add(new THREE.HemisphereLight(0xdfeaff, 0xd8c6a8, 1.15));
+
+      const ground = new THREE.Mesh(
+        new THREE.PlaneGeometry(24, 24),
+        new THREE.ShadowMaterial({ opacity: 0.22 }),
+      );
+      ground.rotation.x = -Math.PI / 2;
+      ground.receiveShadow = true;
+      scene.add(ground);
+
+      const grid = new THREE.GridHelper(4, 40, 0xb9ad9b, 0xd2c9ba);
+      grid.visible = q.get("grid") !== "0";
+      scene.add(grid);
+
+      const beagle = makeBeagle();
+      scene.add(beagle);
+
+      const soloName = q.get("solo");
+      if (soloName) {
+        const keep = new Set();
+        const target = beagle.getObjectByName(soloName);
+        if (target) {
+          target.traverse((o) => keep.add(o));
+          for (let p = target; p; p = p.parent) keep.add(p);
+          beagle.traverse((o) => { if (o.isMesh && !keep.has(o)) o.visible = false; });
+        }
+      }
+
+      // ---- camera: framed from the model's own bounds, so it stays centred
+      // however the builder changes ----
+      const box = new THREE.Box3().setFromObject(beagle);
+      const size = box.getSize(new THREE.Vector3());
+      const centre = box.getCenter(new THREE.Vector3());
+      const camera = new THREE.PerspectiveCamera(32, innerWidth / innerHeight, 0.1, 100);
+      const target = new THREE.Vector3(0, centre.y, 0);
+      const DIST = Math.max(size.x, size.y, size.z) * 3.4;
+      const VIEWS = {
+        side:  [ 1, 0.10,  0.00],
+        front: [ 0, 0.10,  1.00],
+        back:  [ 0, 0.10, -1.00],
+        "34":  [ 0.78, 0.30, 0.72],
+        top:   [ 0.01, 1.00, 0.01],
+        face:  [ 0.45, 0.35, 0.90],
+        headside: [ 1, 0.12, 0.06 ],
+        legs: [ 1, 0.05, 0.02 ],
+      };
+      const v = VIEWS[view] ?? VIEWS["34"];
+      const dir = new THREE.Vector3(v[0], v[1], v[2]).normalize();
+      let dist = DIST;
+      if (view === "legs") {
+        // Tight on the feet — the leg/paw junction is a few hundredths across
+        // and invisible at whole-dog framing.
+        target.set(0, 0.06, 0.05);
+        dist = DIST * 0.30;
+      } else if (view === "face" || view === "headside") {
+        const headObj = beagle.getObjectByName("head");
+        if (headObj) {
+          const hb = new THREE.Box3().setFromObject(headObj);
+          target.set(0, hb.getCenter(new THREE.Vector3()).y, hb.max.z * 0.4);
+          dist = DIST * (view === "headside" ? 0.4 : 0.45);
+        }
+      }
+      camera.position.copy(target).addScaledVector(dir, dist);
+      camera.lookAt(target);
+
+      const controls = new OrbitControls(camera, renderer.domElement);
+      controls.target.copy(target);
+      controls.enableDamping = true;
+      controls.update();
+
+      addEventListener("resize", () => {
+        camera.aspect = innerWidth / innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(innerWidth, innerHeight);
+      });
+
+      // ---- readout ----
+      const hud = document.getElementById("hud");
+      let tris = 0;
+      let meshes = 0;
+      beagle.traverse((o) => {
+        if (!o.isMesh) return;
+        meshes++;
+        const g = o.geometry;
+        tris += g.index ? g.index.count / 3 : g.attributes.position.count / 3;
+      });
+      hud.textContent =
+        `view ${view}\n` +
+        `size    ${size.x.toFixed(2)} w x ${size.y.toFixed(2)} h x ${size.z.toFixed(2)} l\n` +
+        `floor   ${box.min.y.toFixed(3)}\n` +
+        `meshes  ${meshes}\n` +
+        `tris    ${Math.round(tris)}`;
+      if (!showHud) hud.style.display = "none";
+
+      window.__preview = { THREE, scene, camera, beagle, renderer };
+
+      // Idle: the same tail-wag / ear-sway / breathing the menu showcase runs,
+      // so the page shows the model moving the way the game moves it.
+      const parts = beagle.userData.parts;
+      function poseAt(t) {
+        if (!parts) return;
+        parts.tail.rotation.y = Math.sin(t * 1.8) * 0.4;
+        parts.earL.rotation.x = -0.22 + Math.sin(t * 0.9) * 0.08 + Math.sin(t * 0.31 * Math.PI * 2) * 0.05;
+        parts.earR.rotation.x = -0.22 + Math.sin(t * 0.9 + 1.1) * 0.08 + Math.sin(t * 0.31 * Math.PI * 2 + 1.1) * 0.05;
+        beagle.scale.y = beagle.scale.x * (1 + Math.sin(t * 1.4 * Math.PI * 2) * 0.015);
+      }
+
+      // ?earx=<radians> pins the ear hinge to one value and freezes the idle,
+      // so a specific pose (the run sweep, say) can be judged from any of the
+      // six camera angles instead of only wherever the walk cycle happens to
+      // be when a screenshot lands.
+      const earPin = q.get("earx");
+      if (earPin !== null && parts) {
+        const a = Number(earPin);
+        const z = Number(q.get("earz") ?? 0);
+        parts.earL.rotation.x = a;
+        parts.earR.rotation.x = a;
+        // Mirrored: the ears flare AWAY from each other, so the sign flips.
+        parts.earL.rotation.z = -z;
+        parts.earR.rotation.z = z;
+      }
+
+      let t = 0;
+      let last = performance.now();
+      renderer.setAnimationLoop(() => {
+        const now = performance.now();
+        const dt = Math.min(0.05, (now - last) / 1000);
+        last = now;
+        if (animate && earPin === null) { t += dt; poseAt(t); }
+        controls.update();
+        renderer.render(scene, camera);
+      });
+      // Deterministic capture for the harness.
+      window.__poseAt = (seconds) => { poseAt(seconds); renderer.render(scene, camera); };
+    </script>
+  </body>
+</html>

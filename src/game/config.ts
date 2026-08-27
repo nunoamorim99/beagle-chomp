@@ -96,9 +96,14 @@ export const COLORS = {
   wall: 0x3f8f3a,
   wallEmissive: 0x0e2a0e,
   floor: 0x6b4a2f,
-  beagleTan: 0xc98a3c,
-  beagleWhite: 0xf4efe6,
-  beagleBlack: 0x2a2320,
+  // The rebuilt model's coat (IDEA-024 v2). Warmer and lighter than the
+  // original: a toon ramp quantises lighting into three hard bands, so a
+  // coat tuned under smooth PBR falloff goes muddy in the lower band. The
+  // white is a warm OFF-white on purpose — pure white blows out to a flat
+  // silhouette in the top band and takes the muzzle's modelling with it.
+  beagleTan: 0xd6934f,
+  beagleWhite: 0xf0efec,
+  beagleBlack: 0x4a2a1e,
   biscuit: 0xf0cf8e,
   ghostRose: 0xe0577a,
   ghostTeal: 0x53c7c0,

@@ -8,6 +8,9 @@
 // even while the model animates.
 import * as THREE from "three";
 import { type PartNode } from "./partTree";
+// `EditableMaterial` covers every model the editor's shading dropdown can
+// produce, not only the toon one the game ships — see src/render/toon.ts.
+import { type EditableMaterial, isEditableMaterial, roughnessOf } from "../render/toon";
 
 export type Vec3Tuple = [number, number, number];
 
@@ -21,7 +24,7 @@ interface TransformBaseline {
 }
 
 export interface MaterialInfo {
-  material: THREE.MeshStandardMaterial;
+  material: EditableMaterial;
   /** Name generated code refers to — "tan"/"white"/"black"/"ear" (beagle
    *  coat), "bodyMat" (enemies), or "<firstMeshName>Mat" as fallback. */
   varName: string;
@@ -60,7 +63,7 @@ export interface AddedPartRecord {
   kind: PrimKind;
   parentVar: string;
   object: THREE.Mesh;
-  material: THREE.MeshStandardMaterial;
+  material: EditableMaterial;
   /** Geometry constructor params, in the order the codegen emits them. */
   params: Record<string, number>;
 }
@@ -103,7 +106,7 @@ function describeLocator(object: THREE.Object3D): string {
  */
 export class EditLog {
   private baselines = new Map<string, TransformBaseline>();
-  private materialBaselines = new Map<string, { color: number; roughness: number }>();
+  private materialBaselines = new Map<string, { color: number; roughness: number | null }>();
   readonly transformEdits = new Map<string, TransformEditRecord>();
   readonly materialEdits = new Map<string, MaterialEditRecord>();
   readonly addedParts: AddedPartRecord[] = [];
@@ -132,7 +135,7 @@ export class EditLog {
     for (const info of materials) {
       this.materialBaselines.set(info.material.uuid, {
         color: info.material.color.getHex(),
-        roughness: info.material.roughness,
+        roughness: roughnessOf(info.material),
       });
     }
   }
@@ -175,8 +178,15 @@ export class EditLog {
     const color = info.material.color.getHex();
     if (color === base.color) delete record.color;
     else record.color = color;
-    if (Math.abs(info.material.roughness - base.roughness) < EPS) delete record.roughness;
-    else record.roughness = info.material.roughness;
+    // A toon material has no roughness at all, so there is nothing to diff
+    // and nothing to record — `null` is "this channel does not exist here",
+    // not "unchanged".
+    const rough = roughnessOf(info.material);
+    if (rough === null || base.roughness === null || Math.abs(rough - base.roughness) < EPS) {
+      delete record.roughness;
+    } else {
+      record.roughness = rough;
+    }
     if (record.color === undefined && record.roughness === undefined) {
       this.materialEdits.delete(info.material.uuid);
     } else {
@@ -205,7 +215,7 @@ export class EditLog {
   refreshMaterialBaseline(info: MaterialInfo): void {
     this.materialBaselines.set(info.material.uuid, {
       color: info.material.color.getHex(),
-      roughness: info.material.roughness,
+      roughness: roughnessOf(info.material),
     });
     this.materialEdits.delete(info.material.uuid);
   }
@@ -316,7 +326,10 @@ export function collectMaterials(root: THREE.Object3D, nodes: PartNode[]): Mater
       ? node.object.material
       : [node.object.material];
     for (const mat of mats) {
-      if (!(mat instanceof THREE.MeshStandardMaterial)) continue;
+      // Accepts toon AND standard: the scene is cel-shaded, so a
+      // MeshStandardMaterial-only gate here matched nothing and the panel
+      // came up empty for every character.
+      if (!isEditableMaterial(mat)) continue;
       const existing = infos.get(mat.uuid);
       if (existing) {
         existing.shareCount++;

@@ -98,6 +98,7 @@ import { PropPartEditLog, nextAddedPartId, type LiveAddedPropPart } from "./prop
 import { PROP_PART_GEOMETRY_DEFAULTS, buildPropPartPrimitiveGeometry } from "./propsPartCodegen";
 import { generateFullPropsFile } from "./propsFileExport";
 import { type PropPrimKind } from "../game/props";
+import { hasEmissive, isEditableMaterial, roughnessOf } from "../render/toon";
 
 // --- DOM ---
 function byId<T extends HTMLElement>(id: string): T {
@@ -236,6 +237,14 @@ function selectionContext() {
     materialFor: materialForMesh,
     addedRecord: selected ? log.findAddedPart(selected.object) : undefined,
     onEdit: updateGenerated,
+    onMaterialReplaced: () => {
+      // Re-derive the registry from the live scene graph: a shading swap gives
+      // every affected mesh a NEW material with a new uuid, and the old map
+      // would resolve none of them.
+      if (!group) return;
+      materials = collectMaterials(group, nodes);
+      materialByUuid = new Map(materials.map((m) => [m.material.uuid, m]));
+    },
     onGeometryRebuilt: (node: PartNode) => {
       // The wireframe overlay shares the mesh's geometry — refresh it.
       if (selected === node) highlighter.set(state.highlight ? node : null);
@@ -253,7 +262,10 @@ function selectionContext() {
     onMaterialCommitted: (info: MaterialInfo, before: MaterialSnapshot, after: MaterialSnapshot) => {
       const apply = (value: MaterialSnapshot) => (): void => {
         info.material.color.setHex(value.color);
-        info.material.roughness = value.roughness;
+        // Toon materials have no roughness to restore.
+        if (roughnessOf(info.material) !== null) {
+          (info.material as THREE.MeshStandardMaterial).roughness = value.roughness;
+        }
         log.touchMaterial(info);
         afterHistoryApply(null);
       };
@@ -1625,9 +1637,9 @@ function propPartSelectionContext() {
       const apply = (value: number) => (): void => {
         if (node.object instanceof THREE.Mesh) {
           const mat = Array.isArray(node.object.material) ? node.object.material[0] : node.object.material;
-          if (mat instanceof THREE.MeshStandardMaterial) {
+          if (isEditableMaterial(mat)) {
             if (channel === "color") mat.color.setHex(value);
-            else mat.emissive.setHex(value);
+            else if (hasEmissive(mat)) mat.emissive.setHex(value);
           }
         }
         propPartLog.touchMaterial(node, channel, value);

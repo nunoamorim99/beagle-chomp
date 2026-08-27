@@ -26,6 +26,25 @@ it to `rollupOptions.input`). `src/editor/*` may import three (like
 `src/render/*`), imports read-only from render/game, and registers no service
 worker; no game module may import from `src/editor/*`.
 
+## Cel shading (IDEA-024 v2)
+Every lit surface in the game is a `MeshToonMaterial` sharing ONE gradient
+texture from `src/render/toon.ts`. One texture matters twice over: it is a
+single GPU upload, and three.js keys shader programs partly on the gradient map,
+so the whole scene stays on one program variant instead of one per material.
+
+Two things the ramp depends on, both easy to undo by accident:
+- `NearestFilter` + no mipmaps on the gradient. Without them the GPU
+  interpolates the three texels and you get back the smooth falloff the toon
+  material was chosen to escape.
+- `renderer.toneMapping = NoToneMapping` (scene.ts, and the editor's stage
+  matches it). ACESFilmic's shoulder re-compresses the top bands into a
+  gradient — the banding of cel shading with none of the crispness.
+
+Materials are built through `toon({...})` rather than `new MeshToonMaterial`, so
+every surface picks up the shared ramp automatically. `roughness`/`metalness` do
+not exist on a toon material; the editor asks (`roughnessOf`, `hasEmissive`)
+before offering a control for a channel a given model may not have.
+
 ## Coordinate system
 Grid tile `(tx, ty)` maps to world:
 ```
