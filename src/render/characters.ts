@@ -630,6 +630,13 @@ export interface GhostUserData {
  * Every distinct MeshStandardMaterial under `g`, minus the ones passed in.
  * Used to gather the materials that go translucent while eaten, so a builder
  * only has to name its EYE materials and the rest is discovered.
+ *
+ * The same traversal also snapshots each mesh's AUTHORED `castShadow`. The
+ * spirit pass switches shadows off wholesale, and the restore used to switch
+ * them all back on — which is not the same thing: the bee's wings are
+ * deliberately non-casting, and one trip to the pen turned them into hard
+ * black paddles for the rest of the run. Every builder calls this after it has
+ * set its shadow flags, so what is captured here is the authored value.
  */
 function collectSpiritMats(
   g: THREE.Group,
@@ -639,6 +646,7 @@ function collectSpiritMats(
   const out: THREE.MeshToonMaterial[] = [];
   g.traverse((o) => {
     if (!(o instanceof THREE.Mesh)) return;
+    o.userData.shadowBase = o.castShadow;
     const mats = Array.isArray(o.material) ? o.material : [o.material];
     for (const m of mats) {
       if (seen.has(m)) continue;
@@ -649,11 +657,18 @@ function collectSpiritMats(
       // was opaque. The bee's wings are already translucent by design; a
       // restore that hardcoded `transparent = false` would turn them into
       // solid cream paddles the first time the bee was eaten and released.
+      // colour/emissive are part of this snapshot for the same reason: the
+      // spirit pass repaints EVERY spirit material to the team colour, not
+      // just the body, so a restore that only put back the transparency flags
+      // left the muzzle, ears and markings permanently team-coloured — an
+      // enemy that came out of the pen half normal, half eaten.
       m.userData.spiritBase = {
         transparent: m.transparent,
         opacity: m.opacity,
         depthWrite: m.depthWrite,
         emissiveIntensity: m.emissiveIntensity,
+        color: m.color.getHex(),
+        emissive: m.emissive.getHex(),
       };
       out.push(m);
     }
@@ -666,6 +681,8 @@ interface SpiritBase {
   opacity: number;
   depthWrite: boolean;
   emissiveIntensity: number;
+  color: number;
+  emissive: number;
 }
 
 /**
@@ -2694,10 +2711,17 @@ function applyEnemyLook(mesh: THREE.Object3D, ud: GhostUserData, look: LookKind)
         m.opacity = base?.opacity ?? 1;
         m.depthWrite = base?.depthWrite ?? true;
         m.emissiveIntensity = base?.emissiveIntensity ?? 1;
+        // Put the authored colours back too. bodyMat and the accents are in
+        // this list as well and get repainted a few lines below, so this is
+        // the full undo for every OTHER material — the ones no branch owns.
+        if (base) {
+          m.color.setHex(base.color);
+          m.emissive.setHex(base.emissive);
+        }
         m.needsUpdate = true;
       }
       mesh.traverse((o) => {
-        if (o instanceof THREE.Mesh) o.castShadow = true;
+        if (o instanceof THREE.Mesh) o.castShadow = (o.userData.shadowBase as boolean | undefined) ?? true;
       });
     }
     mesh.traverse((o) => { o.visible = true; });

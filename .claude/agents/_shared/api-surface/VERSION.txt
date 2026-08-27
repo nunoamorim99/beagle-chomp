@@ -1,0 +1,2 @@
+three@0.169.0
+core=421 webgpu=1100 tsl=1100 addonModules=306

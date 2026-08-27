@@ -139,3 +139,41 @@ and ship next.
 
 Delegate the matching slice to the matching agent. Keep pure logic and render layers
 decoupled so agents can work in parallel.
+
+## The three.js specialist pack (`.claude/agents/threejs-*`)
+Fourteen deep-domain three.js agents sit alongside the six project agents above:
+`threejs-tech-lead` (route here for anything vague or cross-domain) plus
+scene-architect, geometry-engineer, material-lookdev, texture-pipeline,
+lighting-shadows, tsl-shader-engineer, animation-rigging, character-controller,
+asset-pipeline, camera-interaction, physics-collision, postfx-compositor,
+performance-optimizer, vfx-audio.
+
+**The project agents own the game; the `threejs-*` agents own three.js technique.**
+`render-artist` still owns `src/render/*` and pulls a specialist in for the technique.
+The full split is the table at the end of `.claude/agents/_shared/routing.md`.
+
+Shared rules live in `.claude/agents/_shared/`: `conventions.md` (every specialist
+reads it first), `taxonomy.md`, `routing.md`, and `api-surface/` — a greppable dump of
+every symbol that actually exists in the installed three.js, so "is this a real API?"
+is a grep, not a guess. **Regenerate it after every three.js upgrade:**
+`node .claude/agents/_shared/tools/gen-api-surface.mjs`.
+
+### three.js rules for this project
+The pack ships generic WebGPU/TSL advice. **This project is not that stack**, and
+`conventions.md` §−1 records the difference — these rules win:
+- **`THREE.WebGLRenderer` on three r169.** Import everything from `three`. Never from
+  `three/webgpu` or `three/tsl`: at r169 they are one browser-only bundle and node
+  materials do not render on WebGL. Proposing TSL is proposing a renderer migration.
+- **`MeshToonMaterial` via `toon()`, `NoToneMapping`, one shared 3-step ramp** — see
+  the cel-shading rules above. Not a style preference; the three are one system.
+- **No glTF assets, no physics engine, no post-processing.** Meshes and textures are
+  built in code, movement is tile-stepping on the grid. Adding any of those three is a
+  stack change: raise it, don't slip it in.
+- **1 world unit = 1 maze tile** (`TILE = 1`), not 1 metre.
+- **Verify APIs against the installed package** (`api-surface/`, `node_modules/three/src`,
+  the `.d.ts` files) before using anything you are not certain of at this revision.
+  Never invent a property, constant or import path. The pack's rename table is upstream
+  history — several rows run backwards at r169 and are flagged there.
+- Colour management is on: colour textures tagged sRGB, data maps left linear.
+- Every class that allocates GPU resources or DOM listeners exposes `dispose()`.
+  No allocation inside the render loop.
