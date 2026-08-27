@@ -35,8 +35,46 @@
       </aside>
       <main id="viewportPane">
         <canvas id="viewport"></canvas>
+        <!-- Transform gizmo toolbar. Overlays the viewport's top-left rather
+             than joining the right-hand GUI pane: it drives a thing you are
+             looking AT, and the reference editor (three.js editor's
+             Viewport.Controls) puts it in the same place for the same reason.
+             Character/Pickups modes only — main.ts hides it elsewhere, since
+             board and props modes have no gizmo of their own yet. -->
+        <div id="gizmoBar">
+          <button id="gizmoTranslateBtn" class="gizmo-btn active" data-gizmo="translate" title="Move — W">✥</button>
+          <button id="gizmoRotateBtn" class="gizmo-btn" data-gizmo="rotate" title="Rotate — E">⟳</button>
+          <button id="gizmoScaleBtn" class="gizmo-btn" data-gizmo="scale" title="Scale — T">⤢</button>
+          <span class="gizmo-sep"></span>
+          <button id="gizmoSpaceBtn" class="gizmo-toggle" title="Local or world axes">Local</button>
+          <button id="gizmoSnapBtn" class="gizmo-toggle" title="Snap to 0.01 / 5° / 0.05 increments">Snap</button>
+          <button id="gizmoOffBtn" class="gizmo-toggle" title="Show or hide the gizmo — Q">Hide</button>
+          <span class="gizmo-sep"></span>
+          <button id="focusBtn" class="gizmo-toggle" title="Frame the selected part — F">Focus</button>
+          <select id="shadingSelect" class="gizmo-select" title="How the viewport draws the model (a way of looking at it — not a saved property)">
+            <option value="solid">Solid</option>
+            <option value="wireframe">Wireframe</option>
+            <option value="normals">Normals</option>
+          </select>
+          <button id="viewCubeBtn" class="gizmo-toggle active" title="Show or hide the orientation cube">Cube</button>
+          <button id="infoBtn" class="gizmo-toggle active" title="Show or hide the scene readout">Info</button>
+          <span class="gizmo-sep"></span>
+          <!-- glTF in/out. Export writes the character you are editing;
+               "Ref" loads a model to build AGAINST — it is scaffolding and
+               can never be saved into characters.ts (see src/editor/assets.ts).
+               Drag a .glb onto the viewport for the same thing. -->
+          <button id="exportGlbBtn" class="gizmo-toggle" title="Download the current character as a .glb">Export</button>
+          <button id="refLoadBtn" class="gizmo-toggle" title="Load a .glb/.gltf as a translucent reference to model against (never saved)">Ref</button>
+          <button id="refClearBtn" class="gizmo-toggle" title="Remove the reference model" hidden>Ref ✕</button>
+          <input id="refFileInput" type="file" accept=".glb,.gltf" hidden />
+        </div>
+        <!-- Scene readout (objects/verts/tris/draw calls). Top-RIGHT: the
+             orientation cube owns the bottom-right corner at r169 (ViewHelper
+             hard-codes that offset), and the gizmo bar owns the top-left. -->
+        <div id="viewportInfo"></div>
         <div id="viewportHint">
           drag to orbit · scroll to zoom · click a part to select ·
+          drag the gizmo to transform (W move · E rotate · T scale · Q hide) ·
           arrows nudge position (hold S = scale · hold R = rotate · Shift = big · Alt = fine ·
           Ctrl = depth/roll) · Ctrl+Z undo · Esc deselect
         </div>
@@ -50,6 +88,14 @@
         <div id="codeTabs">
           <button class="code-tab active" data-tab="generated">Generated code</button>
           <button class="code-tab" data-tab="source">Real source</button>
+          <!-- Click-to-jump edit history (three.js editor's Sidebar.History).
+               Lives as a code-pane tab rather than a fourth pane: it is a
+               read-out of the same edits the other two tabs describe. -->
+          <button class="code-tab" data-tab="history">History</button>
+          <!-- Play/scrub the REAL game animation, with a row per channel it
+               actually drives (discovered by sampling — there are no
+               AnimationClips here). See src/editor/timeline.ts. -->
+          <button class="code-tab" data-tab="animation">Animation</button>
           <span id="codeTitle"></span>
           <button id="saveFileBtn" class="save-btn" title="Write your edits straight into src/render/characters.ts (dev server only). The safe way — no copy-paste.">💾 Save to characters.ts</button>
           <button id="copyBtn" class="copy-btn" title="Fallback: copy just the edit lines, then paste them INSIDE makeBeagle, just before 'return g;'">Copy edits</button>
@@ -58,6 +104,8 @@
         <div id="codeBody">
           <pre id="generatedView" class="code-view active"><code></code></pre>
           <pre id="sourceView" class="code-view"><code></code></pre>
+          <div id="historyView" class="code-view"></div>
+          <div id="animationView" class="code-view"></div>
         </div>
       </section>
     </div>

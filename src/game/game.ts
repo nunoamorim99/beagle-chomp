@@ -489,6 +489,9 @@ export class Game {
         // the player can see right behind the shop panel — exactly the way
         // onEquipBeagle already recolours the showcase dog.
         this.menuScene.setMazeTheme(theme);
+        // ...and the shop's OWN character stage, which is what the player is
+        // looking at the moment they switch back to the Beagle/Enemy tab.
+        this.shopScene.setMazeTheme(theme);
       },
     });
 

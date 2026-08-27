@@ -71,23 +71,44 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v6.
   `public/icons/*` (192, 512, 512-maskable).
 - **Wall surfaces are PROCEDURAL** (`src/render/wallTexture.ts`): each theme's
   palette carries a `wallTexture` kind — `hedge` (garden/forest/park), `sand`
-  (beach), `brick` (city), `flat` (arcade) — drawn to a 128px canvas at runtime,
-  never loaded. Three rules they follow: generated not shipped (this is a PWA
-  with no texture assets), luminance-only averaging near white (the map
-  MULTIPLIES `palette.wall`, so a grey texture would darken every theme), and
-  seamless (walls are one InstancedMesh of unit boxes, so each tile shows the
-  full 0..1 — a non-tiling pattern turns the maze into a grid of stamps).
+  (beach), `brick` (city), `flat` (arcade) — drawn to a 256px canvas at runtime,
+  never loaded. Three rules: generated not shipped (this is a PWA with no
+  texture assets); **they carry COLOUR** — they bake `palette.wall` in and every
+  caller holds the material at **white** (a luminance map can only ever darken,
+  and cartoon foliage is mostly LIT leaves *above* the mass, which multiplication
+  cannot reach); and seamless (walls are one InstancedMesh of unit boxes, so each
+  tile shows the full 0..1 — a non-tiling pattern turns the maze into a grid of
+  stamps; anything random must be decided BEFORE `wrapped()`, or the nine passes
+  draw nine different blobs). Cached by **kind AND colour**, never disposed —
+  a handful of small entries, shared by the board and every showcase. Unlike the
+  floor the emissive is NOT map-driven: wall palettes lift by only 0.15–0.28.
   Swapping the map needs `material.needsUpdate` — null↔texture changes the
   shader program.
+- Both surface modules follow **the CARTOON rule** and share `render/paint.ts`
+  (RGB/mix/lit/css/rng): a fixed handful of *named* tones per surface, real
+  shapes rather than per-pixel scatter, keylines on the hero shapes, and nothing
+  smaller than a couple of pixels. Tune at BOTH framings — a wall face is ~25px
+  at the game camera, so detail that looks right in the showcase aliases back
+  into speckle in play. Keep each texture's mean close to `palette.wall` /
+  `palette.floor` or a theme's tuned colour relationships drift.
 - **Floor surfaces are PROCEDURAL AND GRID-DERIVED** (`src/render/floorTexture.ts`):
-  `floorTexture` kinds `stone`/`earth`/`sand`/`parkGrass`/`road`/`flat`. The floor
+  `floorTexture` kinds `lawn`/`earth`/`sand`/`parkGrass`/`road`/`flat`. The floor
   is one `PlaneGeometry(COLS+2, ROWS+2)` with plain 0..1 UVs, so tile `(tx,ty)`
   maps to canvas `((tx+1.5)*S, (ty+1.5)*S)` and the maze itself can be painted in
-  — that's how the garden's stepping stones, the park's gravel walk and the road
-  markings follow the corridors. `S = 32`, and every pattern is written in terms
-  of `K = S/16` (sizes scale with K, scatter counts with K²) so the resolution
-  can move without restyling the five surfaces. Two rules differ from the walls,
-  both load-bearing:
+  — that's how the park's gravel walk and the road markings follow the corridors.
+  (`lawn`, `earth` and `sand` ignore the grid; the garden is deliberately the
+  quiet theme — a path down a one-tile corridor competes with the biscuit trail
+  the player is actually reading, which is why its stones were dropped.) A **`Sheet`** describes what is being painted in
+  TILE terms (`cols/rows/W/H/S/K/cx/cy/walk`) — the board is one sheet, a small
+  showcase patch is another — so the same surfaces serve the maze and the
+  menu/shop previews. Every feature size is a fraction of `sh.S` and every
+  scatter is counted PER TILE, which makes `S` a pure resolution knob: the board
+  runs at 32, a preview patch at 96 (it is magnified far more), same picture.
+  **They are drawn CARTOON, not photoreal** — three or four named tones per
+  surface, real shapes (tufts, keylined stones, leaves) and nothing under a
+  couple of pixels. The first pass used per-pixel scatter off a continuous ramp
+  and read as a photograph laid under a cel-shaded scene. Two more rules differ
+  from the walls, both load-bearing:
   1. **They carry COLOUR.** A `map` multiplies, so the brightest thing a
      luminance map can make is the material's own colour — on Night City's
      `0x3a3640` floor a `grey(1)` lane marking still rendered at 0.22 and was
@@ -97,6 +118,13 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v6.
      lift *after* the multiply, which swamped the pattern on the dark themes.
   Grid-derived means **not cached** (a cache keyed by kind would paint level 1's
   corridors into level 2's floor) — `syncBoardMaterials` disposes the outgoing one.
+- **The showcases wear the same surfaces** (`src/render/showcaseSurface.ts`): the
+  menu vignette and the shop's character stage both call `applyShowcaseSurfaces`,
+  which puts `wallTextureFor`'s shared texture on their hedges and paints their
+  ground with `floorPreviewTexture` over a small hand-authored tile patch. The
+  shop's theme diorama does the same with its own patch — which must stay in
+  step with `DIORAMA_WALL_TILES`, and `test-board-surfaces.ts` checks that it
+  does. Same white-material and `emissiveMap` rules as the board.
 - **Character editor tabs** (`/editor/`, dev-only): **Character** (characters.ts),
   **Pickups** (the maze items in board.ts — power bone, bonus-life bone, fruit,
   coin), **Board & Themes**, **Props**. Character and Pickups are the SAME
@@ -109,6 +137,53 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v6.
   **`src/editor/boardCodegen.ts` writes a palette field by field, by hand**, so a new
   `ThemePalette` key that the writer doesn't know about is quietly dropped from every
   theme saved in the editor. Add a palette field → add it to the writer.
+- **The editor has DIRECT MANIPULATION** (three.js-editor parity work): a
+  `TransformControls` gizmo on the selected part (`src/editor/gizmo.ts`), a
+  click-to-jump history panel, a foldable outliner with geometry badges and
+  drag-reparenting, and viewport furniture — orientation cube, scene readout,
+  solid/wireframe/normals shading (`src/editor/viewportExtras.ts`). Four rules
+  hold this together:
+  1. **The gizmo commits through `pushTransformHistory`** — the same function
+     the inspector's number fields use. A drag and a typed coordinate are the
+     same edit to the EditLog, the undo stack and codegen. Never add a second
+     command path.
+  2. **Keys are `W`/`E`/`T` + `Q`/`F`, not the reference editor's `W`/`E`/`R`.**
+     `R` and `S` are held modifiers for arrow-key rotate/scale nudging here.
+  3. **Only editor-ADDED parts can be reparented.** They codegen as
+     `<parentVar>.add(<name>)`, so a move is representable; an original part's
+     parent is written by the builder and a move would silently vanish on save.
+     For the same reason there is no sibling REORDER — `add()` appends.
+  4. **Shading overrides are a way of LOOKING, never a saved property.**
+     "normals" swaps `mesh.material`, so anything reading materials off the
+     scene graph must go through `withRealMaterials()` or it rebuilds the
+     material registry around a fake shared material.
+- **MULTI-SELECT**: Ctrl/Shift-click, `A` for all/none. `selection` is the set,
+  `selected` is its PRIMARY (`selection[0]`) — everything that edits ONE thing
+  (inspector, source marker) keys off the primary, everything that can act on
+  MANY (gizmo, Delete) reads the set. That split is why multi-select landed
+  without touching `inspector.ts`. The gizmo mirrors the primary's movement as
+  a DELTA (translate/rotate) or a RATIO (scale) from each part's own
+  mouse-down pose, so dragging two ears moves both rather than collapsing them
+  together. `history.begin()`/`commit()` folds N edits into one undo step.
+- **ANIMATION TIMELINE** (`src/editor/timeline.ts`, the Animation tab): play /
+  pause / step / scrub. **There are no `AnimationClip`s here** — our characters
+  are animated procedurally by `syncToEntity`/`applyGhostState`, so "time" is
+  accumulated `dt` fed to the real animate() call, and scrubbing back means
+  restore-and-replay. Tracks are **discovered by sampling** the cycle and
+  keeping the channels that actually move, which answers the IDEA-041 question
+  directly: *which parts does the runtime own?* Exactly one driver steps the
+  animation — the timeline while its tab is open, the free-running preview
+  otherwise.
+- **glTF IN AND OUT** (`src/editor/assets.ts`): export the character as `.glb`;
+  load a `.glb`/`.gltf` as a **reference model** (button or drag onto the
+  viewport). The hard boundary: **a reference can never be saved.** Codegen
+  emits constructor calls, and there is no such expression for an arbitrary
+  triangle soup — so a reference is tagged `editorOverlay`, which keeps it out
+  of the part tree, picking, the scene readout and every codegen path. No
+  DRACO/KTX2/meshopt: those open COMPRESSED assets and this project ships none.
+  Both addons are dynamically imported, and the editor still never ships.
+  All of the above is guarded by `scripts/test-editor-viewport.ts`
+  (`npm run test:editor:viewport`), including a real export→reimport round-trip.
 - **Character editor** (`editor/index.html` + `src/editor/*`): dev-only workbench at
   `/editor/` — tweak the real character meshes live, add parts, copy the generated
   three.js code into `characters.ts`. Not a rollup input, so it never ships (see

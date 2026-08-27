@@ -121,11 +121,60 @@ body {
   color: #ffffff;
 }
 
+/* Secondary members of a multi-selection: selected, but not the one the
+   inspector is showing. Matches Highlighter's dimmer viewport colour. */
+.tree-row.selected.secondary {
+  background: #262b36;
+  border-left-color: #8f5f9e;
+  color: #cdd3dc;
+}
+
 .tree-row .tree-icon {
   color: #7d8694;
   font-size: 10px;
   width: 12px;
   text-align: center;
+}
+
+/* The fold twisty on rows that have children. Slightly brighter than the
+   inert leaf glyph so it reads as clickable, and it swallows its own click
+   (partTree.ts) rather than also selecting the row. */
+.tree-row .tree-opener {
+  color: #aab2bd;
+  cursor: pointer;
+}
+
+.tree-row .tree-opener:hover {
+  color: #ffffff;
+}
+
+/* Geometry-kind badge on mesh rows ("sphere", "box", …). */
+.tree-type-badge {
+  margin-left: auto;
+  padding-left: 8px;
+  color: #5f6873;
+  font-size: 10px;
+}
+
+.tree-row.selected .tree-type-badge {
+  color: #8d97a4;
+}
+
+.tree-row.dragging {
+  opacity: 0.45;
+}
+
+.tree-row.drop-target {
+  background: #2f3a33;
+  border-left-color: #7fd1a6;
+}
+
+/* The tree pane takes focus for its arrow-key navigation — suppress the
+   default focus ring, which lands on the whole scrolling pane and looks
+   like an error state. */
+#partTree:focus,
+#propsPartTree:focus {
+  outline: none;
 }
 
 /* Props mode's "used by N placements" badge (propsTree.ts) — a small pill
@@ -166,6 +215,243 @@ body {
   width: 100%;
   height: 100%;
   display: block;
+}
+
+/* Transform gizmo toolbar — floats over the viewport's top-left corner. */
+#gizmoBar {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 6px;
+  background: rgba(23, 25, 29, 0.82);
+  border: 1px solid #2c3037;
+  backdrop-filter: blur(2px);
+}
+
+#gizmoBar[hidden] {
+  display: none;
+}
+
+.gizmo-btn,
+.gizmo-toggle {
+  font: inherit;
+  color: #b6bcc6;
+  background: #22252a;
+  border: 1px solid #33383f;
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 3px 8px;
+  line-height: 1.4;
+}
+
+.gizmo-btn {
+  min-width: 30px;
+  font-size: 15px;
+}
+
+.gizmo-toggle {
+  font-size: 11px;
+}
+
+.gizmo-btn:hover,
+.gizmo-toggle:hover {
+  color: #e8ebef;
+  border-color: #4a515a;
+}
+
+.gizmo-btn.active,
+.gizmo-toggle.active {
+  color: #17191d;
+  background: #7fd1a6;
+  border-color: #7fd1a6;
+}
+
+.gizmo-sep {
+  width: 1px;
+  height: 18px;
+  margin: 0 2px;
+  background: #33383f;
+}
+
+.gizmo-select {
+  font: inherit;
+  font-size: 11px;
+  color: #b6bcc6;
+  background: #22252a;
+  border: 1px solid #33383f;
+  border-radius: 4px;
+  padding: 3px 4px;
+  cursor: pointer;
+}
+
+#viewportInfo {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: rgba(23, 25, 29, 0.72);
+  border: 1px solid #2c3037;
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+#viewportInfo[hidden] {
+  display: none;
+}
+
+/* --- history panel (a code-pane tab) --- */
+#historyView {
+  padding: 6px 0;
+  overflow: auto;
+}
+
+.history-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  border-left: 2px solid transparent;
+}
+
+.history-row:hover {
+  background: #23272e;
+}
+
+/* Undone steps are still listed — they are the redo future, and greying
+   them is what makes the cursor position legible at a glance. */
+.history-row.undone .history-label,
+.history-row.undone .history-index {
+  color: #5c636d;
+}
+
+.history-row.current {
+  background: #2b3242;
+  border-left-color: #7fd1a6;
+}
+
+.history-index {
+  min-width: 18px;
+  text-align: right;
+  color: #6f7885;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.history-label {
+  color: #cfd4db;
+}
+
+.history-hint {
+  padding: 6px 12px;
+  color: #6f7885;
+  font-style: italic;
+}
+
+/* --- animation timeline (a code-pane tab) --- */
+#animationView {
+  padding: 8px 12px;
+  overflow: auto;
+}
+
+.tl-transport {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.tl-btn {
+  font: inherit;
+  font-size: 12px;
+  min-width: 30px;
+  color: #b6bcc6;
+  background: #22252a;
+  border: 1px solid #33383f;
+  border-radius: 4px;
+  padding: 2px 6px;
+  cursor: pointer;
+}
+
+.tl-btn:hover {
+  color: #e8ebef;
+  border-color: #4a515a;
+}
+
+.tl-readout {
+  color: #8d97a4;
+  font-variant-numeric: tabular-nums;
+}
+
+.tl-hint {
+  color: #6f7885;
+  font-style: italic;
+}
+
+.tl-scrub {
+  width: 100%;
+  margin: 0 0 8px;
+  accent-color: #7fd1a6;
+}
+
+.tl-track {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 16px;
+}
+
+/* Fixed label gutter, same idea as the reference panel's 150px — the lanes
+   have to share one time axis or the bars cannot be compared by eye. */
+.tl-track-label {
+  flex: 0 0 150px;
+  color: #cfd4db;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tl-lane {
+  position: relative;
+  flex: 1 1 auto;
+  height: 10px;
+  border-radius: 2px;
+  background: #212429;
+}
+
+.tl-bar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 2px;
+}
+
+/* The playhead spans every lane, so one vertical read tells you what is
+   moving at this instant. `--tl-playhead` is a UNITLESS 0..1 fraction set by
+   timeline.ts — unitless so it can be multiplied inside calc(); the lane
+   area starts after the 150px label gutter plus the 8px flex gap. */
+.tl-tracks {
+  position: relative;
+  --tl-playhead: 0;
+}
+
+.tl-tracks::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(158px + (100% - 158px) * var(--tl-playhead));
+  width: 2px;
+  background: #ff3b3b;
+  pointer-events: none;
 }
 
 #viewportHint {

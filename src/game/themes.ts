@@ -160,7 +160,7 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
       wallEmissive: 0x0e2a0e,
       wallEmissiveIntensity: 0.2,
       floor: 0x6b4a2f,
-      floorTexture: "stone",
+      floorTexture: "lawn",
       floorEmissive: 0x2a1a0c,
       floorEmissiveIntensity: 0.3,
       biscuit: 0xf0cf8e,

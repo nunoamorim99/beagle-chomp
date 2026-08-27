@@ -16,6 +16,12 @@ import { COLORS } from "../game/config";
 import { type BeagleSkin, getEquippedBeagleSkin } from "../game/cosmetics";
 import { type MazeTheme, getEquippedMazeTheme } from "../game/themes";
 import { makeBeagle, applyBeagleSkin, type BeagleParts } from "./characters";
+import {
+  VIGNETTE_CELLS,
+  applyShowcaseSurfaces,
+  disposeShowcaseSurfaces,
+  type ShowcaseSurfaces,
+} from "./showcaseSurface";
 import { toon } from "./toon";
 
 // Vertical-gradient backdrop, the same cheap inward-facing skydome technique
@@ -206,6 +212,13 @@ function makeGardenPatch(): GardenPatch {
 function applyTheme(bits: ThemedBits, theme: MazeTheme): void {
   const p = theme.palette;
 
+  // The theme's real SURFACES — the same procedural hedge/sand/brick the maze
+  // walls wear, and the same corridor-derived ground. Run FIRST because it
+  // owns the soil material's colour whenever a floor texture is present (the
+  // texture bakes the palette colour in, so tinting it again would square it);
+  // the soil tint just below therefore only applies on a "flat" floor theme.
+  applyShowcaseSurfaces(bits.surfaces, p);
+
   // Sky: the shader dome's two gradient stops.
   const uniforms = (bits.backdrop as THREE.ShaderMaterial).uniforms;
   if (uniforms?.topColor && uniforms?.bottomColor) {
@@ -213,13 +226,15 @@ function applyTheme(bits: ThemedBits, theme: MazeTheme): void {
     (uniforms.bottomColor.value as THREE.Color).setHex(p.bg);
   }
 
-  bits.soil.color.setHex(p.floor);
+  // colour is applyShowcaseSurfaces' — see above.
   bits.soil.emissive.setHex(p.floorEmissive);
   bits.soil.emissiveIntensity = p.floorEmissiveIntensity;
 
-  // The grass rim and hedges both read as the board's walls.
+  // The grass rim and hedges both read as the board's walls. Only the RIM's
+  // colour is set here — the hedge wears the wall texture, so its colour
+  // belongs to applyShowcaseSurfaces (a textured material stays white).
+  bits.grass.color.setHex(p.wall);
   for (const mat of [bits.grass, bits.hedge]) {
-    mat.color.setHex(p.wall);
     mat.emissive.setHex(p.wallEmissive);
     mat.emissiveIntensity = p.wallEmissiveIntensity;
   }
@@ -303,6 +318,8 @@ const TURNTABLE_SPEED = 0.18; // rad/s — slow, smooth full rotation every ~35s
  *  makes re-theming instant and allocation-free. */
 interface ThemedBits {
   backdrop: THREE.ShaderMaterial | THREE.MeshBasicMaterial;
+  /** The wall/floor stand-ins, for the procedural surfaces pass. */
+  surfaces: ShowcaseSurfaces;
   soil: THREE.MeshToonMaterial;
   grass: THREE.MeshToonMaterial;
   hedge: THREE.MeshToonMaterial;
@@ -375,6 +392,14 @@ export function createMenuScene(): MenuScene {
   // IDEA-037: everything the theme can re-tint, gathered once.
   const themed: ThemedBits = {
     backdrop: backdrop.material,
+    // The grass rim is a torus, so it is left OUT of the wall list: its UVs
+    // wrap the pattern exactly once around the whole ring, which smears it.
+    // It keeps the palette's wall colour and stays a plain trim.
+    surfaces: {
+      wall: [patch.hedgeMat],
+      floor: [patch.soilMat],
+      cells: VIGNETTE_CELLS,
+    },
     soil: patch.soilMat,
     grass: patch.grassMat,
     hedge: patch.hedgeMat,
@@ -462,6 +487,7 @@ export function createMenuScene(): MenuScene {
       applyBeagleSkin(beagleMesh, skin);
     },
     dispose(): void {
+      disposeShowcaseSurfaces(themed.surfaces);
       scene.remove(beagleMesh);
       beagleMesh.traverse((o) => {
         if (o instanceof THREE.Mesh) {

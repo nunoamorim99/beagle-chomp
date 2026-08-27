@@ -14,6 +14,12 @@ export function attachPicking(
   getRoot: () => THREE.Object3D | null,
   getNodeFor: (object: THREE.Object3D) => PartNode | undefined,
   onPick: (node: PartNode) => void,
+  /** Consulted on pointerup: true swallows the click. The transform gizmo
+   *  passes its own "pointer is on an axis handle" state here — without it,
+   *  letting go of a gizmo drag lands as a click and re-picks whatever part
+   *  happens to sit behind the handle. Optional so the Props-mode instance
+   *  (no gizmo of its own yet) needs no change. */
+  isBlocked?: () => boolean,
 ): () => void {
   const raycaster = new THREE.Raycaster();
   const pointer = new THREE.Vector2();
@@ -26,6 +32,7 @@ export function attachPicking(
   }
 
   function onPointerUp(e: PointerEvent): void {
+    if (isBlocked?.()) return;
     if (Math.abs(e.clientX - downX) > CLICK_SLOP_PX || Math.abs(e.clientY - downY) > CLICK_SLOP_PX)
       return;
     const root = getRoot();

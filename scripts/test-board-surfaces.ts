@@ -127,6 +127,110 @@ ok(
   "the colour is baked into the canvas; tinting again squares it towards black",
 );
 
+// The WALL surfaces carry colour on the same terms as of the cartoon pass —
+// they have to, since a multiply can never paint a leaf lighter than the wall
+// it sits on. Same white-material contract, and one extra clause of its own:
+// the cache key must include the colour, or every theme after the first gets
+// the first one's wall painted into it.
+const wallSrc = readFileSync("src/render/wallTexture.ts", "utf8");
+
+ok(
+  "wallTextureFor takes the palette colour it bakes in",
+  /export function wallTextureFor\(kind: WallTextureKind, baseHex: number\)/.test(wallSrc),
+);
+ok(
+  "the wall surface is cached by kind AND colour",
+  /const key = kind \+ "\|" \+ baseHex/.test(wallSrc),
+  "keyed by kind alone, the first theme's wall colour is baked into every other theme",
+);
+ok(
+  "a textured wall is left white so the palette is not applied twice",
+  /matWall\.color\.set\(wallMap \? 0xffffff : palette\.wall\)/.test(boardSrc),
+);
+ok(
+  "the board editor binds wall colour to the PALETTE, not to the material",
+  /addColor\(\{ color: "#" \+ p\.wall\.toString\(16\)/.test(
+    readFileSync("src/editor/boardInspector.ts", "utf8"),
+  ),
+  "a textured wall material is held at white, so a swatch bound to it double-tints",
+);
+
+// ---------------------------------------------------------------------------
+section("The showcases wear the same surfaces as the board");
+
+const menuSrc = readFileSync("src/render/menuScene.ts", "utf8");
+const shopSrc = readFileSync("src/render/shopScene.ts", "utf8");
+const showcaseSrc = readFileSync("src/render/showcaseSurface.ts", "utf8");
+
+for (const [name, src] of [
+  ["the menu vignette", menuSrc],
+  ["the shop's character stage", shopSrc],
+] as const) {
+  ok(
+    name + " applies the theme's procedural surfaces",
+    /applyShowcaseSurfaces\(/.test(src),
+    "without it a showcase re-themes by colour alone and shows less of a theme than the maze does",
+  );
+}
+ok(
+  "the shop diorama wears the board's own wall texture",
+  /wallTextureFor\(palette\.wallTexture, palette\.wall\)/.test(shopSrc),
+);
+ok(
+  "the shop diorama draws its own ground",
+  /floorPreviewTexture\(palette\.floorTexture, DIORAMA_FLOOR_CELLS, palette\.floor\)/.test(shopSrc),
+);
+ok(
+  "a textured showcase floor is left white so the palette is not applied twice",
+  /m\.color\.setHex\(next \? 0xffffff : palette\.floor\)/.test(showcaseSrc),
+);
+ok(
+  "and so is a textured showcase wall",
+  /m\.color\.setHex\(wallMap \? 0xffffff : palette\.wall\)/.test(showcaseSrc),
+);
+ok(
+  "the shop diorama holds its textured wall white too",
+  /color: wallTex \? 0xffffff : palette\.wall/.test(shopSrc),
+);
+ok(
+  "the diorama disposes the ground it owns",
+  /userData\.floorTexture as THREE\.Texture \| undefined\)\?\.dispose\(\)/.test(shopSrc),
+  "browsing the Themes tab would otherwise leak one canvas texture per tap",
+);
+
+// The diorama paints its ground from a hand-written tile patch, and the maze
+// corner it stages is a SECOND hand-written list. Nothing links them: move a
+// wall block and the stepping stones / lane markings keep following the old
+// corridors — a preview that quietly lies about the theme it is selling. So
+// the two are checked against each other here.
+const wallBlock = shopSrc.slice(shopSrc.indexOf("const DIORAMA_WALL_TILES"));
+const wallTiles = [
+  ...wallBlock.slice(0, wallBlock.indexOf("];")).matchAll(/\[\s*(-?\d+)\s*,\s*(-?\d+)\s*\]/g),
+].map((m) => [Number(m[1]), Number(m[2])] as [number, number]);
+const cellsBlock = shopSrc.slice(shopSrc.indexOf("const DIORAMA_FLOOR_CELLS"));
+const cells = [...cellsBlock.slice(0, cellsBlock.indexOf("];")).matchAll(/"([.#]+)"/g)].map(
+  (m) => m[1],
+);
+
+ok("the diorama's wall run and ground patch were both found", cells.length > 0 && wallTiles.length > 0);
+// Cell (c, r) is diorama tile (c - 1, r - 1) — see DIORAMA_FLOOR_CELLS.
+const walledCells = new Set<string>();
+cells.forEach((row, r) => {
+  [...row].forEach((ch, c) => {
+    if (ch === "#") walledCells.add(c - 1 + "," + (r - 1));
+  });
+});
+ok(
+  "every diorama wall block stands on a wall tile of the ground patch",
+  wallTiles.every(([tx, tz]) => walledCells.has(tx + "," + tz)),
+  "wall run " + JSON.stringify(wallTiles) + " vs patch " + JSON.stringify([...walledCells]),
+);
+ok(
+  "and the patch invents no wall the diorama does not build",
+  walledCells.size === wallTiles.length,
+  "a wall tile with no block on it paints a bald patch of ground in plain view",
+);
+
 // ---------------------------------------------------------------------------
 console.log("\n" + "-".repeat(60));
 console.log("BOARD SURFACES: " + pass + " passed, " + fail + " failed");

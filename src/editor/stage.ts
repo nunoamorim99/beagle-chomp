@@ -10,6 +10,7 @@
 // collide.
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { ViewHelper } from "three/examples/jsm/helpers/ViewHelper.js";
 import { COLORS } from "../game/config";
 
 const BACKDROP_RADIUS = 80;
@@ -82,8 +83,23 @@ export interface Stage {
    *  instance costs nothing today and avoids stage.ts having to anticipate
    *  every future framing need with bespoke setters. */
   orbit: OrbitControls;
+  /** Exposed for the viewport's info readout (renderer.info) — see
+   *  viewportExtras.ts. Nothing else should be reaching in here. */
+  renderer: THREE.WebGLRenderer;
   setTurntable(on: boolean): void;
   setGrid(on: boolean): void;
+  /** The bottom-right orientation cube. Clicking a face flies the camera onto
+   *  that axis, around the SAME pivot orbit uses. */
+  setViewHelper(on: boolean): void;
+  /** True when the most recent pointerup landed on the orientation cube, so
+   *  picking.ts can ignore that click instead of also selecting whatever part
+   *  happened to be underneath. */
+  viewHelperConsumedClick(): boolean;
+  /** Frames `object`: centre the orbit pivot on it and pull the camera back
+   *  to its bounding radius. Groups with no geometry of their own (the pivot
+   *  groups this model is full of) fall back to their world position and a
+   *  close-in distance — the three.js editor's EditorControls.focus() rule. */
+  focusOn(object: THREE.Object3D): void;
   /** IDEA-027: the neutral ground disc reads wrong under a 19x21 maze floor
    *  (board.ts's own floor plane already covers that job) — board mode hides
    *  it; character mode always wants it back. */
@@ -166,6 +182,29 @@ export function createStage(canvas: HTMLCanvasElement): Stage {
   orbit.maxPolarAngle = Math.PI * 0.55; // don't dive below the ground disc
   orbit.update();
 
+  // Orientation cube, bottom-right. NOTE: the parity spec says top-right —
+  // that is r185's placement. At r169 ViewHelper hard-codes `x = width - dim,
+  // y = 0`, i.e. BOTTOM-right, and the offset is a closure local with no
+  // setter, so this is not a knob we can turn without forking the addon.
+  // Bottom-right is fine here: the top-left is where the gizmo bar lives.
+  const viewHelper = new ViewHelper(camera, canvas);
+  // Same pivot as the orbit rig, so clicking a face re-frames the view the
+  // user already has rather than swinging around the world origin.
+  viewHelper.center = orbit.target;
+  let viewHelperOn = true;
+  let viewHelperHit = false;
+
+  // Capture phase: this must resolve BEFORE picking.ts's own bubble-phase
+  // pointerup handler on the same canvas, so a click on the cube can be
+  // marked consumed in time for picking to skip it.
+  canvas.addEventListener(
+    "pointerup",
+    (e) => {
+      viewHelperHit = viewHelperOn && viewHelper.handleClick(e);
+    },
+    true,
+  );
+
   let turntableOn = false;
   let frameCb: ((dt: number, t: number) => void) | null = null;
 
@@ -186,22 +225,66 @@ export function createStage(canvas: HTMLCanvasElement): Stage {
     const dt = Math.min(clock.getDelta(), 0.05);
     t += dt;
     if (turntableOn) contentRoot.rotation.y += dt * TURNTABLE_SPEED;
+    // The cube's fly-to animation drives the camera directly, so it has to
+    // run BEFORE orbit.update() re-reads the camera for damping.
+    if (viewHelper.animating) viewHelper.update(dt);
     orbit.update(); // damping needs a per-frame tick
     frameCb?.(dt, t);
     renderer.render(scene, camera);
+    if (viewHelperOn) {
+      // autoClear off for the overlay pass: ViewHelper.render() does its own
+      // clearDepth and expects the colour buffer to survive. Leaving autoClear
+      // on wipes the frame we just drew and the viewport goes black.
+      renderer.autoClear = false;
+      viewHelper.render(renderer);
+      renderer.autoClear = true;
+    }
   });
+
+  function focusOn(object: THREE.Object3D): void {
+    object.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(object);
+    const center = new THREE.Vector3();
+    let distance: number;
+    if (box.isEmpty()) {
+      object.getWorldPosition(center);
+      distance = 0.1;
+    } else {
+      box.getCenter(center);
+      distance = box.getBoundingSphere(new THREE.Sphere()).radius;
+    }
+    // Pull back along the camera's CURRENT view direction, so focusing keeps
+    // the angle you were already looking from and only changes the framing.
+    const offset = new THREE.Vector3(0, 0, 1)
+      .applyQuaternion(camera.quaternion)
+      .multiplyScalar(Math.max(distance, 0.05) * 4);
+    orbit.target.copy(center);
+    camera.position.copy(center).add(offset);
+    // orbit.update() clamps the result back inside min/max distance, so a
+    // tiny part (a glint, a pupil) can't shove the camera inside the model.
+    orbit.update();
+  }
 
   return {
     scene,
     camera,
     contentRoot,
     orbit,
+    renderer,
     setTurntable(on: boolean): void {
       turntableOn = on;
     },
     setGrid(on: boolean): void {
       grid.visible = on;
     },
+    setViewHelper(on: boolean): void {
+      viewHelperOn = on;
+      if (!on) viewHelperHit = false;
+    },
+    viewHelperConsumedClick(): boolean {
+      return viewHelperHit;
+    },
+    focusOn,
     setGroundVisible(on: boolean): void {
       ground.visible = on;
     },
@@ -213,6 +296,7 @@ export function createStage(canvas: HTMLCanvasElement): Stage {
       renderer.setAnimationLoop(null);
       window.removeEventListener("resize", resize);
       orbit.dispose();
+      viewHelper.dispose();
       renderer.dispose();
     },
   };

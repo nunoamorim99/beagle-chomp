@@ -27,10 +27,18 @@
 import * as THREE from "three";
 import { COLORS } from "../game/config";
 import { type BeagleSkin } from "../game/cosmetics";
-import { getMazeTheme, type MazeTheme } from "../game/themes";
+import { getEquippedMazeTheme, getMazeTheme, type MazeTheme } from "../game/themes";
 import { makeBeagle, makeEnemy, applyBeagleSkin, type BeagleParts } from "./characters";
 import { makePropById, makeLifeBone } from "./board";
+import { floorPreviewTexture } from "./floorTexture";
+import {
+  VIGNETTE_CELLS,
+  applyShowcaseSurfaces,
+  disposeShowcaseSurfaces,
+  type ShowcaseSurfaces,
+} from "./showcaseSurface";
 import { toon } from "./toon";
+import { wallTextureFor } from "./wallTexture";
 
 // Same cheap inward-facing skydome technique as menuScene.ts's own
 // makeBackdrop (itself a copy of scene.ts's) — kept as a third small copy
@@ -87,7 +95,18 @@ const HEDGE_COLOR = COLORS.wall;
 const GRASS_RIM_COLOR = COLORS.wall;
 const BLOOM_COLOR = 0xf2d43a;
 
-function makeGardenPatch(): THREE.Group {
+/** The character stage's own bits, kept so a theme can re-skin them — see
+ *  applyPatchTheme. */
+interface GardenPatch {
+  group: THREE.Group;
+  surfaces: ShowcaseSurfaces;
+  soilMat: THREE.MeshToonMaterial;
+  grassMat: THREE.MeshToonMaterial;
+  hedgeMat: THREE.MeshToonMaterial;
+  bloomMat: THREE.MeshToonMaterial;
+}
+
+function makeGardenPatch(): GardenPatch {
   const g = new THREE.Group();
 
   const soilMat = toon({
@@ -144,7 +163,55 @@ function makeGardenPatch(): THREE.Group {
     hedge.add(bloom);
   });
 
-  return g;
+  return {
+    group: g,
+    // The grass rim is a torus and stays untextured — its UVs wrap the
+    // pattern exactly once around the whole ring, which smears it. Same call
+    // as menuScene's vignette, for the same reason.
+    surfaces: { wall: [hedgeMat], floor: [soilMat], cells: VIGNETTE_CELLS },
+    soilMat,
+    grassMat,
+    hedgeMat,
+    bloomMat,
+  };
+}
+
+/**
+ * Re-skins the character stage to `theme`, in place.
+ *
+ * The stage used to be permanently The Garden, which made it the one screen
+ * where a player who had BOUGHT a theme could not see it: they would equip
+ * Night City, open the shop to look at a beagle, and stand it on a garden
+ * patch. It now follows the equipped theme exactly the way menuScene's
+ * vignette does — same slot mapping (soil = floor, rim + hedge = wall, bloom =
+ * decor), same procedural surfaces on top.
+ */
+function applyPatchTheme(patch: GardenPatch, theme: MazeTheme): void {
+  const p = theme.palette;
+
+  // First: the surfaces pass owns soilMat's COLOUR whenever the theme has a
+  // floor texture (it bakes the palette colour into the canvas, so tinting it
+  // again would square it) — see showcaseSurface.ts.
+  applyShowcaseSurfaces(patch.surfaces, p);
+
+  patch.soilMat.emissive.setHex(p.floorEmissive);
+  patch.soilMat.emissiveIntensity = p.floorEmissiveIntensity;
+
+  // hedgeMat's colour belongs to applyShowcaseSurfaces (it wears the wall
+  // texture); the grass rim is untextured and keeps the palette's wall colour.
+  patch.grassMat.color.setHex(p.wall);
+  for (const mat of [patch.grassMat, patch.hedgeMat]) {
+    mat.emissive.setHex(p.wallEmissive);
+    mat.emissiveIntensity = p.wallEmissiveIntensity;
+  }
+
+  // Arcade Night ships an empty bloom palette (deliberately clean/propless),
+  // so fall back to the biscuit colour rather than a black dot — the same
+  // fallback menuScene's own vignette uses.
+  const bloom = p.bloomColors.length > 0 ? p.bloomColors[0] : p.biscuit;
+  patch.bloomMat.color.setHex(bloom);
+  patch.bloomMat.emissive.setHex(bloom);
+  patch.bloomMat.emissiveIntensity = p.bloomEmissiveIntensity;
 }
 
 // ---------------------------------------------------------------------------
@@ -180,6 +247,23 @@ const DIORAMA_WALL_TILES: ReadonlyArray<[number, number]> = [
 // mid-air (visible in the shop screenshots).
 const DIORAMA_FLOOR_SIZE = { w: 5.0, d: 4.6 };
 const DIORAMA_FLOOR_CENTER = { x: 1.1, z: 1.05 };
+
+// The slab as a TILE PATCH, for floorPreviewTexture — which needs to know
+// where the corridors are, because that is what the garden's stepping stones,
+// the park's gravel walk and the road's lane markings follow.
+//
+// It is the wall run above, transcribed: the slab spans 5 tiles across and
+// (near enough) 5 down, so cell (c, r) is diorama tile (c - 1, r - 1) and the
+// L at (0,0),(1,0),(2,0),(0,1),(0,2) lands at (1,1),(2,1),(3,1),(1,2),(1,3).
+// Keeping it aligned is what makes the preview honest: the trail of stones
+// runs along the open ground the biscuits sit on, not underneath the walls.
+const DIORAMA_FLOOR_CELLS: readonly string[] = [
+  ".....",
+  ".###.",
+  ".#...",
+  ".#...",
+  ".....",
+];
 
 // The trail: 4 biscuits stepping away from the corner along the open
 // diagonal, plus one bone at the far end — echoes board.ts's actual pellet
@@ -309,13 +393,22 @@ function makeThemeDiorama(theme: MazeTheme): THREE.Group {
   const palette = theme.palette;
   const g = new THREE.Group();
 
-  // Floor — same roughness/emissive treatment as board.ts's matFloor.
+  // Floor — same emissive treatment as board.ts's matFloor, and now the same
+  // procedural GROUND too, drawn from DIORAMA_FLOOR_CELLS instead of a maze
+  // grid. board.ts's two rules come with it: a floor texture bakes the
+  // palette colour in, so the material is held at white while one is present
+  // (tinting twice squares the colour), and the same texture drives the
+  // emissive map or the palette's flat emissive lift swamps the pattern on
+  // the dark themes. The diorama OWNS this texture — see disposeHero.
+  const floorTex = floorPreviewTexture(palette.floorTexture, DIORAMA_FLOOR_CELLS, palette.floor);
   const floorMat = toon({
-    color: palette.floor,
-
+    color: floorTex ? 0xffffff : palette.floor,
+    map: floorTex,
+    emissiveMap: floorTex,
     emissive: palette.floorEmissive,
     emissiveIntensity: palette.floorEmissiveIntensity,
   });
+  g.userData.floorTexture = floorTex;
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(DIORAMA_FLOOR_SIZE.w, DIORAMA_FLOOR_SIZE.d), floorMat);
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = -0.01;
@@ -326,10 +419,16 @@ function makeThemeDiorama(theme: MazeTheme): THREE.Group {
   // matWall, instanced exactly like the real board (one draw call for the
   // whole run, even though 5 instances hardly needs it — keeps the "reuse
   // board.ts's recipe" promise literal, not just visual).
+  // The wall SURFACE is wallTextureFor's cached instance — literally the same
+  // texture object the real board's walls use, and the diorama's blocks are
+  // the same 1x1x1 boxes, so this is the maze's own hedge/sand/brick at the
+  // maze's own scale. Shared and cached, so it is never disposed here.
+  const wallTex = wallTextureFor(palette.wallTexture, palette.wall);
   const wallMat = toon({
-    color: palette.wall,
-
-
+    // White while a texture is present: it bakes palette.wall in as its own
+    // ground, exactly like the floor texture below.
+    color: wallTex ? 0xffffff : palette.wall,
+    map: wallTex,
     emissive: palette.wallEmissive,
     emissiveIntensity: palette.wallEmissiveIntensity,
   });
@@ -553,6 +652,11 @@ export interface ShopScene {
    *  makeLifeBone, scaled up and floated above the garden patch, so the player
    *  is shown the exact mesh they need to recognise mid-run. */
   showGoldenBone(): void;
+  /** Re-skins the CHARACTER stage (the soil disc, turf rim, hedges and their
+   *  blooms) to a maze theme's palette and procedural surfaces, so a player
+   *  browsing beagles or enemies stands them on the ground they actually
+   *  own. Independent of showTheme, which stages a theme as the hero. */
+  setMazeTheme(theme: MazeTheme): void;
   /** Releases the current hero's + patch's geometries/materials. Only
    *  meaningful if the whole game is being torn down — the shop scene is
    *  otherwise created once and kept alive for the app's lifetime. */
@@ -615,8 +719,15 @@ export function createShopScene(): ShopScene {
   // both were visible. Kept as a named reference so showTheme/setHero can
   // toggle its `.visible` rather than add/remove it from the scene (cheaper,
   // and avoids re-triggering shadow-map/matrix churn on every tab switch).
-  const gardenPatch = makeGardenPatch();
+  const patch = makeGardenPatch();
+  const gardenPatch = patch.group;
   scene.add(gardenPatch);
+
+  // Show the EQUIPPED theme from the first paint rather than flashing the
+  // garden default — same reasoning (and the same guarantee that the profile
+  // is hydrated before Game is constructed) as menuScene's own first-paint
+  // applyTheme.
+  applyPatchTheme(patch, getEquippedMazeTheme());
 
   // IDEA-026: default atmosphere values, captured once, so showBeagle/
   // showEnemy can restore the standard shop look exactly (bitwise) after a
@@ -643,6 +754,12 @@ export function createShopScene(): ShopScene {
    *  replacement is added) and final dispose() below. */
   function disposeHero(obj: THREE.Group): void {
     scene.remove(obj);
+    // A theme diorama draws its own ground and is the only owner of it.
+    // Material.dispose() does NOT free a map, so browsing the Themes tab
+    // would leak one canvas texture per tap without this. The WALL map is
+    // deliberately left alone: it is wallTextureFor's shared, cached
+    // instance — the same object the real board's walls hold.
+    (obj.userData.floorTexture as THREE.Texture | undefined)?.dispose();
     obj.traverse((o) => {
       if (o instanceof THREE.Mesh) {
         o.geometry.dispose();
@@ -805,8 +922,12 @@ export function createShopScene(): ShopScene {
       setHero(next, "theme");
       tintAtmosphere(theme.palette.bg, theme.palette.hemiSky, theme.palette.hemiGround);
     },
+    setMazeTheme(theme: MazeTheme): void {
+      applyPatchTheme(patch, theme);
+    },
     dispose(): void {
       disposeHero(hero);
+      disposeShowcaseSurfaces(patch.surfaces);
     },
   };
 }

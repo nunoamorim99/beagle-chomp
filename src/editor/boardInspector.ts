@@ -57,7 +57,7 @@ import { type BoardSlotId } from "./boardTree";
 import type { WorkingTheme, WorkingPropPlacement, WorkingWallDecorPlacement } from "./boardCodegen";
 import { propOptionsFor, type PlacementSelection } from "./boardPlacement";
 import { MAZE_THEMES } from "../game/themes";
-import { wallTextureFor, type WallTextureKind } from "../render/wallTexture";
+import { type WallTextureKind } from "../render/wallTexture";
 import { type FloorTextureKind } from "../render/floorTexture";
 
 const MAX_BLOOM_COLORS = 4;
@@ -359,10 +359,16 @@ export function createBoardInspector(
     const folder = gui.addFolder("Walls");
     folders.walls = folder;
     const p = theme.palette;
+    // Bound to the PALETTE, not to wall.color — the same reason as the floor
+    // below. A wall surface bakes the palette colour into its canvas and the
+    // material is held at white, so writing the material here would be painted
+    // over on the next rebuild AND double-tint the texture until then.
+    // Rebuilding on finish rather than on change keeps a colour drag cheap.
     folder
-      .addColor(colorProxy(wall.color), "color")
+      .addColor({ color: "#" + p.wall.toString(16).padStart(6, "0") }, "color")
       .name("wall color")
-      .onChange((v: string) => { p.wall = new THREE.Color(v).getHex(); });
+      .onChange((v: string) => { p.wall = new THREE.Color(v).getHex(); })
+      .onFinishChange(() => cb.onDecorChange());
     folder
       .addColor(colorProxy(wall.emissive), "color")
       .name("wall emissive")
@@ -372,20 +378,17 @@ export function createBoardInspector(
       .name("emissive intensity")
       .onChange((v: number) => { p.wallEmissiveIntensity = v; });
     // The wall's SURFACE — a procedural texture generated in code
-    // (src/render/wallTexture.ts), not an asset. Swapping it live needs
-    // `needsUpdate`: changing a map between null and a texture changes the
-    // shader program, and without the flag the board keeps rendering with the
-    // old one until some unrelated recompile.
+    // (src/render/wallTexture.ts), not an asset. Routed through
+    // onDecorChange like the ground below, which re-runs applyBoardTheme:
+    // that owns both halves of the contract this control used to hand-roll —
+    // the `needsUpdate` a null-to-texture swap needs (it changes the shader
+    // program), and holding the material white while a texture is on.
     folder
       .add({ wallTexture: p.wallTexture }, "wallTexture", ["flat", "hedge", "sand", "brick"])
       .name("surface")
       .onChange((v: WallTextureKind) => {
         p.wallTexture = v;
-        const next = wallTextureFor(v);
-        if (wall.map !== next) {
-          wall.map = next;
-          wall.needsUpdate = true;
-        }
+        cb.onDecorChange();
       });
   }
 
@@ -412,7 +415,7 @@ export function createBoardInspector(
     // through onDecorChange, which re-runs applyBoardTheme with the live grid.
     folder
       .add({ floorTexture: p.floorTexture }, "floorTexture",
-        ["flat", "stone", "earth", "sand", "parkGrass", "road"])
+        ["flat", "lawn", "earth", "sand", "parkGrass", "road"])
       .name("ground")
       .onChange((v: FloorTextureKind) => {
         p.floorTexture = v;

@@ -444,7 +444,6 @@ function buildWallTopDecor(scene: THREE.Object3D, grid: Grid, theme: MazeTheme):
  * two can never drift.
  */
 function syncBoardMaterials(palette: ThemePalette, grid: Grid): void {
-  matWall.color.set(palette.wall);
   matWall.emissive.set(palette.wallEmissive);
   matWall.emissiveIntensity = palette.wallEmissiveIntensity;
   // The theme's SURFACE (hedge / sand / brick / none). Swapping a map between
@@ -453,11 +452,14 @@ function syncBoardMaterials(palette: ThemePalette, grid: Grid): void {
   // renders untextured and only picks the pattern up on some unrelated later
   // recompile. Only flagged when the map actually changed, since a needless
   // recompile stalls the frame.
-  const wallMap = wallTextureFor(palette.wallTexture);
+  const wallMap = wallTextureFor(palette.wallTexture, palette.wall);
   if (matWall.map !== wallMap) {
     matWall.map = wallMap;
     matWall.needsUpdate = true;
   }
+  // Same rule as the floor below: a wall texture bakes palette.wall in as its
+  // own ground, so the material must NOT tint it a second time.
+  matWall.color.set(wallMap ? 0xffffff : palette.wall);
 
   // matFloor.color is set BELOW, once the ground texture is known — a textured
   // floor carries the palette colour inside the canvas and must stay white.

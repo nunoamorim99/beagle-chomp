@@ -41,6 +41,18 @@ import {
 } from "./inspector";
 import { createSourceView } from "./sourceView";
 import { attachPicking } from "./picking";
+// Direct manipulation: the viewport transform gizmo. Ported from the three.js
+// editor's Viewport.js interaction contract, but committing through this
+// file's own pushTransformHistory so a drag and a typed coordinate are the
+// same edit downstream — see gizmo.ts's header.
+import { createGizmo, GIZMO_MODES, type GizmoMode } from "./gizmo";
+// Viewport furniture: the scene readout + solid/wireframe/normals shading.
+import { createViewportExtras, SHADING_MODES, type ShadingMode } from "./viewportExtras";
+// Play/scrub the REAL procedural animation, with sampled per-channel tracks.
+import { createTimeline } from "./timeline";
+// glTF out (export the character) and in (a reference model to build
+// against — see assets.ts's header for why it can never be saved).
+import { exportGLB, loadReference, isGltfFile, type ReferenceModel } from "./assets";
 import { Highlighter } from "./highlight";
 import { applyBeagleSkin, type GhostUserData } from "../render/characters";
 import { getBeagleSkin, DEFAULT_BEAGLE_SKIN_ID } from "../game/cosmetics";
@@ -133,6 +145,15 @@ const modeBoardBtn = byId<HTMLButtonElement>("modeBoardBtn");
 const modePropsBtn = byId<HTMLButtonElement>("modePropsBtn");
 const modePickupsBtn = byId<HTMLButtonElement>("modePickupsBtn");
 const viewportHint = byId<HTMLDivElement>("viewportHint");
+const gizmoBar = byId<HTMLDivElement>("gizmoBar");
+const gizmoSpaceBtn = byId<HTMLButtonElement>("gizmoSpaceBtn");
+const gizmoSnapBtn = byId<HTMLButtonElement>("gizmoSnapBtn");
+const gizmoOffBtn = byId<HTMLButtonElement>("gizmoOffBtn");
+const focusBtn = byId<HTMLButtonElement>("focusBtn");
+const shadingSelect = byId<HTMLSelectElement>("shadingSelect");
+const viewCubeBtn = byId<HTMLButtonElement>("viewCubeBtn");
+const infoBtn = byId<HTMLButtonElement>("infoBtn");
+const viewportInfo = byId<HTMLDivElement>("viewportInfo");
 // IDEA-033: Props mode's second tree pane (the selected prop's own component
 // list) — see editor/index.html's own note on why this is a SEPARATE DOM
 // node from #partTree rather than a second view fighting for the same one.
@@ -165,6 +186,203 @@ let log = new EditLog();
 let generatedText = "";
 const history = new History();
 
+// --- transform gizmo ---
+// Set by the gizmo's per-drag-frame callback and flushed once in the render
+// loop below. The reference editor dispatches `objectChanged` on every drag
+// frame and lets each panel decide; we coalesce instead, because our
+// inspector is a lil-gui folder whose refresh is a full rebuild — doing that
+// 60x a second during a drag is what would make the gizmo feel worse than
+// the arrow keys, not better.
+let gizmoDirty = false;
+
+/** Which EditLog channel the current gizmo mode writes. */
+function gizmoChannel(): TransformChannel {
+  const m = gizmo.getMode();
+  return m === "translate" ? "position" : m === "rotate" ? "rotation" : "scale";
+}
+
+const gizmo = createGizmo({
+  camera: stage.camera,
+  canvas,
+  scene: stage.scene,
+  orbit: stage.orbit,
+  onCommit: (channel, changes) => {
+    // One drag = one undo entry, however many parts moved. The single-part
+    // case routes through the SAME pushTransformHistory the inspector's
+    // number fields use, so a drag and a typed coordinate stay identical
+    // downstream; the multi-part case wraps N of them in one transaction.
+    //
+    // No coalesceKey either way: a drag is already one gesture, and sharing
+    // a key with the typed field would let a drag swallow a later nudge.
+    const moved = changes
+      .map((c) => ({ node: nodeByObject.get(c.object), change: c }))
+      .filter((m): m is { node: PartNode; change: (typeof changes)[number] } => m.node !== undefined);
+    if (moved.length === 0) return;
+
+    // The per-frame drag flush only touches the PRIMARY (it is the one the
+    // gizmo handle is on), so the followers' edits have to be registered
+    // here or they would not reach codegen until an undo/redo ran.
+    for (const m of moved) log.touchTransform(m.node, channel);
+
+    if (moved.length === 1) {
+      pushTransformHistory(moved[0].node, channel, moved[0].change.before, moved[0].change.after);
+    } else {
+      history.begin();
+      for (const m of moved) pushTransformHistory(m.node, channel, m.change.before, m.change.after);
+      history.commit(`${channel} ${moved.length} parts`);
+    }
+    // Catch the inspector's number fields up to where the drag left the part.
+    afterHistoryApply(selected);
+  },
+  onDrag: () => {
+    gizmoDirty = true;
+  },
+  onModeChange: (m) => syncGizmoBar(m),
+});
+
+/** Reflects the gizmo's mode back onto the toolbar, so the keyboard
+ *  shortcuts and the buttons can never disagree about which one is live —
+ *  the same "toolbar subscribes to the mode signal" arrangement the three.js
+ *  editor uses, minus the signal bus (one call site does not need one). */
+function syncGizmoBar(mode: GizmoMode): void {
+  for (const btn of document.querySelectorAll<HTMLButtonElement>(".gizmo-btn")) {
+    btn.classList.toggle("active", btn.dataset.gizmo === mode);
+  }
+}
+
+for (const btn of document.querySelectorAll<HTMLButtonElement>(".gizmo-btn")) {
+  btn.addEventListener("click", () => {
+    const mode = btn.dataset.gizmo as GizmoMode | undefined;
+    if (mode && (GIZMO_MODES as readonly string[]).includes(mode)) gizmo.setMode(mode);
+  });
+}
+
+let gizmoWorldSpace = false;
+gizmoSpaceBtn.addEventListener("click", () => {
+  gizmoWorldSpace = !gizmoWorldSpace;
+  gizmo.setSpace(gizmoWorldSpace ? "world" : "local");
+  gizmoSpaceBtn.textContent = gizmoWorldSpace ? "World" : "Local";
+  gizmoSpaceBtn.classList.toggle("active", gizmoWorldSpace);
+});
+
+let gizmoSnap = false;
+gizmoSnapBtn.addEventListener("click", () => {
+  gizmoSnap = !gizmoSnap;
+  gizmo.setSnap(gizmoSnap);
+  gizmoSnapBtn.classList.toggle("active", gizmoSnap);
+});
+
+function setGizmoEnabled(on: boolean): void {
+  gizmo.setEnabled(on);
+  gizmoOffBtn.textContent = on ? "Hide" : "Show";
+  gizmoOffBtn.classList.toggle("active", !on);
+}
+gizmoOffBtn.addEventListener("click", () => setGizmoEnabled(!gizmo.isEnabled()));
+
+// --- viewport furniture: focus, shading, orientation cube, info ---
+const viewportExtras = createViewportExtras({ info: viewportInfo, renderer: stage.renderer });
+
+/** Frames the current selection, or the whole character when nothing is
+ *  selected — "F with nothing selected does nothing" is a dead key. */
+function focusSelection(): void {
+  const target = selected?.object ?? group;
+  if (target) stage.focusOn(target);
+}
+focusBtn.addEventListener("click", focusSelection);
+
+shadingSelect.addEventListener("change", () => {
+  const mode = shadingSelect.value as ShadingMode;
+  if (!(SHADING_MODES as readonly string[]).includes(mode)) return;
+  viewportExtras.setShading(mode);
+  viewportExtras.reapply(group);
+});
+
+viewCubeBtn.addEventListener("click", () => {
+  const on = !viewCubeBtn.classList.contains("active");
+  viewCubeBtn.classList.toggle("active", on);
+  stage.setViewHelper(on);
+});
+
+infoBtn.addEventListener("click", () => {
+  const on = !infoBtn.classList.contains("active");
+  infoBtn.classList.toggle("active", on);
+  viewportExtras.setInfoVisible(on);
+});
+
+// --- glTF export + reference model ---
+const exportGlbBtn = byId<HTMLButtonElement>("exportGlbBtn");
+const refLoadBtn = byId<HTMLButtonElement>("refLoadBtn");
+const refClearBtn = byId<HTMLButtonElement>("refClearBtn");
+const refFileInput = byId<HTMLInputElement>("refFileInput");
+
+let reference: ReferenceModel | null = null;
+
+exportGlbBtn.addEventListener("click", () => {
+  if (!group) return;
+  void exportGLB(group, `${def.builderName}.glb`)
+    .then(() => flash(exportGlbBtn, "Saved ✓", true))
+    .catch((err: unknown) => {
+      console.error("GLB export failed", err);
+      flash(exportGlbBtn, "Failed", false);
+    });
+});
+
+function clearReference(): void {
+  reference?.dispose();
+  reference = null;
+  refClearBtn.hidden = true;
+  refLoadBtn.classList.remove("active");
+  refLoadBtn.textContent = "Ref";
+}
+
+function adoptReference(model: ReferenceModel): void {
+  clearReference();
+  reference = model;
+  // Parented to contentRoot, NOT the scene: the turntable should swing the
+  // reference and the character together, or they stop lining up the moment
+  // you spin the view.
+  stage.contentRoot.add(model.root);
+  refClearBtn.hidden = false;
+  refLoadBtn.classList.add("active");
+  refLoadBtn.textContent = "Ref ✓";
+  refLoadBtn.title =
+    `${model.name} — ${model.size.toFixed(2)} units across. Reference only: it is never saved into ${def.sourceFile}.`;
+}
+
+function loadReferenceFile(file: File): void {
+  if (!isGltfFile(file)) {
+    flash(refLoadBtn, "Not glTF", false);
+    return;
+  }
+  void loadReference(file)
+    .then(adoptReference)
+    .catch((err: unknown) => {
+      console.error("reference load failed", err);
+      flash(refLoadBtn, "Failed", false);
+    });
+}
+
+refLoadBtn.addEventListener("click", () => refFileInput.click());
+refClearBtn.addEventListener("click", clearReference);
+refFileInput.addEventListener("change", () => {
+  const file = refFileInput.files?.[0];
+  if (file) loadReferenceFile(file);
+  refFileInput.value = ""; // so re-picking the same file fires change again
+});
+
+// Drag a .glb straight onto the viewport. preventDefault on dragover is what
+// makes the canvas a drop target at all; without it the browser navigates
+// away to the file, taking the editor (and any unsaved edits) with it.
+canvas.addEventListener("dragover", (e) => {
+  e.preventDefault();
+  if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+});
+canvas.addEventListener("drop", (e) => {
+  e.preventDefault();
+  const file = e.dataTransfer?.files?.[0];
+  if (file) loadReferenceFile(file);
+});
+
 // --- code panel ---
 function renderGenerated(text: string): void {
   const code = generatedPre.querySelector("code");
@@ -185,13 +403,64 @@ function updateGenerated(): void {
 }
 
 // --- part list bookkeeping (tree, maps, materials) ---
-const tree = createPartTreeView(treeContainer, (node) => select(node));
+const tree = createPartTreeView(
+  treeContainer,
+  // Ctrl/Cmd/Shift-click toggles the part in or out of the selection;
+  // a plain click replaces it.
+  (node, intent) => (intent.toggle ? toggleSelection(node) : select(node)),
+  {
+    onFocus: (node) => stage.focusOn(node.object),
+    onReparent: (node, newParent) => reparentAddedPart(node, newParent),
+  },
+);
+
+/**
+ * Moves an editor-ADDED part under a new parent (drag-and-drop in the tree).
+ *
+ * Restricted to added parts by partTree.ts, and this function re-checks
+ * rather than trusting it: an ORIGINAL part's parent is decided by the
+ * builder in characters.ts, and codegen has no line it could emit to
+ * re-attach it — moving one would look right in the viewport and then vanish
+ * on save, which is the exact failure mode the editor-residue incidents were
+ * about. An added part codegen's as `<parentVar>.add(<name>)`, so a reparent
+ * is representable: change the record's parentVar and the emitted line
+ * follows.
+ */
+function reparentAddedPart(node: PartNode, newParent: PartNode): void {
+  const record = log.findAddedPart(node.object);
+  if (!record) return; // not an added part — nothing we could persist
+  const fromParent = node.object.parent;
+  if (!fromParent || fromParent === newParent.object) return;
+  const fromVar = record.parentVar;
+
+  const move = (parent: THREE.Object3D, parentVar: string) => (): void => {
+    parent.add(record.object);
+    record.parentVar = parentVar;
+    refreshParts();
+    // The moved row is at a new path, so re-select by OBJECT rather than
+    // trying to carry the stale path across.
+    const moved = nodeByObject.get(record.object);
+    select(moved ?? null);
+    updateGenerated();
+  };
+
+  move(newParent.object, newParent.varName)();
+  history.push({
+    undo: move(fromParent, fromVar),
+    redo: move(newParent.object, newParent.varName),
+    label: `reparent ${record.name} → ${newParent.varName}`,
+  });
+}
 
 function refreshParts(): void {
   if (!group) return;
   nodes = buildPartList(group, def.label);
   nodeByObject = new Map(nodes.map((n) => [n.object, n]));
-  materials = collectMaterials(group, nodes);
+  // The material registry must be built from the character's OWN materials.
+  // In "normals" shading every mesh is temporarily wearing one shared
+  // MeshNormalMaterial, so collect with the real ones put back — see
+  // withRealMaterials' doc comment for what goes wrong otherwise.
+  materials = viewportExtras.withRealMaterials(group, () => collectMaterials(group!, nodes));
   materialByUuid = new Map(materials.map((m) => [m.material.uuid, m]));
   tree.render(nodes);
 }
@@ -229,11 +498,46 @@ function setAnimation(mode: AnimMode): void {
 }
 
 // --- selection ---
+//
+// `selection` is the full set; `selected` is its PRIMARY — selection[0], the
+// most recently clicked part. Everything that edits ONE thing (the inspector,
+// the source-view marker, the code panel's "Selected:" folder) keys off the
+// primary, exactly as it did when single selection was all there was.
+// Everything that can sensibly act on MANY (the gizmo, Delete) reads the
+// whole set. That split is what let multi-select land without touching the
+// inspector at all.
+let selection: PartNode[] = [];
+
+/** Replaces the selection with `node` (or clears it). */
 function select(node: PartNode | null): void {
+  setSelection(node ? [node] : []);
+}
+
+/** Ctrl/Shift-click: add the part if it is out, drop it if it is in. The
+ *  newly added part becomes the primary, so the inspector follows the thing
+ *  you just clicked. */
+function toggleSelection(node: PartNode): void {
+  const without = selection.filter((n) => n.path !== node.path);
+  setSelection(without.length === selection.length ? [node, ...selection] : without);
+}
+
+/** Every editable part — the root is excluded for the same reason the gizmo
+ *  skips it: it is not a part Save can write. */
+function selectAllParts(): void {
+  setSelection(nodes.filter((n) => n.path !== ""));
+}
+
+function setSelection(next: PartNode[]): void {
+  selection = next;
+  const node = selection[0] ?? null;
   selected = node;
-  tree.setSelected(node?.path ?? null);
-  highlighter.set(state.highlight ? node : null);
+  tree.setSelected(selection.map((n) => n.path));
+  highlighter.set(state.highlight ? selection : []);
   if (node && state.animation !== "off") setAnimation("off"); // hold still while editing
+  // The gizmo drives the whole selection, primary first. The root (path "")
+  // is excluded: Save never writes its transform, so a gizmo on it would be a
+  // control wired to nothing (IDEA-041's rule).
+  gizmo.attach(selection.filter((n) => n.path !== "").map((n) => n.object));
   inspector.setSelection(node, node ? selectionContext() : null);
   sourceView.markVar(node && !node.isAutoNamed && !node.isAdded ? node.varName : null);
 }
@@ -257,7 +561,7 @@ function selectionContext() {
     },
     onGeometryRebuilt: (node: PartNode) => {
       // The wireframe overlay shares the mesh's geometry — refresh it.
-      if (selected === node) highlighter.set(state.highlight ? node : null);
+      if (selected === node) highlighter.set(state.highlight ? selection : []);
     },
     onDelete: deleteNode,
     onTransformCommitted: pushTransformHistory,
@@ -267,7 +571,11 @@ function selectionContext() {
         log.touchVisible(node);
         afterHistoryApply(node);
       };
-      history.push({ undo: apply(before), redo: apply(after) });
+      history.push({
+        undo: apply(before),
+        redo: apply(after),
+        label: `${after ? "show" : "hide"} ${node.varName}`,
+      });
     },
     onMaterialCommitted: (info: MaterialInfo, before: MaterialSnapshot, after: MaterialSnapshot) => {
       const apply = (value: MaterialSnapshot) => (): void => {
@@ -279,7 +587,12 @@ function selectionContext() {
         log.touchMaterial(info);
         afterHistoryApply(null);
       };
-      history.push({ undo: apply(before), redo: apply(after), coalesceKey: `mat:${info.material.uuid}` });
+      history.push({
+        undo: apply(before),
+        redo: apply(after),
+        coalesceKey: `mat:${info.material.uuid}`,
+        label: `material ${info.varName}`,
+      });
     },
     onParamCommitted: (record: AddedPartRecord, key: string, before: number, after: number) => {
       const apply = (value: number) => (): void => {
@@ -287,10 +600,15 @@ function selectionContext() {
         record.object.geometry.dispose();
         record.object.geometry = buildPrimitiveGeometry(record.kind, record.params);
         const node = nodeByObject.get(record.object);
-        if (node && selected === node) highlighter.set(state.highlight ? node : null); // overlay shares the geometry
+        if (node && selected === node) highlighter.set(state.highlight ? selection : []); // overlay shares the geometry
         afterHistoryApply(node ?? null);
       };
-      history.push({ undo: apply(before), redo: apply(after), coalesceKey: `param:${record.name}:${key}` });
+      history.push({
+        undo: apply(before),
+        redo: apply(after),
+        coalesceKey: `param:${record.name}:${key}`,
+        label: `${record.name} ${key}`,
+      });
     },
   };
 }
@@ -323,7 +641,7 @@ function pushTransformHistory(
     log.touchTransform(node, channel);
     afterHistoryApply(node);
   };
-  history.push({ undo: apply(before), redo: apply(after), coalesceKey });
+  history.push({ undo: apply(before), redo: apply(after), coalesceKey, label: `${channel} ${node.varName}` });
 }
 
 // --- character build / switch ---
@@ -364,6 +682,10 @@ function buildCharacter(): void {
   saveFileBtn.textContent = `💾 Save to ${shortFile}`;
   saveFileBtn.title = `Write your edits straight into ${def.sourceFile} (dev server only). The safe way — no copy-paste.`;
   codeTitle.textContent = `${def.builderName}() — ${def.sourceFile}`;
+  // A shading override is a property of the VIEW, not the character, so it
+  // has to be re-applied to the meshes the rebuild just created.
+  viewportExtras.reapply(group);
+  if (animationTabOpen) timeline.rebuild();
   updateGenerated();
 }
 
@@ -446,6 +768,7 @@ function addPart(kind: PrimKind, rawName: string): void {
     undo: () => detachAdded(record),
     redo: () => attachAdded(record, parent),
     onDiscard: discardAdded(record),
+    label: `add ${name}`,
   });
   const node = nodeByObject.get(mesh);
   if (node) select(node); // straight into tweaking it
@@ -460,6 +783,7 @@ function deletePart(node: PartNode): void {
     undo: () => attachAdded(record, parent),
     redo: () => detachAdded(record),
     onDiscard: discardAdded(record),
+    label: `delete ${record.name}`,
   });
 }
 
@@ -525,6 +849,7 @@ function deleteOriginalPart(node: PartNode): void {
   history.push({
     undo: () => attachOriginalAt(rec),
     redo: () => detachOriginal(rec),
+    label: `delete ${rec.varName}`,
     // No onDiscard: nothing to dispose. If the redo stack is wiped (a new
     // action after undo) the part simply stays in the scene, un-deleted —
     // exactly as if the delete had never happened, which is correct: the
@@ -539,6 +864,35 @@ function deleteOriginalPart(node: PartNode): void {
 function deleteNode(node: PartNode): void {
   if (log.findAddedPart(node.object)) deletePart(node);
   else deleteOriginalPart(node);
+}
+
+/**
+ * Deletes the WHOLE selection as one undoable step.
+ *
+ * Deepest-first, so deleting a group and something inside it in the same
+ * gesture cannot have the child's delete run against a parent that has
+ * already left the scene graph. Descendants of an already-deleted group are
+ * skipped outright — the group's own delete took the entire subtree with it,
+ * and deleting a child again would push a second entry for a part that is
+ * already gone.
+ */
+function deleteSelection(): void {
+  const doomed = selection
+    .filter((n) => n.path !== "")
+    .sort((a, b) => b.path.split("/").length - a.path.split("/").length);
+  if (doomed.length === 0) return;
+  if (doomed.length === 1) {
+    deleteNode(doomed[0]);
+    return;
+  }
+  const gone = new Set<string>();
+  history.begin();
+  for (const node of doomed) {
+    if ([...gone].some((p) => node.path === p || node.path.startsWith(`${p}/`))) continue;
+    gone.add(node.path);
+    deleteNode(node);
+  }
+  history.commit(`delete ${gone.size} parts`);
 }
 
 // --- inspector (right pane) ---
@@ -568,7 +922,7 @@ const inspector = createInspector(charGuiHost, state, {
   onGrid: (on) => stage.setGrid(on),
   // Hide the pink wireframe to judge the result cleanly; selection itself
   // (tree row, controls, code marker) stays active.
-  onHighlight: (on) => highlighter.set(on ? selected : null),
+  onHighlight: (on) => highlighter.set(on ? selection : []),
   onAddPart: (kind, name) => addPart(kind, name),
 });
 
@@ -583,6 +937,10 @@ attachPicking(
   () => (mode === "character" || mode === "pickups" ? group : null),
   (object) => nodeByObject.get(object),
   (node) => select(node),
+  // Releasing a gizmo handle must not land as a click on the part behind it.
+  // …and neither may a click on the orientation cube, which sits over the
+  // viewport and would otherwise also select whatever part is behind it.
+  () => gizmo.isBlocking() || stage.viewHelperConsumedClick(),
 );
 
 // IDEA-033: a SECOND attachPicking instance, scoped to Props mode's own
@@ -621,7 +979,22 @@ stage.onFrame((_dt, t) => {
   // highlighter itself is already empty in board mode since select(null) ran
   // on the way in, but the explicit gate documents the intent either way).
   if (mode === "character" || mode === "pickups") {
-    if (group && state.animation !== "off") def.animate(group, state.animation, _dt);
+    // Exactly one driver for the animation: the timeline when its tab is
+    // open (it owns play/pause/scrub), the free-running preview otherwise.
+    if (animationTabOpen) timeline.update(_dt);
+    else if (group && state.animation !== "off") def.animate(group, state.animation, _dt);
+    // Flush one drag's worth of gizmo movement (see gizmoDirty's note): mark
+    // the channel edited so the generated code follows the handle live. The
+    // inspector's own fields are left until mouseUp — a full lil-gui rebuild
+    // per frame is the one thing that would make dragging feel worse.
+    if (gizmoDirty) {
+      gizmoDirty = false;
+      if (selected) {
+        log.touchTransform(selected, gizmoChannel());
+        updateGenerated();
+      }
+    }
+    viewportExtras.update(group, _dt);
     highlighter.update();
   }
   // IDEA-034: the empty-slot marker PULSE (see boardPlacement.ts's
@@ -635,14 +1008,103 @@ stage.onFrame((_dt, t) => {
 });
 
 // --- code panel chrome: tabs + copy ---
+/** data-tab value → the view element it shows. */
+const CODE_VIEWS: Record<string, string> = {
+  generated: "generatedView",
+  source: "sourceView",
+  history: "historyView",
+  animation: "animationView",
+};
+
+/** True while the Animation tab is the visible code view — it owns the
+ *  animation frame while open (see the frame callback). */
+let animationTabOpen = false;
+
 for (const tab of document.querySelectorAll<HTMLButtonElement>(".code-tab")) {
   tab.addEventListener("click", () => {
     document.querySelectorAll(".code-tab").forEach((t) => t.classList.remove("active"));
     document.querySelectorAll(".code-view").forEach((v) => v.classList.remove("active"));
     tab.classList.add("active");
-    byId(tab.dataset.tab === "source" ? "sourceView" : "generatedView").classList.add("active");
+    byId(CODE_VIEWS[tab.dataset.tab ?? "generated"] ?? "generatedView").classList.add("active");
+    // The timeline DRIVES the animation while its tab is open (see the frame
+    // callback) — two drivers stepping the same character would double its
+    // speed. Re-scan on open so the tracks match the current mode.
+    animationTabOpen = tab.dataset.tab === "animation";
+    if (animationTabOpen) timeline.rebuild();
   });
 }
+
+// --- history panel (click a step to jump to that state) ---
+const historyView = byId<HTMLDivElement>("historyView");
+
+function renderHistoryPanel(): void {
+  const steps = history.list();
+  const position = history.position();
+  historyView.textContent = "";
+
+  // Row 0 is the ORIGINAL state — without it there is no way to click your
+  // way back to "before any edit", only to keep pressing Ctrl+Z.
+  const rows: Array<{ label: string; target: number; done: boolean }> = [
+    { label: "original build", target: 0, done: true },
+    ...steps.map((s, i) => ({ label: s.label, target: i + 1, done: s.done })),
+  ];
+
+  for (const row of rows) {
+    const el = document.createElement("div");
+    el.className = "history-row";
+    if (!row.done) el.classList.add("undone");
+    if (row.target === position) el.classList.add("current");
+    const n = document.createElement("span");
+    n.className = "history-index";
+    n.textContent = row.target === 0 ? "·" : String(row.target);
+    const label = document.createElement("span");
+    label.className = "history-label";
+    label.textContent = row.label;
+    el.append(n, label);
+    el.addEventListener("click", () => {
+      history.goTo(row.target);
+      // The jump ran undo()/redo() closures, which already repaint the code
+      // panel and inspector via afterHistoryApply — but the SELECTION may
+      // now point at a part those closures added or removed, so re-derive
+      // the part list rather than trusting the stale one.
+      refreshParts();
+      const stillThere = selected && nodes.some((n2) => n2.path === selected?.path);
+      if (!stillThere) select(null);
+      updateGenerated();
+    });
+    historyView.appendChild(el);
+  }
+  if (steps.length === 0) {
+    const hint = document.createElement("div");
+    hint.className = "history-hint";
+    hint.textContent = "No edits yet — every change you make lists here, click one to jump back to it.";
+    historyView.appendChild(hint);
+  }
+}
+
+history.onChange = renderHistoryPanel;
+renderHistoryPanel();
+
+// --- animation timeline ---
+// The host is deliberately thin: the timeline never touches the character
+// itself, it asks main.ts to reset or step the REAL animation. reset() is
+// the same setAnimation("off") restore path the GUI dropdown uses, so a
+// scrub back to zero and choosing "off" from the menu land on identical
+// poses — no second definition of "the authored pose".
+const timeline = createTimeline(byId<HTMLDivElement>("animationView"), {
+  reset: () => {
+    if (!group) return;
+    const playing = state.animation;
+    setAnimation("off");
+    state.animation = playing; // keep the CHOSEN mode; only the pose was reset
+    inspector.setAnimation(playing);
+  },
+  step: (dt) => {
+    if (group && state.animation !== "off") def.animate(group, state.animation, dt);
+  },
+  nodes: () => nodes,
+  isAnimating: () => state.animation !== "off",
+});
 
 function flash(btn: HTMLButtonElement, message: string, ok: boolean): void {
   const original = btn.dataset.label ?? btn.textContent ?? "";
@@ -890,6 +1352,24 @@ window.addEventListener(
     // Arrows inside a number field / dropdown belong to the widget.
     if (inTextField || active instanceof HTMLSelectElement) return;
 
+    // Gizmo modes. Deliberately NOT the reference editor's w/e/r: `r` and `s`
+    // are already taken HERE as held modifiers for arrow-key rotate/scale
+    // nudging (scaleKeyHeld/rotateKeyHeld, just below), so binding `r` to
+    // "rotate mode" would fire every time you reached for a rotate nudge and
+    // silently change the gizmo out from under you. `t` takes scale's slot.
+    if (key === "w" || key === "e" || key === "t") {
+      gizmo.setMode(key === "w" ? "translate" : key === "e" ? "rotate" : "scale");
+      return;
+    }
+    if (key === "q") {
+      setGizmoEnabled(!gizmo.isEnabled());
+      return;
+    }
+    if (key === "f") {
+      focusSelection();
+      return;
+    }
+
     if (key === "s") scaleKeyHeld = true;
     if (key === "r") rotateKeyHeld = true;
 
@@ -905,10 +1385,29 @@ window.addEventListener(
     // field, and it wasn't part of the spec — Delete only.)
     if (selected && selected.path !== "" && e.key === "Delete") {
       e.preventDefault();
-      deleteNode(selected);
+      deleteSelection();
       return;
     }
-    if (selected && (e.key === "ArrowUp" || e.key === "ArrowDown" || e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+    // Select-all / deselect toggle. Plain `a` (no Ctrl): Ctrl+A is the
+    // browser's select-all and taking it over inside a dev tool that also
+    // has text fields is more annoying than it is worth.
+    if (key === "a" && !e.ctrlKey && !e.metaKey) {
+      e.preventDefault();
+      if (selection.length > 0) select(null);
+      else selectAllParts();
+      return;
+    }
+    // Up/Down inside the focused part tree NAVIGATE it (partTree.ts owns that
+    // handler) — they must not also nudge the selected part's transform, or
+    // one keypress would move the selection AND move the model. Left/Right
+    // are not tree keys, so they keep nudging even while the tree has focus.
+    const treeNavigating =
+      active === treeContainer && (e.key === "ArrowUp" || e.key === "ArrowDown");
+    if (
+      selected &&
+      !treeNavigating &&
+      (e.key === "ArrowUp" || e.key === "ArrowDown" || e.key === "ArrowLeft" || e.key === "ArrowRight")
+    ) {
       e.preventDefault();
       const step = e.shiftKey ? NUDGE_COARSE : e.altKey ? NUDGE_FINE : NUDGE_STEP;
       if (scaleKeyHeld) nudgeScaleSelected(e.key, step);
@@ -1639,7 +2138,7 @@ function refreshPropParts(): void {
   propPartNodes = buildPartList(mesh, def?.name ?? "Prop");
   propPartNodeByObject = new Map(propPartNodes.map((n) => [n.object, n]));
   propPartTree.render(propPartNodes);
-  if (selectedPropPart) propPartTree.setSelected(selectedPropPart.path);
+  if (selectedPropPart) propPartTree.setSelected([selectedPropPart.path]);
 }
 
 /** Selection for a prop's OWN component — the props-mode analogue of
@@ -1650,8 +2149,8 @@ function refreshPropParts(): void {
  *  overlay can never belong to two modes at once). */
 function selectPropPart(node: PartNode | null): void {
   selectedPropPart = node;
-  propPartTree.setSelected(node?.path ?? null);
-  highlighter.set(state.highlight ? node : null);
+  propPartTree.setSelected(node ? [node.path] : []);
+  highlighter.set(state.highlight && node ? [node] : []);
   propsPartInspector.setSelection(node, node ? propPartSelectionContext() : null);
 }
 
@@ -1661,7 +2160,7 @@ function propPartSelectionContext() {
     addedRecord: selectedPropPart ? propPartLog.findAddedPart(selectedPropPart.object) : undefined,
     onEdit: () => {}, // Props mode has no bottom code panel to refresh (see main.ts's setMode note)
     onGeometryRebuilt: (node: PartNode) => {
-      if (selectedPropPart === node) highlighter.set(state.highlight ? node : null);
+      if (selectedPropPart === node) highlighter.set(state.highlight ? [node] : []);
     },
     onDelete: deletePropPartNode,
     onTransformCommitted: (node: PartNode, channel: PropTransformChannel, before: Vec3Tuple, after: Vec3Tuple) => {
@@ -1695,7 +2194,7 @@ function propPartSelectionContext() {
         record.object.geometry.dispose();
         record.object.geometry = buildPropPartPrimitiveGeometry(record.kind, record.params);
         const node = propPartNodeByObject.get(record.object);
-        if (node && selectedPropPart === node) highlighter.set(state.highlight ? node : null);
+        if (node && selectedPropPart === node) highlighter.set(state.highlight ? [node] : []);
         afterPropHistoryApply(node ?? null);
       };
       propHistory.push({ undo: apply(before), redo: apply(after), coalesceKey: `propparam:${record.id}:${key}` });
@@ -2042,6 +2541,8 @@ propsGuiHost.prepend(savePropsFileBtn);
 // scope, and leaving it as-is is the additive-only choice here.
 const HINT_CHARACTER =
   "drag to orbit · scroll to zoom · click a part to select · " +
+  "drag the gizmo to transform (W move · E rotate · T scale · Q hide · F focus) · " +
+  "Ctrl/Shift-click to multi-select · A all/none · " +
   "arrows nudge position (hold S = scale · hold R = rotate · Shift = big · Alt = fine · " +
   "Ctrl = depth/roll) · Ctrl+Z undo · Esc deselect";
 const HINT_BOARD =
@@ -2091,6 +2592,13 @@ function setMode(next: Mode): void {
   boardGuiHost.hidden = next !== "board";
   propsGuiHost.hidden = next !== "props";
   byId<HTMLElement>("codePane").style.display = meshMode ? "" : "none";
+  // The gizmo drives the character `selected` only — board and props modes
+  // have their own selection stories and no gizmo yet, so the bar goes with
+  // it rather than sitting there wired to nothing (IDEA-041's rule).
+  gizmoBar.hidden = !meshMode;
+  // The readout counts the CHARACTER group, which only exists in the mesh
+  // modes — leaving it up in board/props would report a permanent 0.
+  viewportInfo.hidden = !meshMode || !infoBtn.classList.contains("active");
   // IDEA-034/033: swap the viewport hint's text to match whichever keyboard
   // story is actually live in the new mode.
   viewportHint.textContent = next === "board" ? HINT_BOARD : next === "props" ? HINT_PROPS : HINT_CHARACTER;

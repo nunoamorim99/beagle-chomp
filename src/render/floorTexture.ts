@@ -31,74 +31,99 @@
 // theme and the old one disposed.
 import * as THREE from "three";
 import { COLS, ROWS, type Grid } from "../game/grid";
+import { css, lit, mix, rgbOf, rng, type RGB } from "./paint";
 
 /** Which surface a theme's floor wears. */
-export type FloorTextureKind = "flat" | "stone" | "earth" | "sand" | "parkGrass" | "road";
+export type FloorTextureKind = "flat" | "lawn" | "earth" | "sand" | "parkGrass" | "road";
 
 /**
- * Pixels per maze tile.
+ * Pixels per maze tile, on the board.
  *
  * 32, not 16: the garden's stepping stones are ELLIPSES, and at 16 they came
  * out as mush once the camera got close — one texture is stretched over the
- * whole ~21-unit plane. Everything below was tuned at 16 and is expressed in
- * terms of `K`, so raising S makes the drawn SHAPES crisper without changing
- * how any surface looks: feature sizes scale with K and scatter counts with K
- * squared, which holds both the size and the density of every noise pass
- * constant. Costs 672x736 (~1.9 MB RGBA), one live at a time — and nothing on
- * disk, which is the point of drawing these at runtime.
+ * whole ~21-unit plane. Every feature size below is a fraction of a tile and
+ * every scatter is counted PER TILE, so this is a pure resolution knob: raise
+ * it and the same picture comes out crisper, never restyled. That is what lets
+ * a showcase patch run at a much higher one (see PREVIEW_S) without any of the
+ * surfaces needing to know. Costs 672x736 (~1.9 MB RGBA) here, one live at a
+ * time — and nothing on disk, which is the point of drawing these at runtime.
  */
-const S = 32;
+const BOARD_S = 32;
 
-/** Pixel scale relative to the resolution these patterns were tuned at. */
-const K = S / 16;
+/**
+ * Pixels per tile in a showcase patch.
+ *
+ * Three times the board's, because a showcase magnifies its ground far more
+ * than the maze camera ever does: the menu stretches a THREE-tile patch across
+ * a disc that fills a third of the screen. At the board's 32 that came out
+ * blurred, which reads as a smeared photo — the exact failure the cartoon
+ * rewrite was for. A 3x3 patch at 96 is a 288x288 canvas: nothing.
+ */
+const PREVIEW_S = 96;
 
-/** A scatter count at the tuned density, for `n` tuned at K = 1. */
-const density = (n: number): number => Math.round(n * K * K);
-const W = (COLS + 2) * S;
-const H = (ROWS + 2) * S;
-
-/** Canvas centre of tile (tx, ty) — the apron offset baked in. */
-function cx(tx: number): number {
-  return (tx + 1.5) * S;
+/**
+ * The canvas being painted, described in TILE terms.
+ *
+ * The board is one sheet — COLS x ROWS plus a one-tile apron — but the menu
+ * and shop showcases need these same surfaces over a HANDFUL of tiles rather
+ * than a whole maze, and they have no Grid to derive them from. So every
+ * pattern below works through this instead of the board's own dimensions.
+ * Feature sizes and densities still come from S/K alone, which is what makes a
+ * preview tile and a board tile the same picture at the same scale — the
+ * showcase is honest about what the theme will look like underfoot.
+ */
+interface Sheet {
+  cols: number;
+  rows: number;
+  W: number;
+  H: number;
+  /** Pixels per tile. Every drawn size is a fraction of this. */
+  S: number;
+  /** Hairline scale, for the handful of strokes too thin to express in tiles. */
+  K: number;
+  /** Canvas centre of tile (tx, ty). */
+  cx(tx: number): number;
+  cy(ty: number): number;
+  /** Is tile (tx, ty) corridor? Out of bounds is never walkable. */
+  walk(tx: number, ty: number): boolean;
 }
-function cy(ty: number): number {
-  return (ty + 1.5) * S;
-}
 
-function rng(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+/** The real board's sheet: the whole maze plus its one-tile apron. */
+function boardSheet(grid: Grid): Sheet {
+  return {
+    cols: COLS,
+    rows: ROWS,
+    W: (COLS + 2) * BOARD_S,
+    H: (ROWS + 2) * BOARD_S,
+    S: BOARD_S,
+    K: BOARD_S / 16,
+    // The +1.5 is the one-tile apron plus a half-tile to reach the centre.
+    cx: (tx) => (tx + 1.5) * BOARD_S,
+    cy: (ty) => (ty + 1.5) * BOARD_S,
+    walk: (x, y) => y >= 0 && y < ROWS && x >= 0 && x < COLS && grid.cells[y][x] !== "#",
   };
 }
 
-/** A colour as 0..1 components — the form all the mixing below works in. */
-type RGB = readonly [number, number, number];
-
-function rgbOf(hex: number): RGB {
-  return [((hex >> 16) & 255) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255];
+/**
+ * A showcase sheet: `cells` rows of '#' (wall) and anything else (corridor),
+ * edge to edge with NO apron — a preview frames its own patch, so every pixel
+ * of the canvas is ground the player will see.
+ */
+function previewSheet(cells: readonly string[]): Sheet {
+  const rows = cells.length;
+  const cols = cells[0].length;
+  return {
+    cols,
+    rows,
+    W: cols * PREVIEW_S,
+    H: rows * PREVIEW_S,
+    S: PREVIEW_S,
+    K: PREVIEW_S / 16,
+    cx: (tx) => (tx + 0.5) * PREVIEW_S,
+    cy: (ty) => (ty + 0.5) * PREVIEW_S,
+    walk: (x, y) => y >= 0 && y < rows && x >= 0 && x < cols && cells[y][x] !== "#",
+  };
 }
-
-function css(c: RGB): string {
-  const b = (v: number): number => Math.max(0, Math.min(255, Math.round(v * 255)));
-  return "rgb(" + b(c[0]) + "," + b(c[1]) + "," + b(c[2]) + ")";
-}
-
-/** Linear blend; t = 0 keeps `a`, t = 1 reaches `b`. */
-function mix(a: RGB, b: RGB, t: number): RGB {
-  return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
-}
-
-/** Same hue, scaled brightness — the cheap way to get a sibling shade. */
-function lit(c: RGB, k: number): RGB {
-  return [c[0] * k, c[1] * k, c[2] * k];
-}
-
-const walkable = (grid: Grid, x: number, y: number): boolean =>
-  y >= 0 && y < ROWS && x >= 0 && x < COLS && grid.cells[y][x] !== "#";
 
 /**
  * Paints the corridor network as a connected ribbon of `width` px.
@@ -111,211 +136,418 @@ const walkable = (grid: Grid, x: number, y: number): boolean =>
  */
 function paintCorridors(
   ctx: CanvasRenderingContext2D,
-  grid: Grid,
+  sh: Sheet,
   width: number,
   paint: string,
 ): void {
   ctx.fillStyle = paint;
   const half = width / 2;
-  for (let y = 0; y < ROWS; y++) {
-    for (let x = 0; x < COLS; x++) {
-      if (!walkable(grid, x, y)) continue;
-      ctx.fillRect(cx(x) - half, cy(y) - half, width, width);
-      if (walkable(grid, x + 1, y)) ctx.fillRect(cx(x) - half, cy(y) - half, S + width, width);
-      if (walkable(grid, x, y + 1)) ctx.fillRect(cx(x) - half, cy(y) - half, width, S + width);
+  for (let y = 0; y < sh.rows; y++) {
+    for (let x = 0; x < sh.cols; x++) {
+      if (!sh.walk(x, y)) continue;
+      ctx.fillRect(sh.cx(x) - half, sh.cy(y) - half, width, width);
+      if (sh.walk(x + 1, y)) ctx.fillRect(sh.cx(x) - half, sh.cy(y) - half, sh.S + width, width);
+      if (sh.walk(x, y + 1)) ctx.fillRect(sh.cx(x) - half, sh.cy(y) - half, width, sh.S + width);
     }
   }
 }
+// ---------------------------------------------------------------------------
+// THE CARTOON RULE.
+//
+// The first pass drew these the way a photoreal texture is drawn: thousands of
+// one-pixel scatter marks, each a random brightness off a continuous ramp. Up
+// close that is grain; at the game camera it averages into mush. Next to a
+// beagle built from flat colour fields with hard edges it read as a photograph
+// someone had laid down under a cartoon.
+//
+// So every surface below follows the characters instead:
+//
+//  1. A FIXED, TINY PALETTE. Three or four tones per surface, named up front
+//     and reused — never `lit(base, 0.6 + rnd() * 0.7)`, which is a thousand
+//     shades and therefore noise. Flat fields of a few colours is exactly what
+//     the cel ramp does to lighting, so the albedo agrees with the shading.
+//
+//  2. SHAPES, NOT SPECKS. A grass tuft is three tapered blades, a stone is an
+//     ellipse with a keyline and one highlight, a leaf is a leaf. Nothing is
+//     smaller than a couple of pixels, because anything that is disappears
+//     into grain at maze distance.
+//
+//  3. KEYLINES ON THE HERO SHAPES. Stones and pebbles carry a darker outline,
+//     the same trick as the beagle's inverted-hull outline — it is most of
+//     what separates "drawn" from "rendered".
+//
+// Scatter is placed PER TILE rather than as a whole-canvas count, so a
+// six-tile showcase patch and a full maze come out at identical density with
+// no second number to keep in sync.
 
-/** Garden: a trail of rounded stepping stones through a tended lawn. */
-function drawStone(ctx: CanvasRenderingContext2D, grid: Grid, base: RGB): void {
-  // A garden is PLANTED, so the ground is lawn and the path is a trail of
-  // separate stones with grass showing between them — not a paved run. The
-  // first pass laid continuous flagstones and read as a patio. A slightly
-  // fresher green than the park's, since that is the other grass theme and the
-  // two should not be the same picture.
-  const lawn = mix(base, [0.3, 0.5, 0.2], 0.87);
-  ctx.fillStyle = css(lawn);
-  ctx.fillRect(0, 0, W, H);
-  const r = rng(0x5709e);
-  for (let i = 0; i < density(6600); i++) {
-    ctx.fillStyle = css(lit(lawn, 0.64 + r() * 0.68));
-    ctx.fillRect(Math.floor(r() * W), Math.floor(r() * H), K, K * (1 + Math.floor(r() * 2)));
-  }
-
-  const stone = mix(base, [0.56, 0.55, 0.51], 0.85);
-  /** One rounded stone, seated on the grass by its own contact shadow. */
-  const step = (px: number, py: number, rx: number, ry: number, rot: number): void => {
-    const oval = (ox: number, oy: number, ax: number, ay: number, fill: string): void => {
-      ctx.fillStyle = fill;
-      ctx.beginPath();
-      ctx.ellipse(px + ox, py + oy, ax, ay, rot, 0, Math.PI * 2);
-      ctx.fill();
-    };
-    // Shadow first, offset down. Without it a stone reads as a sticker printed
-    // on the lawn rather than something lying on it. Kept shallow: a deep one
-    // plus a strong highlight turns a stepping stone into a boulder.
-    oval(0, ry * 0.12, rx * 1.05, ry * 1.05, css(lit(lawn, 0.72)));
-    const face = lit(stone, 0.9 + r() * 0.2);
-    oval(0, 0, rx, ry, css(face));
-    // A barely-lighter crown — enough to keep it from being a flat disc, not
-    // enough to make it a sphere. These are laid IN the lawn, seen from above.
-    oval(-rx * 0.12, -ry * 0.14, rx * 0.7, ry * 0.66, css(lit(face, 1.08)));
-    // A few grains of darker mineral, which is what stops a stone at this size
-    // from reading as a plastic pebble.
-    for (let i = 0; i < 4; i++) {
-      const a = r() * Math.PI * 2;
-      const d = Math.sqrt(r()) * 0.62;
-      oval(Math.cos(a) * rx * d, Math.sin(a) * ry * d, rx * 0.13, ry * 0.11, css(lit(face, 0.84)));
-    }
-  };
-
-  for (let y = 0; y < ROWS; y++) {
-    for (let x = 0; x < COLS; x++) {
-      if (!walkable(grid, x, y)) continue;
-      // Well under half a tile across, so consecutive stones never touch and
-      // the trail stays a trail — that gap, and the grass in it, IS the effect.
-      const rx = S * (0.23 + r() * 0.05);
-      step(
-        cx(x) + (r() - 0.5) * S * 0.12,
-        cy(y) + (r() - 0.5) * S * 0.12,
-        rx,
-        rx * (0.8 + r() * 0.3),
-        r() * Math.PI,
-      );
-      // Every so often a pebble alongside, which breaks the one-per-tile
-      // rhythm that would otherwise read as a grid of dots.
-      if (r() < 0.24) {
-        const pr = S * (0.09 + r() * 0.05);
-        step(
-          cx(x) + (r() - 0.5) * S * 0.66,
-          cy(y) + (r() - 0.5) * S * 0.66,
-          pr,
-          pr * (0.8 + r() * 0.3),
-          r() * Math.PI,
-        );
+/** Places `n` jittered items in every tile, the apron included. */
+function perTile(
+  sh: Sheet,
+  n: number,
+  rnd: () => number,
+  place: (x: number, y: number, tx: number, ty: number) => void,
+): void {
+  for (let ty = -1; ty <= sh.rows; ty++) {
+    for (let tx = -1; tx <= sh.cols; tx++) {
+      for (let i = 0; i < n; i++) {
+        place(sh.cx(tx) + (rnd() - 0.5) * sh.S, sh.cy(ty) + (rnd() - 0.5) * sh.S, tx, ty);
       }
     }
   }
 }
 
-/** Forest: bare earth everywhere, with clods and dry leaf litter. */
-function drawEarth(ctx: CanvasRenderingContext2D, base: RGB): void {
-  ctx.fillStyle = css(base);
-  ctx.fillRect(0, 0, W, H);
-  const r = rng(0xea27);
-  // Clods, both lighter and darker than the ground, so the surface breaks up
-  // in both directions instead of only accumulating shadow.
-  for (let i = 0; i < density(900); i++) {
-    const rad = K * (1 + r() * 4);
-    ctx.fillStyle = css(lit(base, 0.6 + r() * 0.75));
-    ctx.beginPath();
-    ctx.arc(r() * W, r() * H, rad, 0, Math.PI * 2);
-    ctx.fill();
+/**
+ * A closed, gently irregular shape — the cartoon stand-in for a cloud of
+ * scattered dots. Eight lobes joined by quadratic curves, so it comes out
+ * organic but smooth-edged rather than polygonal.
+ */
+function blob(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  rad: number,
+  rnd: () => number,
+): void {
+  const N = 8;
+  const pts: Array<[number, number]> = [];
+  for (let i = 0; i < N; i++) {
+    const a = (i / N) * Math.PI * 2;
+    const rr = rad * (0.72 + rnd() * 0.56);
+    pts.push([x + Math.cos(a) * rr, y + Math.sin(a) * rr]);
   }
-  // Leaf litter: small elongated flecks in dry ochre — the one thing here that
-  // is a different HUE and not just a different brightness.
-  const leaf = mix(base, [0.62, 0.44, 0.14], 0.6);
-  for (let i = 0; i < density(300); i++) {
-    ctx.fillStyle = css(lit(leaf, 0.75 + r() * 0.5));
-    ctx.fillRect(r() * W, r() * H, K * (1 + r() * 3), K);
+  const mid = (i: number): [number, number] => [
+    (pts[i][0] + pts[(i + 1) % N][0]) / 2,
+    (pts[i][1] + pts[(i + 1) % N][1]) / 2,
+  ];
+  ctx.beginPath();
+  const [sx, sy] = mid(N - 1);
+  ctx.moveTo(sx, sy);
+  for (let i = 0; i < N; i++) {
+    const [nx, ny] = mid(i);
+    ctx.quadraticCurveTo(pts[i][0], pts[i][1], nx, ny);
+  }
+  ctx.closePath();
+  ctx.fill();
+}
+
+/** Three tapered blades fanning out of one point — a tuft of grass, drawn. */
+function tuft(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  h: number,
+  rnd: () => number,
+): void {
+  for (let i = 0; i < 3; i++) {
+    const lean = (i - 1) * 0.42 + (rnd() - 0.5) * 0.3;
+    const hh = h * (0.68 + rnd() * 0.5);
+    const w = Math.max(1, h * 0.26);
+    ctx.beginPath();
+    ctx.moveTo(x - w / 2, y);
+    ctx.lineTo(x + lean * hh, y - hh);
+    ctx.lineTo(x + w / 2, y);
+    ctx.closePath();
+    ctx.fill();
   }
 }
 
-/** Beach: fine grain plus wind ripples. */
-function drawSandFloor(ctx: CanvasRenderingContext2D, base: RGB): void {
+/**
+ * A rounded stone: flat face, darker keyline, one highlight.
+ *
+ * The keyline is the whole point — a few flat tones and an outline is how a
+ * cartoon draws a rock, and it survives being shrunk to a dozen pixels in a
+ * way a soft gradient does not.
+ */
+function stone(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  rx: number,
+  ry: number,
+  rot: number,
+  face: RGB,
+  line: RGB,
+  hi: RGB,
+): void {
+  const oval = (ox: number, oy: number, ax: number, ay: number): void => {
+    ctx.beginPath();
+    ctx.ellipse(x + ox, y + oy, ax, ay, rot, 0, Math.PI * 2);
+  };
+  oval(0, 0, rx, ry);
+  ctx.fillStyle = css(face);
+  ctx.fill();
+  // ONE ring, kept thin. The first pass drew a contact shadow at 1.06x the
+  // radius as well, and the two together made every stone a grey doughnut —
+  // shadow rim, keyline, face, highlight, four bands on a shape 16px across.
+  // The keyline alone does both jobs: it outlines AND it seats.
+  ctx.strokeStyle = css(line);
+  ctx.lineWidth = Math.max(1, rx * 0.12);
+  ctx.stroke();
+  // A crescent, not a blob: a small ellipse pushed up-left and squashed reads
+  // as the lit top of a rounded thing at any size.
+  oval(-rx * 0.26, -ry * 0.3, rx * 0.42, ry * 0.28);
+  ctx.fillStyle = css(hi);
+  ctx.fill();
+}
+
+/**
+ * Garden: lawn, and nothing else.
+ *
+ * This one has been round the houses. It began as a trail of stepping stones
+ * through the grass, which is the obvious thing a garden maze wants — but the
+ * corridors are only a tile wide, so ANY path drawn down them competes with
+ * the biscuit trail the player is actually reading, and the stones kept
+ * winning. A neat diagonal run of flagstones read better than the scattered
+ * version it replaced and still lost that fight.
+ *
+ * So the garden is now the quiet theme: a tended lawn, and the corridors are
+ * corridors because of what is NOT planted on them. The other five surfaces
+ * carry the detail; this one carries the biscuits. It is also the one grass
+ * theme with no path in it, which is what keeps it distinct from the park.
+ *
+ * That leaves it grid-independent, like `earth` and `sand` — nothing here
+ * reads `sh.walk`. It still goes through the same uncached path, since the
+ * palette can change under it and the caller owns disposal either way.
+ */
+function drawLawn(ctx: CanvasRenderingContext2D, sh: Sheet, base: RGB): void {
+  // A slightly fresher green than the park's, since that is the other grass
+  // theme and the two should not be the same picture.
+  const lawn = mix(base, [0.3, 0.5, 0.2], 0.87);
+  const dark = lit(lawn, 0.86);
+  const light = lit(lawn, 1.16);
+  const r = rng(0x5709e);
+
+  ctx.fillStyle = css(lawn);
+  ctx.fillRect(0, 0, sh.W, sh.H);
+
+  // Broad tonal patches, and only that. No tufts: at four a tile they were a
+  // rash of dark dots, and even at two they read as busy rather than tended.
+  // Three flat greens in soft drifts is what a cel-shaded lawn wants — the
+  // mown-in banding of a real one, without a single mark small enough to
+  // alias into grain at the maze camera.
+  perTile(sh, 1, r, (x, y) => {
+    if (r() > 0.4) return;
+    ctx.fillStyle = css(r() < 0.5 ? dark : light);
+    blob(ctx, x, y, sh.S * (0.5 + r() * 0.5), r);
+  });
+}
+
+/**
+ * Forest: bare earth, and nothing on it.
+ *
+ * It carried dry leaf litter — the one mark in the whole set that was a
+ * different HUE rather than a different brightness — and a few keylined
+ * pebbles. Both are gone for the reason the garden's stones went: a corridor
+ * is one tile wide, so anything scattered along it competes with the biscuit
+ * trail, and warm ochre flecks on a dark brown floor pulled the eye hardest of
+ * all. The pebbles went with them rather than leaving one lone kind of clutter
+ * behind on a floor that is meant to read as bare.
+ *
+ * What is left is the clods, which are broad enough to be ground rather than
+ * things lying on it.
+ */
+function drawEarth(ctx: CanvasRenderingContext2D, sh: Sheet, base: RGB): void {
+  const dark = lit(base, 0.82);
+  const light = lit(base, 1.16);
+  const r = rng(0xea27);
+
   ctx.fillStyle = css(base);
-  ctx.fillRect(0, 0, W, H);
+  ctx.fillRect(0, 0, sh.W, sh.H);
+
+  // Clods, both lighter and darker than the ground, so the surface breaks up
+  // in both directions instead of only accumulating shadow — a handful of
+  // readable patches rather than 900 dots.
+  perTile(sh, 1, r, (x, y) => {
+    if (r() > 0.5) return;
+    ctx.fillStyle = css(r() < 0.5 ? dark : light);
+    blob(ctx, x, y, sh.S * (0.28 + r() * 0.34), r);
+  });
+}
+
+/** Beach: wind ripples in clean bands, with the odd shell. */
+function drawSandFloor(ctx: CanvasRenderingContext2D, sh: Sheet, base: RGB): void {
+  const trough = lit(base, 0.88);
+  const crest = lit(base, 1.13);
   const r = rng(0x5a11d);
+
+  ctx.fillStyle = css(base);
+  ctx.fillRect(0, 0, sh.W, sh.H);
+
   // Ripples: long shallow waves, the read that separates sand from noise. Each
-  // is a shadow line with a lit crest just above it, which is what gives the
-  // surface a direction instead of a texture.
-  ctx.lineWidth = 1.5 * K;
-  // Ripple COUNT scales linearly: they span the width, so their density is
-  // per-row, not per-area.
-  for (let i = 0; i < Math.round(46 * K); i++) {
-    const y0 = r() * H;
-    const wobble = 3 + r() * 2;
-    const wave = (x: number): number => y0 + Math.sin((x / W) * Math.PI * wobble + i) * 3 * K;
-    for (const [dy, k] of [
-      [0, 0.74],
-      [-2 * K, 1.16],
+  // is a shadow band with a lit crest riding just above it — two flat strokes,
+  // not a gradient, so the pair still reads as one rounded ridge once the cel
+  // ramp has had its way with the lighting.
+  ctx.lineCap = "round";
+  const spacing = sh.S * 0.62;
+  for (let i = 0; i * spacing < sh.H + spacing; i++) {
+    const y0 = i * spacing + (r() - 0.5) * spacing * 0.5;
+    const wobble = 2 + r() * 2;
+    const phase = r() * Math.PI * 2;
+    const amp = sh.S * (0.14 + r() * 0.12);
+    const wave = (x: number): number => y0 + Math.sin((x / sh.W) * Math.PI * wobble + phase) * amp;
+    for (const [dy, colour, w] of [
+      [0, trough, 0.13],
+      [-sh.S * 0.1, crest, 0.09],
     ] as const) {
-      ctx.strokeStyle = css(lit(base, k));
+      ctx.strokeStyle = css(colour);
+      ctx.lineWidth = sh.S * w;
       ctx.beginPath();
-      for (let x = 0; x <= W; x += 6 * K) {
+      for (let x = 0; x <= sh.W; x += sh.S * 0.25) {
         if (x === 0) ctx.moveTo(x, wave(x) + dy);
         else ctx.lineTo(x, wave(x) + dy);
       }
       ctx.stroke();
     }
   }
-  for (let i = 0; i < density(5200); i++) {
-    ctx.fillStyle = css(lit(base, 0.8 + r() * 0.42));
-    ctx.fillRect(Math.floor(r() * W), Math.floor(r() * H), K, K);
-  }
+
+  // Shells and worn pebbles, sparse — the beach's equivalent of the garden's
+  // stray pebble, and the only thing on it carrying a keyline.
+  const shell = mix(base, [1, 0.96, 0.9], 0.5);
+  perTile(sh, 1, r, (x, y) => {
+    if (r() > 0.12) return;
+    const rx = sh.S * (0.07 + r() * 0.05);
+    stone(ctx, x, y, rx, rx * 0.78, r() * Math.PI, shell, lit(shell, 0.66), lit(shell, 1.12));
+  });
 }
 
 /** City park: real grass everywhere, a gravel path only where the dog walks. */
-function drawParkGrass(ctx: CanvasRenderingContext2D, grid: Grid, base: RGB): void {
+function drawParkGrass(ctx: CanvasRenderingContext2D, sh: Sheet, base: RGB): void {
   // The lawn is GREEN, not a shade of the palette's tan. This is the whole
   // reason these textures carry colour: the theme keeps its warm floor tone for
   // the gravel, and the planted half gets the hue it actually needs.
   const lawn = mix(base, [0.24, 0.44, 0.16], 0.88);
-  ctx.fillStyle = css(lawn);
-  ctx.fillRect(0, 0, W, H);
+  const lawnDark = lit(lawn, 0.86);
+  const lawnLight = lit(lawn, 1.16);
+  const tuftDark = lit(lawn, 0.7);
   const r = rng(0x9a55);
-  // Grass: short blades, light and dark, dense.
-  for (let i = 0; i < density(6200); i++) {
-    ctx.fillStyle = css(lit(lawn, 0.62 + r() * 0.7));
-    ctx.fillRect(Math.floor(r() * W), Math.floor(r() * H), K, K * (1 + Math.floor(r() * 2)));
-  }
-  // The path is NARROWER than the corridor (0.55 of a tile), so grass shows
+
+  ctx.fillStyle = css(lawn);
+  ctx.fillRect(0, 0, sh.W, sh.H);
+
+  perTile(sh, 1, r, (x, y) => {
+    if (r() > 0.32) return;
+    ctx.fillStyle = css(r() < 0.5 ? lawnDark : lawnLight);
+    blob(ctx, x, y, sh.S * (0.45 + r() * 0.4), r);
+  });
+  ctx.fillStyle = css(tuftDark);
+  perTile(sh, 2, r, (x, y) => tuft(ctx, x, y, sh.S * 0.3, r));
+  ctx.fillStyle = css(lawnLight);
+  perTile(sh, 1, r, (x, y) => {
+    if (r() > 0.5) return;
+    tuft(ctx, x, y, sh.S * 0.24, r);
+  });
+
+  // The path is NARROWER than the corridor (0.46 of a tile), so grass shows
   // along both verges — that strip of green either side of the walking line is
   // the whole idea, and a full-tile path would erase it.
+  //
+  // Laid down twice: once fatter in a darker tone, then the gravel inside it.
+  // That leaves a clean keyline all the way round the path, which is what
+  // stops a flat tan ribbon from reading as a hole cut in the lawn.
   const gravel = mix(base, [0.76, 0.69, 0.55], 0.7);
-  paintCorridors(ctx, grid, S * 0.46, css(gravel));
-  // Grit, clipped to the path by simply re-rolling inside it.
-  for (let y = 0; y < ROWS; y++) {
-    for (let x = 0; x < COLS; x++) {
-      if (!walkable(grid, x, y)) continue;
-      for (let i = 0; i < density(14); i++) {
-        ctx.fillStyle = css(lit(gravel, 0.72 + r() * 0.44));
-        ctx.fillRect(cx(x) - S * 0.22 + r() * S * 0.44, cy(y) - S * 0.22 + r() * S * 0.44, K, K);
+  const edge = lit(gravel, 0.68);
+  paintCorridors(ctx, sh, sh.S * 0.46 + Math.max(2, sh.K * 1.6) * 2, css(edge));
+  paintCorridors(ctx, sh, sh.S * 0.46, css(gravel));
+
+  // Grit as actual pebbles, kept on the path by simply re-rolling inside it.
+  const grit = [lit(gravel, 0.78), lit(gravel, 1.14)] as const;
+  for (let y = 0; y < sh.rows; y++) {
+    for (let x = 0; x < sh.cols; x++) {
+      if (!sh.walk(x, y)) continue;
+      for (let i = 0; i < 5; i++) {
+        ctx.fillStyle = css(grit[i % 2]);
+        ctx.beginPath();
+        ctx.ellipse(
+          sh.cx(x) + (r() - 0.5) * sh.S * 0.34,
+          sh.cy(y) + (r() - 0.5) * sh.S * 0.34,
+          sh.S * (0.03 + r() * 0.025),
+          sh.S * (0.025 + r() * 0.02),
+          r() * Math.PI,
+          0,
+          Math.PI * 2,
+        );
+        ctx.fill();
       }
     }
   }
 }
 
 /** Night city: asphalt lanes with a dashed centre line. */
-function drawRoad(ctx: CanvasRenderingContext2D, grid: Grid, base: RGB): void {
+function drawRoad(ctx: CanvasRenderingContext2D, sh: Sheet, base: RGB): void {
   // Off-road is pavement — lifted off the palette so the kerb line reads.
-  ctx.fillStyle = css(mix(base, [1, 1, 1], 0.24));
-  ctx.fillRect(0, 0, W, H);
+  const pavement = mix(base, [1, 1, 1], 0.24);
   const asphalt = mix(base, [0.08, 0.08, 0.1], 0.74);
-  paintCorridors(ctx, grid, S, css(asphalt));
+  const worn = lit(asphalt, 1.22);
   const r = rng(0x20ad);
-  for (let i = 0; i < density(3000); i++) {
-    ctx.fillStyle = css(lit(asphalt, 0.7 + r() * 0.75));
-    ctx.fillRect(Math.floor(r() * W), Math.floor(r() * H), K, K);
+
+  ctx.fillStyle = css(pavement);
+  ctx.fillRect(0, 0, sh.W, sh.H);
+  // Paving slabs: a plain grid of joints. Cheap, and it is the one thing that
+  // says "pavement" rather than "a lighter bit of road".
+  ctx.strokeStyle = css(lit(pavement, 0.88));
+  ctx.lineWidth = Math.max(1, sh.K);
+  ctx.beginPath();
+  for (let x = 0; x <= sh.W; x += sh.S * 0.5) {
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, sh.H);
   }
+  for (let y = 0; y <= sh.H; y += sh.S * 0.5) {
+    ctx.moveTo(0, y);
+    ctx.lineTo(sh.W, y);
+  }
+  ctx.stroke();
+
+  paintCorridors(ctx, sh, sh.S, css(asphalt));
+  // Worn patches, as a few broad shapes rather than 3,000 grains of grit.
+  perTile(sh, 1, r, (x, y, tx, ty) => {
+    if (!sh.walk(tx, ty) || r() > 0.3) return;
+    ctx.fillStyle = css(worn);
+    blob(ctx, x, y, sh.S * (0.22 + r() * 0.2), r);
+  });
+
   // Dashes down the middle of each straight run. Junctions are skipped: a dash
   // through a crossroads reads as a mistake, and real roads leave them clear.
   // This near-white is only reachable because the map carries colour — as a
   // luminance map it came out at the floor's own 0.22 and vanished.
   ctx.fillStyle = css([0.95, 0.93, 0.82]);
-  const D = S * 0.34;
-  const T = Math.max(K, Math.round(S * 0.12));
-  for (let y = 0; y < ROWS; y++) {
-    for (let x = 0; x < COLS; x++) {
-      if (!walkable(grid, x, y)) continue;
-      const h = walkable(grid, x - 1, y) && walkable(grid, x + 1, y);
-      const v = walkable(grid, x, y - 1) && walkable(grid, x, y + 1);
+  const D = sh.S * 0.34;
+  const T = Math.max(sh.K, Math.round(sh.S * 0.12));
+  for (let y = 0; y < sh.rows; y++) {
+    for (let x = 0; x < sh.cols; x++) {
+      if (!sh.walk(x, y)) continue;
+      const h = sh.walk(x - 1, y) && sh.walk(x + 1, y);
+      const v = sh.walk(x, y - 1) && sh.walk(x, y + 1);
       if (h === v) continue; // a junction, a corner, or a dead end — leave clear
-      if (h) ctx.fillRect(cx(x) - D / 2, cy(y) - T / 2, D, T);
-      else ctx.fillRect(cx(x) - T / 2, cy(y) - D / 2, T, D);
+      if (h) ctx.fillRect(sh.cx(x) - D / 2, sh.cy(y) - T / 2, D, T);
+      else ctx.fillRect(sh.cx(x) - T / 2, sh.cy(y) - D / 2, T, D);
     }
   }
+}
+
+/** Paints `kind` onto `sh` and hands back the texture, or null for "flat". */
+function render(kind: FloorTextureKind, sh: Sheet, baseHex: number): THREE.Texture | null {
+  if (kind === "flat") return null;
+  const c = document.createElement("canvas");
+  c.width = sh.W;
+  c.height = sh.H;
+  const ctx = c.getContext("2d");
+  if (!ctx) return null;
+
+  const base = rgbOf(baseHex);
+  if (kind === "lawn") drawLawn(ctx, sh, base);
+  else if (kind === "earth") drawEarth(ctx, sh, base);
+  else if (kind === "sand") drawSandFloor(ctx, sh, base);
+  else if (kind === "parkGrass") drawParkGrass(ctx, sh, base);
+  else drawRoad(ctx, sh, base);
+
+  const tex = new THREE.CanvasTexture(c);
+  // No repeat: the texture IS the surface, mapped 1:1 onto its plane.
+  tex.wrapS = THREE.ClampToEdgeWrapping;
+  tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  tex.needsUpdate = true;
+  return tex;
 }
 
 /**
@@ -334,26 +566,27 @@ export function floorTextureFor(
   grid: Grid,
   baseHex: number,
 ): THREE.Texture | null {
-  if (kind === "flat") return null;
-  const c = document.createElement("canvas");
-  c.width = W;
-  c.height = H;
-  const ctx = c.getContext("2d");
-  if (!ctx) return null;
+  return render(kind, boardSheet(grid), baseHex);
+}
 
-  const base = rgbOf(baseHex);
-  if (kind === "stone") drawStone(ctx, grid, base);
-  else if (kind === "earth") drawEarth(ctx, base);
-  else if (kind === "sand") drawSandFloor(ctx, base);
-  else if (kind === "parkGrass") drawParkGrass(ctx, grid, base);
-  else drawRoad(ctx, grid, base);
-
-  const tex = new THREE.CanvasTexture(c);
-  // No repeat: this texture IS the board, mapped 1:1 onto the floor plane.
-  tex.wrapS = THREE.ClampToEdgeWrapping;
-  tex.wrapT = THREE.ClampToEdgeWrapping;
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 4;
-  tex.needsUpdate = true;
-  return tex;
+/**
+ * The same surface over a small hand-authored patch, for the menu showcase and
+ * the shop previews — which have a ground to paint but no maze behind it.
+ *
+ * `cells` is that patch: '#' is wall, anything else is corridor. It matters,
+ * because half of what a floor theme says is said BY the corridors — the
+ * garden's stepping stones, the park's gravel walk, the road's lane markings
+ * all follow them. A showcase with no walls in its patch would render as an
+ * unbroken sheet of path and lose exactly the detail the player is there to
+ * look at, so callers pass a patch whose corridors match the ground the
+ * camera can actually see.
+ *
+ * Same disposal contract as floorTextureFor: the caller owns the result.
+ */
+export function floorPreviewTexture(
+  kind: FloorTextureKind,
+  cells: readonly string[],
+  baseHex: number,
+): THREE.Texture | null {
+  return render(kind, previewSheet(cells), baseHex);
 }
