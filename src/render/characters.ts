@@ -13,12 +13,13 @@ import { type Vec2 } from "../game/grid";
 import { type GhostState } from "../game/ghostAI";
 import { COLORS } from "../game/config";
 import { type BeagleSkin, getEquippedBeagleSkin } from "../game/cosmetics";
+import { toon } from "./toon";
 
 /**
  * Animatable sub-parts of the beagle model, stashed on the group's userData
  * so `syncToEntity` can pose them per frame without any geometry rebuilds.
  * Each is a pivot `Group` (not the visible mesh directly) positioned at the
- * joint, with the actual mesh(es) offset inside it — rotating the pivot
+ * joint, with the actual mesh(es) offset inside it â€” rotating the pivot
  * therefore swings the part the way a real joint would.
  */
 export interface BeagleParts {
@@ -32,23 +33,23 @@ export interface BeagleParts {
 /**
  * The 4 coat materials a beagle skin swaps, stashed on the group's userData
  * (`g.userData.coatMats`) so a later skin change (see `applyBeagleSkin`) can
- * recolour the existing mesh in place — no geometry rebuild, no remove/re-add,
+ * recolour the existing mesh in place â€” no geometry rebuild, no remove/re-add,
  * the model keeps animating uninterrupted.
  */
 export interface BeagleCoatMats {
-  tan: THREE.MeshStandardMaterial;
-  white: THREE.MeshStandardMaterial;
-  black: THREE.MeshStandardMaterial;
-  ear: THREE.MeshStandardMaterial;
+  tan: THREE.MeshToonMaterial;
+  white: THREE.MeshToonMaterial;
+  black: THREE.MeshToonMaterial;
+  ear: THREE.MeshToonMaterial;
 }
 
 /**
- * Builds the beagle from primitives — "sculpted flush forms" redesign
+ * Builds the beagle from primitives â€” "sculpted flush forms" redesign
  * (IDEA-024 second attempt, technique P2). Nose points toward +Z at
  * rotation.y = 0, matching ARCHITECTURE's "yaw = atan2(dir.x, dir.y)"
  * facing convention.
  *
- * THE TECHNIQUE — every coat marking is a "decal shell": a partial sphere
+ * THE TECHNIQUE â€” every coat marking is a "decal shell": a partial sphere
  * (SphereGeometry with restricted phi/theta ranges) sharing its base form's
  * exact centre and mesh scale, at a radius only a hair (~1-4% of the base
  * radius, 0.003-0.010 world units of rise) larger, so it hugs the base
@@ -59,7 +60,7 @@ export interface BeagleCoatMats {
  * are baked into the GEOMETRY (rotating a sphere's cap about its own centre
  * keeps it on the same sphere) so each shell mesh can carry its base
  * ellipsoid's non-uniform scale untouched and stay glued to the curved
- * surface everywhere — rotating the mesh instead would rotate the whole
+ * surface everywhere â€” rotating the mesh instead would rotate the whole
  * ellipsoid and peel the shell off the base. Overlapping shells get
  * slightly different radius factors (layer order = radius order), so they
  * stack like print passes with zero z-fighting.
@@ -69,7 +70,7 @@ export interface BeagleCoatMats {
  *  - BLACK saddle: ONE smooth cap over the body ellipsoid, pole tilted
  *    up-and-back, flowing from the neck (its front edge hides inside the
  *    head) over the back and rump to the tail root, draping about half-way
- *    down the flanks. A single continuous region — no discrete blobs.
+ *    down the flanks. A single continuous region â€” no discrete blobs.
  *  - WHITE bib+belly: one cap, pole tilted forward-and-down, wrapping the
  *    chest front and underside in a single white sweep. A soft white chest
  *    FORM (part of the silhouette, its edges buried deep inside the body)
@@ -77,34 +78,34 @@ export interface BeagleCoatMats {
  *    both share the same white material and the poke-through region lies
  *    entirely inside the cap's zone.
  *  - EAR-BROWN head sides: one cap per side of the skull, centred where the
- *    ears root, sweeping around the eyes and cheeks — the classic beagle
+ *    ears root, sweeping around the eyes and cheeks â€” the classic beagle
  *    brown head split by the white blaze (eyes and blaze render on top via
  *    larger radius factors). Left/right factors differ by 0.004 so their
  *    small overlap at the back of the crown can't z-fight.
  *  - WHITE blaze: a narrow phi-restricted LUNE (a meridian strip of the
  *    head sphere itself, not a tilted lump) running from the crown down the
  *    forehead and melting into the white muzzle at its lower end. Flush by
- *    construction — checklist item "blaze painted into the head" is the
+ *    construction â€” checklist item "blaze painted into the head" is the
  *    literal geometry here.
  *  - WHITE socks: paw blobs inside each leg pivot (forms at the end of the
  *    legs, not surface bumps) so they trot with the leg; WHITE tail tip.
  *
  * Eyes are painted-lens style: three concentric decal caps per eye sitting
- * directly on the head sphere — white sclera disc (rise ~0.005), the calm
+ * directly on the head sphere â€” white sclera disc (rise ~0.005), the calm
  * dark-brown 0x2a1a10 pupil (~0.008), and a tiny white glint cap offset
- * up-and-outward (~0.010) — so the eyes read as glossy lenses embedded in
+ * up-and-outward (~0.010) â€” so the eyes read as glossy lenses embedded in
  * the skull, never bulging spheres. They stay OUTSIDE the skin system
  * (fixed materials) exactly like before. The pupil caps are aimed a touch
  * medially relative to the sclera centres so the gaze converges gently
- * forward — calm, no walleye.
+ * forward â€” calm, no walleye.
  *
  * Silhouette: 3 blended body forms (main ellipsoid + white chest + tan
  * haunches, the latter two poking through only low on the front/flanks and
  * rear so they never break the saddle's smooth edge) under a chibi head
  * (r 0.27, DOWN from the rejected pass's 0.30) placed high and forward: the
  * body runs a full ~0.5 units behind the head's rear edge and is WIDER than
- * the head (0.60 vs 0.54 across), so from every angle — especially the
- * game's top-down camera — it reads as a dog with a body, not a head with
+ * the head (0.60 vs 0.54 across), so from every angle â€” especially the
+ * game's top-down camera â€” it reads as a dog with a body, not a head with
  * feet. Stubby approved legs kept (0.17 long, paws at y=0). Top-down
  * direction read: brown/white head + blaze at the front vs black saddle
  * behind.
@@ -113,16 +114,16 @@ export interface BeagleCoatMats {
  * root, full middle, rounded tip), flattened into a soft paddle, rooted at
  * the top-side of the skull with its upper quarter buried inside the head
  * sphere, draping beside the cheek with a slight outward + backward tilt.
- * One mesh, one clean silhouette — no overlapping lobes, nothing that can
+ * One mesh, one clean silhouette â€” no overlapping lobes, nothing that can
  * read as a second ear.
  *
  * Tail: pivot at the rump top (embedded in the haunch, under the saddle's
  * black rear so the base emerges from black fur like a real tricolor), with
- * the shaft in an INNER tilt group leaning ~20 degrees back — pointing UP
+ * the shaft in an INNER tilt group leaning ~20 degrees back â€” pointing UP
  * like a happy flag (tip crests at y~0.82 pre-scale, white flag tip).
  * syncToEntity wags `tail.rotation.y` on the OUTER pivot; because the
  * back-lean lives in the inner group, that yaw sweeps the leaned shaft
- * around the vertical axis — the flag waves side to side — instead of
+ * around the vertical axis â€” the flag waves side to side â€” instead of
  * uselessly spinning a vertical shaft about its own axis.
  *
  * flatShading was auditioned for the low-poly-portfolio look and dropped:
@@ -141,10 +142,10 @@ export interface BeagleCoatMats {
 export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Group {
   const g = new THREE.Group();
   const { coat } = skin;
-  const tan = new THREE.MeshStandardMaterial({ color: coat.tan, roughness: 0.6 });
-  const white = new THREE.MeshStandardMaterial({ color: coat.white, roughness: 0.6 });
-  const black = new THREE.MeshStandardMaterial({ color: coat.black, roughness: 0.55 });
-  const earMat = new THREE.MeshStandardMaterial({ color: coat.ear, roughness: 0.65 });
+  const tan = toon({ color: coat.tan });
+  const white = toon({ color: coat.white });
+  const black = toon({ color: coat.black });
+  const earMat = toon({ color: coat.ear });
 
   // Decal-shell builder (see the doc comment): a cap of a sphere `factor`
   // larger than `baseR`, pole aimed by rotating the GEOMETRY (rx about X,
@@ -169,19 +170,28 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
 
   // --- unified silhouette: 3 blended body forms ---
   // Main body: a long low ellipsoid (x 0.30 / y 0.255 / z 0.42 half-extents)
-  // spanning z -0.44..0.40 — deliberately elongated so a clear body runs
+  // spanning z -0.44..0.40 â€” deliberately elongated so a clear body runs
   // behind and below the head (checklist: never "a head with feet").
   const BODY_R = 0.3;
   const body = new THREE.Mesh(new THREE.SphereGeometry(BODY_R, 32, 24), tan);
   body.name = "body";
-  body.scale.set(1, 0.85, 1.4);
+  // Slimmed (IDEA-024 v2 polish). It was 0.60 wide x 0.51 tall — WIDER than
+  // deep, which is what read as chubby: a dog's ribcage is deeper than it is
+  // broad, and an ellipsoid that is the other way round looks like a loaf.
+  //
+  // 0.92 x 0.81 x 1.45 gives 0.552 x 0.486 x 0.870 — 8% narrower, 5%
+  // shallower, 3.5% longer. Deliberately not slimmer than that: the body has
+  // to stay WIDER than the 0.54 head or the dog reads as a head with feet
+  // (the failure this model was rebuilt to fix), and 0.552 leaves only a
+  // 2% margin. Slimming further means shrinking the head to match.
+  body.scale.set(0.92, 0.81, 1.45);
   body.position.set(0, 0.34, -0.02);
   g.add(body);
 
   // Haunches: a rounder form blended into the rear. Sized so it pokes
   // through the main ellipsoid only LOW on the flanks (max ~0.02 proud at
   // y~0.30, below the saddle's flank edge at y~0.42) and at the very rear
-  // under the tail — a soft hip bulge that never breaks the saddle seam.
+  // under the tail â€” a soft hip bulge that never breaks the saddle seam.
   const haunch = new THREE.Mesh(new THREE.SphereGeometry(0.24, 24, 18), tan);
   haunch.name = "haunch";
   haunch.scale.set(1.06, 0.9, 0.95);
@@ -198,12 +208,12 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
   chest.position.set(0, 0.3, 0.24);
   g.add(chest);
 
-  // BLACK saddle: ONE smooth flush cap on the body — pole tilted 0.35 rad
+  // BLACK saddle: ONE smooth flush cap on the body â€” pole tilted 0.35 rad
   // back, angular radius 1.25 rad. Front edge ((0,~0.51,~0.30) pre-scale)
   // hides inside the head/neck; rear edge wraps past the rump to z~-0.44 so
   // the tail base emerges from black fur; flank edge drapes to y~0.42,
   // about half-way down the visible side. Radial rise: 0.006 (x) / 0.005
-  // (y) / 0.0086 (z) — painted into the surface, zero bumps.
+  // (y) / 0.0086 (z) â€” painted into the surface, zero bumps.
   const saddle = new THREE.Mesh(shell(BODY_R, 1.02, -0.35, 0, 1.25), black);
   saddle.name = "saddle";
   saddle.scale.copy(body.scale);
@@ -211,10 +221,10 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
   g.add(saddle);
 
   // WHITE bib + belly: one flush cap, pole tilted forward-and-down (3/4 pi
-  // about X points it at (0,-0.71,+0.71)), angular radius 1.05 — its upper
+  // about X points it at (0,-0.71,+0.71)), angular radius 1.05 â€” its upper
   // front edge crests at y~0.41 under the chin (the bib) and its rear edge
   // sweeps under the belly. Factor 1.012 keeps it under the saddle's 1.02
-  // (they never meet anyway — a tan flank band separates them).
+  // (they never meet anyway â€” a tan flank band separates them).
   const belly = new THREE.Mesh(shell(BODY_R, 1.012, Math.PI * 0.75, 0, 1.05), white);
   belly.name = "belly";
   belly.scale.copy(body.scale);
@@ -243,14 +253,24 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
   nose.position.set(0, 0.555, 0.635);
   g.add(nose);
 
-  // WHITE blaze: a phi-restricted LUNE of the head sphere itself — a strip
+  // WHITE blaze: a phi-restricted LUNE of the head sphere itself â€” a strip
   // 0.32 rad wide in azimuth centred on the front meridian (phi = pi/2 in
   // SphereGeometry's parametrisation), running from theta 0.25 (just off
   // the crown) down to theta 1.40 where it melts into the muzzle top.
-  // x half-width ~0.043 — well clear of the eyes at x ±0.115. Rise 0.006:
+  // x half-width ~0.043 â€” well clear of the eyes at x ±0.115. Rise 0.006:
   // painted flush into the head, NOT a raised strip.
   const blaze = new THREE.Mesh(
-    shell(HEAD_R, 1.022, 0, 0, 1.15, 0.25, Math.PI / 2 - 0.16, 0.32),
+    // SLIMMER and longer than the first pass, both asked for:
+    //  - 0.32 rad of azimuth gave a 0.069-wide band that read as a stripe
+    //    painted on rather than a blaze. 0.21 takes it to 0.045, closer to a
+    //    line — and still clear of the eyes, whose inner edge is at x 0.038
+    //    against the blaze's widest half-width of 0.023.
+    //  - theta now runs to 1.57 (the head's front equator) instead of 1.40.
+    //    At 1.40 the strip stopped at (y 0.606, z 0.566), a thread of tan short
+    //    of the muzzle; at 1.57 its lower end lands at (y 0.560, z 0.576),
+    //    INSIDE the snout ellipsoid, so blaze and muzzle merge into one
+    //    continuous white face marking the way the reference dogs do.
+    shell(HEAD_R, 1.022, 0, 0, 1.32, 0.25, Math.PI / 2 - 0.105, 0.21),
     white,
   );
   blaze.name = "blaze";
@@ -269,23 +289,18 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
   jaw.add(jawMesh);
   g.add(jaw);
 
-  // Eye materials — fixed, never skinned (same policy as before): white
+  // Eye materials â€” fixed, never skinned (same policy as before): white
   // sclera, calm dark-brown pupil, tiny emissive glint that still reads as
   // a light-catch in shadow.
-  const eyeW = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.25 });
-  const pupilM = new THREE.MeshStandardMaterial({ color: 0x2a1a10, roughness: 0.35 });
-  const glintM = new THREE.MeshStandardMaterial({
-    color: 0xffffff,
-    roughness: 0.15,
-    emissive: 0xffffff,
-    emissiveIntensity: 0.35,
-  });
+  const eyeW = toon({ color: 0xffffff });
+  const pupilM = toon({ color: 0x2a1a10 });
+  const glintM = new THREE.MeshBasicMaterial({ color: 0xffffff });
 
   // Eye-cap aim, derived from the unit gaze direction (±0.42, 0.20, 0.885)
-  // — ~33 degrees off the head's forward axis, slightly above the muzzle:
+  // â€” ~33 degrees off the head's forward axis, slightly above the muzzle:
   // rotateX(acos(0.20)) lowers the cap pole from +Y to the right elevation,
   // then rotateY(±0.443) yaws it to each side. The pupil uses a slightly
-  // smaller yaw (0.41) so both pupils sit a touch medial on their scleras —
+  // smaller yaw (0.41) so both pupils sit a touch medial on their scleras â€”
   // a gentle forward convergence, never walleyed. The glint aims a little
   // higher and further out (up-and-outer highlight).
   const EYE_RX = Math.acos(0.2);
@@ -294,29 +309,21 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
   const GLINT_RX = EYE_RX - 0.09;
   const GLINT_RY = 0.5;
 
-  // ONE-piece teardrop ear profile for LatheGeometry: narrow root, fullest
-  // just below the middle, rounded tapered tip 0.36 long. Lathed about its
-  // own axis then flattened into a paddle (scale x0.55/z0.85), it is a
-  // single continuous mesh — one clean silhouette per side.
-  const earProfile = [
-    new THREE.Vector2(0.002, 0),
-    new THREE.Vector2(0.045, -0.05),
-    new THREE.Vector2(0.07, -0.13),
-    new THREE.Vector2(0.082, -0.21),
-    new THREE.Vector2(0.068, -0.28),
-    new THREE.Vector2(0.038, -0.33),
-    new THREE.Vector2(0.002, -0.36),
-  ];
-
   const legs: THREE.Group[] = [];
   ([-1, 1] as const).forEach((s) => {
     // EAR-BROWN head-side cap: pole aimed at the ear root (unit direction
-    // ~(±0.78, 0.59, 0.22)), angular radius 0.95 — sweeps around the eye
+    // ~(±0.78, 0.59, 0.22)), angular radius 0.95 â€” sweeps around the eye
     // and cheek so the eyes sit ON brown patches (they render above it via
     // larger radius factors) and the blaze splits the brown crown, the
     // classic beagle head map. Factors 1.010/1.014 per side so the small
     // overlap at the back of the crown layers cleanly instead of z-fighting.
-    const sideCap = new THREE.Mesh(shell(HEAD_R, 1.012 + 0.002 * s, 0.936, 1.31 * s, 0.95), earMat);
+    // Base TAN, not the ear's brown. Both used earMat, so the cheek marking and
+    // the ear leather hanging over it were the same tone and merged into one
+    // brown mass in profile — the ear had no edge to read against. The
+    // references show the head's tan and the ear as close but distinct, with
+    // the ear the deeper of the two; that is exactly what tan-under-earMat
+    // gives, and it leaves `earMat` doing what its name says.
+    const sideCap = new THREE.Mesh(shell(HEAD_R, 1.012 + 0.002 * s, 0.936, 1.31 * s, 0.95), tan);
     sideCap.name = s < 0 ? "sideCapL" : "sideCapR";
     sideCap.position.copy(HEAD_POS);
     g.add(sideCap);
@@ -324,30 +331,76 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
     // Ear: ONE continuous teardrop (see earProfile), rooted at the top-side
     // of the skull. The pivot sits 0.02 INSIDE the head surface and the
     // mesh is nudged 0.02 further up, so the ear's narrow root is buried a
-    // solid ~0.04-0.08 inside the head sphere at every angle — it visibly
+    // solid ~0.04-0.08 inside the head sphere at every angle â€” it visibly
     // grows out of the skull (within the brown side cap, so root color
     // matches). A slight outward roll (rotation.z, tip curls off the cheek)
     // and backward drape (rotation.x) keep it soft; the tip hangs beside
     // the cheek at y~0.36 pre-scale, far above ground even mid-flop.
     // syncToEntity flops earPivot.rotation.x, same joint semantics as ever.
+    // TWO-PART EAR. The leather has to swing a long way — folded forward when
+    // the dog is standing, swept back like a wing when it runs — and a single
+    // piece hinged at the skull tears away from the head at the extremes,
+    // showing a gap where it attaches.
+    //
+    // So the attachment is its own STATIC lump, welded to the head and never
+    // animated, and the leather hinges out of it. The lump covers the hinge at
+    // every angle, which is what sells the ear as growing out of the skull
+    // rather than being pinned to it.
+    // The ear leather, and nothing else.
+    //
+    // It replaced a flattened LatheGeometry teardrop, which had only two
+    // settings: squash it little and you get a fat lobe stuck to the head,
+    // squash it enough to stop reading as a lobe and it becomes paper with no
+    // form. There is no useful middle, because a lathe's cross-section is a
+    // circle and flattening it is the only lever.
+    //
+    // A CAPSULE gives what the lathe could not: its silhouette is a rounded
+    // oblong — the shape of an actual ear leather — and it keeps real
+    // thickness through the middle even when flattened into a flap.
+    //
+    // A separate static "butt" at the attachment was tried and dropped: the
+    // leather's own top is buried 0.028 inside the skull and stays buried
+    // through the full run sweep, so there was no hinge for it to hide.
     const earPivot = new THREE.Group();
     earPivot.name = s < 0 ? "earL" : "earR";
-    earPivot.position.set(0.195 * s, 0.716, 0.313);
-    const ear = new THREE.Mesh(new THREE.LatheGeometry(earProfile, 20), earMat);
+    // Set BACK from the eye (z 0.36, against the eye's own 0.54) so the leather
+    // hangs behind the face instead of across it — at 0.42 the ear's 0.28
+    // front-to-back reached forward over the eye and shaded it. Nudged a
+    // fraction wider (0.222) to keep the root's burial depth the same now that
+    // it sits nearer the skull's centre, where the sphere is fatter.
+    earPivot.position.set(0.222 * s, 0.645, 0.36);
+
+    // Radius 0.125 with a 0.14 shaft is a 0.39-long leather. Flattened to 0.44
+    // across it keeps 0.11 of thickness — thin enough to be a flap, thick
+    // enough to catch its own shading band and read as flesh. Widened to 1.12
+    // front-to-back so the oblong is broader than it is thick, which is the
+    // proportion the reference photos show.
+    const ear = new THREE.Mesh(new THREE.CapsuleGeometry(0.125, 0.14, 6, 20), earMat);
     ear.name = s < 0 ? "earMeshL" : "earMeshR";
-    ear.scale.set(0.55, 1, 0.85);
-    ear.rotation.z = 0.2 * s;
-    ear.rotation.x = 0.12;
-    ear.position.set(0.01 * s, 0.02, 0);
+    ear.scale.set(0.44, 1, 1.12);
+    ear.rotation.z = 0.5 * s;
+    ear.rotation.x = -0.35;
+    ear.rotation.y = 0.35 * s;
+    // Pushed OUT and raised. At the old 0.012 the leather's inner face sat
+    // 0.032 inside the skull for most of its length — the ear was embedded in
+    // the head rather than hanging beside it.
+    //
+    // 0.046 puts that inner face level with the skull's widest point (0.255 at
+    // this z), so the leather grazes the head at its equator and swings clear
+    // below it. The TOP still buries, because the mesh's own outward lean
+    // (rotation.z) tips its upper end back toward the skull as the sphere
+    // narrows — that lean is what keeps the ear rooted while its body hangs
+    // free, and it is why the ear cannot simply be translated outward.
+    ear.position.set(0.046 * s, -0.10, 0);
     earPivot.add(ear);
     g.add(earPivot);
     if (s < 0) g.userData.__earL = earPivot;
     else g.userData.__earR = earPivot;
 
-    // Painted-lens eye: three concentric flush caps directly on the head —
+    // Painted-lens eye: three concentric flush caps directly on the head â€”
     // sclera (angular radius 0.28, rise 0.005), pupil (0.165, rise 0.008,
     // aimed a touch medial for convergence), glint (0.055, rise 0.010,
-    // up-and-outer). Embedded, near-flush, cute — nothing bulges.
+    // up-and-outer). Embedded, near-flush, cute â€” nothing bulges.
     const sclera = new THREE.Mesh(shell(HEAD_R, 1.02, EYE_RX, EYE_RY * s, 0.28), eyeW);
     sclera.name = s < 0 ? "scleraL" : "scleraR";
     sclera.position.copy(HEAD_POS);
@@ -361,58 +414,86 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
     glint.position.copy(HEAD_POS);
     g.add(glint);
 
-    // Legs: approved stubby proportions — pivot at the hip (inside the
+    // Legs: approved stubby proportions â€” pivot at the hip (inside the
     // body), short chunky cylinder, white paw/sock blob INSIDE the pivot so
     // it trots with the leg. Paw bottom lands at y~0.00 (ground contact).
-    ([-0.17, 0.17] as const).forEach((dz) => {
+    ([-0.18, 0.18] as const).forEach((dz) => {
       const legName = `leg${dz < 0 ? "F" : "B"}${s < 0 ? "L" : "R"}`;
       const legPivot = new THREE.Group();
       legPivot.name = legName;
-      legPivot.position.set(0.16 * s, 0.2, dz);
-      const legMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.055, 0.17, 10), tan);
+      // Tracks the body: x scaled by the same 0.92 so the legs stay under the
+      // barrel rather than outside it, and dz widened to 0.18 with the longer
+      // body so the stance keeps its proportion.
+      legPivot.position.set(0.147 * s, 0.2, dz);
+      // 20 radial segments, not 10: at this size a 10-sided cylinder reads as a
+      // hexagonal post. The bottom also tapers harder (0.046, was 0.055) so the
+      // paw engulfs the rim with margin all the way round — where the two
+      // surfaces cross at a shallow angle, the intersection curve turns into a
+      // visibly polygonal edge, and burying it deeper is what hides that.
+      const legMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.046, 0.17, 20), tan);
       legMesh.name = `${legName}Mesh`;
-      legMesh.position.y = -0.085;
+      legMesh.position.y = -0.055;
       legPivot.add(legMesh);
-      const paw = new THREE.Mesh(new THREE.SphereGeometry(0.06, 12, 8), white);
+
+      // The paw has to SWALLOW the leg's bottom rim, not sit under it.
+      //
+      // It used to be offset 0.025 forward with a z half-extent of 0.075, so it
+      // only reached back to z -0.05 — and being an ellipsoid, its height went
+      // to zero exactly there. The leg's bottom rim runs to z -0.055, so the
+      // back of every foot had a bare cylinder edge hanging in mid-air with a
+      // visible gap under it.
+      //
+      // Pulled back to 0.010 and grown to a 0.070 z half-extent, the paw now
+      // reaches z -0.070 with 0.015 to spare behind the leg, and still has
+      // 0.031 of height there — enough to close over the rim. Bottom sits on
+      // y = 0 exactly, as before.
+      const paw = new THREE.Mesh(new THREE.SphereGeometry(0.06, 24, 16), white);
       paw.name = `${legName}Paw`;
-      paw.scale.set(1.05, 0.75, 1.25);
-      paw.position.set(0, -0.155, 0.025);
+      paw.scale.set(1.18, 0.7, 1.34);
+      paw.position.set(0, -0.157, 0.03);
       legPivot.add(paw);
       g.add(legPivot);
       legs.push(legPivot);
     });
   });
 
-  // Tail: the happy flag. OUTER pivot at the rump top (0,0.46,-0.38) —
+  // Tail: the happy flag. OUTER pivot at the rump top (0,0.46,-0.38) â€”
   // inside the haunch form and under the saddle's black rear, so the base
   // emerges from black fur. INNER tilt group leans the shaft 0.35 rad BACK
   // (near-vertical with a slight back-lean); shaft + white tip live in the
   // tilt group. syncToEntity wags tail.rotation.y on the OUTER pivot, which
-  // sweeps the leaned shaft around the vertical axis — the tip traces a
+  // sweeps the leaned shaft around the vertical axis â€” the tip traces a
   // visible side-to-side flag wave (horizontal lever arm ~0.11) instead of
   // a vertical shaft spinning invisibly on its own axis. Tip crests at
   // y~0.82 pre-scale, under the 1.0 ceiling.
-  // Shaft is a chunky tapered cone (0.06 base -> 0.038 top) — thick enough to
+  // Shaft is a chunky tapered cone (0.06 base -> 0.038 top) â€” thick enough to
   // read as a tail, not an antenna. The white tip is a matching taper that
   // overlaps the shaft's top third (steep shared seam at the shaft radius, no
   // radius jump to a distinct sphere) so it blends in as the tail's white
   // upper segment rather than a lollipop ball stuck on the end.
   const tail = new THREE.Group();
   tail.name = "tail";
-  tail.position.set(0, 0.46, -0.38);
+  tail.position.set(0.01, 0.43, -0.38);
+  // Pitched back so the tail's root tucks into the rump instead of standing off
+  // it. This lives on the OUTER pivot on purpose: `animateBeagleParts` writes
+  // `tail.rotation.y` (the wag) every frame and never touches `.x`, so a pose
+  // set here survives — the editor greys the control out only because its
+  // runtime-owned rule locks the whole `rotation` channel rather than the one
+  // animated axis.
+  tail.rotation.x = -0.2;
   const tailTilt = new THREE.Group();
   tailTilt.name = "tailTilt";
   tailTilt.rotation.x = -0.35;
   tail.add(tailTilt);
-  const tailShaft = new THREE.Mesh(new THREE.CylinderGeometry(0.038, 0.06, 0.3, 10), tan);
+  const tailShaft = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.075, 0.3, 10), tan);
   tailShaft.name = "tailShaft";
   tailShaft.position.y = 0.15;
   tailTilt.add(tailShaft);
-  const tailTip = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.044, 0.16, 10), white);
+  const tailTip = new THREE.Mesh(new THREE.CylinderGeometry(0.038, 0.058, 0.16, 10), white);
   tailTip.name = "tailTip";
   tailTip.position.y = 0.34;
   tailTilt.add(tailTip);
-  const tailTipCap = new THREE.Mesh(new THREE.SphereGeometry(0.028, 10, 8), white);
+  const tailTipCap = new THREE.Mesh(new THREE.SphereGeometry(0.038, 10, 8), white);
   tailTipCap.name = "tailTipCap";
   tailTipCap.position.y = 0.42;
   tailTilt.add(tailTipCap);
@@ -449,7 +530,7 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
 }
 
 /**
- * Recolors an already-built beagle group in place to `skin`'s coat — sets
+ * Recolors an already-built beagle group in place to `skin`'s coat â€” sets
  * `.color` on the 4 materials stashed in `g.userData.coatMats` by `makeBeagle`.
  * No geometry rebuild, no remove/re-add: the mesh keeps animating (walk bob,
  * tail wag, etc.) uninterrupted through the switch. This is what the live
@@ -467,7 +548,7 @@ export function applyBeagleSkin(group: THREE.Group, skin: BeagleSkin): void {
 }
 
 export interface InsectLimbs {
-  /** Antenna root pivots — swayed on idle, always. */
+  /** Antenna root pivots â€” swayed on idle, always. */
   antennae: THREE.Object3D[];
   /** Per-leg swing pivots, in build order: F-L, F-R, M-L, M-R, B-L, B-R. */
   legs: THREE.Object3D[];
@@ -478,8 +559,8 @@ export interface InsectLimbs {
  *
  * Everything an enemy does that is NOT common to all enemies lives behind this
  * instead of behind another optional field on GhostUserData. The shared code
- * kept growing a field and a branch per character — `accentMats?`, `limbs?`,
- * and so on — which is why a change aimed at one enemy kept rippling into the
+ * kept growing a field and a branch per character â€” `accentMats?`, `limbs?`,
+ * and so on â€” which is why a change aimed at one enemy kept rippling into the
  * other three. A builder now closes over its own parts and hands back the
  * behaviour, so the shared layer never learns that legs or antennae exist.
  *
@@ -487,7 +568,7 @@ export interface InsectLimbs {
  * default, which is what the ghost, bee and ladybug do today.
  */
 export interface EnemyBehaviour {
-  /** Extra per-frame motion this character owns — limbs, wings, whatever it
+  /** Extra per-frame motion this character owns â€” limbs, wings, whatever it
    *  happens to have. Called from syncToEntity after the shared body pose. */
   animate?(t: number, idleT: number, moveBlend: number): void;
   /** Fully replaces the shared "eaten" look for this character. */
@@ -497,46 +578,46 @@ export interface EnemyBehaviour {
 }
 
 export interface GhostUserData {
-  bodyMat: THREE.MeshStandardMaterial;
-  /** Every node the "eaten" state must re-show — the eye parts and any group
+  bodyMat: THREE.MeshToonMaterial;
+  /** Every node the "eaten" state must re-show â€” the eye parts and any group
    *  they hang from, since an invisible parent hides its children outright.
    *  Object3D, not Mesh: some of those are Groups. */
   eyes: THREE.Object3D[];
   /** The authored pupil colour, restored by applyGhostState when leaving the
    *  frightened look. Without it the "normal" branch put back a hardcoded ghost
-   *  blue, which quietly repainted any character that wanted its own — the
+   *  blue, which quietly repainted any character that wanted its own â€” the
    *  beetle's warm near-black turned blue the moment it animated. */
   pupBaseColor: number;
-  /** This character's own behaviour — see EnemyBehaviour. */
+  /** This character's own behaviour â€” see EnemyBehaviour. */
   behaviour?: EnemyBehaviour;
   /** Every material of the body, dimmed to a translucent spirit while eaten.
    *  Collected by traversal at build time so a character never has to keep a
    *  hand-written list of its own materials in sync. */
-  spiritMats: THREE.MeshStandardMaterial[];
-  /** Materials left SOLID while eaten — the eyes, which are what a player
+  spiritMats: THREE.MeshToonMaterial[];
+  /** Materials left SOLID while eaten â€” the eyes, which are what a player
    *  actually tracks as an eaten enemy runs home. */
-  eyeMats: THREE.MeshStandardMaterial[];
+  eyeMats: THREE.MeshToonMaterial[];
   /** Extra materials that must follow the frightened/normal recolour along
    *  with `bodyMat`. Small fixed accents (a dark antenna, a wing) deliberately
-   *  stay their own colour — but when an accent is a LARGE share of the
+   *  stay their own colour â€” but when an accent is a LARGE share of the
    *  silhouette, leaving it un-recoloured would weaken the "this one is edible
    *  now" read, which matters more than the styling. Undefined = none. */
-  accentMats?: THREE.MeshStandardMaterial[];
+  accentMats?: THREE.MeshToonMaterial[];
   /** Pupil dart PIVOTS, one per eye. A decal cap has to stay centred on the
    *  form to hug it, so it can never be TRANSLATED the way the old ball pupils
-   *  were — instead its pivot is ROTATED, sweeping the cap across the surface
+   *  were â€” instead its pivot is ROTATED, sweeping the cap across the surface
    *  while it stays perfectly flush. Every character builds its own eyes, but
    *  they all share this one pivot convention, which is why a single editor
    *  rule covers all four. */
   pupPivots: THREE.Object3D[];
-  pupM: THREE.MeshStandardMaterial;
+  pupM: THREE.MeshToonMaterial;
   baseColor: number;
-  /** The 5 wavy-hem spheres, in build order — wobbled (y bob + scale) by syncToEntity. */
+  /** The 5 wavy-hem spheres, in build order â€” wobbled (y bob + scale) by syncToEntity. */
   hem: THREE.Mesh[];
   /** Skirt body, breathed by animateGhostHem alongside the hem wobble.
    *
    *  OPTIONAL: a character can decline the shared idle entirely. The ladybug
-   *  does — its rim has to follow the shell's forward tilt, and a breathing
+   *  does â€” its rim has to follow the shell's forward tilt, and a breathing
    *  tilted rim slides in and out of the shell it is supposed to seal. Its own
    *  behaviour supplies a body bob and antenna twitch instead. */
   skirt?: THREE.Mesh;
@@ -552,17 +633,17 @@ export interface GhostUserData {
  */
 function collectSpiritMats(
   g: THREE.Group,
-  exclude: THREE.MeshStandardMaterial[],
-): THREE.MeshStandardMaterial[] {
+  exclude: THREE.MeshToonMaterial[],
+): THREE.MeshToonMaterial[] {
   const seen = new Set<THREE.Material>(exclude);
-  const out: THREE.MeshStandardMaterial[] = [];
+  const out: THREE.MeshToonMaterial[] = [];
   g.traverse((o) => {
     if (!(o instanceof THREE.Mesh)) return;
     const mats = Array.isArray(o.material) ? o.material : [o.material];
     for (const m of mats) {
       if (seen.has(m)) continue;
       seen.add(m);
-      if (!(m instanceof THREE.MeshStandardMaterial)) continue;
+      if (!(m instanceof THREE.MeshToonMaterial)) continue;
       // Remember what this material looked like BEFORE any spirit pass, so the
       // restore puts back its own values rather than assuming every material
       // was opaque. The bee's wings are already translucent by design; a
@@ -601,18 +682,18 @@ interface WavyRing {
 }
 
 /**
- * A surface of revolution whose BOTTOM EDGE undulates — the ghost's body and
+ * A surface of revolution whose BOTTOM EDGE undulates â€” the ghost's body and
  * its scalloped hem as ONE mesh.
  *
  * LatheGeometry cannot do this: it revolves a fixed profile, so every angle
  * gets the same silhouette and the hem has to be built as separate blobs
- * hung underneath. Those blobs were the whole problem — five surfaces grazing
+ * hung underneath. Those blobs were the whole problem â€” five surfaces grazing
  * the body's flank at a shallow angle, which reads as a crease however they
  * are positioned, and a joint that opened whenever they animated.
  *
  * Here each ring is dipped by `amp * (0.5 + 0.5cos(waves * theta))`, scaled by
  * its own weight: 1 at the rim, fading to 0 up the flank and back to 0 at the
- * underside's axis. The axis MUST be pinned — every angle shares that single
+ * underside's axis. The axis MUST be pinned â€” every angle shares that single
  * vertex, so letting the wave move it would tear the mesh.
  *
  * Winding is bottom-to-top like LatheGeometry's, for the same reason: get it
@@ -657,7 +738,7 @@ function wavyLathe(
 // runs whether or not it is moving: the whole body rises and falls.
 //
 // Two earlier ideas were tried and dropped. The hem used to TURN, so the waves
-// travelled around the rim — but a spinning hem reads as the whole ghost
+// travelled around the rim â€” but a spinning hem reads as the whole ghost
 // rotating, and it fights the yaw syncToEntity applies to face the direction of
 // travel. The scallops also used to ripple individually; they no longer exist
 // as separate objects, since the hem is now part of the body's own geometry.
@@ -677,18 +758,18 @@ function ghostBehaviour(hover: THREE.Object3D): EnemyBehaviour {
 export function makeGhost(color: number): THREE.Group {
   const g = new THREE.Group();
 
-  const bodyMat = new THREE.MeshStandardMaterial({
+  const bodyMat = toon({
     color,
     // Glossier than the old ghost: the reference is a smooth plastic toy, and
     // a low roughness is what the rig's rim light needs to read as a sheen.
-    roughness: 0.28,
-    metalness: 0,
+
+
     emissive: color,
     emissiveIntensity: 0.14,
     // SOLID, deliberately. A translucent body was tried and reverted: the eyes
     // are protruding balls mostly buried in the body, so a see-through surface
     // drew over them and you saw the whole sunken eyeball instead of the neat
-    // oval that clears it — pupils washed out and all. The closed underside and
+    // oval that clears it â€” pupils washed out and all. The closed underside and
     // the hem scallops showed through as a band across the middle too.
     //
     // Translucency belongs to the EATEN state alone (0.3), where it means
@@ -703,7 +784,7 @@ export function makeGhost(color: number): THREE.Group {
   g.add(hover);
 
   // --- body: ONE mesh, hem included ---------------------------------------
-  // The hem is no longer five blobs hung underneath — it is the body's own
+  // The hem is no longer five blobs hung underneath â€” it is the body's own
   // bottom EDGE, undulating. See wavyLathe for why LatheGeometry cannot do this
   // and why separate scallops always creased against the flank.
   //
@@ -713,7 +794,7 @@ export function makeGhost(color: number): THREE.Group {
   const BODY_BOTTOM = 0.105;
   const WAVE_AMP = 0.092; // how far the points hang below the notches
   const profile: readonly WavyRing[] = [
-    // underside, axis outward — the axis is PINNED at w 0
+    // underside, axis outward â€” the axis is PINNED at w 0
     { r: 0.0, y: BODY_BOTTOM - 0.03, w: 0 },
     { r: 0.1, y: BODY_BOTTOM - 0.026, w: 0.34 },
     { r: 0.2, y: BODY_BOTTOM - 0.016, w: 0.72 },
@@ -740,14 +821,14 @@ export function makeGhost(color: number): THREE.Group {
   hover.add(body);
 
   // --- eyes ----------------------------------------------------------------
-  // Big white ovals with a plain black pupil — no iris, no second highlight.
+  // Big white ovals with a plain black pupil â€” no iris, no second highlight.
   // The reference's whole face is those two shapes, and anything more starts
   // fighting them.
-  const scleraMat = new THREE.MeshStandardMaterial({ color: 0xfdfaf4, roughness: 0.3 });
-  const pupM = new THREE.MeshStandardMaterial({ color: 0x14161f, roughness: 0.3 });
-  const glintMat = new THREE.MeshStandardMaterial({
+  const scleraMat = toon({ color: 0xfdfaf4});
+  const pupM = toon({ color: 0x14161f});
+  const glintMat = toon({
     color: 0xffffff,
-    roughness: 0.1,
+
     emissive: 0xffffff,
     emissiveIntensity: 0.45,
   });
@@ -760,7 +841,7 @@ export function makeGhost(color: number): THREE.Group {
     rx: number,
     ry: number,
     thetaLen: number,
-    mat: THREE.MeshStandardMaterial,
+    mat: THREE.MeshToonMaterial,
   ): THREE.Mesh => {
     const geo = new THREE.SphereGeometry(EYE_R * factor, 24, 18, 0, Math.PI * 2, 0, thetaLen);
     geo.rotateX(rx);
@@ -774,7 +855,7 @@ export function makeGhost(color: number): THREE.Group {
   const makeEye = (s: number): { ball: THREE.Mesh; pivot: THREE.Group } => {
     // Pushed OUT along the body's surface normal until a real oval clears it.
     // These sat at radius 0.224 against a body radius of 0.286, so only 0.013
-    // of the eyeball ever emerged — a sliver. It looked fine only because the
+    // of the eyeball ever emerged â€” a sliver. It looked fine only because the
     // body's normals were inverted at the time and the whole ball showed
     // through it; fixing the body exposed how buried they actually were.
     const centre = new THREE.Vector3(0.123 * s, 0.462, 0.223);
@@ -798,7 +879,7 @@ export function makeGhost(color: number): THREE.Group {
     //
     // Offsets here are measured from the PUPIL's axis, which carries its own
     // -0.1 yaw. It used to be offset (0.3, 0.3) = 0.424 from that axis while
-    // the pupil's angular radius is 0.42 — so the highlight straddled the rim
+    // the pupil's angular radius is 0.42 â€” so the highlight straddled the rim
     // and read as a dot floating just above the pupil. (0.16, 0.15) = 0.219
     // puts its far edge at 0.329, comfortably within the black.
     const glint = eyeCap(1.055, EYE_FWD - 0.16, (-0.1 + 0.15) * s, 0.11, glintMat);
@@ -826,8 +907,8 @@ export function makeGhost(color: number): THREE.Group {
     pupM,
     pupBaseColor: pupM.color.getHex(),
     baseColor: color,
-    // The hem is driven by this character's OWN behaviour — it ripples in
-    // place rather than doing the shared bob — so `hem` is empty here and no
+    // The hem is driven by this character's OWN behaviour â€” it ripples in
+    // place rather than doing the shared bob â€” so `hem` is empty here and no
     // `skirt` is offered. animateGhostHem has nothing to do for this one.
     hem: [],
     pupOffset: { x: 0, z: 0 },
@@ -839,23 +920,23 @@ export function makeGhost(color: number): THREE.Group {
   return g;
 }
 
-// Fixed-dark accent color for the beetle's antennae + tiny head accent — a
+// Fixed-dark accent color for the beetle's antennae + tiny head accent â€” a
 // small enough slice of the silhouette that it doesn't fight the "whole bug
 // turns blue" frightened read (see makeBeetle's doc comment), but reads as a
 // natural dark detail against any of the three team shell colors.
 const BEETLE_ACCENT = 0x1c1712;
-/** The beetle's head/thorax, legs and antennae — the teal against the shell's
+/** The beetle's head/thorax, legs and antennae â€” the teal against the shell's
  *  team colour. That two-tone split IS the design (see makeBeetle), so unlike
  *  the old tiny dark nub this is a big slice of the silhouette; it is listed in
  *  `accentMats` so applyGhostState still turns the WHOLE bug blue when
- *  frightened. A frightened enemy has to be unmistakable — that reads ahead of
+ *  frightened. A frightened enemy has to be unmistakable â€” that reads ahead of
  *  any styling. */
 const BEETLE_BODY = 0x1d6f7d;
 
 /**
  * Builds a garden-beetle/ladybug-ish enemy from primitives (IDEA-009 skin
  * alternative to makeGhost). Satisfies the exact same `GhostUserData`
- * contract as the ghost — a single shared `bodyMat` covering the vast
+ * contract as the ghost â€” a single shared `bodyMat` covering the vast
  * majority of the silhouette (shell dome + skirt-equivalent underbelly rim +
  * the "hem" accent spheres), so `applyGhostState`'s frightened recolor
  * ("whole creature turns blue") and eaten hide/reveal both read correctly
@@ -863,12 +944,12 @@ const BEETLE_BODY = 0x1d6f7d;
  *
  * Shape: a rounded, squashed-sphere SHELL as the clear main body (reads as a
  * beetle's back from the top-down game camera) with the 2 eyes sitting
- * directly on its front face — no oversized head nub swallowing them (an
+ * directly on its front face â€” no oversized head nub swallowing them (an
  * earlier pass had a large dark head blob here; it dominated the silhouette
  * and buried the eyes, so it's gone). Only a tiny dark accent nub peeks out
  * low between/below the eyes (mostly hidden by the shell's own curve), plus
  * two short, thin antennae firmly rooted at the shell's front-top edge and
- * swept up-and-back — small, attached, no floating pieces. A faint shell
+ * swept up-and-back â€” small, attached, no floating pieces. A faint shell
  * seam + a few subtle "hem" spot-bumps add ladybug character, all on
  * `bodyMat` so they recolor with it.
  *
@@ -881,21 +962,21 @@ export function makeBeetle(color: number): THREE.Group {
   const g = new THREE.Group();
   // Shell keeps the TEAM colour (that is how a player tells the three enemies
   // apart); the head, legs and antennae carry the contrasting teal.
-  const bodyMat = new THREE.MeshStandardMaterial({
+  const bodyMat = toon({
     color,
-    roughness: 0.35,
+
     emissive: color,
     emissiveIntensity: 0.15,
   });
-  const limbMat = new THREE.MeshStandardMaterial({ color: BEETLE_BODY, roughness: 0.45 });
+  const limbMat = toon({ color: BEETLE_BODY});
   // applyGhostState turns accents blue while frightened and needs to know what
-  // to put back afterwards — bodyMat has `baseColor` in userData for the same
+  // to put back afterwards â€” bodyMat has `baseColor` in userData for the same
   // reason, but an accent's base is its own, not the team colour.
   limbMat.userData.baseColor = BEETLE_BODY;
-  const seamMat = new THREE.MeshStandardMaterial({ color: BEETLE_ACCENT, roughness: 0.6 });
+  const seamMat = toon({ color: BEETLE_ACCENT});
 
   // Proportion base: SHELL WIDTH = W, everything else a fraction of it per the
-  // reference sheet. W itself comes from the game rather than the sheet — the
+  // reference sheet. W itself comes from the game rather than the sheet â€” the
   // ghost reads 0.60 wide and 0.66 tall, and a beetle much bigger would not
   // sit right beside it in the same maze.
   const W = 0.64;
@@ -918,7 +999,7 @@ export function makeBeetle(color: number): THREE.Group {
   shell.rotation.x = SHELL_TILT;
   g.add(shell);
 
-  // --- seams: grooves, NOT gaps. The same decal trick the eyes use — thin
+  // --- seams: grooves, NOT gaps. The same decal trick the eyes use â€” thin
   // lunes of a very slightly larger sphere, so they lie exactly on the shell
   // at any tilt instead of having to be fitted to it. One centre seam (front
   // half plus rear half, since a lune runs pole-to-cut down ONE side) and two
@@ -951,7 +1032,7 @@ export function makeBeetle(color: number): THREE.Group {
   // --- underside rim: the thin darker edge showing the shell's thickness.
   // Doubles as `skirt`, the mesh animateGhostHem gently breathes. That wobble
   // is applied RELATIVE to whatever is authored here (see restPose), so this
-  // scale is free to be whatever the shape needs — it is no longer forced to 1.
+  // scale is free to be whatever the shape needs â€” it is no longer forced to 1.
   const skirt = new THREE.Mesh(new THREE.CylinderGeometry(R * 1.05, R * 1.0, 0.035, 24), seamMat);
   skirt.name = "skirt";
   skirt.scale.setScalar(0.94);
@@ -960,7 +1041,7 @@ export function makeBeetle(color: number): THREE.Group {
 
   // --- belly: the underside mass closing the shell off. The shell is a
   // partial sphere with no lid, so without this you look straight through its
-  // open rim into an unlit cavity — a black wedge under the bug. It also gives
+  // open rim into an unlit cavity â€” a black wedge under the bug. It also gives
   // the six legs a body to grow out of, which is what the reference shows:
   // legs on the teal thorax mass, never on the shell.
   const belly = new THREE.Mesh(new THREE.SphereGeometry(R * 0.98, 24, 16), limbMat);
@@ -989,9 +1070,9 @@ export function makeBeetle(color: number): THREE.Group {
     // Each antenna hangs off a PIVOT at its root on the head, and its curve is
     // built relative to that root. That is what lets the idle sway rotate the
     // whole antenna from where it meets the head, instead of swinging it about
-    // the model's origin — and it keeps the pivot's rotation a channel the
+    // the model's origin â€” and it keeps the pivot's rotation a channel the
     // animation can own outright without touching anything authored.
-    const root = new THREE.Vector3(0.085 * s, 0.5, 0.31);
+    const root = new THREE.Vector3(0.085 * s, 0.47, 0.31);
     const pivot = new THREE.Group();
     pivot.name = s < 0 ? "antennaPivotL" : "antennaPivotR";
     pivot.position.copy(root);
@@ -1037,7 +1118,7 @@ export function makeBeetle(color: number): THREE.Group {
 
       // The gait swings this INNER pivot, never `root`. root carries the
       // authored splay and fan, which stay editable; swing's rotation is a
-      // clean channel the animation owns — the same separation the pupil dart
+      // clean channel the animation owns â€” the same separation the pupil dart
       // uses. Rotating a node that also holds authored values would force the
       // editor to lock the whole rotation channel, splay included.
       const swing = new THREE.Group();
@@ -1073,15 +1154,15 @@ export function makeBeetle(color: number): THREE.Group {
   }
 
   // --- face: no mouth at all. Everything expressive lives in the eyes, so they
-  // are big PROTRUDING spheres bulging past the head's silhouette — deliberately
-  // NOT the flush decal caps the other three enemies wear — with a dark brow arc
+  // are big PROTRUDING spheres bulging past the head's silhouette â€” deliberately
+  // NOT the flush decal caps the other three enemies wear â€” with a dark brow arc
   // riding each one as the only expression control.
-  const pupM = new THREE.MeshStandardMaterial({ color: 0x2a1a10, roughness: 0.35 });
-  const scleraMat = new THREE.MeshStandardMaterial({ color: 0xfdf6ec, roughness: 0.25 });
-  const irisMat = new THREE.MeshStandardMaterial({ color: 0x8a5a2b, roughness: 0.4 });
-  const glintMat = new THREE.MeshStandardMaterial({
+  const pupM = toon({ color: 0x2a1a10});
+  const scleraMat = toon({ color: 0xfdf6ec});
+  const irisMat = toon({ color: 0x8a5a2b});
+  const glintMat = toon({
     color: 0xffffff,
-    roughness: 0.15,
+
     emissive: 0xffffff,
     emissiveIntensity: 0.4,
   });
@@ -1111,14 +1192,14 @@ export function makeBeetle(color: number): THREE.Group {
 
     // Iris, pupil and glint hang off a pivot AT THE EYEBALL'S CENTRE, so the
     // dart rotates them around the ball and they stay on its surface. Same
-    // trick as the decal caps — and also just how a googly eye works.
+    // trick as the decal caps â€” and also just how a googly eye works.
     const pivot = new THREE.Group();
     pivot.name = s < 0 ? "pupilPivotL" : "pupilPivotR";
     pivot.position.copy(centre);
     g.add(pivot);
     pupPivots.push(pivot);
 
-    // Iris, pupil and glint are flush decal CAPS on the eyeball — the same
+    // Iris, pupil and glint are flush decal CAPS on the eyeball â€” the same
     // technique the other three enemies' whole eyes use, just applied to a
     // small sphere instead of a head. They were squashed spheres pushed into
     // the eyeball, which z-fought against the sclera and read as a jagged
@@ -1146,7 +1227,7 @@ export function makeBeetle(color: number): THREE.Group {
     eyes.push(glint);
 
     // Brow: a thin dark arc riding the eye's upper edge. Its own node so it can
-    // be rotated later — with no mouth, this is the one expression control.
+    // be rotated later â€” with no mouth, this is the one expression control.
     const brow = new THREE.Mesh(
       new THREE.TorusGeometry(EYE_R * 1.02, EYE_R * 0.075, 6, 20, 1.7),
       seamMat,
@@ -1190,14 +1271,14 @@ export function makeBeetle(color: number): THREE.Group {
   return g;
 }
 
-// Fixed-dark accent color for the bee's stripe bands, antennae, and stinger —
+// Fixed-dark accent color for the bee's stripe bands, antennae, and stinger â€”
 // mirrors BEETLE_ACCENT's role: a small enough slice of the silhouette that
 // it doesn't fight the "whole bug turns blue" frightened read.
 const BEE_ACCENT = 0x1c1712;
-/** The ladybug's head, spots, antennae and leg nubs — a near-black that stays
+/** The ladybug's head, spots, antennae and leg nubs â€” a near-black that stays
  *  slightly warm in the highlights, per the reference palette. */
 const LADYBUG_BLACK = 0x141414;
-// Pale, slightly translucent wing material — stays this color even when
+// Pale, slightly translucent wing material â€” stays this color even when
 // frightened (same treatment as the beetle's dark head accent staying dark),
 // which is fine: a real bug's wings/head don't turn blue when scared either,
 // only the body-color chitin does, and that's what bodyMat models.
@@ -1206,36 +1287,36 @@ const BEE_WING_COLOR = 0xf3f6ff;
 /**
  * Builds a garden-bee enemy from primitives (IDEA-009 third enemy skin,
  * alongside the ghost and the beetle). Satisfies the identical
- * `GhostUserData` contract — a single shared `bodyMat` covering the main
+ * `GhostUserData` contract â€” a single shared `bodyMat` covering the main
  * abdomen+thorax body (plus its skirt-equivalent underbelly rim and the
  * "hem" segment-ring accents), so `applyGhostState`'s frightened recolor
  * ("whole creature turns blue") and eaten hide/reveal both read correctly
- * unmodified. The bee is deliberately NOT literally yellow — its body takes
+ * unmodified. The bee is deliberately NOT literally yellow â€” its body takes
  * the TEAM color like the beetle's shell does; it reads as a bee via SHAPE
  * (elongated, segmented oval body) and a few bold dark accent stripes across
  * its back, not via a fixed yellow-and-black palette.
  *
  * Shape: a plump oval body (more front-back elongated than the beetle's
  * round shell) on `bodyMat`, 3 bold dark stripe bands PAINTED ON the TOP of
- * the rear-half abdomen — each band built from a row of small flattened
+ * the rear-half abdomen â€” each band built from a row of small flattened
  * dark blobs individually surface-solved onto the body's own dome curve
  * (same technique the ladybug's spots use), not a rigid tube/ring (an
  * earlier pass tried that; a fixed-radius ring can only touch a curved dome
  * at isolated points, so it stood visibly off the surface as a hoop from
- * every angle) — small-minority-coverage fixed-dark accent, so bodyMat
- * still clearly dominates the silhouette — 2 small pale
+ * every angle) â€” small-minority-coverage fixed-dark accent, so bodyMat
+ * still clearly dominates the silhouette â€” 2 small pale
  * semi-transparent wings on the upper back, 2
  * short thin antennae at the front, and a tiny dark stinger nub at the rear.
  * Eyes/pupils use the exact same geometry/placement/material pattern as the
  * ghost and beetle (2 white eyes + 2 pupils on `pupM`, added directly to the
- * top-level group `g` as siblings — never nested under a sub-group, which is
+ * top-level group `g` as siblings â€” never nested under a sub-group, which is
  * what makes `applyGhostState`'s eaten-state eyes-float-home re-show work),
  * at the ghost's local coords (eyes y0.4 z0.2 x+-0.12; pupils z0.27 x+-0.12)
  * so applyGhostState's hardcoded pupil-offset math lands unchanged.
  */
 // Chibi-bee hover. Almost all the life in this character comes from the
 // trailing abdomen: the head bobs on a sine and every layer behind it follows
-// LATE — abdomen chain, then antennae, then the dangling legs. Offsetting each
+// LATE â€” abdomen chain, then antennae, then the dangling legs. Offsetting each
 // layer's phase is what makes it feel alive without a single keyframe.
 const BEE_BOB_FREQ = 1.2 * Math.PI * 2; // ~1.2 Hz
 const BEE_BOB = 0.05;
@@ -1296,43 +1377,43 @@ export function makeBee(color: number): THREE.Group {
   const g = new THREE.Group();
 
   // PROPORTION BASE: HEAD WIDTH = W. W comes from the GAME rather than the
-  // sheet — head plus a 1.15 abdomen on a 32-degree axis runs about 0.68 front
+  // sheet â€” head plus a 1.15 abdomen on a 32-degree axis runs about 0.68 front
   // to back, which has to fit a TILE of 1.0, and the total height has to sit
   // beside the ghost's 0.66 and the beetle's 0.76 without looming over them.
   const W = 0.32;
   const HEAD_R = W / 2;
 
-  // Yellow is the TEAM colour here — it is how a player tells the three enemies
+  // Yellow is the TEAM colour here â€” it is how a player tells the three enemies
   // apart and how "frightened" announces itself. The dark stays dark, so the
   // banding still reads in every state.
-  const bodyMat = new THREE.MeshStandardMaterial({
+  const bodyMat = toon({
     color,
-    roughness: 0.75,
-    metalness: 0,
+
+
     emissive: color,
     emissiveIntensity: 0.12,
   });
-  const darkMat = new THREE.MeshStandardMaterial({
+  const darkMat = toon({
     color: BEE_ACCENT,
-    roughness: 0.8,
-    metalness: 0,
+
+
   });
-  const wingMat = new THREE.MeshStandardMaterial({
+  const wingMat = toon({
     color: BEE_WING_COLOR,
-    roughness: 0.3,
+
     transparent: true,
     opacity: 0.55,
     depthWrite: false,
     side: THREE.DoubleSide,
   });
-  const veinMat = new THREE.MeshStandardMaterial({
+  const veinMat = toon({
     color: 0xffffff,
-    roughness: 0.4,
+
     transparent: true,
     // Faint on purpose. The veins do not write depth, so seen EDGE-ON from the
     // front they used to punch through the head as four bright whiskers. At
-    // this opacity they still fan the wing when it faces the camera — which is
-    // the angle the game's overhead view actually shows — without reading as
+    // this opacity they still fan the wing when it faces the camera â€” which is
+    // the angle the game's overhead view actually shows â€” without reading as
     // hairs the rest of the time.
     opacity: 0.28,
     depthWrite: false,
@@ -1344,11 +1425,11 @@ export function makeBee(color: number): THREE.Group {
   hover.name = "hover";
   g.add(hover);
 
-  // --- three masses on a diagonal: head (front, high) → thorax → abdomen ----
+  // --- three masses on a diagonal: head (front, high) â†’ thorax â†’ abdomen ----
   const HEAD_POS = new THREE.Vector3(0, 0.47, 0.09);
   const THORAX_POS = new THREE.Vector3(0, 0.41, -0.09);
 
-  // Thorax first: small, dark, mostly swallowed. It is a JOINT, not a feature —
+  // Thorax first: small, dark, mostly swallowed. It is a JOINT, not a feature â€”
   // its whole job is to let the abdomen pivot.
   const thorax = new THREE.Mesh(new THREE.SphereGeometry(W * 0.275, 18, 14), darkMat);
   thorax.name = "thorax";
@@ -1357,7 +1438,7 @@ export function makeBee(color: number): THREE.Group {
   hover.add(thorax);
 
   // `skirt` is the mesh animateGhostHem breathes; the thorax collar is the
-  // natural pick — a gentle swell between head and abdomen.
+  // natural pick â€” a gentle swell between head and abdomen.
   const skirt = thorax;
 
   // --- abdomen: TWO rounded segments on a 2-link chain ---------------------
@@ -1376,8 +1457,8 @@ export function makeBee(color: number): THREE.Group {
 
   /**
    * A broad FLAT band lying on a segment, rather than a torus ring standing
-   * proud of it. Same flush-decal idea as everywhere else in this file — a
-   * theta slice of a very slightly larger sphere — with one twist: the slice is
+   * proud of it. Same flush-decal idea as everywhere else in this file â€” a
+   * theta slice of a very slightly larger sphere â€” with one twist: the slice is
    * rotated so its pole points along the chain (+Z) instead of up (+Y), which
    * is what makes the band wrap the segment's waist instead of its equator.
    */
@@ -1416,7 +1497,7 @@ export function makeBee(color: number): THREE.Group {
   // form instead of looking like a spike stuck on. Cute, not threatening.
   // Longer, and pushed clear of the segment it grows from. At the sheet's
   // 0.1 x W it was 0.032 long sitting at z -0.091, while the segment's back
-  // surface is already at -0.0998 — so barely 0.007 of it ever emerged and the
+  // surface is already at -0.0998 â€” so barely 0.007 of it ever emerged and the
   // rest was buried inside the abdomen. Its base still matches the abdomen's
   // tip width, so it reads as a continuation rather than a spike stuck on.
   const sting = new THREE.Mesh(new THREE.ConeGeometry(SEG_R[1] * 0.4, W * 0.24, 10), darkMat);
@@ -1470,7 +1551,7 @@ export function makeBee(color: number): THREE.Group {
     const mount = new THREE.Group();
     mount.name = s < 0 ? "wingMountL" : "wingMountR";
     // Set BACK over the front of the abdomen rather than tucked behind the
-    // head — mounted at the head they crowded the face and read as ears.
+    // head â€” mounted at the head they crowded the face and read as ears.
     mount.position.set(0.03 * s, THORAX_POS.y + W * 0.1, THORAX_POS.z - W * 0.42);
     hover.add(mount);
 
@@ -1484,7 +1565,7 @@ export function makeBee(color: number): THREE.Group {
 
       // Flat lenses, not alpha-textured planes: this project builds every
       // character from primitives and loads no textures, and a CanvasTexture
-      // would break the headless suites outright — they build these models in
+      // would break the headless suites outright â€” they build these models in
       // Node, where there is no document to draw on.
       const blade = new THREE.Mesh(new THREE.SphereGeometry(len / 2, 20, 12), wingMat);
       blade.name = tag + "Blade" + (s < 0 ? "L" : "R");
@@ -1494,7 +1575,7 @@ export function makeBee(color: number): THREE.Group {
 
       if (tag === "fore") {
         // Brighter rim along the leading edge, plus a small vein fan from the
-        // base. Forewings only — on the hindwing these would be sub-pixel.
+        // base. Forewings only â€” on the hindwing these would be sub-pixel.
         const rim = new THREE.Mesh(
           new THREE.BoxGeometry(len * 0.94, len * 0.009, len * 0.009),
           veinMat,
@@ -1529,7 +1610,7 @@ export function makeBee(color: number): THREE.Group {
     bend: number,
     reach: number,
     pawR: number,
-    /** Pitch of the whole limb about X — the arms tip forward on this. */
+    /** Pitch of the whole limb about X â€” the arms tip forward on this. */
     pitch: number,
     /** How far the limb splays outward about Z. */
     splay: number,
@@ -1549,7 +1630,7 @@ export function makeBee(color: number): THREE.Group {
     root.add(swing);
     legSwings.push(swing);
 
-    // Thick relative to length — thin limbs kill the chibi read.
+    // Thick relative to length â€” thin limbs kill the chibi read.
     const upper = new THREE.Mesh(new THREE.CapsuleGeometry(W * 0.055, upperLen, 4, 8), darkMat);
     upper.name = tag + "Upper" + (s < 0 ? "L" : "R");
     upper.position.y = -upperLen / 2;
@@ -1566,7 +1647,7 @@ export function makeBee(color: number): THREE.Group {
     fore.position.y = -upperLen * 0.4;
     wrist.add(fore);
 
-    // A rounded MITTEN — one ball, no separated fingers.
+    // A rounded MITTEN â€” one ball, no separated fingers.
     const paw = new THREE.Mesh(new THREE.SphereGeometry(pawR, 12, 10), darkMat);
     paw.name = tag + "Paw" + (s < 0 ? "L" : "R");
     paw.position.y = -upperLen * 0.8 - pawR * 0.5;
@@ -1586,8 +1667,8 @@ export function makeBee(color: number): THREE.Group {
   //
   // Front arms: short, chubby, reaching forward and inward. The wrist is a free
   // node so these can be posed to hold a prop later. Anchors sit INSIDE the mass
-  // each limb hangs from — the arm root within the head's lower front, the leg
-  // root within the thorax — so they grow out of the body rather than floating
+  // each limb hangs from â€” the arm root within the head's lower front, the leg
+  // root within the thorax â€” so they grow out of the body rather than floating
   // beside it.
   const ARM_ANCHOR = new THREE.Vector3(W * 0.26, HEAD_POS.y - HEAD_R * 0.7, 0.02);
   // Rear legs: dangling from the thorax underside, bent ~100 degrees and
@@ -1609,23 +1690,23 @@ export function makeBee(color: number): THREE.Group {
   hover.add(limbLegR);
 
   // --- face: big cute eyes, no mouth, no nose ------------------------------
-  const scleraMat = new THREE.MeshStandardMaterial({ color: 0xfdf9f2, roughness: 0.4 });
-  const irisMat = new THREE.MeshStandardMaterial({ color: 0x2f7fd4, roughness: 0.3 });
-  const pupM = new THREE.MeshStandardMaterial({ color: 0x0a0c12, roughness: 0.35 });
-  const glintMat = new THREE.MeshStandardMaterial({
+  const scleraMat = toon({ color: 0xfdf9f2});
+  const irisMat = toon({ color: 0x2f7fd4});
+  const pupM = toon({ color: 0x0a0c12});
+  const glintMat = toon({
     color: 0xffffff,
-    roughness: 0.1,
+
     emissive: 0xffffff,
     emissiveIntensity: 0.5,
   });
   const beeEyeMats = [scleraMat, irisMat, pupM, glintMat];
 
   // BEETLE-STYLE eyes: big PROTRUDING eyeballs bulging past the head's
-  // silhouette, with the iris, pupil and glint as flush caps ON each eyeball —
+  // silhouette, with the iris, pupil and glint as flush caps ON each eyeball â€”
   // not caps painted flat on the head. Same construction as makeBeetle's, which
   // is why the parts carry the same names and the shared dart pivot still fits.
   const EYE_R = W * 0.21;
-  /** Yaw of the iris/pupil off the eyeball's axis — a touch medial. */
+  /** Yaw of the iris/pupil off the eyeball's axis â€” a touch medial. */
   const EYE_TILT = -0.12;
   const EYE_FWD = Math.PI / 2; // tips a cap's pole from +Y round to +Z
   const eyeCap = (
@@ -1633,7 +1714,7 @@ export function makeBee(color: number): THREE.Group {
     rx: number,
     ry: number,
     thetaLen: number,
-    mat: THREE.MeshStandardMaterial,
+    mat: THREE.MeshToonMaterial,
   ): THREE.Mesh => {
     const geo = new THREE.SphereGeometry(EYE_R * factor, 26, 18, 0, Math.PI * 2, 0, thetaLen);
     geo.rotateX(rx);
@@ -1674,7 +1755,7 @@ export function makeBee(color: number): THREE.Group {
     eyes.push(pupil);
 
     // One highlight straddling the pupil/iris boundary. The offset is measured
-    // from the PUPIL's axis, not the eyeball's — the pupil carries its own
+    // from the PUPIL's axis, not the eyeball's â€” the pupil carries its own
     // EYE_TILT yaw, and ignoring that was what pushed the highlight out onto
     // the iris. sqrt(0.27^2 + 0.27^2) = 0.38, exactly the pupil's radius.
     const glint = eyeCap(1.05, EYE_FWD - 0.27, (EYE_TILT + 0.27) * s, 0.13, glintMat);
@@ -1716,26 +1797,26 @@ export function makeBee(color: number): THREE.Group {
 /**
  * Builds a garden-ladybug enemy from primitives (IDEA-009 fourth enemy skin,
  * alongside the ghost, beetle, and bee). Satisfies the identical
- * `GhostUserData` contract — a single shared `bodyMat` covering the shell
+ * `GhostUserData` contract â€” a single shared `bodyMat` covering the shell
  * (plus its skirt-equivalent underbelly rim), so `applyGhostState`'s
  * frightened recolor ("whole creature turns blue") and eaten hide/reveal
  * both read correctly unmodified. Like the beetle and bee, the shell takes
- * the TEAM color (rose/teal/amber) rather than a fixed red — the signature
+ * the TEAM color (rose/teal/amber) rather than a fixed red â€” the signature
  * ladybug read comes from SHAPE + the black spot pattern on top, not from a
  * fixed red-and-black palette, so each ghost keeps its team identity.
  *
  * Shape: a rounded, more-hemispherical dome shell than the beetle's flatter
  * one (a classic ladybug's back is rounder/taller) on `bodyMat`, 7 black
  * spot dots (1 centred + 3 symmetric pairs) scattered across the shell top
- * and weighted toward the REAR half — the star of the design, clearly
+ * and weighted toward the REAR half â€” the star of the design, clearly
  * visible from the overhead game camera, each one flush on the dome's own
- * curved surface — while still a clear minority of the shell area so
+ * curved surface â€” while still a clear minority of the shell area so
  * bodyMat dominates the silhouette. A thin dark centre-seam line down the
  * back (the wing-case split), a small fixed-dark head at the front, and 2
  * short thin antennae. Eyes/pupils use the exact
  * same geometry/placement/material pattern as the other three enemies (2
  * white eyes + 2 blue pupils on `pupM`, added directly to the top-level
- * group `g` as siblings — never nested under a sub-group, which is what
+ * group `g` as siblings â€” never nested under a sub-group, which is what
  * makes `applyGhostState`'s eaten-state eyes-float-home re-show work), at
  * the standard local coords (eyes y0.4 z0.2 x+-0.12; pupils z0.27 x+-0.12)
  * so applyGhostState's hardcoded pupil-offset math lands unchanged.
@@ -1743,7 +1824,7 @@ export function makeBee(color: number): THREE.Group {
 // Ladybug scuttle. The proportions call for a fast, low, busy gait rather than
 // a deliberate step: the body barely bobs, the six nubs flick through a quick
 // alternating tripod, and the antennae only twitch. Single-bone legs, no IK.
-const LB_SCUTTLE_FREQ = 16; // rad/s — quick and busy, matching the tiny legs
+const LB_SCUTTLE_FREQ = 16; // rad/s â€” quick and busy, matching the tiny legs
 const LB_SCUTTLE_SWING = 0.42;
 const LB_BOB = 0.006; // barely there; the body sits ~0.05 W off the ground
 const LB_BOB_FREQ = 2.1 * Math.PI * 2;
@@ -1781,29 +1862,29 @@ export function makeLadybug(color: number): THREE.Group {
 
   // PROPORTION BASE: SHELL WIDTH = W, everything derived from it per the
   // reference sheet. W comes from the GAME: total height is 0.95 x W, and at
-  // W = 0.68 that lands on 0.65 — right beside the ghost's 0.66 and the
+  // W = 0.68 that lands on 0.65 â€” right beside the ghost's 0.66 and the
   // beetle's 0.76, which is what matters for a row of enemies in one maze.
   const W = 0.68;
   const R = W / 2;
 
   // The sheet's palette is a fixed red shell. In the game the shell carries the
-  // TEAM colour instead — it is how a player tells the three enemies apart and
+  // TEAM colour instead â€” it is how a player tells the three enemies apart and
   // how "frightened" announces itself. Everything the sheet calls black stays
   // black, so the spots and the oversized head read in every state.
-  const shellMat = new THREE.MeshStandardMaterial({
+  const shellMat = toon({
     color,
     // As glossy as this scene can go: there is no environment map (see the
     // note in the summary), so a low roughness plus the rig's rim light is
     // what carries the plastic sheen.
-    roughness: 0.22,
-    metalness: 0,
+
+
     emissive: color,
     emissiveIntensity: 0.12,
   });
-  const blackMat = new THREE.MeshStandardMaterial({
+  const blackMat = toon({
     color: LADYBUG_BLACK,
-    roughness: 0.18,
-    metalness: 0,
+
+
   });
   blackMat.userData.baseColor = LADYBUG_BLACK;
 
@@ -1822,7 +1903,7 @@ export function makeLadybug(color: number): THREE.Group {
   shell.rotation.x = SHELL_TILT;
   g.add(shell);
 
-  /** A flush decal on the shell — same transform as the shell itself, so it
+  /** A flush decal on the shell â€” same transform as the shell itself, so it
    *  lies exactly on the curve at any tilt instead of having to be fitted. */
   const shellDecal = (
     factor: number,
@@ -1840,13 +1921,13 @@ export function makeLadybug(color: number): THREE.Group {
   };
 
   // Centre seam: one shallow crease down the middle, visible mainly on the
-  // FRONT slope where the two elytra halves meet — hence the limited theta
+  // FRONT slope where the two elytra halves meet â€” hence the limited theta
   // range. No panel divisions; this shell is otherwise smooth.
   const seam = shellDecal(1.004, Math.PI / 2 - 0.022, 0.044, 0, 1.05);
   seam.name = "seam";
   g.add(seam);
 
-  // Spots: flat discs PROJECTED onto the curve, not bumps — a small cap of a
+  // Spots: flat discs PROJECTED onto the curve, not bumps â€” a small cap of a
   // slightly larger sphere is exactly that. Placement is hand-authored and
   // deliberately irregular: not mirrored across the seam, not gridded, sizes
   // varied between 0.12 and 0.21 of W, with clear breathing room around each
@@ -1882,7 +1963,7 @@ export function makeLadybug(color: number): THREE.Group {
   // It is NOT the `skirt` any more, and it now shares the shell's tilt. Both
   // changes fix the same defect: the shell's cut is a tilted ellipse whose edge
   // rises and falls by 0.054, while a level cylinder 0.035 tall cannot span
-  // that — so the two interpenetrated, and animateGhostHem's breathe then slid
+  // that â€” so the two interpenetrated, and animateGhostHem's breathe then slid
   // that intersection in and out on every frame of movement. Matching the tilt
   // makes the rim parallel to the cut it seals, and dropping it as the skirt
   // stops anything animating it at all.
@@ -1897,8 +1978,8 @@ export function makeLadybug(color: number): THREE.Group {
 
   // Underside: the shell is a partial sphere and three.js does not cap a cut,
   // so its bottom is an open hole. The flat rim above cannot seal it once the
-  // shell is TILTED — the rim ellipse tips with it while the cylinder stays
-  // level — and you end up looking through the gap into the lit interior. A
+  // shell is TILTED â€” the rim ellipse tips with it while the cylinder stays
+  // level â€” and you end up looking through the gap into the lit interior. A
   // squashed black mass plugs it and reads as the body the legs grow from.
   const belly = new THREE.Mesh(new THREE.SphereGeometry(R * 0.93, 24, 16), blackMat);
   belly.name = "belly";
@@ -1909,7 +1990,7 @@ export function makeLadybug(color: number): THREE.Group {
   // --- head + pronotum: ONE fused black mass, and deliberately OVERSIZED ----
   // 0.78 x the shell's width. That is the whole charm of this design; shrinking
   // it toward realistic proportions loses the toy read immediately. The colour
-  // break against the shell is hard and clean — no blending, no fringe.
+  // break against the shell is hard and clean â€” no blending, no fringe.
   const HEAD_R = W * 0.39;
   const HEAD_POS = new THREE.Vector3(0, 0.24, 0.17);
   const head = new THREE.Mesh(new THREE.SphereGeometry(HEAD_R, 32, 24), blackMat);
@@ -1941,7 +2022,7 @@ export function makeLadybug(color: number): THREE.Group {
     pivot.add(club);
     return pivot;
   };
-  // Named per side rather than built in a mirrored loop — one loop statement
+  // Named per side rather than built in a mirrored loop â€” one loop statement
   // owns both sides, which makes them un-editable in the character editor.
   const antennaPivotL = makeAntenna(-1);
   g.add(antennaPivotL);
@@ -1952,12 +2033,12 @@ export function makeLadybug(color: number): THREE.Group {
   // One smooth capsule each, no joints, no segments, no toes. The body sits so
   // low that only the outer half of each nub clears the silhouette.
   /**
-   * One leg. `fanForward` is POSITIVE toward the front of the bug — front pair
+   * One leg. `fanForward` is POSITIVE toward the front of the bug â€” front pair
    * positive, middle zero, rear pair negative.
    *
    * The sign matters, and it used to be inverted. `rotation.y` is applied after
    * `rotation.z` (Euler XYZ) and the leg's outward axis has a POSITIVE x
-   * component, so a positive yaw swings the leg toward NEGATIVE z — backwards.
+   * component, so a positive yaw swings the leg toward NEGATIVE z â€” backwards.
    * Passing the fan straight through as `yaw * s` therefore aimed the front
    * legs behind the bug and the rear legs in front of it.
    */
@@ -1966,7 +2047,7 @@ export function makeLadybug(color: number): THREE.Group {
     root.name = "leg" + tag + (s < 0 ? "L" : "R");
     root.position.set(R * 0.7 * s, 0.15, z);
     // Outward and DOWN. The first version used -(PI/2 - 0.5), whose cosine is
-    // POSITIVE — so the nubs angled outward and UP, back into the body. And
+    // POSITIVE â€” so the nubs angled outward and UP, back into the body. And
     // they were too short to matter: the belly that plugs the shell's open
     // underside is 0.329 wide, and a nub reaching x 0.293 left the middle and
     // rear pairs entirely buried inside it. Only the front pair ever showed.
@@ -1979,7 +2060,7 @@ export function makeLadybug(color: number): THREE.Group {
     leg.position.y = upperLen * 0.5;
     root.add(leg);
 
-    // A rounded PAW at the tip — slightly flattened, so it reads as a little
+    // A rounded PAW at the tip â€” slightly flattened, so it reads as a little
     // foot rather than the end of a stick. This is what makes the legs visible
     // at all at this size: the pad is wider than the leg and catches the light.
     const paw = new THREE.Mesh(new THREE.SphereGeometry(W * 0.062, 12, 10), blackMat);
@@ -1991,10 +2072,10 @@ export function makeLadybug(color: number): THREE.Group {
     return root;
   };
   // All three pairs sit under the BELLY. The front pair used to be at z 0.143,
-  // which is inside the head's z span (-0.03 .. 0.37) — so it read as legs
+  // which is inside the head's z span (-0.03 .. 0.37) â€” so it read as legs
   // growing out of the head rather than the body. Shifted back to clear it.
   // Front pair fans FORWARD, rear pair BACKWARD, middle straight out to the
-  // side — which is what the reference sheet asks for and what makes the
+  // side â€” which is what the reference sheet asks for and what makes the
   // alternating tripod read, since the middle leg is the pivot the other two
   // swing around.
   //
@@ -2021,15 +2102,15 @@ export function makeLadybug(color: number): THREE.Group {
   // The sheet describes the head as one unbroken black mass with no eyes. The
   // game needs them anyway: every other enemy has a face, and applyGhostState's
   // "eaten" state is built around eyes that stay solid while the body fades. So
-  // they use the same protruding build as the beetle and the bee — a white ball
-  // with the iris, pupil and glint as flush caps on it — which also gives the
+  // they use the same protruding build as the beetle and the bee â€” a white ball
+  // with the iris, pupil and glint as flush caps on it â€” which also gives the
   // black head the one bright element it otherwise lacks.
-  const scleraMat = new THREE.MeshStandardMaterial({ color: 0xfdf9f2, roughness: 0.35 });
-  const irisMat = new THREE.MeshStandardMaterial({ color: 0x2f7fd4, roughness: 0.3 });
-  const pupM = new THREE.MeshStandardMaterial({ color: 0x0a0c12, roughness: 0.35 });
-  const glintMat = new THREE.MeshStandardMaterial({
+  const scleraMat = toon({ color: 0xfdf9f2});
+  const irisMat = toon({ color: 0x2f7fd4});
+  const pupM = toon({ color: 0x0a0c12});
+  const glintMat = toon({
     color: 0xffffff,
-    roughness: 0.1,
+
     emissive: 0xffffff,
     emissiveIntensity: 0.5,
   });
@@ -2043,7 +2124,7 @@ export function makeLadybug(color: number): THREE.Group {
     rx: number,
     ry: number,
     thetaLen: number,
-    mat: THREE.MeshStandardMaterial,
+    mat: THREE.MeshToonMaterial,
   ): THREE.Mesh => {
     const geo = new THREE.SphereGeometry(EYE_R * factor, 24, 16, 0, Math.PI * 2, 0, thetaLen);
     geo.rotateX(rx);
@@ -2073,7 +2154,7 @@ export function makeLadybug(color: number): THREE.Group {
     pivot.add(pupil);
 
     // One highlight straddling the pupil/iris rim, measured from the PUPIL's
-    // axis — the same construction the beetle and bee use.
+    // axis â€” the same construction the beetle and bee use.
     const glint = eyeCap(1.05, EYE_FWD - 0.27, (EYE_TILT + 0.27) * s, 0.13, glintMat);
     glint.name = s < 0 ? "glintL" : "glintR";
     pivot.add(glint);
@@ -2095,7 +2176,7 @@ export function makeLadybug(color: number): THREE.Group {
   const userData: GhostUserData = {
     bodyMat: shellMat,
     // The black mass is most of the silhouette, so it follows the frightened
-    // recolour — otherwise a frightened ladybug would stay largely black and
+    // recolour â€” otherwise a frightened ladybug would stay largely black and
     // blunt the "edible now" read.
     accentMats: [blackMat],
     eyes,
@@ -2118,7 +2199,7 @@ export function makeLadybug(color: number): THREE.Group {
 
 /**
  * Builds an enemy mesh for `skinId`, dispatching between the classic ghost
- * and the garden beetle/bee/ladybug (IDEA-009) — all four satisfy the
+ * and the garden beetle/bee/ladybug (IDEA-009) â€” all four satisfy the
  * identical `GhostUserData` contract, so callers (game.ts) can treat the
  * result uniformly regardless of which skin is equipped. Falls back to the
  * ghost for any unrecognised id, mirroring cosmetics.ts's getEnemySkin
@@ -2133,7 +2214,7 @@ export function makeEnemy(skinId: string, color: number): THREE.Group {
 
 // Angular speed (rad/s) for turning the model toward its facing direction.
 // High enough that, combined with the tile-stepping model (facing only
-// changes at tile centres), a turn resolves well within one tile crossing —
+// changes at tile centres), a turn resolves well within one tile crossing â€”
 // the prototype snaps instantly, this keeps that feel but avoids a visible
 // pop when two syncs land on either side of a corner.
 const TURN_RATE = 18;
@@ -2143,14 +2224,35 @@ const BOB_HEIGHT = 0.06;
 const WADDLE_AMPLITUDE = 0.06;
 
 // Beagle part-animation tuning. All keyed off the same BOB_FREQ-derived walk
-// clock (`state.t`) so everything stays in lock-step with the existing bob —
+// clock (`state.t`) so everything stays in lock-step with the existing bob â€”
 // a trot/wag/flop that drifted out of phase with the bob would look wrong.
-// Amplitudes bumped from the original pass (0.55/0.3/0.5 tail/ear/leg) — at
+// Amplitudes bumped from the original pass (0.55/0.3/0.5 tail/ear/leg) â€” at
 // normal camera distance the smaller values read as barely-there; these are
 // the values that actually land on screen.
 const TAIL_WAG_FREQ = BOB_FREQ * 0.5; // slower than the leg trot, reads as a wag not a blur
 const TAIL_WAG_AMPLITUDE = 0.7; // radians of yaw at the pivot
-const EAR_FLOP_AMPLITUDE = 0.5;
+// How far the leather swings, and where it sits at each end of the crossfade.
+// Positive rotation.x sweeps the ear BACK (rotating the ear's -Y hang about X
+// tips the tip toward -Z); negative folds it FORWARD.
+const EAR_FLOP_AMPLITUDE = 0.38;
+/** Standing: the ear folds slightly FORWARD, the way it hangs on a still dog. */
+const EAR_IDLE_FOLD = -0.22;
+/** Running: the leather is swept BACK and flaps around that swept position —
+ *  ears streaming behind like wings, which is what a beagle at speed does and
+ *  what reads as speed on screen. Flapping around 0 instead (the old
+ *  behaviour) just wagged the ears about the standing pose and read as
+ *  nothing in particular. */
+const EAR_RUN_SWEEP = 0.88;
+/**
+ * ...and swung OUT as well as back, which is the half that makes it work.
+ *
+ * Sweeping on X alone sends the ear straight into the body: this is a chibi
+ * build, the head sits close to the chest, and past ~0.6 rad the leather
+ * disappears inside the barrel. Adding flare carries it clear on the way round
+ * — and it is also what "ears flying like wings" actually looks like from the
+ * front, which is the angle the player sees most in the maze.
+ */
+const EAR_RUN_FLARE = 0.62;
 const EAR_FLOP_LAG = 0.35; // radians ear R lags ear L by (phase offset, not time) for a floppy asymmetry
 const LEG_TROT_AMPLITUDE = 0.6;
 const JAW_CHOMP_AMPLITUDE = 0.22;
@@ -2161,14 +2263,14 @@ const JAW_CHOMP_FREQ = BOB_FREQ; // one chomp per bob cycle
 // its own gentle life instead of going dead-flat. All keyed off `state.idleT`
 // (free-running, unlike `state.t` which only advances while moving) so idle
 // motion never freezes. Deliberately slower/subtler than the moving
-// animation above — this is a standing dog breathing and glancing around,
+// animation above â€” this is a standing dog breathing and glancing around,
 // not a trot.
 const TAIL_IDLE_WAG_FREQ = 1.8;
 const TAIL_IDLE_WAG_AMPLITUDE = 0.4; // was 0.12 (read as +-0.08 on screen, imperceptible)
 const EAR_IDLE_SWAY_FREQ = 0.9;
 const EAR_IDLE_SWAY_AMPLITUDE = 0.08; // gentle sway, not a flop
 const EAR_IDLE_SWAY_LAG = 1.1; // phase offset (radians) so L/R don't sway in lockstep
-// Occasional bigger ear twitch layered on top of the base sway — a beat
+// Occasional bigger ear twitch layered on top of the base sway â€” a beat
 // pattern (two closely-spaced frequencies) gives a periodic "perk up" without
 // any randomness/state.
 const EAR_TWITCH_FREQ = 0.31;
@@ -2201,7 +2303,7 @@ function angleDelta(a: number, b: number): number {
 // while moving), `idleT` is a free-running clock (advances always, used for
 // idle-tail-wag and the ghost hem wobble so those never freeze when stopped),
 // `baseY` is the model's own y baseline captured once (on first sync) and
-// reused forever — obj.position.y is overwritten with bob applied on top of
+// reused forever â€” obj.position.y is overwritten with bob applied on top of
 // it each call, so re-reading obj.position.y as the baseline would re-add
 // the previous frame's bob and ratchet the model upward. `moveBlend` is an
 // exponentially-smoothed 0..1 crossfade between the idle and moving beagle
@@ -2259,12 +2361,12 @@ export function syncToEntity(obj: THREE.Object3D, e: Entity, dt: number): void {
   // fading out via moveBlend as it starts moving (a trotting dog's silhouette
   // shouldn't also be breathing) and fading back in once it settles. Skipped
   // entirely for objects with no `parts` (i.e. ghosts) since only the beagle
-  // group's top-level scale is otherwise free — ghosts already breathe via
+  // group's top-level scale is otherwise free â€” ghosts already breathe via
   // animateGhostHem's skirt scale. Guarded to never run during the death
   // spin-shrink: setBeagleDeath/resetBeagleScale own `obj.scale` there, but
   // syncToEntity is never called on the beagle mesh while mode === "dying"
   // (see src/game/game.ts's "dying" case, which calls setBeagleDeath instead)
-  // so there is no per-frame conflict — this code path simply doesn't run
+  // so there is no per-frame conflict â€” this code path simply doesn't run
   // then. At full moveBlend (steady trot) scale.y is pinned back to the base
   // uniform scale so no idle-breathe residue lingers into the moving pose.
   if (parts) {
@@ -2277,7 +2379,7 @@ export function syncToEntity(obj: THREE.Object3D, e: Entity, dt: number): void {
   const skirt = obj.userData.skirt as THREE.Mesh | undefined;
   if (hem && skirt) animateGhostHem(hem, skirt, state.idleT);
 
-  // Whatever else this particular character animates — the shared layer does
+  // Whatever else this particular character animates â€” the shared layer does
   // not know or care what that is.
   const behaviour = obj.userData.behaviour as EnemyBehaviour | undefined;
   behaviour?.animate?.(state.t, state.idleT, state.moveBlend);
@@ -2288,13 +2390,13 @@ export function syncToEntity(obj: THREE.Object3D, e: Entity, dt: number): void {
  * `state.t` (the shared bob clock) while moving so the trot/wag/chomp stay in
  * lock-step with the bob, and off `state.idleT` for the idle sway/wag so the
  * beagle keeps a little life once stopped (Start panel, "Ready!" banner,
- * paused mid-decision). No allocations — every part is rotated in place via
+ * paused mid-decision). No allocations â€” every part is rotated in place via
  * plain scalar assignment.
  *
  * Idle and moving poses are computed independently and then cross-faded via
  * `state.moveBlend` (an exponentially-smoothed 0..1 chase toward `moving`,
  * advanced in syncToEntity) rather than hard if/else-switched, so a stop or
- * start eases between "standing around" and "mid-trot" instead of popping —
+ * start eases between "standing around" and "mid-trot" instead of popping â€”
  * task item C. Legs/jaw have no idle motion (a standing dog doesn't trot or
  * chomp), so they naturally blend down to 0 as `moveBlend` falls.
  */
@@ -2303,8 +2405,8 @@ function animateBeagleParts(parts: BeagleParts, state: WalkState): void {
 
   // --- moving pose ---
   const movingTailWag = Math.sin(state.t * TAIL_WAG_FREQ * Math.PI * 2) * TAIL_WAG_AMPLITUDE;
-  const movingEarL = Math.sin(state.t * BOB_FREQ) * EAR_FLOP_AMPLITUDE;
-  const movingEarR = Math.sin(state.t * BOB_FREQ - EAR_FLOP_LAG) * EAR_FLOP_AMPLITUDE;
+  const movingEarL = EAR_RUN_SWEEP + Math.sin(state.t * BOB_FREQ) * EAR_FLOP_AMPLITUDE;
+  const movingEarR = EAR_RUN_SWEEP + Math.sin(state.t * BOB_FREQ - EAR_FLOP_LAG) * EAR_FLOP_AMPLITUDE;
   // Alternating trot: front-left/back-right swing opposite front-right/back-left.
   const trot = Math.sin(state.t * BOB_FREQ) * LEG_TROT_AMPLITUDE;
   const movingJaw = Math.max(0, Math.sin(state.t * JAW_CHOMP_FREQ)) * JAW_CHOMP_AMPLITUDE;
@@ -2314,10 +2416,12 @@ function animateBeagleParts(parts: BeagleParts, state: WalkState): void {
   const idleTailWag = Math.sin(state.idleT * TAIL_IDLE_WAG_FREQ) * TAIL_IDLE_WAG_AMPLITUDE;
   // Ears: slow out-of-phase sway plus a small periodic "perk up" twitch, so a
   // standing beagle looks alert rather than pinned flat. Only ~0.1-0.15 rad
-  // total — a gentle sway/twitch, not a flop.
-  const earSwayL = Math.sin(state.idleT * EAR_IDLE_SWAY_FREQ) * EAR_IDLE_SWAY_AMPLITUDE
+  // total â€” a gentle sway/twitch, not a flop.
+  const earSwayL = EAR_IDLE_FOLD
+    + Math.sin(state.idleT * EAR_IDLE_SWAY_FREQ) * EAR_IDLE_SWAY_AMPLITUDE
     + Math.sin(state.idleT * EAR_TWITCH_FREQ * Math.PI * 2) * EAR_TWITCH_AMPLITUDE;
-  const earSwayR = Math.sin(state.idleT * EAR_IDLE_SWAY_FREQ + EAR_IDLE_SWAY_LAG) * EAR_IDLE_SWAY_AMPLITUDE
+  const earSwayR = EAR_IDLE_FOLD
+    + Math.sin(state.idleT * EAR_IDLE_SWAY_FREQ + EAR_IDLE_SWAY_LAG) * EAR_IDLE_SWAY_AMPLITUDE
     + Math.sin(state.idleT * EAR_TWITCH_FREQ * Math.PI * 2 + EAR_IDLE_SWAY_LAG) * EAR_TWITCH_AMPLITUDE;
   // Legs/jaw at rest: a standing dog doesn't trot or chomp, so idle target is 0
   // and they simply blend down to nothing as `blend` falls (see below).
@@ -2325,6 +2429,11 @@ function animateBeagleParts(parts: BeagleParts, state: WalkState): void {
   parts.tail.rotation.y = idleTailWag + (movingTailWag - idleTailWag) * blend;
   parts.earL.rotation.x = earSwayL + (movingEarL - earSwayL) * blend;
   parts.earR.rotation.x = earSwayR + (movingEarR - earSwayR) * blend;
+  // The outward swing is moving-only, so it simply scales with the crossfade:
+  // standing, the leather hangs on the flare its own mesh already carries.
+  // Mirrored, so the ears fly away from each other rather than both one way.
+  parts.earL.rotation.z = -EAR_RUN_FLARE * blend;
+  parts.earR.rotation.z = EAR_RUN_FLARE * blend;
 
   parts.legs[0].rotation.x = trot * blend;
   parts.legs[1].rotation.x = -trot * blend;
@@ -2336,7 +2445,7 @@ function animateBeagleParts(parts: BeagleParts, state: WalkState): void {
 
 /**
  * Wobbles a ghost's 5 hem spheres (phase-offset vertical bob + squash/stretch)
- * and gently breathes the skirt cylinder, purely for idle liveliness — runs
+ * and gently breathes the skirt cylinder, purely for idle liveliness â€” runs
  * off the free-running `idleT` clock so it never stops even when the ghost
  * itself is paused (e.g. still in its pen).
  */
@@ -2351,13 +2460,13 @@ interface RestPose {
  * The authored rest pose of a wobbled part, captured the first time it is
  * animated and then reused every frame.
  *
- * This exists because animateGhostHem used to write ABSOLUTE values — a
- * hardcoded `position.y = 0.02` and `scale.set(s, s, s)` — which silently threw
+ * This exists because animateGhostHem used to write ABSOLUTE values â€” a
+ * hardcoded `position.y = 0.02` and `scale.set(s, s, s)` â€” which silently threw
  * away whatever the builder had authored. Two consequences, both real:
  *
  *  1. The bee's stripe blobs and the ladybug's spots are placed ON their body
  *     surface (y around 0.50), computed by bodySurfaceY/spotSurfaceY. The old
- *     code dropped every one of them to y = 0.02 on the first animated frame —
+ *     code dropped every one of them to y = 0.02 on the first animated frame â€”
  *     they fell off the body onto the floor. Invisible in the editor, which
  *     does not idle-animate enemies, and visible in the actual game.
  *  2. Nothing could author its own skirt scale or hem height, because the
@@ -2381,7 +2490,7 @@ function restPose(o: THREE.Object3D): RestPose {
 
 // Beetle gait + antenna sway. The sheet asked for "body bob + counter-phase
 // antenna lag"; the bob already comes free from syncToEntity's shared BOB_FREQ.
-const LEG_GAIT_FREQ = 11; // rad/s — a quick insect scuttle, not a dog's trot
+const LEG_GAIT_FREQ = 11; // rad/s â€” a quick insect scuttle, not a dog's trot
 const LEG_GAIT_SWING = 0.5; // radians fore/aft at a full stride
 const ANTENNA_SWAY_FREQ = 1.15;
 const ANTENNA_SWAY = 0.14;
@@ -2394,7 +2503,7 @@ const ANTENNA_LAG = 1.15; // radians of phase between the two antennae
  * as a bug scuttling rather than a toy waddling.
  *
  * Legs arrive in build order (F-L, F-R, M-L, M-R, B-L, B-R), so a leg's tripod
- * is simply whether its index is even or odd — index 0 (F-L), 3 (M-R) and 4
+ * is simply whether its index is even or odd â€” index 0 (F-L), 3 (M-R) and 4
  * (B-L) land in one group and 1, 2, 5 in the other.
  */
 function animateInsectLimbs(limbs: InsectLimbs, t: number, idleT: number, moveBlend: number): void {
@@ -2403,7 +2512,7 @@ function animateInsectLimbs(limbs: InsectLimbs, t: number, idleT: number, moveBl
     const tripodA = i === 0 || i === 3 || i === 4;
     limbs.legs[i].rotation.x = tripodA ? stride : -stride;
   }
-  // The antennae never stop — a bug's feelers twitch even standing still — and
+  // The antennae never stop â€” a bug's feelers twitch even standing still â€” and
   // the two are phase-offset so they never look mechanically twinned.
   for (let i = 0; i < limbs.antennae.length; i++) {
     const phase = idleT * ANTENNA_SWAY_FREQ + i * ANTENNA_LAG;
@@ -2427,7 +2536,7 @@ function animateGhostHem(hem: THREE.Mesh[], skirt: THREE.Mesh, idleT: number): v
 }
 
 // Pupil dart smoothing rate (1/s decay constant, same shape as TURN_RATE's
-// exp smoothing) — fast enough to read as "snappy glance" rather than lazy
+// exp smoothing) â€” fast enough to read as "snappy glance" rather than lazy
 // drift, but no longer an instant snap to the target offset.
 const PUPIL_SMOOTH_RATE = 14;
 // Eaten-eyes glide the same way, slightly gentler so the eyes read as
@@ -2440,7 +2549,7 @@ const EYES_GLIDE_RATE = 10;
 // The ceiling is geometric, not aesthetic: a pupil cap of angular radius r_p
 // sitting inside a sclera of r_s can travel (r_s - r_p) before its edge clears
 // the white. The old shared helper used 0.28 and 0.28 * 0.59, a margin of 0.115
-// radians — and pupOffset peaks at 0.05 per axis. The first version converted
+// radians â€” and pupOffset peaks at 0.05 per axis. The first version converted
 // by 1/0.309 = 3.24, giving 0.162: HALF AGAIN past the margin, so the pupils
 // rode up off the sclera and sat on the body whenever an enemy moved. 1.6 keeps
 // the sweep at 0.08, comfortably inside the white with a rim still showing.
@@ -2456,7 +2565,7 @@ const SHIVER_ROT_AMPLITUDE = 0.05;
  * Per-mesh clock for applyGhostState's own time-based effects (pupil/eye
  * smoothing, frightened shiver). applyGhostState intentionally has no `dt`
  * parameter (the call sites pass only mesh/state/dir), so it derives one
- * internally from consecutive `performance.now()` timestamps — the same
+ * internally from consecutive `performance.now()` timestamps â€” the same
  * technique the game loop itself uses (see game.ts's `clock.last`). This
  * keeps the shiver/smoothing frame-rate independent without touching the
  * exported signature.
@@ -2464,7 +2573,7 @@ const SHIVER_ROT_AMPLITUDE = 0.05;
 interface GhostStateClock {
   lastMs: number;
   shiverT: number;
-  /** The look currently painted on this mesh — null until the first apply.
+  /** The look currently painted on this mesh â€” null until the first apply.
    *  Gates the expensive material work to genuine state TRANSITIONS. */
   look: LookKind | null;
 }
@@ -2479,7 +2588,7 @@ function smoothTo(from: number, to: number, rate: number, dt: number): number {
  * Recolours/re-visibilities a ghost mesh for its current gameplay state and
  * offsets its pupils to look toward `dir` (ported from prototype syncMeshes,
  * lines 591-608). Call once per frame per ghost, separate from syncToEntity
- * (which only moves/turns — the beagle has no state to recolour, so state
+ * (which only moves/turns â€” the beagle has no state to recolour, so state
  * handling stays out of the shared positional path).
  *
  * - frightened: body recolours to COLORS.frightened / a dark blue emissive,
@@ -2493,7 +2602,7 @@ function smoothTo(from: number, to: number, rate: number, dt: number): number {
  *
  * Pupil dart-toward-`dir` is smoothed (exponential ease) rather than
  * snapped, using `ud.pupOffset` as the running value. A fright-ending blink
- * (a classic arcade cue) is deliberately NOT implemented here — this
+ * (a classic arcade cue) is deliberately NOT implemented here â€” this
  * function only ever receives the current `state`, not remaining fright
  * time, and changing that contract is out of scope for this pass; it's left
  * for the effects layer, which is better positioned to key off a timer.
@@ -2516,14 +2625,14 @@ export function applyGhostState(mesh: THREE.Object3D, state: GhostState, dir: Ve
   ud.pupOffset.x = smoothTo(ud.pupOffset.x, targetX, glideRate, dt);
   ud.pupOffset.z = smoothTo(ud.pupOffset.z, targetZ, glideRate, dt);
   // The eye-dart. Every enemy's pupil is now a flush decal cap, which must
-  // stay centred on its form to hug it — so it can never be TRANSLATED the way
+  // stay centred on its form to hug it â€” so it can never be TRANSLATED the way
   // the old ball pupils were. Its pivot ROTATES instead, sweeping the cap
   // across the surface. The pivot is its own node so the animation can own its
   // rotation outright, without touching anything the builder authored.
   for (const pivot of ud.pupPivots) {
     pivot.rotation.y = ud.pupOffset.x * PUPIL_SWEEP;
     // A cap cannot slide along its own surface normal, so what used to be an
-    // in/out nudge reads as an up/down glance — closer to what a real eye does
+    // in/out nudge reads as an up/down glance â€” closer to what a real eye does
     // anyway. Flip this sign for the opposite glance.
     pivot.rotation.x = -ud.pupOffset.z * PUPIL_SWEEP;
   }
@@ -2556,7 +2665,7 @@ type LookKind = "normal" | "frightened" | "eaten";
 
 /** How much of the body survives as a spirit while eaten. */
 const EATEN_OPACITY = 0.3;
-/** Emissive strength of that spirit — enough to read against a dark maze. */
+/** Emissive strength of that spirit â€” enough to read against a dark maze. */
 const EATEN_GLOW = 0.5;
 
 /**
@@ -2614,7 +2723,7 @@ function applyEnemyLook(mesh: THREE.Object3D, ud: GhostUserData, look: LookKind)
       behaviour.onEaten();
       return;
     }
-    // Everything stays VISIBLE — that is the whole change. The body simply
+    // Everything stays VISIBLE â€” that is the whole change. The body simply
     // turns to a faint, glowing version of its own colour.
     mesh.traverse((o) => { o.visible = true; });
     for (const m of ud.spiritMats) {

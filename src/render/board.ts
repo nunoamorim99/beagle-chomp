@@ -35,6 +35,9 @@ import {
   type AddedPropPart,
   type PropPrimKind,
 } from "../game/props";
+import { toon } from "./toon";
+import { wallTextureFor } from "./wallTexture";
+import { floorTextureFor } from "./floorTexture";
 
 export const WALL_H = 1;
 
@@ -112,10 +115,10 @@ const initialPalette = getEquippedMazeTheme().palette;
 // emissive/emissiveIntensity now come from the theme palette (garden's values
 // above still equal the pre-theme constants, so equipping garden is a
 // visual no-op — see themes.ts's regression note).
-const matWall = new THREE.MeshStandardMaterial({
+const matWall = toon({
   color: initialPalette.wall,
-  roughness: 0.5,
-  metalness: 0.1,
+
+
   emissive: initialPalette.wallEmissive,
   emissiveIntensity: initialPalette.wallEmissiveIntensity,
 });
@@ -123,9 +126,9 @@ const matWall = new THREE.MeshStandardMaterial({
 // (0x0a0a18) to a warm dark brown so the soil reads as sunlit earth rather
 // than picking up a cold night cast — still a faint whisper of lift, not a
 // glow, on an otherwise diffuse, roughness: 1 surface. IDEA-026: themed.
-const matFloor = new THREE.MeshStandardMaterial({
+const matFloor = toon({
   color: initialPalette.floor,
-  roughness: 1,
+
   emissive: initialPalette.floorEmissive,
   emissiveIntensity: initialPalette.floorEmissiveIntensity,
 });
@@ -135,9 +138,9 @@ const geoBiscuit = new THREE.SphereGeometry(0.13, 12, 12);
 // blowing out at the tuned exposure (see scene.ts toneMappingExposure note).
 // IDEA-026: themed — biscuits ARE the trail, so they re-skin with the world
 // (unlike the fixed-identity pickups below).
-const matBiscuit = new THREE.MeshStandardMaterial({
+const matBiscuit = toon({
   color: initialPalette.biscuit,
-  roughness: 0.7,
+
   emissive: initialPalette.biscuitEmissive,
   emissiveIntensity: initialPalette.biscuitEmissiveIntensity,
 });
@@ -159,27 +162,30 @@ function hash01(x: number, y: number, seed: number): number {
 }
 
 /** A dog bone built from a cylinder shaft + four sphere "knuckles". */
-function makeBone(): THREE.Group {
+export function makeBone(): THREE.Group {
   const g = new THREE.Group();
   // Emissive warmed and strengthened (0x554a2a/0.25 -> 0x6a5730/0.4) to match
   // the biscuit's softly-lit-treat read at the new exposure/lighting.
-  const white = new THREE.MeshStandardMaterial({
+  const white = toon({
     color: 0xf6f1e6,
-    roughness: 0.5,
+
     emissive: 0x6a5730,
     emissiveIntensity: 0.4,
   });
   const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.34, 10), white);
+  shaft.name = "shaft";
+  shaft.scale.set(0.7, 1, 1);
   shaft.rotation.z = Math.PI / 2;
   g.add(shaft);
   const knuckles: Array<[number, number]> = [
-    [-0.2, 0.09],
-    [-0.2, -0.09],
-    [0.2, 0.09],
-    [0.2, -0.09],
+    [-0.2, 0.08],
+    [-0.2, -0.08],
+    [0.2, 0.08],
+    [0.2, -0.08],
   ];
   knuckles.forEach(([x, z]) => {
     const k = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 10), white);
+    k.name = `knuckle${x < 0 ? "L" : "R"}${z < 0 ? "B" : "F"}`;
     k.position.set(x, 0, z);
     g.add(k);
   });
@@ -196,10 +202,10 @@ function makeBone(): THREE.Group {
 // emissive) since both are "wallet/reward" gold, but with a touch more
 // metalness/roughness contrast so the bone's knuckle geometry still catches
 // visible highlights rather than reading as a flat gold blob.
-const matGoldBone = new THREE.MeshStandardMaterial({
+const matGoldBone = toon({
   color: 0xf4c430,
-  roughness: 0.35,
-  metalness: 0.5,
+
+
   emissive: 0x6b4e0a,
   emissiveIntensity: 0.55,
 });
@@ -219,16 +225,19 @@ const matGoldBone = new THREE.MeshStandardMaterial({
 export function makeLifeBone(): THREE.Group {
   const g = new THREE.Group();
   const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.34, 10), matGoldBone);
+  shaft.name = "shaft";
+  shaft.scale.set(0.7, 1.15, 1);
   shaft.rotation.z = Math.PI / 2;
   g.add(shaft);
   const knuckles: Array<[number, number]> = [
-    [-0.2, 0.09],
-    [-0.2, -0.09],
-    [0.2, 0.09],
-    [0.2, -0.09],
+    [-0.2, 0.08],
+    [-0.2, -0.08],
+    [0.2, 0.08],
+    [0.2, -0.08],
   ];
   knuckles.forEach(([x, z]) => {
     const k = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 10), matGoldBone);
+    k.name = `knuckle${x < 0 ? "L" : "R"}${z < 0 ? "B" : "F"}`;
     k.position.set(x, 0, z);
     g.add(k);
   });
@@ -250,24 +259,26 @@ export function makeFruit(): THREE.Group {
   // as a glowing bonus pickup, matching the biscuit/bone glow treatment.
   const apple = new THREE.Mesh(
     new THREE.SphereGeometry(0.22, 16, 16),
-    new THREE.MeshStandardMaterial({
+    toon({
       color: 0xd8483f,
-      roughness: 0.4,
+
       emissive: 0x5c130f,
       emissiveIntensity: 0.5,
     }),
   );
+  apple.name = "apple";
   g.add(apple);
   // Leaf gets a faint green emissive too (was none) — subtle, just enough
   // that it doesn't look like a flat unlit cutout next to the glowing apple.
   const leaf = new THREE.Mesh(
     new THREE.SphereGeometry(0.06, 8, 8),
-    new THREE.MeshStandardMaterial({
+    toon({
       color: 0x5fae4d,
       emissive: 0x1c3a18,
       emissiveIntensity: 0.3,
     }),
   );
+  leaf.name = "leaf";
   leaf.position.set(0.06, 0.22, 0);
   leaf.scale.set(1.4, 0.5, 0.8);
   g.add(leaf);
@@ -288,17 +299,17 @@ const geoCoinBody = new THREE.CylinderGeometry(0.2, 0.2, 0.055, 20);
 const geoCoinRim = new THREE.TorusGeometry(0.2, 0.02, 8, 20);
 const geoCoinEmboss = new THREE.CylinderGeometry(0.1, 0.1, 0.01, 16);
 
-const matCoinBody = new THREE.MeshStandardMaterial({
+const matCoinBody = toon({
   color: 0xf4c430,
-  roughness: 0.3,
-  metalness: 0.55,
+
+
   emissive: 0x6b4e0a,
   emissiveIntensity: 0.5,
 });
-const matCoinRim = new THREE.MeshStandardMaterial({
+const matCoinRim = toon({
   color: 0xffcc33,
-  roughness: 0.25,
-  metalness: 0.6,
+
+
   emissive: 0x6b4e0a,
   emissiveIntensity: 0.55,
 });
@@ -316,23 +327,27 @@ export function makeCoin(): THREE.Group {
   const g = new THREE.Group();
 
   const body = new THREE.Mesh(geoCoinBody, matCoinBody);
+  body.name = "body";
   body.rotation.z = Math.PI / 2; // flat faces point along X/-X, edge faces the camera-ish view
   body.castShadow = true;
   g.add(body);
 
   const rim = new THREE.Mesh(geoCoinRim, matCoinRim);
+  rim.name = "rim";
   rim.rotation.y = Math.PI / 2; // ring wraps the coin's circumference, matching the body's orientation
   rim.castShadow = true;
   g.add(rim);
 
   // Small emboss discs, one per face, sitting just proud of the body surface.
   const embossFront = new THREE.Mesh(geoCoinEmboss, matCoinRim);
+  embossFront.name = "embossFront";
   embossFront.rotation.z = Math.PI / 2;
   embossFront.position.x = 0.03;
   embossFront.castShadow = true;
   g.add(embossFront);
 
   const embossBack = new THREE.Mesh(geoCoinEmboss, matCoinRim);
+  embossBack.name = "embossBack";
   embossBack.rotation.z = Math.PI / 2;
   embossBack.position.x = -0.03;
   embossBack.castShadow = true;
@@ -353,7 +368,7 @@ export function makeCoin(): THREE.Group {
  */
 export function buildBoard(scene: THREE.Object3D, grid: Grid): Board {
   const theme = getEquippedMazeTheme();
-  syncBoardMaterials(theme.palette);
+  syncBoardMaterials(theme.palette, grid);
 
   const pelletMeshes = new Map<string, PelletMesh>();
   let pelletsLeft = 0;
@@ -428,14 +443,50 @@ function buildWallTopDecor(scene: THREE.Object3D, grid: Grid, theme: MazeTheme):
  * by buildBoard (fresh level) and applyBoardTheme (mid-run re-theme) so the
  * two can never drift.
  */
-function syncBoardMaterials(palette: ThemePalette): void {
+function syncBoardMaterials(palette: ThemePalette, grid: Grid): void {
   matWall.color.set(palette.wall);
   matWall.emissive.set(palette.wallEmissive);
   matWall.emissiveIntensity = palette.wallEmissiveIntensity;
+  // The theme's SURFACE (hedge / sand / brick / none). Swapping a map between
+  // null and a texture changes the shader program three compiles for this
+  // material, so `needsUpdate` is required — without it the first themed board
+  // renders untextured and only picks the pattern up on some unrelated later
+  // recompile. Only flagged when the map actually changed, since a needless
+  // recompile stalls the frame.
+  const wallMap = wallTextureFor(palette.wallTexture);
+  if (matWall.map !== wallMap) {
+    matWall.map = wallMap;
+    matWall.needsUpdate = true;
+  }
 
-  matFloor.color.set(palette.floor);
+  // matFloor.color is set BELOW, once the ground texture is known — a textured
+  // floor carries the palette colour inside the canvas and must stay white.
   matFloor.emissive.set(palette.floorEmissive);
   matFloor.emissiveIntensity = palette.floorEmissiveIntensity;
+  // The theme's GROUND. Unlike the wall texture this is grid-derived — a
+  // garden path, a park's gravel walk and a road's markings all follow the
+  // corridors — so it cannot be cached by kind and must be rebuilt whenever
+  // the level or the theme changes. The outgoing one is disposed here because
+  // nothing else owns it: leaking one canvas texture per level would grow all
+  // through a run.
+  const nextFloor = floorTextureFor(palette.floorTexture, grid, palette.floor);
+  if (matFloor.map !== nextFloor) {
+    matFloor.map?.dispose();
+    matFloor.map = nextFloor;
+    // ALSO the emissive map, and this is what makes the pattern visible at
+    // all. Every floor palette carries a flat emissive lift (~0.3), which is
+    // added AFTER the map multiplies the colour — so on the dark floors
+    // (city 0.22 luminance, forest 0.22, arcade 0.07) that constant swamped
+    // the pattern and the first pass rendered as a plain surface. Driving the
+    // emissive with the same texture means the dark parts of the pattern dim
+    // the lift too, and the contrast survives.
+    matFloor.emissiveMap = nextFloor;
+    matFloor.needsUpdate = true;
+  }
+  // A floor texture bakes palette.floor in as its own ground, so the material
+  // must NOT tint it a second time — that would square the colour and drag
+  // every surface back down towards black.
+  matFloor.color.set(nextFloor ? 0xffffff : palette.floor);
 
   matBiscuit.color.set(palette.biscuit);
   matBiscuit.emissive.set(palette.biscuitEmissive);
@@ -494,16 +545,16 @@ function buildHedgeDecor(
 
   const matBlooms = bloomColors.map(
     (color) =>
-      new THREE.MeshStandardMaterial({
+      toon({
         color,
-        roughness: 0.5,
+
         emissive: color,
         emissiveIntensity: palette.bloomEmissiveIntensity,
       }),
   );
-  const matLeafSpeck = new THREE.MeshStandardMaterial({
+  const matLeafSpeck = toon({
     color: palette.speckColor,
-    roughness: 0.6,
+
     emissive: palette.speckEmissive,
     emissiveIntensity: 0.2,
   });
@@ -608,7 +659,7 @@ const PROP_HEIGHT_CLASS: Record<PropBaseShape, PropHeightClass> = {
 // brown (0x6b4a2f) so trunks read as "the same wood" across every theme
 // rather than each def inventing its own bark hue. A def's own
 // `params.trunkColor` overrides this per-shape default (see props.ts).
-// Deliberately NOT a shared module-level THREE.MeshStandardMaterial (unlike
+// Deliberately NOT a shared module-level THREE.MeshToonMaterial (unlike
 // matWall/matFloor/matBiscuit above) — makeTrunkMat below is called fresh by
 // every tree/pine/palm instance so each prop's disposal is fully
 // self-contained (see buildProps' doc comment: "every mesh gets its OWN
@@ -622,8 +673,8 @@ const DEFAULT_TRUNK_COLOR = 0x6b4a2f;
 const DEFAULT_POLE_COLOR = 0x2a2a30; // streetlight/sign poles
 const DEFAULT_UMBRELLA_POLE_COLOR = 0xdedede;
 
-function makeTrunkMat(color = DEFAULT_TRUNK_COLOR): THREE.MeshStandardMaterial {
-  return new THREE.MeshStandardMaterial({ color, roughness: 0.75 });
+function makeTrunkMat(color = DEFAULT_TRUNK_COLOR): THREE.MeshToonMaterial {
+  return toon({ color});
 }
 
 /** Picks one entry from `colors` deterministically via an already-computed
@@ -649,7 +700,7 @@ function makeShrub(params: PropParams, h: number): THREE.Group {
   const width = params.width ?? 1;
   const segments = THREE.MathUtils.clamp(Math.round(params.segments ?? 3), 2, 3);
 
-  const mat = new THREE.MeshStandardMaterial({ color: pickColor(colors, h), roughness: 0.65 });
+  const mat = toon({ color: pickColor(colors, h)});
   const lobes: Array<[number, number, number, number]> = [
     [0, 0.12, 0, 0.22],
     [0.13, 0.15, 0.05, 0.17],
@@ -691,7 +742,7 @@ function makeTree(params: PropParams, h: number): THREE.Group {
   trunk.castShadow = true;
   g.add(trunk);
 
-  const foliageMat = new THREE.MeshStandardMaterial({ color: pickColor(colors, h), roughness: 0.6 });
+  const foliageMat = toon({ color: pickColor(colors, h)});
   // Crown spheres stack upward from just above the trunk, each a touch
   // smaller than the last — segments=2 reproduces the exact pre-v4.1
   // crownLo/crownHi radii/positions.
@@ -735,7 +786,7 @@ function makePine(params: PropParams, h: number): THREE.Group {
   trunk.castShadow = true;
   g.add(trunk);
 
-  const foliageMat = new THREE.MeshStandardMaterial({ color: pickColor(colors, h), roughness: 0.65 });
+  const foliageMat = toon({ color: pickColor(colors, h)});
   // Tiers taper radius/height by a fixed ratio per step (matches the
   // pre-v4.1 authored 3-tier sequence exactly at segments=3) and climb in Y
   // by a fixed step so consecutive cones keep overlapping enough to read as
@@ -796,7 +847,7 @@ function makePalm(params: PropParams, h: number): THREE.Group {
   g.add(upper);
 
   const crownOrigin = new THREE.Vector3(0.17 * width, 0.8 * height, 0);
-  const frondMat = new THREE.MeshStandardMaterial({ color: pickColor(colors, h), roughness: 0.55 });
+  const frondMat = toon({ color: pickColor(colors, h)});
   const frondCount = 4 + (h > 0.5 ? 1 : 0); // 4-5 fronds
   for (let i = 0; i < frondCount; i++) {
     const angle = (i / frondCount) * Math.PI * 2 + h * 1.7;
@@ -815,7 +866,7 @@ function makePalm(params: PropParams, h: number): THREE.Group {
   }
 
   // A tiny coconut cluster tucked under the crown.
-  const coconutMat = new THREE.MeshStandardMaterial({ color: 0x4a3524, roughness: 0.7 });
+  const coconutMat = toon({ color: 0x4a3524});
   for (let i = 0; i < 2; i++) {
     const coconut = new THREE.Mesh(new THREE.SphereGeometry(0.045 * width, 6, 6), coconutMat);
     coconut.name = `coconut${i}`; // IDEA-033
@@ -881,7 +932,7 @@ function makeBuilding(params: PropParams, h: number): THREE.Group {
   // buildings rather than one fixed silhouette stretched thin.
   const baseHeight = (1.1 + h * 0.9) * heightMul;
 
-  const facadeMat = new THREE.MeshStandardMaterial({ color: pickColor(colors, h), roughness: 0.75 });
+  const facadeMat = toon({ color: pickColor(colors, h)});
   const tower = new THREE.Mesh(new THREE.BoxGeometry(footprint, baseHeight, footprint), facadeMat);
   tower.name = "base"; // IDEA-033: addressable part name — see applyPropParts
   tower.position.y = baseHeight / 2;
@@ -892,7 +943,7 @@ function makeBuilding(params: PropParams, h: number): THREE.Group {
   // of instances (hash-driven), off-center so the skyline doesn't read as
   // identical box-on-box stamps.
   if (rooftop && h > 0.5) {
-    const roofMat = new THREE.MeshStandardMaterial({ color: pickColor(colors, 1 - h), roughness: 0.75 });
+    const roofMat = toon({ color: pickColor(colors, 1 - h)});
     const roofSize = footprint * 0.48;
     const roof = new THREE.Mesh(new THREE.BoxGeometry(roofSize, baseHeight * 0.3, roofSize), roofMat);
     roof.name = "rooftop"; // IDEA-033
@@ -907,11 +958,11 @@ function makeBuilding(params: PropParams, h: number): THREE.Group {
   // proud of the facade so they never z-fight the tower box. 0 rows or 0
   // cols means no window meshes at all — an intentionally unlit tower.
   if (windowRows > 0 && windowCols > 0) {
-    const windowMat = new THREE.MeshStandardMaterial({
+    const windowMat = toon({
       color: windowColor,
       emissive: windowColor,
       emissiveIntensity: windowEmissiveIntensity,
-      roughness: 0.4,
+
     });
     const winW = footprint * (0.16 / windowCols) * 2; // narrower as columns increase, so a denser grid doesn't overlap
     const winH = baseHeight * (0.07 / windowRows) * 2;
@@ -963,7 +1014,7 @@ function makeStreetlight(params: PropParams, h: number): THREE.Group {
   const glowColors = params.glowColor !== undefined ? [params.glowColor] : [0xf4d060];
   const glowIntensity = params.glowIntensity ?? 0.9;
 
-  const poleMat = new THREE.MeshStandardMaterial({ color: poleColor, roughness: 0.55, metalness: 0.3 });
+  const poleMat = toon({ color: poleColor});
   const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.03, 0.85 * height, 8), poleMat);
   pole.name = "pole"; // IDEA-033: addressable part name — see applyPropParts
   pole.position.y = 0.425 * height;
@@ -978,11 +1029,11 @@ function makeStreetlight(params: PropParams, h: number): THREE.Group {
   g.add(arm);
 
   const headColor = pickColor(glowColors, h);
-  const headMat = new THREE.MeshStandardMaterial({
+  const headMat = toon({
     color: headColor,
     emissive: headColor,
     emissiveIntensity: glowIntensity,
-    roughness: 0.3,
+
   });
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.075, 10, 8), headMat);
   head.name = "head"; // IDEA-033
@@ -1015,7 +1066,7 @@ function makeUmbrella(params: PropParams, h: number): THREE.Group {
   const width = params.width ?? 1;
   const tilt = params.tilt ?? 0.12;
 
-  const poleMat = new THREE.MeshStandardMaterial({ color: poleColor, roughness: 0.5, metalness: 0.15 });
+  const poleMat = toon({ color: poleColor});
   const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.66 * height, 8), poleMat);
   pole.name = "pole"; // IDEA-033: addressable part name — see applyPropParts
   pole.position.y = 0.33 * height;
@@ -1023,7 +1074,7 @@ function makeUmbrella(params: PropParams, h: number): THREE.Group {
   g.add(pole);
 
   const canopyColor = pickColor(colors, h);
-  const canopyMat = new THREE.MeshStandardMaterial({ color: canopyColor, roughness: 0.5 });
+  const canopyMat = toon({ color: canopyColor});
   const canopy = new THREE.Mesh(new THREE.ConeGeometry(0.34 * width, 0.24, 10), canopyMat);
   canopy.name = "canopy"; // IDEA-033
   canopy.position.y = 0.68 * height;
@@ -1035,7 +1086,7 @@ function makeUmbrella(params: PropParams, h: number): THREE.Group {
   // the def's own `tilt`, sign chosen by the hash so instances vary.
   if (h > 0.5 && colors.length > 1) {
     const tipColor = pickColor(colors, (h + 0.5) % 1);
-    const tipMat = new THREE.MeshStandardMaterial({ color: tipColor, roughness: 0.5 });
+    const tipMat = toon({ color: tipColor});
     const tip = new THREE.Mesh(new THREE.SphereGeometry(0.045 * width, 8, 6), tipMat);
     tip.name = "tip"; // IDEA-033
     tip.position.y = 0.81 * height;
@@ -1063,16 +1114,16 @@ function makeBloom(params: PropParams, h: number): THREE.Group {
   const glowColor = params.glowColor ?? 0xf2d43a;
   const glowIntensity = params.glowIntensity ?? 0.25;
 
-  const stemMat = new THREE.MeshStandardMaterial({ color: 0x4a6a2e, roughness: 0.6 });
+  const stemMat = toon({ color: 0x4a6a2e});
   const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.012 * width, 0.015 * width, 0.1 * width, 6), stemMat);
   stem.name = "stem"; // IDEA-033: addressable part name — see applyPropParts
   stem.position.y = 0.05 * width;
   stem.castShadow = true;
   g.add(stem);
 
-  const bloomMat = new THREE.MeshStandardMaterial({
+  const bloomMat = toon({
     color: glowColor,
-    roughness: 0.5,
+
     emissive: glowColor,
     emissiveIntensity: glowIntensity,
   });
@@ -1111,24 +1162,24 @@ function makeSign(params: PropParams, h: number): THREE.Group {
   const glowIntensity = params.glowIntensity ?? 0.85;
   const boardColor = params.signBoardColor;
 
-  const postMat = new THREE.MeshStandardMaterial({ color: postColor, roughness: 0.55, metalness: 0.3 });
+  const postMat = toon({ color: postColor});
   const post = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.024, height, 8), postMat);
   post.name = "post"; // IDEA-033: addressable part name — see applyPropParts
   post.position.y = height / 2;
   post.castShadow = true;
   g.add(post);
 
-  const glowMat = new THREE.MeshStandardMaterial({
+  const glowMat = toon({
     color: glowColor,
     emissive: glowColor,
     emissiveIntensity: glowIntensity,
-    roughness: 0.3,
+
   });
 
   if (boardColor !== undefined) {
     // Transit-signal read: a small rectangular board mounted near the top of
     // the post, with a glowing face plate slightly proud of it.
-    const boardMat = new THREE.MeshStandardMaterial({ color: boardColor, roughness: 0.5, metalness: 0.2 });
+    const boardMat = toon({ color: boardColor});
     const board = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.13, 0.02), boardMat);
     board.name = "board"; // IDEA-033
     board.position.set(0, height * 0.92, 0.01);
@@ -1218,7 +1269,7 @@ function applyPropPartEdit(map: Map<string, THREE.Object3D>, edit: PropPartEdit)
     const mat = target.material;
     const mats = Array.isArray(mat) ? mat : [mat];
     for (const m of mats) {
-      if (!(m instanceof THREE.MeshStandardMaterial)) continue;
+      if (!(m instanceof THREE.MeshToonMaterial)) continue;
       if (edit.color !== undefined) m.color.setHex(edit.color);
       // Emissive override only takes effect on a part the base factory
       // already lit (emissiveIntensity > 0) — recoloring a NON-emissive
@@ -1237,9 +1288,9 @@ function applyPropPartEdit(map: Map<string, THREE.Object3D>, edit: PropPartEdit)
  *  shape/params). */
 function addPropPart(root: THREE.Object3D, map: Map<string, THREE.Object3D>, added: AddedPropPart): void {
   const parent = map.get(added.parentPath) ?? root;
-  const mat = new THREE.MeshStandardMaterial({
+  const mat = toon({
     color: added.color,
-    roughness: 0.6,
+
     ...(added.emissive !== undefined ? { emissive: added.emissive, emissiveIntensity: 0.8 } : {}),
   });
   const mesh = new THREE.Mesh(buildPropPrimitiveGeometry(added.kind, added.params), mat);
@@ -1525,7 +1576,7 @@ export function buildWallDecor(scene: THREE.Object3D, theme: MazeTheme): THREE.G
  * leaving city's hand-placed lamps for garden's density blooms) never leaks.
  */
 export function applyBoardTheme(board: Board, scene: THREE.Object3D, grid: Grid, theme: MazeTheme): void {
-  syncBoardMaterials(theme.palette);
+  syncBoardMaterials(theme.palette, grid);
 
   board.hedgeDecor.forEach((entry) => {
     if (entry instanceof THREE.Group) {

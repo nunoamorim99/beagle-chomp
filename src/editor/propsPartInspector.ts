@@ -18,6 +18,7 @@ import { type PartNode } from "./partTree";
 import { PropPartEditLog, type Vec3Tuple, type LiveAddedPropPart } from "./propPartEditLog";
 import { buildPropPartPrimitiveGeometry } from "./propsPartCodegen";
 import { type PropPrimKind } from "../game/props";
+import { hasEmissive, isEditableMaterial } from "../render/toon";
 
 const POS_RANGE = 1.5; // props are apron/wall-top scale — a touch tighter than the character's ±2.5
 const SCALE_MAX = 3;
@@ -170,11 +171,11 @@ export function createPropsPartInspector(container: HTMLElement, cb: PropsPartIn
     // character-mode material folder.
     if (o instanceof THREE.Mesh) {
       const mat = Array.isArray(o.material) ? o.material[0] : o.material;
-      if (mat instanceof THREE.MeshStandardMaterial) {
+      if (isEditableMaterial(mat)) {
         const matFolder = f.addFolder("material");
         let committedMat: PropMaterialSnapshot = {
           color: mat.color.getHex(),
-          emissive: mat.emissiveIntensity > 0 ? mat.emissive.getHex() : undefined,
+          emissive: hasEmissive(mat) && mat.emissiveIntensity > 0 ? mat.emissive.getHex() : undefined,
         };
         const colorProxy = { color: `#${mat.color.getHexString()}` };
         matFolder
@@ -197,7 +198,9 @@ export function createPropsPartInspector(container: HTMLElement, cb: PropsPartIn
         // plain facade/trunk/lobe never gains a glow control here; that
         // would be a different, more surprising feature ("make anything
         // glow") the brief didn't ask for.
-        if (mat.emissiveIntensity > 0) {
+        // `hasEmissive` also gates it: an unlit MeshBasicMaterial (which the
+        // shading dropdown can produce) has no emissive channel at all.
+        if (hasEmissive(mat) && mat.emissiveIntensity > 0) {
           const emissiveProxy = { color: `#${mat.emissive.getHexString()}` };
           matFolder
             .addColor(emissiveProxy, "color")

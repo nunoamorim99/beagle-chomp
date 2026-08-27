@@ -16,6 +16,7 @@
  *  vite.config.ts's EDITOR_SAVABLE_FILES — a mismatch just yields a 403). */
 export type SavableFile =
   | "src/render/characters.ts"
+  | "src/render/board.ts"
   | "src/game/themes.ts"
   | "src/game/props.ts";
 

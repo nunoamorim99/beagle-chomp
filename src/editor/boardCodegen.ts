@@ -240,9 +240,15 @@ export function formatThemeEntry(theme: WorkingTheme, indent = 2): string {
     `${i2}bg: ${hex(p.bg)},`,
     `${i2}backdropTop: ${hex(p.backdropTop)},`,
     `${i2}wall: ${hex(p.wall)},`,
+    // Not a colour, so it does not go through hex(). Emitted right after
+    // `wall` because it belongs to the same slot — and emitted AT ALL
+    // because this writer is explicit field-by-field: anything missing here
+    // is silently dropped from a saved theme.
+    `${i2}wallTexture: ${JSON.stringify(p.wallTexture)},`,
     `${i2}wallEmissive: ${hex(p.wallEmissive)},`,
     `${i2}wallEmissiveIntensity: ${p.wallEmissiveIntensity},`,
     `${i2}floor: ${hex(p.floor)},`,
+    `${i2}floorTexture: ${JSON.stringify(p.floorTexture)},`,
     `${i2}floorEmissive: ${hex(p.floorEmissive)},`,
     `${i2}floorEmissiveIntensity: ${p.floorEmissiveIntensity},`,
     `${i2}biscuit: ${hex(p.biscuit)},`,

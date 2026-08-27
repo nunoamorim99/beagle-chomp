@@ -287,11 +287,19 @@ export function createScene(canvas: HTMLCanvasElement): SceneRig {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  // IDEA-008 (daytime garden): nudged down a hair from 0.98 now that the
-  // hemisphere/key intensities were lifted for the brighter daylight palette
-  // — keeps the sunlit board from blowing out highlights on walls/floor.
-  renderer.toneMappingExposure = 0.92;
+  // NO tone mapping, deliberately (IDEA-024 v2, the cel-shading pass).
+  //
+  // The scene was on ACESFilmic at 0.92 exposure, which is the right choice for
+  // PBR: its filmic shoulder rolls highlights off smoothly. That shoulder is
+  // exactly what a toon ramp must not have. The whole point of the 3-step
+  // gradient (src/render/toon.ts) is that lighting lands in three flat bands,
+  // and a filmic curve re-compresses the top two into a gradient — you get the
+  // banding artefacts of cel shading with none of the crispness.
+  //
+  // Linear output keeps the ramp's steps exactly where the gradient texture put
+  // them. Colours were re-tuned against this (see config.ts's beagle coat), so
+  // reinstating tone mapping would need the palette revisited with it.
+  renderer.toneMapping = THREE.NoToneMapping;
 
   const initialPalette = getEquippedMazeTheme().palette;
 

@@ -16,6 +16,7 @@ import {
   type Vec3Tuple,
 } from "./editLog";
 
+
 /** Rounds to 3 decimals and avoids "-0" so snippets stay tidy. */
 function fmt(n: number): string {
   const r = Math.round(n * 1000) / 1000;
@@ -136,7 +137,10 @@ export function addedPartLines(part: AddedPartRecord): string[] {
   const { name, object, material } = part;
   const lines: string[] = [
     `// new part: ${name} (${part.kind}) attached to ${part.parentVar}`,
-    `const ${name}Mat = new THREE.MeshStandardMaterial({ color: ${hex(material.color.getHex())}, roughness: ${fmt(material.roughness)} });`,
+    // The scene is cel-shaded, so a new part gets a toon material on the
+    // shared ramp — emitting a MeshStandardMaterial here would produce code
+    // that compiles and then lights differently from everything around it.
+    `const ${name}Mat = toon({ color: ${hex(material.color.getHex())} });`,
     `const ${name} = new THREE.Mesh(${GEOMETRY_CTORS[part.kind](part.params)}, ${name}Mat);`,
     `${name}.name = "${name}";`,
   ];

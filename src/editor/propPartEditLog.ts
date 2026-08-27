@@ -19,6 +19,7 @@
 import * as THREE from "three";
 import { type PartNode } from "./partTree";
 import { type PropPartEdit, type AddedPropPart, type PropPrimKind } from "../game/props";
+import { hasEmissive, isEditableMaterial } from "../render/toon";
 
 export type Vec3Tuple = [number, number, number];
 
@@ -131,10 +132,10 @@ export class PropPartEditLog {
       });
       if (node.object instanceof THREE.Mesh) {
         const mat = Array.isArray(node.object.material) ? node.object.material[0] : node.object.material;
-        if (mat instanceof THREE.MeshStandardMaterial) {
+        if (isEditableMaterial(mat)) {
           this.materialBaselines.set(node.path, {
             color: mat.color.getHex(),
-            emissive: mat.emissiveIntensity > 0 ? mat.emissive.getHex() : undefined,
+            emissive: hasEmissive(mat) && mat.emissiveIntensity > 0 ? mat.emissive.getHex() : undefined,
           });
         }
       }

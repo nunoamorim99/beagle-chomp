@@ -96,9 +96,20 @@ export const COLORS = {
   wall: 0x3f8f3a,
   wallEmissive: 0x0e2a0e,
   floor: 0x6b4a2f,
-  beagleTan: 0xc98a3c,
-  beagleWhite: 0xf4efe6,
-  beagleBlack: 0x2a2320,
+  // The rebuilt model's coat (IDEA-024 v2). Warmer and lighter than the
+  // original: a toon ramp quantises lighting into three hard bands, so a
+  // coat tuned under smooth PBR falloff goes muddy in the lower band. The
+  // white is a warm OFF-white on purpose — pure white blows out to a flat
+  // silhouette in the top band and takes the muzzle's modelling with it.
+  beagleTan: 0xd6934f,
+  beagleWhite: 0xf0efec,
+  // Actually BLACK. This was 0x4a2a1e, a dark brown, which on the nose (a
+  // 5 cm sphere) passed for black but over the whole saddle plainly did not —
+  // and a tricolour beagle's saddle and nose are the same true black. Not
+  // 0x000000: the toon ramp's lowest band multiplies by ~0.27, so pure black
+  // gives a shadow side with no information in it at all. This keeps just
+  // enough warmth to hold the form.
+  beagleBlack: 0x1b1815,
   biscuit: 0xf0cf8e,
   ghostRose: 0xe0577a,
   ghostTeal: 0x53c7c0,

@@ -30,6 +30,7 @@ import { type BeagleSkin } from "../game/cosmetics";
 import { getMazeTheme, type MazeTheme } from "../game/themes";
 import { makeBeagle, makeEnemy, applyBeagleSkin, type BeagleParts } from "./characters";
 import { makePropById, makeLifeBone } from "./board";
+import { toon } from "./toon";
 
 // Same cheap inward-facing skydome technique as menuScene.ts's own
 // makeBackdrop (itself a copy of scene.ts's) — kept as a third small copy
@@ -89,9 +90,9 @@ const BLOOM_COLOR = 0xf2d43a;
 function makeGardenPatch(): THREE.Group {
   const g = new THREE.Group();
 
-  const soilMat = new THREE.MeshStandardMaterial({
+  const soilMat = toon({
     color: COLORS.floor,
-    roughness: 1,
+
     emissive: 0x2a1a0c,
     emissiveIntensity: 0.3,
   });
@@ -100,9 +101,9 @@ function makeGardenPatch(): THREE.Group {
   soil.receiveShadow = true;
   g.add(soil);
 
-  const grassMat = new THREE.MeshStandardMaterial({
+  const grassMat = toon({
     color: GRASS_RIM_COLOR,
-    roughness: 0.6,
+
     emissive: COLORS.wallEmissive,
     emissiveIntensity: 0.2,
   });
@@ -114,18 +115,18 @@ function makeGardenPatch(): THREE.Group {
   // A single low hedge pair behind the hero, each topped with one bloom —
   // the game's own signature detail (board.ts's buildHedgeDecor) in
   // miniature, just enough to say "garden" without a full arc.
-  const hedgeMat = new THREE.MeshStandardMaterial({
+  const hedgeMat = toon({
     color: HEDGE_COLOR,
-    roughness: 0.5,
-    metalness: 0.1,
+
+
     emissive: COLORS.wallEmissive,
     emissiveIntensity: 0.2,
   });
   const hedgeGeo = new THREE.BoxGeometry(0.42, 0.26, 0.28);
   const bloomGeo = new THREE.SphereGeometry(0.05, 8, 8);
-  const bloomMat = new THREE.MeshStandardMaterial({
+  const bloomMat = toon({
     color: BLOOM_COLOR,
-    roughness: 0.5,
+
     emissive: BLOOM_COLOR,
     emissiveIntensity: 0.25,
   });
@@ -309,9 +310,9 @@ function makeThemeDiorama(theme: MazeTheme): THREE.Group {
   const g = new THREE.Group();
 
   // Floor — same roughness/emissive treatment as board.ts's matFloor.
-  const floorMat = new THREE.MeshStandardMaterial({
+  const floorMat = toon({
     color: palette.floor,
-    roughness: 1,
+
     emissive: palette.floorEmissive,
     emissiveIntensity: palette.floorEmissiveIntensity,
   });
@@ -325,10 +326,10 @@ function makeThemeDiorama(theme: MazeTheme): THREE.Group {
   // matWall, instanced exactly like the real board (one draw call for the
   // whole run, even though 5 instances hardly needs it — keeps the "reuse
   // board.ts's recipe" promise literal, not just visual).
-  const wallMat = new THREE.MeshStandardMaterial({
+  const wallMat = toon({
     color: palette.wall,
-    roughness: 0.5,
-    metalness: 0.1,
+
+
     emissive: palette.wallEmissive,
     emissiveIntensity: palette.wallEmissiveIntensity,
   });
@@ -347,9 +348,9 @@ function makeThemeDiorama(theme: MazeTheme): THREE.Group {
 
   // Biscuits — same roughness/emissive treatment as board.ts's matBiscuit;
   // biscuits theme (they're the trail), unlike the fixed-identity bone below.
-  const biscuitMat = new THREE.MeshStandardMaterial({
+  const biscuitMat = toon({
     color: palette.biscuit,
-    roughness: 0.7,
+
     emissive: palette.biscuitEmissive,
     emissiveIntensity: palette.biscuitEmissiveIntensity,
   });
@@ -364,9 +365,9 @@ function makeThemeDiorama(theme: MazeTheme): THREE.Group {
 
   // Bone — fixed off-white identity color in every theme, matching
   // board.ts's makeBone exactly (same shaft + four-knuckle shape/material).
-  const boneMat = new THREE.MeshStandardMaterial({
+  const boneMat = toon({
     color: 0xf6f1e6,
-    roughness: 0.5,
+
     emissive: 0x6a5730,
     emissiveIntensity: 0.4,
   });
@@ -396,9 +397,9 @@ function makeThemeDiorama(theme: MazeTheme): THREE.Group {
     const bloomGeo = new THREE.SphereGeometry(0.075, 6, 6);
     const bloomMats = palette.bloomColors.map(
       (color) =>
-        new THREE.MeshStandardMaterial({
+        toon({
           color,
-          roughness: 0.5,
+
           emissive: color,
           emissiveIntensity: palette.bloomEmissiveIntensity,
         }),
@@ -414,9 +415,9 @@ function makeThemeDiorama(theme: MazeTheme): THREE.Group {
 
     if (palette.speckChance > 0) {
       const speckGeo = new THREE.SphereGeometry(0.05, 6, 6);
-      const speckMat = new THREE.MeshStandardMaterial({
+      const speckMat = toon({
         color: palette.speckColor,
-        roughness: 0.6,
+
         emissive: palette.speckEmissive,
         emissiveIntensity: 0.2,
       });
@@ -699,12 +700,12 @@ export function createShopScene(): ShopScene {
 
   // Same local idle-animation approach as menuScene.ts's animateIdle: the
   // showcase hero has no real game Entity/facing to sync via syncToEntity, so
-  // drive the turntable directly here, plus (for a beagle hero only — enemies
+  // drive the turntable directly here, plus (for a beagle hero only â€” enemies
   // have no `parts`) the same tail-wag/ear-sway/breathing formulas
   // characters.ts's animateBeagleParts already implements for the idle case.
   function animateIdle(dt: number): void {
     idleT += dt;
-    // IDEA-026: the diorama turntables at its own, slower speed — see
+    // IDEA-026: the diorama turntables at its own, slower speed â€” see
     // DIORAMA_TURNTABLE_SPEED's doc comment above.
     const speed = heroKind === "theme" ? DIORAMA_TURNTABLE_SPEED : TURNTABLE_SPEED;
     turntableAngle += dt * speed;
@@ -715,8 +716,8 @@ export function createShopScene(): ShopScene {
     if (!parts) return;
 
     const tailWag = Math.sin(idleT * 1.8) * 0.4;
-    const earSwayL = Math.sin(idleT * 0.9) * 0.08 + Math.sin(idleT * 0.31 * Math.PI * 2) * 0.05;
-    const earSwayR = Math.sin(idleT * 0.9 + 1.1) * 0.08 + Math.sin(idleT * 0.31 * Math.PI * 2 + 1.1) * 0.05;
+    const earSwayL = -0.22 + Math.sin(idleT * 0.9) * 0.08 + Math.sin(idleT * 0.31 * Math.PI * 2) * 0.05;
+    const earSwayR = -0.22 + Math.sin(idleT * 0.9 + 1.1) * 0.08 + Math.sin(idleT * 0.31 * Math.PI * 2 + 1.1) * 0.05;
     parts.tail.rotation.y = tailWag;
     parts.earL.rotation.x = earSwayL;
     parts.earR.rotation.x = earSwayR;
@@ -767,7 +768,7 @@ export function createShopScene(): ShopScene {
       // long-lived showcase beagle (which stays a beagle forever, so
       // applyBeagleSkin is the right live-recolor tool), this hero can BECOME
       // an enemy (or a theme diorama) and back again as the player switches
-      // tabs, so every call here is a full swap — a plain applyBeagleSkin
+      // tabs, so every call here is a full swap â€” a plain applyBeagleSkin
       // would only be correct when the hero is already a beagle, and
       // silently do nothing useful otherwise.
       const next = makeBeagle(skin);

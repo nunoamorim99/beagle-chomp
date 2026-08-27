@@ -22,8 +22,16 @@ import {
 } from "./editLog";
 import { buildPrimitiveGeometry } from "./codegen";
 import { BEAGLE_SKINS } from "../game/cosmetics";
-import { CHARACTERS, BEAGLE_MODES, ENEMY_MODES, type EnemyColorKey, type AnimMode } from "./registry";
+import { CHARACTERS, BEAGLE_MODES, type EnemyColorKey, type AnimMode } from "./registry";
 import { runtimeOwnerFor, shortNote, type Channel } from "./runtimeOwned";
+import {
+  isEditableMaterial,
+  reshade,
+  roughnessOf,
+  SHADING_KINDS,
+  shadingKindOf,
+  type ShadingKind,
+} from "../render/toon";
 
 export interface EditorState {
   characterId: string;
@@ -65,6 +73,10 @@ export interface SelectionContext {
   addedRecord: AddedPartRecord | undefined;
   /** Called after every edit so the code panel refreshes. */
   onEdit(): void;
+  /** A part's material was REPLACED (shading model switched), so the editor's
+   *  uuid-keyed material registry has to be rebuilt — it would otherwise still
+   *  point at the disposed one and the material panel would vanish. */
+  onMaterialReplaced(): void;
   /** Geometry params of an added part changed (geometry was rebuilt). */
   onGeometryRebuilt(node: PartNode): void;
   onDelete(node: PartNode): void;
@@ -81,7 +93,10 @@ export interface Inspector {
   /** Reflects the dropdown when main auto-pauses on selection. */
   setAnimation(mode: AnimMode): void;
   /** Shows the skin dropdown for the beagle, the team color for enemies. */
-  setCharacterMode(isBeagle: boolean): void;
+  setCharacterMode(isBeagle: boolean, modes?: readonly AnimMode[], isPickup?: boolean): void;
+  /** Repoints the top dropdown at a different registry (Character vs Pickups)
+   *  and selects `id` within it. */
+  setRegistry(defs: readonly { id: string; label: string }[], id: string): void;
   /** Re-reads every bound value into the widgets (after undo/redo/nudge). */
   refreshDisplays(): void;
 }
@@ -111,11 +126,19 @@ export function createInspector(
   const gui = new GUI({ container, title: "Character Editor" });
 
   // --- global controls ---
-  const characterOptions: Record<string, string> = {};
-  for (const c of CHARACTERS) characterOptions[c.label] = c.id;
-  gui.add(state, "characterId", characterOptions).name("character").onChange((id: string) => {
-    cb.onCharacter(id);
-  });
+  // The dropdown's CONTENTS depend on the active tab — characters in Character
+  // mode, maze pickups in Pickups mode — so the controller is kept and rebuilt
+  // rather than created once. lil-gui's `.options()` destroys and replaces the
+  // controller, so the handle has to be reassigned and the handler re-bound.
+  const optionsFor = (defs: readonly { id: string; label: string }[]): Record<string, string> => {
+    const out: Record<string, string> = {};
+    for (const d of defs) out[d.label] = d.id;
+    return out;
+  };
+  let characterCtrl = gui
+    .add(state, "characterId", optionsFor(CHARACTERS))
+    .name("character")
+    .onChange((id: string) => cb.onCharacter(id));
 
   const skinOptions: Record<string, string> = {};
   for (const s of BEAGLE_SKINS) skinOptions[s.name] = s.id;
@@ -260,12 +283,12 @@ export function createInspector(
         const matFolder = folder.addFolder(title);
         let committedMat: MaterialSnapshot = {
           color: info.material.color.getHex(),
-          roughness: info.material.roughness,
+          roughness: roughnessOf(info.material) ?? 0,
         };
         const commitMat = (): void => {
           const after: MaterialSnapshot = {
             color: info.material.color.getHex(),
-            roughness: info.material.roughness,
+            roughness: roughnessOf(info.material) ?? 0,
           };
           if (after.color !== committedMat.color || Math.abs(after.roughness - committedMat.roughness) > 1e-6) {
             ctx.onMaterialCommitted(info, committedMat, after);
@@ -295,13 +318,60 @@ export function createInspector(
             ? `${ownedColor.reason}\n\nChange it in: ${ownedColor.owner}`
             : ownedColor.reason;
         }
+        // SHADING MODEL — audition the same form under a different lighting
+        // model. The game ships toon; seeing a part as standard/phong/lambert/
+        // basic is the quickest way to understand what the shading is doing to
+        // the geometry, which is what this workbench is for.
+        //
+        // It swaps by material IDENTITY, so a shared material (one `tan` for
+        // the whole coat) changes everywhere at once — the same scope a colour
+        // edit already has, and the folder title already says how many parts
+        // that is.
+        //
+        // Preview only, and labelled so: the shading model is a scene-wide art
+        // direction choice (src/render/toon.ts), not a per-part property, so
+        // there is nowhere in the builder for Save to write it. Saying that on
+        // the control is the IDEA-041 rule — never a control wired to nothing.
+        const shadingProxy = { shading: shadingKindOf(info.material) as string };
         matFolder
-          .add(info.material, "roughness", 0, 1, 0.01)
-          .onChange(() => {
-            ctx.log.touchMaterial(info);
+          .add(shadingProxy, "shading", [...SHADING_KINDS])
+          .name("shading 🔒 preview only")
+          .onChange((kind: string) => {
+            let root: THREE.Object3D = o;
+            while (root.parent) root = root.parent;
+            info.material = reshade(root, info.material, kind as ShadingKind) as typeof info.material;
+            ctx.onMaterialReplaced();
             ctx.onEdit();
+            // Rebuild: which controls belong here depends on the model that is
+            // now selected (a toon material has no roughness), so the folder
+            // has to be re-derived rather than left showing the old one's.
+            //
+            // DEFERRED to a task, not done inline: this runs from the
+            // dropdown's own onChange, and tearing down the folder that owns
+            // the controller currently dispatching leaves lil-gui mid-event
+            // with a detached element — the next change then finds no dropdown
+            // at all. Letting the event finish first fixes it.
+            setTimeout(() => {
+              selectionFolder?.destroy();
+              selectionFolder = null;
+              buildSelectionFolder(node, ctx);
+            }, 0);
           })
-          .onFinishChange(commitMat);
+          .domElement.classList.add("runtime-owned");
+
+        // Roughness only exists on the PBR materials. A cel-shaded surface has
+        // no such channel, so the control is omitted rather than shown wired to
+        // nothing — which is exactly the class of dead control IDEA-041 is
+        // about.
+        if (isEditableMaterial(info.material) && roughnessOf(info.material) !== null) {
+          matFolder
+            .add(info.material as THREE.MeshStandardMaterial, "roughness", 0, 1, 0.01)
+            .onChange(() => {
+              ctx.log.touchMaterial(info);
+              ctx.onEdit();
+            })
+            .onFinishChange(commitMat);
+        }
       }
     }
 
@@ -353,19 +423,37 @@ export function createInspector(
       state.animation = mode;
       animCtrl.updateDisplay();
     },
-    setCharacterMode(isBeagle: boolean): void {
-      if (isBeagle) {
-        skinCtrl.show();
-        colorCtrl.hide();
-      } else {
-        skinCtrl.hide();
-        colorCtrl.show();
+    setRegistry(defs: readonly { id: string; label: string }[], id: string): void {
+      state.characterId = id;
+      characterCtrl = characterCtrl
+        .options(optionsFor(defs))
+        .name("character")
+        .onChange((next: string) => cb.onCharacter(next));
+      characterCtrl.setValue(id);
+      characterCtrl.updateDisplay();
+    },
+    setCharacterMode(
+      isBeagle: boolean,
+      modes: readonly AnimMode[] = BEAGLE_MODES,
+      isPickup = false,
+    ): void {
+      // A pickup is neither: a bone has no coat skin and no team colour, so it
+      // gets neither control rather than an inert one (IDEA-041's rule).
+      skinCtrl.show(isBeagle && !isPickup);
+      colorCtrl.show(!isBeagle && !isPickup);
+      // Likewise the animation dropdown: nothing in the game moves a pickup's
+      // sub-parts, so a one-entry "off" dropdown would be a widget that can
+      // never do anything.
+      if (isPickup) {
+        animCtrl.hide();
+        state.animation = "off";
+        cb.onAnimation("off");
+        return;
       }
-      // Only enemies have frightened/eaten looks, so the dropdown offers them
-      // only there. lil-gui's .options() DESTROYS the controller and returns a
-      // fresh one, so the handler has to be re-attached and the reference kept
-      // — otherwise setAnimation() below would be updating a dead widget.
-      const modes = isBeagle ? BEAGLE_MODES : ENEMY_MODES;
+      animCtrl.show();
+      // lil-gui's .options() DESTROYS the controller and returns a fresh one,
+      // so the handler has to be re-attached and the reference kept —
+      // otherwise setAnimation() below would be updating a dead widget.
       if (!modes.includes(state.animation)) state.animation = "idle";
       animCtrl = animCtrl
         .options([...modes])

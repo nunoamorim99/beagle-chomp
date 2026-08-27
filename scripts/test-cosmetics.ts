@@ -106,7 +106,7 @@ const bagel = getBeagleSkin("bagel");
 check("bagel.coat.tan === COLORS.beagleTan", bagel.coat.tan === COLORS.beagleTan);
 check("bagel.coat.white === COLORS.beagleWhite", bagel.coat.white === COLORS.beagleWhite);
 check("bagel.coat.black === COLORS.beagleBlack", bagel.coat.black === COLORS.beagleBlack);
-check("bagel.coat.ear === 0x6b3f22 (characters.ts EAR_BROWN)", bagel.coat.ear === 0x6b3f22);
+check("bagel.coat.ear === 0xb87438 (the coat's mid-brown)", bagel.coat.ear === 0xb87438);
 check("bagel is BEAGLE_SKINS[0]", BEAGLE_SKINS[0].id === "bagel");
 check("exactly 4 skins", BEAGLE_SKINS.length === 4);
 check(

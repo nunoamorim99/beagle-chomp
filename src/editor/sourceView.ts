@@ -1,11 +1,13 @@
 // OWNER: character editor (IDEA-025, dev-only).
 // The "Real source" tab: shows the actual text of the selected character's
-// builder function straight out of src/render/characters.ts (via Vite's ?raw
+// builder function straight out of its real file — characters.ts for a
+// character, board.ts for a maze pickup (via Vite's ?raw
 // import — the string is the file, so it can never drift from what ships).
 // Line numbers match the real file; selecting a part scrolls to and marks the
 // line where that part is created. This panel is the learning half of the
 // editor: tweak on the left, read the code that produces it here.
-import charactersSource from "../render/characters.ts?raw";
+import { sourceTextFor } from "./sources";
+import { type SavableFile } from "./saveFile";
 import { findFunctionRange } from "./sourceParse";
 
 interface Extracted {
@@ -27,7 +29,7 @@ function extractFunction(src: string, name: string): Extracted {
 }
 
 export interface SourceViewPanel {
-  showBuilder(builderName: string): void;
+  showBuilder(builderName: string, file: SavableFile): void;
   /** Scrolls to + marks the line creating `varName` (null clears the mark). */
   markVar(varName: string | null): void;
 }
@@ -59,8 +61,8 @@ export function createSourceView(pre: HTMLPreElement): SourceViewPanel {
   }
 
   return {
-    showBuilder(builderName: string): void {
-      render(extractFunction(charactersSource, builderName));
+    showBuilder(builderName: string, file: SavableFile): void {
+      render(extractFunction(sourceTextFor(file), builderName));
       pre.scrollTop = 0;
     },
     markVar(varName: string | null): void {
