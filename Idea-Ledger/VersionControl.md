@@ -25,8 +25,9 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
   bone, fruit and coin are now editable exactly like a character, with Save writing real
   source into board.ts. Built by generalising Character mode rather than copying it.
 - (2026-08-27) IDEA-024 v2 — the game went cel-shaded: every lit surface on one shared 3-step toon
-  ramp, tone mapping off so the bands stay crisp, the shipped beagle kept with broader ears and a
-  thicker tail, and a per-part shading dropdown in the character editor.
+  ramp, tone mapping off so the bands stay crisp, the shipped beagle kept with broader ears, a
+  thicker tail and a saddle that is finally black rather than dark brown, and a per-part shading
+  dropdown in the character editor.
 
 ## 📌 Planned
 > Forward-looking targets from `/plan-version`. Each is a checklist of IDEAs intended for a

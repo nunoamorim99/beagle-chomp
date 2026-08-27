@@ -42,8 +42,9 @@ export const BEAGLE_SKINS: readonly BeagleSkin[] = [
     // `ear` is the coat's MID-BROWN: it dresses the ear leather AND the
     // saddle's blend band, which is why it is a light tan-brown rather than
     // the near-black it used to be. It has to work as the step between
-    // `tan` and `black`, not just as an ear colour.
-    coat: { tan: 0xd6934f, white: 0xf0efec, black: 0x4a2a1e, ear: 0xb87438 },
+    // `tan` and `black`, not just as an ear colour — and it carries more of
+    // that job now that `black` is a real black rather than a dark brown.
+    coat: { tan: 0xd6934f, white: 0xf0efec, black: 0x1b1815, ear: 0xb87438 },
     // Default skin: free and always owned (see profileStore.ts's
     // defaultProfile()).
     price: 0,
