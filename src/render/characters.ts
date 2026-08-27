@@ -175,7 +175,16 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
   const BODY_R = 0.3;
   const body = new THREE.Mesh(new THREE.SphereGeometry(BODY_R, 32, 24), tan);
   body.name = "body";
-  body.scale.set(1, 0.85, 1.4);
+  // Slimmed (IDEA-024 v2 polish). It was 0.60 wide x 0.51 tall — WIDER than
+  // deep, which is what read as chubby: a dog's ribcage is deeper than it is
+  // broad, and an ellipsoid that is the other way round looks like a loaf.
+  //
+  // 0.92 x 0.81 x 1.45 gives 0.552 x 0.486 x 0.870 — 8% narrower, 5%
+  // shallower, 3.5% longer. Deliberately not slimmer than that: the body has
+  // to stay WIDER than the 0.54 head or the dog reads as a head with feet
+  // (the failure this model was rebuilt to fix), and 0.552 leaves only a
+  // 2% margin. Slimming further means shrinking the head to match.
+  body.scale.set(0.92, 0.81, 1.45);
   body.position.set(0, 0.34, -0.02);
   g.add(body);
 
@@ -408,11 +417,14 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
     // Legs: approved stubby proportions â€” pivot at the hip (inside the
     // body), short chunky cylinder, white paw/sock blob INSIDE the pivot so
     // it trots with the leg. Paw bottom lands at y~0.00 (ground contact).
-    ([-0.17, 0.17] as const).forEach((dz) => {
+    ([-0.18, 0.18] as const).forEach((dz) => {
       const legName = `leg${dz < 0 ? "F" : "B"}${s < 0 ? "L" : "R"}`;
       const legPivot = new THREE.Group();
       legPivot.name = legName;
-      legPivot.position.set(0.16 * s, 0.2, dz);
+      // Tracks the body: x scaled by the same 0.92 so the legs stay under the
+      // barrel rather than outside it, and dz widened to 0.18 with the longer
+      // body so the stance keeps its proportion.
+      legPivot.position.set(0.147 * s, 0.2, dz);
       // 20 radial segments, not 10: at this size a 10-sided cylinder reads as a
       // hexagonal post. The bottom also tapers harder (0.046, was 0.055) so the
       // paw engulfs the rim with margin all the way round — where the two
@@ -420,7 +432,7 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
       // visibly polygonal edge, and burying it deeper is what hides that.
       const legMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.046, 0.17, 20), tan);
       legMesh.name = `${legName}Mesh`;
-      legMesh.position.y = -0.085;
+      legMesh.position.y = -0.055;
       legPivot.add(legMesh);
 
       // The paw has to SWALLOW the leg's bottom rim, not sit under it.
