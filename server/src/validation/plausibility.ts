@@ -30,6 +30,10 @@ import {
   FRUIT_THRESHOLDS,
   MAX_FRUIT_POINTS,
   MIN_FRUIT_POINTS,
+  POWERUP_THRESHOLDS,
+  POWERUP_IDS,
+  POWERUP_MULTIPLIER,
+  SCORE_DOUBLING_POWERUPS,
   type ChallengeLevelFacts,
 } from "../catalog.generated.js";
 
@@ -94,6 +98,19 @@ export interface RunSubmission {
    * costs nothing in practice.
    */
   fruitPoints?: number;
+  /**
+   * IDEA-046: how many power-ups were collected, and which kinds.
+   *
+   * Two of the five DOUBLE SCORE, so the per-level ceiling has to know whether
+   * one was held. Reporting them is what keeps that honest: without the list
+   * the ceiling would have to assume a doubler on every run, which hands every
+   * faked score twice the headroom — including on the runs that never saw one.
+   *
+   * Both OPTIONAL, for the usual backward-compatibility reason. An absent list
+   * means no power-ups, which is exactly what a pre-IDEA-046 run was.
+   */
+  powerupsCollected?: number;
+  powerupIds?: string[];
   ghostsEaten: number;
   coinsCollected: number;
   livesLost: number;
@@ -160,13 +177,25 @@ export function maxGhostPointsPerLevel(bones: number, ghostCount: number): numbe
  * is unbounded, but its score PER LEVEL is not, and the number of levels is
  * bounded by elapsed time (MAX-2).
  */
-export function maxLevelScore(mazeIdx: number, ghostCount: number): number {
+export function maxLevelScore(
+  mazeIdx: number,
+  ghostCount: number,
+  /** IDEA-046: multipliers the run's collected power-ups permit. Both default
+   *  to 1, so every existing caller keeps the pre-power-up ceiling exactly. */
+  mult: { biscuit?: number; ghost?: number } = {},
+): number {
   const facts = MAZE_FACTS[mazeIdx];
   if (!facts) return 0;
 
+  const biscuitMult = mult.biscuit ?? 1;
+  const ghostMult = mult.ghost ?? 1;
+
   return (
-    facts.biscuits * SCORING.biscuit +
-    facts.bones * SCORING.bone +
+    // The biscuit doubler pays on bones too — a bone is a pellet (see game.ts's
+    // eatAt), so the ceiling has to allow it on both or an honest run that ate
+    // every bone under a doubler is rejected.
+    facts.biscuits * SCORING.biscuit * biscuitMult +
+    facts.bones * SCORING.bone * biscuitMult +
     // At most one fruit per FRUIT_THRESHOLDS entry, each firing once per level,
     // and at most the DEAREST fruit every time (IDEA-045 — a mango is 5x an
     // apple, and the ceiling has to survive the luckiest possible run).
@@ -178,7 +207,7 @@ export function maxLevelScore(mazeIdx: number, ghostCount: number): number {
     // thresholds and two tiles, the old `Math.min` would have capped an honest
     // level at two fruits and rejected anyone who ate four.
     FRUIT_THRESHOLDS.length * MAX_FRUIT_POINTS +
-    maxGhostPointsPerLevel(facts.bones, ghostCount)
+    maxGhostPointsPerLevel(facts.bones, ghostCount) * ghostMult
   );
 }
 
@@ -357,10 +386,81 @@ export function validateRun(input: RunSubmission, ctx: RunContext): ValidationRe
     ghostCounts = input.mazeIdxSequence.map(() => mods.ghostCount);
   }
 
+  // --- IDEA-046: what the reported power-ups permit -------------------------
+  //
+  // Checked BEFORE it is used, because it feeds the ceiling: an unrecognised id
+  // must not be able to buy headroom, and a count higher than the game can
+  // produce must not either.
+  const powerupIds = input.powerupIds ?? [];
+  if (!Array.isArray(powerupIds) || powerupIds.some((id) => typeof id !== "string")) {
+    return {
+      accepted: false,
+      reasonCode: "MALFORMED_SUBMISSION",
+      detail: { ...detail, field: "powerupIds" },
+    };
+  }
+  const unknownPowerup = powerupIds.find(
+    (id) => !(POWERUP_IDS as readonly string[]).includes(id),
+  );
+  if (unknownPowerup !== undefined) {
+    return {
+      accepted: false,
+      reasonCode: "ITEM_COUNT_IMPOSSIBLE",
+      detail: { ...detail, field: "powerupIds", unknown: unknownPowerup },
+    };
+  }
+
+  // Challenge mode has no power-ups at all — game.ts refuses to spawn them
+  // there, because a challenge level is meant to be the same engine with
+  // different dials and every challenge score already on the board was set
+  // without them. So a challenge run reporting one is not a close call.
+  if (ctx.mode === "challenge" && (powerupIds.length > 0 || (input.powerupsCollected ?? 0) > 0)) {
+    return {
+      accepted: false,
+      reasonCode: "ITEM_COUNT_IMPOSSIBLE",
+      detail: { ...detail, field: "powerups in challenge mode" },
+    };
+  }
+
+  const powerupsCollected = input.powerupsCollected ?? 0;
+  if (!isNonNegativeInt(powerupsCollected)) {
+    return {
+      accepted: false,
+      reasonCode: "MALFORMED_SUBMISSION",
+      detail: { ...detail, field: "powerupsCollected" },
+    };
+  }
+  const maxPowerups = POWERUP_THRESHOLDS.length * levelsPlayed;
+  if (powerupsCollected > maxPowerups) {
+    return {
+      accepted: false,
+      reasonCode: "ITEM_COUNT_IMPOSSIBLE",
+      detail: { ...detail, field: "powerupsCollected", actual: powerupsCollected, max: maxPowerups },
+    };
+  }
+  // You cannot have picked up more KINDS than pickups.
+  if (powerupIds.length > powerupsCollected) {
+    return {
+      accepted: false,
+      reasonCode: "ITEM_COUNT_IMPOSSIBLE",
+      detail: { ...detail, field: "powerupIds", actual: powerupIds.length, max: powerupsCollected },
+    };
+  }
+
+  // Generous ON PURPOSE, and worth being explicit about: a doubler is applied
+  // for EVERY level of the run once it appears anywhere in the list, because
+  // the client does not report which level it was collected on and a doubler
+  // genuinely does survive a cleared map (that is the feature). So this is the
+  // true arithmetic maximum, which is what every bound in this file is.
+  const powerupMult = {
+    biscuit: powerupIds.includes(SCORE_DOUBLING_POWERUPS.biscuit) ? POWERUP_MULTIPLIER : 1,
+    ghost: powerupIds.includes(SCORE_DOUBLING_POWERUPS.ghost) ? POWERUP_MULTIPLIER : 1,
+  };
+
   // --- MAX-1: per-level score ceiling ---------------------------------------
   let scoreCeiling = 0;
   for (let i = 0; i < input.mazeIdxSequence.length; i++) {
-    scoreCeiling += maxLevelScore(input.mazeIdxSequence[i], ghostCounts[i]);
+    scoreCeiling += maxLevelScore(input.mazeIdxSequence[i], ghostCounts[i], powerupMult);
   }
   if (input.score > scoreCeiling) {
     return {
@@ -463,16 +563,22 @@ export function validateRun(input: RunSubmission, ctx: RunContext): ValidationRe
   // comfortably inside that window rather than being rejected for being old.
   const fruitFloor = input.fruitPoints ?? input.fruitEaten * MIN_FRUIT_POINTS;
   const fruitCeiling = input.fruitPoints ?? input.fruitEaten * MAX_FRUIT_POINTS;
+  //
+  // IDEA-046: the FLOOR stays un-multiplied and the CEILING is multiplied. That
+  // asymmetry is deliberate. A doubler can be collected part-way through a run,
+  // so a player holding one may still have eaten most of their biscuits at
+  // face value — raising the floor would reject exactly that honest run. The
+  // ceiling has to allow the best case; the floor has to allow the worst.
   const itemFloor =
     input.pelletsEaten * SCORING.biscuit +
     input.bonesEaten * SCORING.bone +
     fruitFloor +
     input.ghostsEaten * SCORING.ghostBase;
   const itemCeiling =
-    input.pelletsEaten * SCORING.biscuit +
-    input.bonesEaten * SCORING.bone +
+    input.pelletsEaten * SCORING.biscuit * powerupMult.biscuit +
+    input.bonesEaten * SCORING.bone * powerupMult.biscuit +
     fruitCeiling +
-    input.ghostsEaten * ghostPointsForChainPosition(4); // the 1600 cap
+    input.ghostsEaten * ghostPointsForChainPosition(4) * powerupMult.ghost; // the 1600 cap
   if (input.score < itemFloor || input.score > itemCeiling) {
     return {
       accepted: false,

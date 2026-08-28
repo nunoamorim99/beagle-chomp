@@ -66,7 +66,7 @@ export const SCORING = {
 /** Pellet-eaten counts at which a coin / bonus-life bone / fruit spawns. Each
  *  fires at most ONCE per level (see pickups.ts's shouldFireThreshold), so the
  *  array LENGTH is the per-level cap on each pickup. */
-export const COIN_THRESHOLDS = [20,60,105,150] as const;
+export const COIN_THRESHOLDS = [15,55,90,125,155] as const;
 export const LIFE_THRESHOLDS = [130] as const;
 export const FRUIT_THRESHOLDS = [40,80,120,160] as const;
 
@@ -75,6 +75,15 @@ export const FRUIT_THRESHOLDS = [40,80,120,160] as const;
 export const FRUIT_VALUES = [100,200,300,400,500] as const;
 export const MAX_FRUIT_POINTS = 500;
 export const MIN_FRUIT_POINTS = 100;
+
+/** IDEA-046: how many power-ups can spawn per level, every id that exists, and
+ *  by how much the two doublers double. SCORE_DOUBLING_POWERUPS is the pair the
+ *  score ceiling has to account for; the other three change speed or absorb a
+ *  hit and cannot add a point. */
+export const POWERUP_THRESHOLDS = [30,70,105,145] as const;
+export const POWERUP_IDS = ["doubleBiscuit","doubleGhost","slowGhosts","star","shield"] as const;
+export const POWERUP_MULTIPLIER = 2;
+export const SCORE_DOUBLING_POWERUPS = { biscuit: "doubleBiscuit", ghost: "doubleGhost" } as const;
 
 /** What each maze actually CONTAINS, derived from mazes.json rather than
  *  hand-copied. These are the hard ceilings the validator rests on: a run
