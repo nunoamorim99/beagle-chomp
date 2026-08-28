@@ -16,42 +16,7 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
 > lines here roll up into the numbered version below and this section is cleared (hold a line back
 > only if you explicitly choose to).
 
-- (2026-08-28) IDEA-016 v2 — **coins now come from the maze and only the maze.** Scoring points no
-  longer banks currency, so the coin pickups are the whole economy and worth going out of your way
-  for. The shop had become somewhere you bought things rather than chose between them.
-- (2026-08-28) IDEA-010 v2 — **Pac-Beagle**: a tribute coat with red boots and angry brows, which
-  needed two new optional coat channels (paws and eyebrows) to exist at all. Owning it unlocks the
-  **Ghost** as a secret free enemy skin, and the beetle becomes the free default in its place.
-- (2026-08-28) IDEA-046 v1+v2 — **power-ups**: five pickups that change how a run plays rather
-  than what it scores — double biscuits, double enemies, an anchor that slows the pack, a star
-  that scares them and speeds you up, and a shield that takes one hit for you. Some run on a
-  timer; the doublers and the shield stay with you from map to map until you lose a life. The
-  shield shipped as a trap in the first cut — it absorbed the hit and then let the very next
-  frame kill you — and now buys a real moment of invulnerability, which is the whole point of it.
-- (2026-08-28) IDEA-045 v1 — the fruit became a ladder: apple 100, banana 200, carrot 300,
-  strawberry 400, mango 500, on a weighted roll and four spawns a level instead of two. The rare
-  ones are worth cutting across the maze for, and each one had to commit to its own silhouette —
-  the first mango read as an orange apple, which would have made the 100 and the 500 look alike.
-- (2026-08-28) IDEA-040 v3 — fix: the server never knew which level you were on. `levelIdxSequence`
-  was neither sent by the client nor read by the server, so every classic run was judged as though
-  it had three enemies — and a strong stage-3 run (four enemies) was rejected as impossible. Real
-  lost scores. The body parser moved out of the module that opens a database pool, so the gap is
-  testable now instead of invisible.
-- (2026-08-28) IDEA-006 v4 — removed the GitHub Pages deploy. Right for v1.0's static PWA, dead
-  since the move to Cloudflare Pages at v5.0, and quietly publishing a copy of the game with no API
-  URL on every push since.
-- (2026-08-27) IDEA-044 v1 — themed floor surfaces, painted from the maze grid: a trail of
-  stepping stones through the garden's lawn, forest earth, beach sand, a park lawn with a
-  gravel walk under the biscuits, and night-city asphalt with dashed lane markings.
-- (2026-08-27) IDEA-043 v1 — themed wall surfaces: hedges, packed sand and brickwork, drawn
-  procedurally at runtime so each theme's walls finally look like what the theme is about.
-- (2026-08-27) IDEA-042 v1 — the editor grew a **Pickups** tab: the power bone, bonus-life
-  bone, fruit and coin are now editable exactly like a character, with Save writing real
-  source into board.ts. Built by generalising Character mode rather than copying it.
-- (2026-08-27) IDEA-024 v2 — the game went cel-shaded: every lit surface on one shared 3-step toon
-  ramp, tone mapping off so the bands stay crisp, the shipped beagle kept with broader ears, a
-  thicker tail and a saddle that is finally black rather than dark brown, and a per-part shading
-  dropdown in the character editor.
+_(nothing awaiting a release — everything shipped so far is in v7.0 below)_
 
 ## 📌 Planned
 > Forward-looking targets from `/plan-version`. Each is a checklist of IDEAs intended for a
@@ -60,6 +25,85 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
 _(nothing planned yet — v4.0 "New Territory" was fulfilled and cut on 2026-07-12)_
 
 ## Version history
+
+### v7.0 — Worth the Detour (2026-08-28)
+The release where the maze filled up with reasons to leave the biscuit trail. Three changes that
+look separate and are really one argument: **the fruit became a ladder** (apple 100 up to mango
+500, on a weighted roll, four a level instead of two), **power-ups arrived** — five pickups that
+change how a run plays rather than what it scores — and **coins stopped coming from points**. That
+last one is the quiet centre of it. Scoring well used to bank currency on its own, so the shop was
+somewhere you bought things rather than chose between them; now the only coins in the game are the
+five sitting in the maze, which is what makes crossing it for one a decision.
+
+The power-ups are the new toy: **x2 biscuits**, **x2 enemies**, an **anchor** that slows the pack,
+a **star** that frightens them and speeds you up, and a **shield** that takes a hit for you. What
+makes them interesting is that they do not all last the same way — the anchor and the star run on a
+timer, while the doublers and the shield travel with you from map to map until you die. So you can
+be holding three of them at once, and getting caught while shielded costs you the shield and
+nothing else. The shield shipped as a trap in the first cut: it absorbed the hit and then let the
+very next frame kill you anyway, spending the shield, the life and everything else held. It now
+buys a real moment of invulnerability, which was always the whole point of it.
+
+The game also changed how it LOOKS. Every lit surface moved onto one shared three-step **toon
+ramp** with tone mapping switched off, so the shading reads as flat cel bands instead of a soft
+gradient, and the themes finally have **surfaces** rather than coloured blocks: hedges, packed
+sand, brickwork, lawns, forest earth, a gravel walk through the park and dashed lane markings down
+Night City's asphalt — all drawn in code at runtime, so nothing new is downloaded. There is a new
+coat in the shop too, **Pac-Beagle**, and owning it unlocks the Ghost as a secret free enemy skin.
+
+Underneath, one real bug: **the server never knew which map you were on**, so every classic run was
+judged as though it had three enemies and a strong stage-3 run was rejected as impossible. Those
+were real lost scores.
+
+- **IDEA-045 v1** — the fruit became a ladder: apple 100, banana 200, carrot 300, strawberry 400,
+  mango 500, on a weighted roll where the rare ones are worth cutting across the maze for, and four
+  spawns a level instead of two. The kind is chosen when it spawns and remembered, so the mango you
+  crossed the maze for can never pay out as an apple. Each fruit had to commit to its own
+  SILHOUETTE, not just its own colour — the first mango read as an orange apple at the game camera,
+  which would have made the 100 and the 500 look alike.
+- **IDEA-046 v1+v2** — power-ups: five pickups that change how a run plays rather than what it
+  scores, on three different lifetimes, with a HUD tray showing what you are holding and a drain bar
+  on the timed ones. Classic mode only — every challenge score already on the board was set without
+  them. v2 came out of three rounds of live play: the shield's grace window (the fix described
+  above), more of them on the map (2 → 4 a level), weights re-derived from LIFETIME rather than
+  power — the timed pair are the commonest, because a spawn is the only way to ever have one,
+  while a duplicate doubler you already hold does literally nothing — and the star stopped being a
+  glowing bone and became an actual star, since the one pickup that should stop you mid-corridor
+  was dressed as the thing the maze is already full of.
+- **IDEA-016 v2** — coins now come from the maze and only the maze. The points-to-coins conversion
+  is gone, so the five pickups a level are the entire economy. Deleted on both sides deliberately:
+  the server is the authority on coins, so removing it from the game alone would have changed
+  nothing at all.
+- **IDEA-010 v2** — **Pac-Beagle**: a tribute coat with red boots and angry brows, and the first
+  skin that needed the model to change rather than just recolour. Owning it unlocks the **Ghost**
+  as a secret free enemy skin, which makes the beetle the free default in its place.
+- **IDEA-024 v2** — the game went cel-shaded: every lit surface on one shared 3-step toon ramp,
+  tone mapping off so the bands stay crisp, the shipped beagle kept but rebuilt with broader ears,
+  a thicker tail and a saddle that is finally black rather than dark brown, and a per-part shading
+  dropdown in the character editor.
+- **IDEA-043 v1** — themed wall surfaces: hedges, packed sand and brickwork, drawn procedurally at
+  runtime so each theme's walls look like what the theme is about.
+- **IDEA-044 v1** — themed floor surfaces, painted FROM the maze grid, so the ground follows the
+  corridors: a gravel walk under the biscuits in the park, dashed lane markings down Night City's
+  road, forest earth, beach sand.
+- **IDEA-042 v1** — the editor grew a **Pickups** tab: the power bone, bonus-life bone, fruit and
+  coin are now editable exactly like a character, with Save writing real source into board.ts.
+  Built by generalising Character mode rather than copying it — which is why the five new fruits and
+  five power-up meshes were editable the day they existed.
+- **IDEA-040 v3** — fix: `levelIdxSequence` was neither sent by the client nor read by the server,
+  so every classic run was scored as a three-enemy run and strong stage-3 runs were rejected
+  outright. The part of the server that reads a submission moved out of the module that opens a
+  database pool, so this class of gap is testable now instead of invisible.
+- **IDEA-006 v4** — removed the GitHub Pages deploy: right for v1.0's static PWA, dead since the
+  move to Cloudflare Pages at v5.0, and quietly publishing a copy of the game with no API URL on
+  every push since.
+
+**Note on balance:** coins are slower now, and shop prices were set when there were two sources.
+The real change is not the rate but WHAT the rate depends on: earning no longer scales with how long
+you survive, only with how many coins you actually went and got — and they are on a timer, so a
+level rarely gives up all five. If it turns out too slow after a few sessions, the fix is to make a
+maze coin worth more, not to bring the points milestone back.
+
 
 ### v6.0 — The Long Walk (2026-08-25)
 The release where the walk got long. Five maps had become three laps of the same ground, so the

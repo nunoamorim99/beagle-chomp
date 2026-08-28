@@ -25,7 +25,7 @@ the safety net for the trickiest logic and run without a browser.
 - Balance numbers live in `src/game/config.ts`. Don't scatter magic numbers.
 
 ## What is BUILT (do not rewrite lightly)
-The full game is built, shipped, and deployed (playable since v1.0; **now on v6.0 "The Long Walk"**).
+The full game is built, shipped, and deployed (playable since v1.0; **now on v7.0 "Worth the Detour"**).
 
 **v5.0 made this a full-stack app.** It is no longer a static offline PWA:
 - **Frontend** — `beaglechomp.nunoamorim.dev` (Cloudflare Pages). Needs `VITE_API_URL` at build time.

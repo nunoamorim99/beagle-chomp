@@ -127,7 +127,7 @@ _(empty — nothing to triage)_
     anchor is one more factor on the ghost-speed multiplier that was already there and the star
     calls the existing `triggerFright()`. HUD tray with a drain bar for the timed pair and a
     coloured edge for the persistent ones. Classic only. 50 headless checks.
-    _(commits pending)_
+    _(33004c0 api, a63c9e9 frontend)_
   - **v2** (2026-08-28) — three rounds of live play, and the fix that mattered was a **bug, not a
     number**. **The shield was a trap.** Absorbing a hit left the beagle still inside
     `COLLISION_RADIUS`, so the next frame ran the check again with no shield left and killed the
@@ -146,7 +146,9 @@ _(empty — nothing to triage)_
     most spawns on nothing: Nuno saw both doublers twice in one map and never once saw the star or
     the anchor. Finally the **star stopped being a bone**: it was a glowing power bone on the
     reasoning that it does what a bone does, and the maze is full of bones — so the one pickup
-    that should stop you mid-corridor looked like scenery. _(commits pending)_
+    that should stop you mid-corridor looked like scenery.
+    _(a63c9e9 — the same frontend commit as v1: all three rounds of play happened on the
+    branch, before it was cut)_
 
 ### IDEA-045 — A basket of fruits, each worth a different score ✅
 - **Priority:** 🟡
@@ -1126,7 +1128,10 @@ _(empty — nothing to triage)_
     If earning turns out too slow, the number to raise is `COINS.pickupValue` — not a reinstated
     milestone. Kept as a version of this idea rather than a discard: the idea is the coin ECONOMY,
     and it still exists, it just has one source now instead of two. See [[IDEA-017]] for the
-    pickups that are that source. _(commit pending)_
+    pickups that are that source.
+    _(0d22364 — both halves in ONE commit, unlike the fruit and power-up ships. No new field
+    crosses the wire here and the client only ever displays the balance the server returns, so
+    there was nothing for an API-first split to protect.)_
 
 ### IDEA-017 — Classic mode: coin pickups in the maze ✅
 - **Priority:** 🟢
