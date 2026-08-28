@@ -1,5 +1,6 @@
 // Automated browser checks for the editor's PICKUPS tab — the maze items
-// (power bone, bonus-life bone, fruit, coin) built in src/render/board.ts.
+// (power bone, bonus-life bone, the five fruits, coin) built in
+// src/render/board.ts.
 //
 //   npx tsx scripts/test-editor-pickups.ts     (npm run test:editor:pickups)
 //
@@ -93,10 +94,11 @@ async function run(): Promise<void> {
       return sel ? [...sel.options].map((o) => o.textContent ?? "") : [];
     });
     check(
-      "the dropdown lists all four pickups",
-      ["Power bone", "Bonus-life bone", "Fruit", "Coin"].every((l) => options.includes(l)),
+      "the dropdown lists all eight pickups",
+      ["Power bone", "Bonus-life bone", "Apple", "Banana", "Carrot", "Strawberry", "Mango", "Coin"]
+        .every((l) => options.includes(l)),
     );
-    check("…and nothing else", options.length === 4);
+    check("…and nothing else", options.length === 8);
 
     const title = await page.evaluate(() => document.getElementById("codeTitle")?.textContent ?? "");
     check("the code panel points at board.ts, not characters.ts", /src\/render\/board\.ts/.test(title));
@@ -110,7 +112,18 @@ async function run(): Promise<void> {
     const expected: Record<string, string[]> = {
       "Power bone": ["shaft", "knuckleLF", "knuckleRB"],
       "Bonus-life bone": ["shaft", "knuckleLF", "knuckleRB"],
-      Fruit: ["apple", "leaf"],
+      // IDEA-045: one fruit became five, and each one's parts are named for
+      // what it IS — the part tree is how the editor tells them apart, so a
+      // shared generic "body"/"leaf" set across all five would make four of
+      // them indistinguishable in the outliner.
+      Apple: ["apple", "leaf"],
+      Banana: ["banana", "tipStem", "tipEnd"],
+      Carrot: ["carrot", "frondL", "frondC", "frondR"],
+      Strawberry: ["berry", "shoulder", "calyx", "stem"],
+      // No leaf: the mango dropped it deliberately (a gold ball with a green
+      // leaf read as an orange APPLE at game size), so its absence is part of
+      // what keeps the 100 and the 500 apart and is worth pinning.
+      Mango: ["mango", "blush", "stem"],
       Coin: ["body", "rim", "embossFront", "embossBack"],
     };
     for (const [label, parts] of Object.entries(expected)) {

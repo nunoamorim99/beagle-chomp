@@ -9,9 +9,10 @@ export const SPEEDS = {
 export const SCORE = {
   biscuit: 10,
   bone: 50,
-  fruit: 100,
   ghostBase: 200,   // doubles per ghost eaten within one fright window
 } as const;
+// NOTE: fruit is deliberately NOT here — since IDEA-045 there is no single
+// fruit value. See FRUITS below.
 
 export const TIMING = {
   frightSeconds: 7,
@@ -22,6 +23,53 @@ export const TIMING = {
 } as const;
 
 export const START_LIVES = 3;
+
+// IDEA-045: the fruit basket. There used to be one fruit worth a flat
+// SCORE.fruit (100); there are now five, and which one turns up is a weighted
+// roll (see rollFruit in src/game/fruits.ts) rather than a fixed rotation.
+//
+// The point of the ladder is that a Mango is worth FIVE biscuit-runs and shows
+// up about one spawn in twenty, so seeing one is a reason to change what you
+// were about to do — cut across the maze for it instead of finishing the
+// corridor you're in. An Apple is not: it's the common case, and at 100 it is
+// worth exactly what the single old fruit was, so the floor of the feature is
+// the game people already know.
+//
+// WEIGHTS ARE RELATIVE, not percentages — rollFruit sums them itself, so a
+// sixth fruit can be added here without rebalancing the other five. They
+// happen to total 100 today, which makes them readable as percentages, and
+// scripts/test-fruits.ts asserts the distribution rather than the total.
+//
+// The SERVER prices these too (see server/src/validation/plausibility.ts): the
+// score ceiling uses the largest value here and the floor the smallest, so
+// changing a number in this table WITHOUT running `npm run sync` in server/
+// starts rejecting honest runs. That is what npm run test:catalog fails on.
+export const FRUITS = [
+  { id: "apple", label: "Apple", points: 100, weight: 40 },
+  { id: "banana", label: "Banana", points: 200, weight: 25 },
+  { id: "carrot", label: "Carrot", points: 300, weight: 18 },
+  { id: "strawberry", label: "Strawberry", points: 400, weight: 12 },
+  { id: "mango", label: "Mango", points: 500, weight: 5 },
+] as const;
+
+export type FruitId = (typeof FRUITS)[number]["id"];
+export type Fruit = (typeof FRUITS)[number];
+
+// IDEA-045: pellets-eaten thresholds at which a fruit appears — FOUR per level
+// now, up from the two (70/140) that lived in game.ts as a module-local const
+// since v1.0. Moved here because the value table above is here, and because
+// the server's sync step reads both out of this one file.
+//
+// Four rather than two because five tiers need enough rolls to be READABLE: at
+// two spawns a level, a 5%-weight Mango is a once-every-ten-maps event and the
+// ladder never registers as a ladder. At four it lands often enough to be a
+// thing players talk about, without fruit becoming ambient.
+//
+// Spaced 40 apart across a ~179-pellet map, and offset from every other gate
+// the same way those are offset from each other — COIN_THRESHOLDS is
+// 20/60/105/150 and LIFE_THRESHOLDS is 130, so no two pickups can ever fire on
+// the same eaten-pellet tick. scripts/test-fruits.ts pins that.
+export const FRUIT_THRESHOLDS = [40, 80, 120, 160] as const;
 
 // IDEA-016/IDEA-017: coin currency (v2.0 shop wallet).
 export const COINS = {
@@ -50,7 +98,7 @@ export const COINS = {
 //     takes to expire at normal eating pace, so a prior coin has despawned (or
 //     been grabbed) before the next threshold — maybeSpawnCoin's
 //     `if (this.level.board.coin) return` guard never blocks a later spawn.
-//   - Offset from FRUIT_THRESHOLDS (70/140) so a coin and a fruit essentially
+//   - Offset from FRUIT_THRESHOLDS (40/80/120/160) so a coin and a fruit
 //     never appear on the exact same tick.
 export const COIN_THRESHOLDS = [20, 60, 105, 150] as const;
 
@@ -79,7 +127,7 @@ export const LIVES = {
 // IDEA-018: pellets-eaten threshold for the maze life pickup — ONE golden
 // bone per level (rarer than coins by design: bonus lives are a stronger
 // reward than bonus currency). 130 is deliberately offset from both
-// COIN_THRESHOLDS (20/60/105/150) and FRUIT_THRESHOLDS (70/140) so nothing
+// COIN_THRESHOLDS (20/60/105/150) and FRUIT_THRESHOLDS (40/80/120/160) so nothing
 // collides on the same eaten-pellet tick, and late enough (comfortably past
 // every coin/fruit threshold) that it reads as a rarer, later-game bonus
 // rather than competing with the earlier pickups for attention. Every

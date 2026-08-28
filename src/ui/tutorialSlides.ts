@@ -13,6 +13,13 @@
 //   2. "Swipe anywhere to steer" on a desktop, where there is nothing to
 //      swipe. Movement copy depends on the DEVICE, not the account.
 //
+// IDEA-045 added a third of the same kind: this file said fruit was worth 100,
+// full stop, which was true right up until there were five fruits and four of
+// them were not. Naming the RANGE and the trade-off (the good ones are rare) is
+// the part a new player cannot work out by looking, which is what the tutorial
+// is for. The exact ladder is not spelled out on purpose — the score popup over
+// the fruit teaches that better than a wall of numbers here.
+//
 // Both are pinned by scripts/test-tutorial-carousel.ts.
 
 import type { ControlScheme } from "../game/profileStore";
@@ -84,7 +91,9 @@ export function buildSlides(input: DeviceInput): TutorialSlide[] {
       title: "Clear every biscuit",
       body:
         "Biscuits are 10 points each, and eating all of them finishes the map. " +
-        "Fruit turns up now and then — grab it quickly for 100.",
+        "Fruit turns up now and then, worth anywhere from 100 for an apple to " +
+        "500 for a mango — and the best ones show up least, so take the chance " +
+        "when you see it.",
       stage: "maze",
     },
     {

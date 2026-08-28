@@ -25,6 +25,9 @@
 // hand-places wall components OR gets scattered palette blooms, never both.
 import * as THREE from "three";
 import { Grid, COLS, ROWS, TILE, worldX, worldZ } from "../game/grid";
+// IDEA-045: the fruit ids the board can spawn. Render importing pure game
+// data is the allowed direction (CLAUDE.md); the reverse never happens.
+import { type FruitId } from "../game/config";
 import { getEquippedMazeTheme, type MazeTheme, type ThemePalette, type PropPlacement, type WallDecorPlacement } from "../game/themes";
 import {
   getPropDef,
@@ -249,11 +252,42 @@ export function makeLifeBone(): THREE.Group {
 }
 
 /**
- * A bonus fruit built from primitives (ported from prototype makeFruit,
- * line 201): an apple body plus a small leaf. Placement is the caller's job
- * (see spawnFruit) — this just builds the model at the origin.
+ * THE FRUIT BASKET (IDEA-045).
+ *
+ * There used to be one `makeFruit()` worth a flat 100. There are now five
+ * builders, one per entry in config.ts's FRUITS table, and `spawnFruit` picks
+ * between them by id.
+ *
+ * Three rules hold this set together, all of them about being READ rather than
+ * being accurate:
+ *
+ *  1. **Silhouette first, colour second.** At the game camera a fruit is a
+ *     handful of pixels, and three of the five (apple, strawberry, mango) are
+ *     round and warm-coloured. So each one commits to a different OUTLINE — a
+ *     ball, a crescent, a downward cone, a pointed berry, a tilted egg — and
+ *     the colour only confirms what the shape already said. Recolouring these
+ *     without keeping them apart in silhouette would undo the ladder: a player
+ *     has to know a Mango is worth cutting across the maze for BEFORE they get
+ *     there.
+ *  2. **Same footprint, ~0.22 across.** They occupy one tile and share the
+ *     board with the coin and the golden bone, which are built to that size
+ *     too. A "bigger fruit is worth more" cue is tempting and wrong: it makes
+ *     the 500 easier to see and easier to reach, which is backwards.
+ *  3. **Fixed identity colours, and toon() like everything else.** Pickups do
+ *     not follow the maze theme (see applyBoardTheme) — a fruit that went
+ *     hedge-green in the forest theme would stop being a fruit. Emissive sits
+ *     in the same 0.3-0.5 "soft glow" band as the biscuit/bone/coin.
  */
-export function makeFruit(): THREE.Group {
+
+/**
+ * Apple — 100, the common case (weight 40).
+ *
+ * This IS the original `makeFruit()`, renamed and otherwise untouched, down to
+ * the strengthened emissive. Deliberate: the cheapest fruit should look exactly
+ * like the fruit players already know, so the feature reads as four additions
+ * rather than a replacement of something familiar.
+ */
+export function makeApple(): THREE.Group {
   const g = new THREE.Group();
   // Emissive strengthened (0x3a0d0a/0.4 -> 0x5c130f/0.5) so the fruit reads
   // as a glowing bonus pickup, matching the biscuit/bone glow treatment.
@@ -287,6 +321,282 @@ export function makeFruit(): THREE.Group {
   });
   return g;
 }
+
+/**
+ * Banana — 200 (weight 25).
+ *
+ * A partial torus, which is the whole trick: an arc of just under half a turn
+ * gives a crescent that is unmistakable at any size and shares its outline with
+ * nothing else on the board. The default TorusGeometry arc runs anticlockwise
+ * from +X, so an arc of ~0.95PI covers the UPPER half and the crescent opens
+ * downward — a banana resting on its tips, which is how one is drawn.
+ *
+ * Flattened on Y (0.82) because a perfectly circular tube reads as a ring; a
+ * real banana is deeper than it is tall in cross-section.
+ *
+ * Sized UP from the first pass (0.17/0.058 -> 0.2/0.078). A crescent is mostly
+ * empty space inside its own bounding box, so matching the apple on paper left
+ * it reading as a sliver next to one — a shape has to be judged against its
+ * NEIGHBOURS at the size they are actually seen, not against a number.
+ */
+export function makeBanana(): THREE.Group {
+  const g = new THREE.Group();
+  const yellow = toon({
+    color: 0xf2c832,
+    emissive: 0x5c4408,
+    emissiveIntensity: 0.45,
+  });
+  const banana = new THREE.Mesh(
+    new THREE.TorusGeometry(0.2, 0.078, 8, 20, Math.PI * 0.95),
+    yellow,
+  );
+  banana.name = "banana";
+  banana.scale.set(1, 0.82, 1);
+  g.add(banana);
+
+  // The two dark tips (stalk end and flower end). Small, but they are what
+  // stops the crescent reading as a smooth ring, and they sit ON the ends
+  // rather than near them: both are placed by the same arc arithmetic the
+  // torus itself uses, so retuning the arc above cannot leave them floating.
+  const tipMat = toon({
+    color: 0x6b4a2f,
+    emissive: 0x241708,
+    emissiveIntensity: 0.3,
+  });
+  const arc = Math.PI * 0.95;
+  const tipStem = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 8), tipMat);
+  tipStem.name = "tipStem";
+  tipStem.position.set(0.2, 0, 0);
+  tipStem.scale.set(1, 0.82, 1);
+  g.add(tipStem);
+
+  const tipEnd = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 8), tipMat);
+  tipEnd.name = "tipEnd";
+  tipEnd.position.set(0.2 * Math.cos(arc), 0.2 * Math.sin(arc) * 0.82, 0);
+  tipEnd.scale.set(1, 0.82, 1);
+  g.add(tipEnd);
+
+  g.traverse((o) => {
+    o.castShadow = true;
+  });
+  return g;
+}
+
+/**
+ * Carrot — 300 (weight 18).
+ *
+ * The one fruit here that is actually a vegetable, and the one whose outline is
+ * carrying the most weight: a cone POINT-DOWN is the only downward-tapering
+ * shape in the set, so it separates from the mango's warm oval at a glance even
+ * though the two colours are neighbours on the wheel.
+ *
+ * The fronds are three flattened cones rather than one blob because a single
+ * green lump on top would read as the apple's leaf. Splayed outward with a
+ * shared tilt so they catch the light at three different angles.
+ */
+export function makeCarrot(): THREE.Group {
+  const g = new THREE.Group();
+  const carrot = new THREE.Mesh(
+    new THREE.ConeGeometry(0.125, 0.4, 12),
+    toon({
+      color: 0xe8721f,
+      emissive: 0x5c2606,
+      emissiveIntensity: 0.45,
+    }),
+  );
+  carrot.name = "carrot";
+  carrot.rotation.z = Math.PI; // point DOWN — the whole silhouette argument
+  carrot.position.y = 0.02;
+  g.add(carrot);
+
+  const frondMat = toon({
+    color: 0x5fae4d,
+    emissive: 0x1c3a18,
+    emissiveIntensity: 0.35,
+  });
+  // Splay angle and lean are shared so the three read as one tuft rather than
+  // three separate props that happen to be adjacent.
+  const lean = 0.42;
+  ([
+    ["frondL", -1, 0],
+    ["frondC", 0, 1],
+    ["frondR", 1, 0],
+  ] as const).forEach(([name, dx, dz]) => {
+    const frond = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.17, 6), frondMat);
+    frond.name = name;
+    frond.position.set(dx * 0.055, 0.28, dz * 0.055);
+    frond.rotation.z = -dx * lean;
+    frond.rotation.x = dz * lean;
+    g.add(frond);
+  });
+
+  g.traverse((o) => {
+    o.castShadow = true;
+  });
+  return g;
+}
+
+/**
+ * Strawberry — 400 (weight 12).
+ *
+ * Broad shoulders tapering to a point: a cone for the body and a squashed
+ * sphere sitting on its base to round the top off, which is the difference
+ * between a strawberry and a traffic cone.
+ *
+ * NO SEEDS. They are the first thing anyone reaches for and they are exactly
+ * what the CARTOON rule in CLAUDE.md rules out — at the game camera a face of
+ * this thing is a couple of dozen pixels, and a scatter of sub-pixel dots
+ * aliases into noise that just makes the berry look dirty. The green calyx does
+ * the identifying instead, at a size that survives.
+ */
+export function makeStrawberry(): THREE.Group {
+  const g = new THREE.Group();
+  const red = toon({
+    color: 0xe23a5e,
+    emissive: 0x5c0f22,
+    emissiveIntensity: 0.5,
+  });
+  const berry = new THREE.Mesh(new THREE.ConeGeometry(0.19, 0.34, 14), red);
+  berry.name = "berry";
+  berry.rotation.z = Math.PI; // point down
+  berry.position.y = 0.02;
+  g.add(berry);
+
+  // Rounds the cone's flat top into a shoulder. Same material, so it reads as
+  // one solid rather than a hat.
+  const shoulder = new THREE.Mesh(new THREE.SphereGeometry(0.19, 14, 10), red);
+  shoulder.name = "shoulder";
+  shoulder.position.y = 0.125;
+  // Tall enough to be a shoulder, NOT wider than the cone it caps. The pass
+  // before this went the other way (1.12 wide, 0.62 tall) and the overhang read
+  // as the brim of a spinning top — a hard silhouette break where a berry wants
+  // a continuous curve. Sunk into the cone rather than perched on it.
+  shoulder.scale.set(1.0, 0.82, 1.0);
+  g.add(shoulder);
+
+  const greenMat = toon({
+    color: 0x5fae4d,
+    emissive: 0x1c3a18,
+    emissiveIntensity: 0.35,
+  });
+  // A flat star-ish cap: one wide, very squashed cone with few radial segments,
+  // which gives real points around the rim for the price of one mesh.
+  // Sits just inside the shoulder's widest point, so it caps the berry instead
+  // of flanging out past it. Five radial segments keep real points on the rim
+  // at a size that survives the game camera.
+  const calyx = new THREE.Mesh(new THREE.ConeGeometry(0.155, 0.075, 5), greenMat);
+  calyx.name = "calyx";
+  calyx.position.y = 0.235;
+  g.add(calyx);
+
+  const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.024, 0.09, 6), greenMat);
+  stem.name = "stem";
+  stem.position.y = 0.3;
+  g.add(stem);
+
+  g.traverse((o) => {
+    o.castShadow = true;
+  });
+  return g;
+}
+
+/**
+ * Mango — 500 (weight 5), the one worth changing your route for.
+ *
+ * A long tilted oval with a red cheek: the only fruit here that is NOT
+ * symmetrical about the Y axis, so spinning on the board (spinDecor) it visibly
+ * turns where a plain sphere would look static however fast it spun.
+ *
+ * The FIRST pass of this was a near-round gold ball with a green leaf, and it
+ * rendered as an orange apple — the cheapest fruit and the dearest one sharing
+ * a silhouette, which is the one thing this set cannot afford. Hence the hard
+ * stretch, the dropped leaf (it was the apple's tell) and a blush big enough to
+ * change the outline rather than decorate it.
+ *
+ * The blush is a second sphere in a different colour poking through the first,
+ * not a texture: the whole project builds surfaces in code, and one extra
+ * sphere is cheaper than a canvas for a thing this small.
+ */
+export function makeMango(): THREE.Group {
+  const g = new THREE.Group();
+  // The long axis, tilted. Everything else on this fruit is placed ALONG it by
+  // the same two numbers, so the mango can be re-proportioned by editing these
+  // and nothing ends up floating beside the body.
+  const tilt = 0.42;
+  const halfLong = 0.2 * 1.34;
+
+  const mango = new THREE.Mesh(
+    new THREE.SphereGeometry(0.2, 16, 14),
+    toon({
+      color: 0xf0b429,
+      emissive: 0x5c3d05,
+      emissiveIntensity: 0.5,
+    }),
+  );
+  mango.name = "mango";
+  // Stretched hard (1.34 long against 0.86 short) rather than the near-round
+  // 1.16/0.94 of the first pass. That version rendered as an orange ball with a
+  // green leaf — which is the APPLE's silhouette, and having the 100 and the
+  // 500 look alike at a glance defeats the whole ladder.
+  mango.scale.set(1.34, 0.86, 0.86);
+  mango.rotation.z = tilt;
+  g.add(mango);
+
+  // A red cheek over the fat end, not a dot on the side. Big enough (0.16
+  // against the body's 0.172 minor radius) that it breaks the outline instead
+  // of sitting inside it, and placed along the tilted long axis so it stays on
+  // the end as the fruit spins.
+  const blush = new THREE.Mesh(
+    new THREE.SphereGeometry(0.16, 12, 10),
+    toon({
+      color: 0xd6455c,
+      emissive: 0x4a0f1c,
+      emissiveIntensity: 0.45,
+    }),
+  );
+  blush.name = "blush";
+  blush.position.set(Math.cos(tilt) * halfLong * 0.52, Math.sin(tilt) * halfLong * 0.52, 0);
+  blush.scale.set(1.02, 0.92, 0.92);
+  g.add(blush);
+
+  // Stem at the OTHER end of the long axis (the thin end), which is where a
+  // mango's stalk actually is — and, more usefully here, it keeps the two ends
+  // reading differently so the shape has a direction.
+  const stem = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.02, 0.026, 0.08, 6),
+    toon({
+      color: 0x6b4a2f,
+      emissive: 0x241708,
+      emissiveIntensity: 0.3,
+    }),
+  );
+  stem.name = "stem";
+  stem.position.set(-Math.cos(tilt) * halfLong * 0.86, -Math.sin(tilt) * halfLong * 0.86 + 0.11, 0);
+  stem.rotation.z = tilt;
+  g.add(stem);
+
+  g.traverse((o) => {
+    o.castShadow = true;
+  });
+  return g;
+}
+
+/**
+ * id -> builder, so `spawnFruit` (and the editor's Pickups registry) can go
+ * from a FRUITS entry to a mesh without a switch statement that someone has to
+ * remember to extend.
+ *
+ * Typed as a full Record<FruitId, ...>, which is the load-bearing part: adding
+ * a sixth fruit to config.ts's FRUITS without building a mesh for it is then a
+ * TYPE ERROR at build time, not a fruit that silently fails to appear.
+ */
+export const FRUIT_BUILDERS: Record<FruitId, () => THREE.Group> = {
+  apple: makeApple,
+  banana: makeBanana,
+  carrot: makeCarrot,
+  strawberry: makeStrawberry,
+  mango: makeMango,
+};
 
 // IDEA-017: real gold coin geometry/materials, sized to match the fruit's
 // ~0.22 visual footprint. A short cylinder is the coin body; a thin torus
@@ -1561,7 +1871,7 @@ export function buildWallDecor(scene: THREE.Object3D, theme: MazeTheme): THREE.G
  *     `null`, if the new theme is propless).
  *
  * Pickups (bones/fruit/coin/golden bone) are untouched — they keep fixed
- * identity colors in every theme (see makeBone/makeFruit/makeCoin/
+ * identity colors in every theme (see makeBone/the FRUIT_BUILDERS/makeCoin/
  * makeLifeBone above) and are never read from ThemePalette.
  *
  * v4.1 "Set Dressing": hedge decor's disposal (step 2) now branches per
@@ -1644,13 +1954,23 @@ export function eatPellet(board: Board, key: string): PelletKind | null {
 
 /**
  * Spawns a fruit mesh at tile (tx,ty), replacing any fruit already on the
- * board (prototype maybeSpawnFruit only ever keeps one at a time). Placement
+ * board (prototype maybeSpawnFruit only ever keeps one at a time).
+ *
+ * IDEA-045: WHICH fruit is the caller's decision, not this function's — the
+ * weighted roll lives in src/game/fruits.ts so it can be tested in Node, and
+ * this only turns the chosen id into the matching mesh. Placement
  * (which tile, when) is entirely gameplay's call — this just builds the mesh
  * and tracks it on the board so clearFruit/spinDecor and eating can find it.
  */
-export function spawnFruit(board: Board, scene: THREE.Object3D, tx: number, ty: number): void {
+export function spawnFruit(
+  board: Board,
+  scene: THREE.Object3D,
+  tx: number,
+  ty: number,
+  kind: FruitId,
+): void {
   if (board.fruit) clearFruit(board, scene);
-  const fruit = makeFruit();
+  const fruit = FRUIT_BUILDERS[kind]();
   fruit.position.set(worldX(tx), 0.35, worldZ(ty));
   scene.add(fruit);
   board.fruit = fruit;

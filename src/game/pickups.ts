@@ -19,8 +19,9 @@
 
 /**
  * Whether the NEXT not-yet-fired threshold in `thresholds` (a threshold list
- * sorted ascending, e.g. config.ts's COIN_THRESHOLDS/LIFE_THRESHOLDS or
- * game.ts's FRUIT_THRESHOLDS) should fire now, given how many pellets have
+ * sorted ascending — config.ts's COIN_THRESHOLDS, LIFE_THRESHOLDS and, since
+ * IDEA-045, FRUIT_THRESHOLDS, which moved out of game.ts when the fruits gained
+ * a value table to sit beside) should fire now, given how many pellets have
  * been eaten so far (`eaten`) and how many thresholds have already fired
  * this level (`nextIdx` — the index into `thresholds` of the next one still
  * pending; starts at 0 for a fresh level).

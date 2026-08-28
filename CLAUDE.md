@@ -35,6 +35,11 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v6.
   there is no guest mode. `profileStore.ts` kept all 19 synchronous signatures but now reads an
   in-memory cache hydrated from the server, so `game.ts`/`shop.ts`/`levelMap.ts` were untouched.
 - **Scores are server-validated** (`server/src/validation/plausibility.ts`, pure + heavily tested).
+  Reading a submission off the wire is `validation/wire.ts` — also pure, and pure ON PURPOSE:
+  it used to live in `scoreService.ts`, which opens a Postgres pool on import, so no DB-free
+  test could reach it and `levelIdxSequence` went un-sent AND un-read for a whole release
+  (IDEA-040 v3). **Every field the client sends must be named in `wire.ts` or it is silently
+  dropped** — add a field to `RunSubmission` and you add it there and to the round-trip test.
   Its constants are GENERATED from the real game modules by `server/scripts/sync-game-constants.ts`
   — so **after changing `config.ts`, `mazes.json` or `challenges.ts`, run `npm run sync` in
   `server/`**, or honest runs will start being rejected. `npm run test:catalog` fails on drift.
@@ -44,6 +49,20 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v6.
   the raw path — see `server/src/http/metrics.ts` and `server/README.md` § Observability. The
   `[slow-query]` line at 200 ms is deliberately STACK.md §6's own Redis trigger, so **Redis stays
   deferred until that line actually appears, or a second replica exists** — not on a hunch.
+- **The FRUIT is a LADDER, not a flat 100** (IDEA-045): five fruits — apple 100,
+  banana 200, carrot 300, strawberry 400, mango 500 — on a weighted roll
+  (`FRUITS` in `config.ts`, `rollFruit` in `fruits.ts`), four per map instead of
+  two. Three things are load-bearing. The kind is chosen at SPAWN and remembered
+  (`Game.fruitKind`), never re-rolled at eat time, or the mango you crossed the
+  maze for could pay out as an apple. The five meshes commit to five different
+  SILHOUETTES, because three of them are round and warm and at the game camera a
+  fruit is a handful of pixels — the first pass had a near-round gold mango that
+  read as an orange apple, i.e. the 100 and the 500 looked alike. And the server
+  prices runs against `MAX_FRUIT_POINTS`/`MIN_FRUIT_POINTS`, so the client now
+  reports `fruitPoints` (the exact total) alongside the count — **change a number
+  in `FRUITS` and you must run `npm run sync` in `server/`** or honest runs start
+  failing `SCORE_ITEM_MISMATCH`. `FRUIT_THRESHOLDS` moved from `game.ts` to
+  `config.ts` for the same reason.
 - **Pure logic** (`src/game/*`): `mazes.json`+`mazes.ts` (two **validated** mazes —
   connected, all pellets reachable, ghosts can leave the pen), `grid.ts` (tiles, tunnel
   wrap, walkability), `movement.ts` (tile-stepping model), `ghostAI.ts` (targeting with a
@@ -133,6 +152,10 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v6.
   off the def rather than assuming one file. Adding a mesh tab means adding a
   registry entry — not a parallel copy of the editor.
 - **Tests**: `scripts/validate-maze.ts`, `scripts/sim-logic.ts` — import the real modules.
+  `scripts/test-fruits.ts` covers the fruit ladder: the weighted roll's exact boundaries
+  (deterministic — `rollFruit` takes an injectable rand), that value rises as weight falls,
+  that no fruit threshold collides with a coin or bonus-life one, and that each threshold
+  still fires exactly once per level (the v1.0 farming exploit, now worth 500 a pop).
   `scripts/test-board-surfaces.ts` guards the one silent failure in the theme pipeline:
   **`src/editor/boardCodegen.ts` writes a palette field by field, by hand**, so a new
   `ThemePalette` key that the writer doesn't know about is quietly dropped from every
