@@ -112,11 +112,37 @@ const themesSrc = readFileSync(join(GAME_DIR, "themes.ts"), "utf-8");
 // starts failing validation — a silent, infuriating bug. Generating them (and
 // asserting on them in test-plausibility.ts) turns that into a build failure.
 
-/** Pull a numeric field out of an `export const NAME = { ... }` block. */
-function numberField(source: string, constName: string, field: string): number {
+/** Slice out the `{ ... }` body of an `export const NAME = { ... }`, by
+ *  brace-matching rather than by a fixed character budget.
+ *
+ *  It WAS a fixed 900-character window, and that broke the moment a const grew
+ *  a long comment: writing up why the points-to-coins conversion was removed
+ *  pushed COINS.pickupValue past the cutoff and the build failed with "could
+ *  not find COINS.pickupValue". The quieter failure is the worse one and was
+ *  always possible — a window that overruns the end of one const starts
+ *  matching fields from the NEXT one, and this file's whole job is to be a loud
+ *  failure rather than silent drift. */
+function objectBody(source: string, constName: string): string {
   const start = source.indexOf(`export const ${constName}`);
   if (start === -1) throw new Error(`could not find ${constName}`);
-  const scope = source.slice(start, start + 900);
+  const eq = source.indexOf("=", start);
+  const open = source.indexOf("{", eq);
+  if (eq === -1 || open === -1) throw new Error(`could not find the body of ${constName}`);
+
+  let depth = 0;
+  for (let i = open; i < source.length; i++) {
+    if (source[i] === "{") depth++;
+    else if (source[i] === "}") {
+      depth--;
+      if (depth === 0) return source.slice(open, i + 1);
+    }
+  }
+  throw new Error(`unbalanced braces in ${constName}`);
+}
+
+/** Pull a numeric field out of an `export const NAME = { ... }` block. */
+function numberField(source: string, constName: string, field: string): number {
+  const scope = objectBody(source, constName);
   const m = new RegExp(`\\b${field}:\\s*([0-9.]+)`).exec(scope);
   if (!m) throw new Error(`could not find ${constName}.${field}`);
   return Number(m[1]);
@@ -151,7 +177,6 @@ const scoring = {
   readySeconds: numberField(configSrc, "TIMING", "readySeconds"),
   deathSeconds: numberField(configSrc, "TIMING", "deathSeconds"),
   startLives: numberConst(configSrc, "START_LIVES"),
-  coinsPerPoints: numberField(configSrc, "COINS", "perPoints"),
   coinPickupValue: numberField(configSrc, "COINS", "pickupValue"),
   livesMilestonePoints: numberField(configSrc, "LIVES", "milestonePoints"),
 };
@@ -399,7 +424,6 @@ export const SCORING = {
   readySeconds: ${scoring.readySeconds},
   deathSeconds: ${scoring.deathSeconds},
   startLives: ${scoring.startLives},
-  coinsPerPoints: ${scoring.coinsPerPoints},
   coinPickupValue: ${scoring.coinPickupValue},
   livesMilestonePoints: ${scoring.livesMilestonePoints},
 } as const;

@@ -16,6 +16,9 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
 > lines here roll up into the numbered version below and this section is cleared (hold a line back
 > only if you explicitly choose to).
 
+- (2026-08-28) IDEA-016 v2 — **coins now come from the maze and only the maze.** Scoring points no
+  longer banks currency, so the coin pickups are the whole economy and worth going out of your way
+  for. The shop had become somewhere you bought things rather than chose between them.
 - (2026-08-28) IDEA-010 v2 — **Pac-Beagle**: a tribute coat with red boots and angry brows, which
   needed two new optional coat channels (paws and eyebrows) to exist at all. Owning it unlocks the
   **Ghost** as a secret free enemy skin, and the beetle becomes the free default in its place.

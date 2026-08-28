@@ -624,10 +624,21 @@ export function validateRun(input: RunSubmission, ctx: RunContext): ValidationRe
 
   // --- accepted: award coins from the ACCEPTED values ------------------------
   // Recomputed server-side, never taken from the client — this is what stops a
-  // client minting currency. Mirrors game.ts's coinsDueFromScore + pickups.
-  const coinsAwarded =
-    Math.floor(input.score / SCORING.coinsPerPoints) +
-    input.coinsCollected * SCORING.coinPickupValue;
+  // client minting currency.
+  //
+  // IDEA-016 v2: maze PICKUPS ONLY. There used to be a
+  // `Math.floor(score / coinsPerPoints)` term here as well, mirroring the
+  // client's own milestone award, and between them the shop had become trivial
+  // — a decent run bought an item outright, so nothing in it was a decision.
+  //
+  // Deleting it from the client alone would have changed nothing: THIS is the
+  // authority. scoreService adds whatever comes back here to the balance, and
+  // the client reconciles its optimistic local total to the returned profile.
+  // The milestone would simply have kept running from the server side.
+  //
+  // Note this also makes the award independent of `score` entirely, so a run
+  // that scores nothing but grabs coins still earns them.
+  const coinsAwarded = input.coinsCollected * SCORING.coinPickupValue;
 
   return { accepted: true, coinsAwarded, detail: { ...detail, scoreCeiling } };
 }

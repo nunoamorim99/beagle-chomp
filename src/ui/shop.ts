@@ -2,7 +2,9 @@
 // IDEA-026 extends this with a third "Themes" tab)
 //
 // The real skin-picker UI: a full-screen dedicated PAGE (not an overlay panel
-// — see IDEA-023) where the player spends coins (earned via IDEA-016/
+// — see IDEA-023) where the player spends coins (earned via IDEA-017 —
+// maze pickups, the only source since IDEA-016 v2 removed the points
+// conversion that had made everything here affordable in a run or two --
 // IDEA-017) to unlock beagle/enemy skins and maze themes (IDEA-026), then
 // equips them, browsing via a tab bar (Beagle Skins | Enemy Skins | Themes)
 // plus a live 3D hero turntable (src/render/shopScene.ts, driven through the

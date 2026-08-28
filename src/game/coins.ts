@@ -1,20 +1,26 @@
-// OWNER: gameplay-engineer (IDEA-016 points->coins)
+// OWNER: gameplay-engineer
 //
-// Pure helper for the score->coins bookkeeping (IDEA-016: every COINS.perPoints
-// points earned in a run banks 1 coin). Kept as its own tiny three/DOM-free
-// module (rather than inline in game.ts) so the threshold math is unit
-// testable in Node without constructing a Game — see scripts/test-cosmetics.ts.
+// Pure helper for POINTS-MILESTONE bookkeeping: how many times a cumulative
+// score has crossed a "every N points" threshold. Three/DOM-free so the maths
+// is unit testable in Node without constructing a Game — see
+// scripts/test-cosmetics.ts.
+//
+// It was written for IDEA-016's points-to-coins conversion, and the name still
+// says so. That mechanic is GONE (IDEA-016 v2 — it made the shop trivial), and
+// the function survives because bonus LIVES use exactly the same maths on a
+// different divisor (LIVES.milestonePoints). Kept under its old name rather
+// than renamed: it is referenced by name across the tests and the ledger, and a
+// rename would cost more in traceability than the stale word costs in clarity.
 
 /**
- * How many coins a given cumulative `score` has earned in total, at
- * `perPoints` points per coin. Pure `Math.floor` division — callers (game.ts)
- * track how many have already been "awarded" and bank the difference each
- * time score changes, so a single scoring event that crosses multiple
- * thresholds at once (e.g. a big ghost-eat chain) banks all of them together.
+ * How many times a cumulative `score` has crossed a `perPoints` threshold in
+ * total. Pure `Math.floor` division — callers (game.ts) track how many have
+ * already been "awarded" and act on the difference each time score changes, so
+ * a single scoring event that crosses several thresholds at once (a big
+ * ghost-eat chain) is handled in one go.
  *
- * Guards against a negative/garbage `perPoints` (shouldn't happen given
- * config.ts's COINS.perPoints const, but keeps this safe to call with any
- * number without producing Infinity/NaN/negative results).
+ * Guards against a negative/garbage `perPoints` so this is safe to call with
+ * any number without producing Infinity/NaN/negative results.
  */
 export function coinsDueFromScore(score: number, perPoints: number): number {
   if (!Number.isFinite(score) || score <= 0) return 0;

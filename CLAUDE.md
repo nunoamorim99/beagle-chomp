@@ -79,6 +79,17 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v6.
   actually REPORTS collecting; the score FLOOR is deliberately left
   un-multiplied, since a doubler collected late means most pellets were eaten
   at face value.
+- **COINS COME FROM THE MAZE, AND ONLY THE MAZE** (IDEA-016 v2): the
+  points-to-coins conversion is gone — no "every N points banks a coin". The
+  five coin pickups per level are the entire economy, which is what makes them
+  worth detouring for. **The SERVER is the authority**: `plausibility.ts`
+  recomputes the award and `scoreService` banks it, and the client reconciles
+  its optimistic balance to the returned profile — so a change here that only
+  touches `src/game` changes nothing at all. If earning is ever too slow, raise
+  `COINS.pickupValue`, don't reinstate a milestone. `coinsDueFromScore` in
+  `coins.ts` survives under its old name because bonus LIVES still use the same
+  maths on `LIVES.milestonePoints` — that is the one points-milestone left, and
+  it is fine because a life is not a currency: you can't bank or spend it.
 - **Pure logic** (`src/game/*`): `mazes.json`+`mazes.ts` (two **validated** mazes —
   connected, all pellets reachable, ghosts can leave the pen), `grid.ts` (tiles, tunnel
   wrap, walkability), `movement.ts` (tile-stepping model), `ghostAI.ts` (targeting with a

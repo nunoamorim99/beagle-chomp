@@ -58,7 +58,6 @@ export const SCORING = {
   readySeconds: 1.6,
   deathSeconds: 1.3,
   startLives: 3,
-  coinsPerPoints: 1000,
   coinPickupValue: 1,
   livesMilestonePoints: 5000,
 } as const;

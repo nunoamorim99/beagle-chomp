@@ -391,14 +391,6 @@ export class Game {
   // while the player isn't even moving yet.
   private coinTimer = 0;
 
-  // IDEA-016: how many coins this run's score has already banked, so
-  // advanceSchedule-adjacent score changes only award the *newly* crossed
-  // COINS.perPoints thresholds (coinsDueFromScore(this.score, ...) minus this
-  // is the delta to bank). Reset to 0 whenever score resets to 0 (new game /
-  // play-again) — NOT on level transitions, since score (and this counter)
-  // carry across levels within one run.
-  private coinsAwardedFromScore = 0;
-
   // IDEA-018: current maze bonus-life tile, if any (board.life is only the
   // mesh — mirrors coinTile/fruitTile exactly).
   private lifeTile: Vec2 | null = null;
@@ -409,11 +401,16 @@ export class Game {
   private lifeTimer = 0;
 
   // IDEA-018: how many bonus lives this run's score has already granted via
-  // the points-milestone trigger (LIVES.milestonePoints), mirroring
-  // coinsAwardedFromScore exactly — including the "advance even if the cap
-  // blocked the actual grant" rule (see maybeAwardLivesFromScore) so a
-  // milestone can never re-fire once already counted. Reset at the same 3
-  // new-game sites as coinsAwardedFromScore.
+  // the points-milestone trigger (LIVES.milestonePoints), including the
+  // "advance even if the cap blocked the actual grant" rule (see
+  // maybeAwardLivesFromScore) so a milestone can never re-fire once counted.
+  // Reset wherever score resets to 0 (new game / play-again), never on a level
+  // transition — score carries across levels within a run.
+  //
+  // This is the LAST points-milestone in the game: coins used to work the same
+  // way and no longer do (IDEA-016 v2). Lives keep it because a life is not a
+  // currency — you cannot bank it, spend it, or accumulate it past LIVES.max,
+  // so "score well, survive longer" stays a reward rather than an economy.
   private livesAwardedFromScore = 0;
 
   // IDEA-040 v2: the how-to-play carousel. Shown before the first run, and
@@ -671,7 +668,6 @@ export class Game {
     const initial = createInitialGameState();
     this.score = initial.score;
     this.lives = initial.lives;
-    this.coinsAwardedFromScore = 0;
     this.livesAwardedFromScore = 0;
     // IDEA-046: power-ups are RUN-scoped — "until you die" means until the run
     // ends, and a new run must not inherit the last one's doublers. Reset here
@@ -965,7 +961,6 @@ export class Game {
     const fresh = createInitialGameState();
     this.score = fresh.score;
     this.lives = fresh.lives;
-    this.coinsAwardedFromScore = 0;
     this.livesAwardedFromScore = 0;
     this.hud.setScore(this.score);
     this.hud.setLives(this.lives);
@@ -1148,7 +1143,6 @@ export class Game {
           this.sound.biscuit();
         }
         this.hud.setScore(this.score);
-        this.maybeAwardCoinsFromScore();
         this.maybeAwardLivesFromScore();
         // Mentioning the 5,000-point life is meaningless at 30 points; wait
         // until the number on screen is big enough to feel within reach.
@@ -1170,7 +1164,6 @@ export class Game {
       this.effects.pelletEaten(worldX(tx), worldZ(ty), "biscuit");
       this.effects.scorePopup(worldX(tx), worldZ(ty), points);
       this.hud.setScore(this.score);
-      this.maybeAwardCoinsFromScore();
       this.maybeAwardLivesFromScore();
       this.sound.fruit();
     }
@@ -1221,25 +1214,6 @@ export class Game {
   }
 
   // ---- coins (IDEA-016 points->coins, IDEA-017 maze pickup) ----
-
-  /**
-   * Banks any coins newly earned since the last check, based on cumulative
-   * run score crossing COINS.perPoints thresholds (IDEA-016). Called after
-   * every score change. Handles a single scoring event crossing multiple
-   * thresholds at once (e.g. a big ghost-eat chain) by banking the full
-   * delta in one call. Coins are persisted immediately (see profileStore's
-   * addCoins) — they survive even if the beagle dies right after.
-   */
-  private maybeAwardCoinsFromScore(): void {
-    const due = coinsDueFromScore(this.score, COINS.perPoints);
-    if (due > this.coinsAwardedFromScore) {
-      const earned = due - this.coinsAwardedFromScore;
-      this.coinsAwardedFromScore = due;
-      addCoins(earned);
-      this.hud.setCoins(getCoins());
-      this.sound.coin();
-    }
-  }
 
   // ---- maze coin pickup spawn (IDEA-017, mirrors maybeSpawnFruit) ----
 
@@ -1602,7 +1576,6 @@ export class Game {
           this.score += chainScore;
           recordGhost(this.telemetry);
           this.hud.setScore(this.score);
-          this.maybeAwardCoinsFromScore();
           this.maybeAwardLivesFromScore();
           this.effects.ghostEaten(gw.x, gw.z, chainScore);
           // 0-based within the fright window: ghostEatChain was just
@@ -1835,7 +1808,6 @@ export class Game {
       const fresh = createInitialGameState();
       this.score = fresh.score;
       this.lives = fresh.lives;
-      this.coinsAwardedFromScore = 0;
       this.livesAwardedFromScore = 0;
       this.hud.setScore(this.score);
       this.hud.setLives(this.lives);
@@ -1875,7 +1847,6 @@ export class Game {
     const fresh = createInitialGameState();
     this.score = fresh.score;
     this.lives = fresh.lives;
-    this.coinsAwardedFromScore = 0;
     this.livesAwardedFromScore = 0;
     this.hud.setScore(this.score);
     this.hud.setLives(this.lives);
@@ -2084,8 +2055,7 @@ export class Game {
     againBtn?.addEventListener("click", () => {
       this.sound.resume();
       if (isChallenge) {
-        // startChallenge() itself resets score/lives/coinsAwardedFromScore/
-        // livesAwardedFromScore (see its own doc comment) — no need to
+        // startChallenge() itself resets score/lives/livesAwardedFromScore (see its own doc comment) — no need to
         // duplicate that here.
         this.startChallenge(this.challengeIdx);
         return;
@@ -2117,7 +2087,6 @@ export class Game {
       const fresh = createInitialGameState();
       this.score = fresh.score;
       this.lives = fresh.lives;
-      this.coinsAwardedFromScore = 0;
       this.livesAwardedFromScore = 0;
       this.hud.setScore(this.score);
       this.hud.setLives(this.lives);
@@ -2247,7 +2216,6 @@ export class Game {
     const fresh = createInitialGameState();
     this.score = fresh.score;
     this.lives = fresh.lives;
-    this.coinsAwardedFromScore = 0;
     this.livesAwardedFromScore = 0;
     this.hud.setScore(this.score);
     this.hud.setLives(this.lives);

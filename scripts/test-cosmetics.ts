@@ -505,10 +505,15 @@ console.log("\n=== coins.ts (IDEA-016 points->coins math) ===");
   check("coinsDueFromScore(NaN, 1000) === 0", coinsDueFromScore(NaN, 1000) === 0);
   check("coinsDueFromScore(500, 0) === 0 (guards a bogus perPoints)", coinsDueFromScore(500, 0) === 0);
   check("coinsDueFromScore(500, -100) === 0 (guards a negative perPoints)", coinsDueFromScore(500, -100) === 0);
+  // IDEA-016 v2: there is no COINS.perPoints any more — the points-to-coins
+  // conversion was removed because it made the shop trivial, and maze pickups
+  // are now the only way to earn. The helper survives because bonus LIVES use
+  // the same maths on LIVES.milestonePoints, so that is what it is pinned to.
   check(
-    "coinsDueFromScore matches config.ts's COINS.perPoints for a 3450 score -> 3 coins",
-    coinsDueFromScore(3450, COINS.perPoints) === 3,
+    "coinsDueFromScore matches LIVES.milestonePoints for a 12000 score -> 2 lives",
+    coinsDueFromScore(12000, LIVES.milestonePoints) === 2,
   );
+  check("COINS no longer carries a points-per-coin rate", !("perPoints" in COINS));
 }
 
 console.log("\n=== pickups.ts (bugfix: shouldFireThreshold — each threshold fires ONCE per level) ===");

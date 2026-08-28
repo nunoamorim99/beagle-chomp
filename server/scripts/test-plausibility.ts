@@ -476,31 +476,75 @@ for (const [label, over] of [
 // ===========================================================================
 section("Coin awards — recomputed server-side, never trusted");
 
+// IDEA-016 v2: maze PICKUPS ONLY.
+//
+// The award used to be floor(score / coinsPerPoints) + pickups, and between
+// that and the client's own matching milestone the shop had stopped being a
+// place where anything was a decision — a good run bought an item outright.
+//
+// The score term is gone from BOTH sides, and it had to be: THIS is the
+// authority. scoreService adds whatever comes back from here, and the client
+// reconciles its optimistic local balance to the returned profile, so deleting
+// the client's half alone would have left the mechanic running from the server.
 {
   const result = validateRun(
-    makeRun({
-      mazeIdxSequence: [0],
-      pelletsEaten: 175,
-      bonesEaten: 4,
-      fruitEaten: 2,
-      ghostsEaten: 6,
-      coinsCollected: 3,
-    }),
+    makeRun({ mazeIdxSequence: [0], coinsCollected: 3, score: 5000 }),
     classicCtx(),
   );
+  ok(
+    "coins = pickups only",
+    result.accepted && result.coinsAwarded === 3,
+    result.accepted ? result.coinsAwarded : result.reasonCode,
+  );
+}
 
-  if (!result.accepted) {
-    ok("coin award case is accepted", false, result.reasonCode);
-  } else {
-    // 175*10 + 4*50 + 2*100 + 6*200 = 1750+200+200+1200 = 3350
-    // floor(3350/1000) = 3 milestone coins, + 3 collected = 6
-    ok("coins = score milestones + pickups", result.coinsAwarded === 6, result.coinsAwarded);
-  }
+// The property that makes the change real rather than cosmetic: scoring well
+// no longer earns currency at all.
+{
+  const tiny = validateRun(
+    makeRun({
+      mazeIdxSequence: [0], coinsCollected: 2,
+      pelletsEaten: 20, bonesEaten: 0, fruitEaten: 0, fruitPoints: 0,
+      ghostsEaten: 0, livesLost: 0,
+    }),
+    classicCtx({ elapsedServerSeconds: 600 }),
+  );
+  const huge = validateRun(
+    makeRun({
+      mazeIdxSequence: [0], coinsCollected: 2,
+      pelletsEaten: 175, bonesEaten: 4,
+      fruitEaten: 4, fruitPoints: 4 * MAX_FRUIT_POINTS,
+      ghostsEaten: 12, livesLost: 0,
+    }),
+    classicCtx({ elapsedServerSeconds: 600 }),
+  );
+  ok(
+    "a huge run and a tiny one earn the same coins for the same pickups",
+    tiny.accepted && huge.accepted && tiny.coinsAwarded === 2 && huge.coinsAwarded === 2,
+    `${tiny.accepted ? tiny.coinsAwarded : tiny.reasonCode} vs ${huge.accepted ? huge.coinsAwarded : huge.reasonCode}`,
+  );
 }
 
 {
   const result = validateRun(
-    makeRun({ mazeIdxSequence: [0], pelletsEaten: 10, bonesEaten: 0, fruitEaten: 0, ghostsEaten: 0, coinsCollected: 0, livesLost: 0 }),
+    makeRun({
+      mazeIdxSequence: [0], coinsCollected: 0,
+      pelletsEaten: 175, bonesEaten: 4,
+      fruitEaten: 4, fruitPoints: 4 * MAX_FRUIT_POINTS,
+      ghostsEaten: 12, livesLost: 0,
+    }),
+    classicCtx({ elapsedServerSeconds: 600 }),
+  );
+  ok(
+    "a run that grabs no coins earns none, however well it scored",
+    result.accepted && result.coinsAwarded === 0,
+    result.accepted ? result.coinsAwarded : result.reasonCode,
+  );
+}
+
+{
+  const result = validateRun(
+    makeRun({ mazeIdxSequence: [0], pelletsEaten: 10, bonesEaten: 0, fruitEaten: 0, fruitPoints: 0, ghostsEaten: 0, coinsCollected: 0, livesLost: 0 }),
     classicCtx({ elapsedServerSeconds: 60 }),
   );
   ok("a tiny run earns 0 coins", result.accepted && result.coinsAwarded === 0, result.accepted ? result.coinsAwarded : result.reasonCode);

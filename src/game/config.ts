@@ -73,10 +73,23 @@ export const FRUIT_THRESHOLDS = [40, 80, 120, 160] as const;
 
 // IDEA-016/IDEA-017: coin currency (v2.0 shop wallet).
 export const COINS = {
-  // IDEA-016: every 1000 points earned in a run banks 1 coin (persisted
-  // immediately — see coinsDueFromScore in src/game/coins.ts).
-  perPoints: 1000,
+  // IDEA-016 v2: there is NO points-to-coins conversion any more.
+  //
+  // Every 1000 points used to bank a coin on top of the maze pickups, and by
+  // v7.0 that made the shop trivial — a decent run bought an item outright, so
+  // nothing in it was ever a decision. Coins are now earned ONE way: by going
+  // and getting the coins that appear in the maze. That makes them a thing you
+  // detour for, which is what a currency has to be.
+  //
+  // Removing it here is only half: the SERVER is the authority on coins (it
+  // recomputes the award from the accepted run and the client's local balance
+  // is reconciled to whatever it returns), so plausibility.ts had to stop
+  // adding the milestone term at the same time or the mechanic would have kept
+  // running from the other side.
+  //
   // IDEA-017: a maze coin pickup grants this many coins directly (no points).
+  // This is now the ONLY source. If earning turns out too slow at 5 pickups a
+  // level, THIS is the number to raise — not a reinstated milestone.
   pickupValue: 1,
   // IDEA-017 follow-up: the maze coin auto-despawns if not grabbed in time —
   // a "grab it quick" bonus rather than a permanent fixture like the fruit.

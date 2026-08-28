@@ -1108,6 +1108,25 @@ _(empty — nothing to triage)_
 - **Dependencies:** [[IDEA-012]] (spend-only; not blocking)
 - **History:**
   - **v1** (2026-07-09) — every `COINS.perPoints` (1000) points banks 1 coin, immediately + persisted (survives a death or reload). Pure `coinsDueFromScore(score, perPoints)` helper (`src/game/coins.ts`) crosses multiple thresholds in one big scoring event; `coinsAwardedFromScore` bookkeeping resets per-run but the wallet accumulates across games. `coins` field added to the profile blob (`profileStore.ts`, back-compatible: `getCoins`/`addCoins`, garbage/negative/NaN → 0). HUD coin counter (`hud.setCoins`, `#coins` stat) + a coin "ching" (`sound.coin`). 24 headless assertions. Verified live: score→coins math, persistence across reload, zero errors. `coins.ts`, `config.ts`, `game.ts`, `profileStore.ts`, `hud.ts`, `sound.ts`, `index.html`, `style.css`, `scripts/test-cosmetics.ts`. _(f561491)_
+  - **v2** (2026-08-28) — **the mechanic this idea IS was removed.** (Nuno) "The only way to gain
+    coins is collecting the coins that appear on the map — forget the logic to make a number of
+    points give coins." By v7.0 the shop had stopped being a place where anything was a decision:
+    a decent run banked coins from score AND from pickups, so an item was affordable in a run or
+    two and nothing in it was ever weighed. Coins now come from the maze and only the maze, which
+    is what makes the five pickups a level worth detouring for.
+    **Deleted on BOTH sides, and that is the point.** The server is the authority — `plausibility.ts`
+    recomputes the award, `scoreService` banks it, and the client reconciles its optimistic local
+    balance to the returned profile — so removing the client's half alone would have changed
+    nothing and the milestone would have kept running from the server. `COINS.perPoints` is gone
+    from `config.ts` and `coinsPerPoints` from the generated catalog.
+    `coinsDueFromScore` SURVIVES under its old name: bonus lives ([[IDEA-018]]) use identical maths
+    on `LIVES.milestonePoints`, and that is now the only points-milestone in the game — which is
+    fine, because a life is not a currency. You cannot bank it, spend it, or hold more than
+    `LIVES.max`, so "score well, survive longer" stays a reward rather than an economy.
+    If earning turns out too slow, the number to raise is `COINS.pickupValue` — not a reinstated
+    milestone. Kept as a version of this idea rather than a discard: the idea is the coin ECONOMY,
+    and it still exists, it just has one source now instead of two. See [[IDEA-017]] for the
+    pickups that are that source. _(commit pending)_
 
 ### IDEA-017 — Classic mode: coin pickups in the maze ✅
 - **Priority:** 🟢
