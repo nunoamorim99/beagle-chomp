@@ -21,7 +21,12 @@ import * as sessionsRepo from "../repo/gameSessions.js";
 import * as usersRepo from "../repo/users.js";
 import { toPublicProfile, type PublicProfile, type UserRow } from "../repo/types.js";
 import { ApiError } from "../http/errors.js";
-import { validateRun, MAX_RUN_HOURS, type RunSubmission } from "../validation/plausibility.js";
+import { validateRun, MAX_RUN_HOURS } from "../validation/plausibility.js";
+// IDEA-040 v3: reading the body moved OUT of this file so it can be tested.
+// This module opens a Postgres pool on import (via db.js), so nothing here
+// was reachable from the DB-free suite — which is how a field the client
+// sends went unread for a whole release without anything noticing.
+import { readSubmission } from "../validation/wire.js";
 import { invalidateBoardCache } from "./boardCache.js";
 import { CHALLENGE_LEVELS, CHALLENGE_LEVEL_COUNT } from "../catalog.generated.js";
 
@@ -119,25 +124,6 @@ export interface FinishRejectedResult {
 }
 
 export type FinishResult = FinishAcceptedResult | FinishRejectedResult;
-
-function readSubmission(body: Record<string, unknown>): RunSubmission {
-  const num = (value: unknown): number => (typeof value === "number" ? value : NaN);
-
-  return {
-    score: num(body.score),
-    levelsCleared: num(body.levelsCleared),
-    mazeIdxSequence: Array.isArray(body.mazeIdxSequence)
-      ? (body.mazeIdxSequence as number[])
-      : [],
-    pelletsEaten: num(body.pelletsEaten),
-    bonesEaten: num(body.bonesEaten),
-    fruitEaten: num(body.fruitEaten),
-    ghostsEaten: num(body.ghostsEaten),
-    coinsCollected: num(body.coinsCollected),
-    livesLost: num(body.livesLost),
-    playSeconds: num(body.playSeconds),
-  };
-}
 
 /**
  * Judge a completed run.

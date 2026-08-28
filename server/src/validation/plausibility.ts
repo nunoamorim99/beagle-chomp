@@ -28,6 +28,8 @@ import {
   COIN_THRESHOLDS,
   LIFE_THRESHOLDS,
   FRUIT_THRESHOLDS,
+  MAX_FRUIT_POINTS,
+  MIN_FRUIT_POINTS,
   type ChallengeLevelFacts,
 } from "../catalog.generated.js";
 
@@ -73,6 +75,25 @@ export interface RunSubmission {
   pelletsEaten: number;
   bonesEaten: number;
   fruitEaten: number;
+  /**
+   * IDEA-045: the total points those fruits were worth.
+   *
+   * Fruit used to have one price, so the count WAS the value. It now ranges
+   * from 100 (apple) to 500 (mango), and without this the score check would
+   * have to allow the full spread on every run — a 5x window that a cheat
+   * could hide a fabricated 1600 inside.
+   *
+   * Untrusted like everything else: it is bounded against
+   * fruitEaten * MAX_FRUIT_POINTS above and fruitEaten * MIN_FRUIT_POINTS
+   * below, so claiming four mangos requires having reported four fruits.
+   *
+   * OPTIONAL, for the same backward-compatibility reason as levelIdxSequence:
+   * a run queued on a device before IDEA-045 shipped omits it, and the checks
+   * below fall back to the wide bound rather than dropping the run. Those runs
+   * pre-date the ladder and only ever ate 100-point fruit, so the wide bound
+   * costs nothing in practice.
+   */
+  fruitPoints?: number;
   ghostsEaten: number;
   coinsCollected: number;
   livesLost: number;
@@ -146,8 +167,17 @@ export function maxLevelScore(mazeIdx: number, ghostCount: number): number {
   return (
     facts.biscuits * SCORING.biscuit +
     facts.bones * SCORING.bone +
-    // At most one fruit per FRUIT_THRESHOLDS entry, each firing once per level.
-    Math.min(facts.fruitTiles, FRUIT_THRESHOLDS.length) * SCORING.fruit +
+    // At most one fruit per FRUIT_THRESHOLDS entry, each firing once per level,
+    // and at most the DEAREST fruit every time (IDEA-045 — a mango is 5x an
+    // apple, and the ceiling has to survive the luckiest possible run).
+    //
+    // Deliberately NOT bounded by facts.fruitTiles as well. Only one fruit is
+    // ever on the board and spawnFruit REPLACES it, so the number of `F` tiles
+    // in a maze was never a limit on how many fruits a level can yield — it
+    // just happened to equal the threshold count back when both were 2. At four
+    // thresholds and two tiles, the old `Math.min` would have capped an honest
+    // level at two fruits and rejected anyone who ate four.
+    FRUIT_THRESHOLDS.length * MAX_FRUIT_POINTS +
     maxGhostPointsPerLevel(facts.bones, ghostCount)
   );
 }
@@ -348,7 +378,9 @@ export function validateRun(input: RunSubmission, ctx: RunContext): ValidationRe
     const facts = MAZE_FACTS[mazeIdx];
     maxPellets += facts.biscuits;
     maxBones += facts.bones;
-    maxFruit += Math.min(facts.fruitTiles, FRUIT_THRESHOLDS.length);
+    // Per LEVEL, not per maze: see maxLevelScore for why the `F` tile count is
+    // not the limit it looks like.
+    maxFruit += FRUIT_THRESHOLDS.length;
   }
   const maxCoins = COIN_THRESHOLDS.length * levelsPlayed;
 
@@ -374,6 +406,38 @@ export function validateRun(input: RunSubmission, ctx: RunContext): ValidationRe
     }
   }
 
+  // --- MAX-4c: the claimed fruit VALUE (IDEA-045) --------------------------
+  //
+  // Only meaningful when the client sent it. When it did, it is pinned from
+  // both sides: you cannot claim more value than the fruits you reported could
+  // possibly be worth, and you cannot claim less than they must have been worth
+  // (under-reporting would drag the score floor down and buy room for invented
+  // points elsewhere).
+  if (input.fruitPoints !== undefined) {
+    if (!isNonNegativeInt(input.fruitPoints)) {
+      return {
+        accepted: false,
+        reasonCode: "MALFORMED_SUBMISSION",
+        detail: { ...detail, field: "fruitPoints" },
+      };
+    }
+    const maxFruitPoints = input.fruitEaten * MAX_FRUIT_POINTS;
+    const minFruitPoints = input.fruitEaten * MIN_FRUIT_POINTS;
+    if (input.fruitPoints > maxFruitPoints || input.fruitPoints < minFruitPoints) {
+      return {
+        accepted: false,
+        reasonCode: "ITEM_COUNT_IMPOSSIBLE",
+        detail: {
+          ...detail,
+          field: "fruitPoints",
+          actual: input.fruitPoints,
+          max: maxFruitPoints,
+          min: minFruitPoints,
+        },
+      };
+    }
+  }
+
   // --- MAX-4b: lives -------------------------------------------------------
   // You can't lose more lives than you could ever have held: the starting
   // stock, plus every way the game grants one.
@@ -391,15 +455,23 @@ export function validateRun(input: RunSubmission, ctx: RunContext): ValidationRe
   }
 
   // --- MAX-5: the score must be REACHABLE from the reported items -----------
+  //
+  // IDEA-045: the fruit term is the exact reported total when the client sent
+  // one (already pinned to the reported count by MAX-4c above), and otherwise
+  // the widest the ladder allows — cheapest for the floor, dearest for the
+  // ceiling. A pre-IDEA-045 client only ever ate 100-point fruit, so it lands
+  // comfortably inside that window rather than being rejected for being old.
+  const fruitFloor = input.fruitPoints ?? input.fruitEaten * MIN_FRUIT_POINTS;
+  const fruitCeiling = input.fruitPoints ?? input.fruitEaten * MAX_FRUIT_POINTS;
   const itemFloor =
     input.pelletsEaten * SCORING.biscuit +
     input.bonesEaten * SCORING.bone +
-    input.fruitEaten * SCORING.fruit +
+    fruitFloor +
     input.ghostsEaten * SCORING.ghostBase;
   const itemCeiling =
     input.pelletsEaten * SCORING.biscuit +
     input.bonesEaten * SCORING.bone +
-    input.fruitEaten * SCORING.fruit +
+    fruitCeiling +
     input.ghostsEaten * ghostPointsForChainPosition(4); // the 1600 cap
   if (input.score < itemFloor || input.score > itemCeiling) {
     return {
