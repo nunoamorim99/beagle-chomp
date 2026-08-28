@@ -18,6 +18,15 @@
 # host's, which would also mix Windows and Linux native binaries), and install
 # only re-runs when the lockfile actually changes.
 #
+# EDITING vite.config.ts NEEDS A MANUAL RESTART:
+#     docker compose restart web
+# Vite watches its own config and restarts itself in place, but that restart
+# races strictPort — the new server tries to bind 5173 before the old one has
+# let go, fails, and leaves a process that is alive but serving nothing. The
+# healthcheck below now surfaces that as `unhealthy` instead of `Up`, but the
+# restart is still the fix. Nothing else in the repo needs it; ordinary source
+# edits hot-reload fine.
+#
 # The host path still works and is still faster for a tight edit loop:
 #     npm run dev
 # Stop the container first, or the port is taken — vite.config.ts uses
@@ -117,6 +126,20 @@ services:
       DOCKER_DEV: "1"
     ports:
       - "5173:5173"
+    # Without this the container reports "Up" whenever the node process is
+    # alive, which is not the same thing as the dev server answering — and the
+    # difference cost real time once already: a failed config hot-restart left a
+    # zombie that served nothing while `docker compose ps` said Up.
+    #
+    # `node -e` rather than curl: curl is not in node:22-bookworm-slim, and
+    # node 22 has global fetch, so this needs nothing installed.
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:5173/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      # Generous: the very first start installs dependencies before Vite boots.
+      start_period: 90s
     volumes:
       - ./:/app
       # A NAMED volume, not the anonymous one this used to have. Anonymous

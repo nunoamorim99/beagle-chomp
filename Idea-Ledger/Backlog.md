@@ -1157,6 +1157,27 @@ _(empty — nothing to triage)_
 - **Dependencies:** —
 - **History:**
   - **v1** (2026-07-09) — 4 beagle coat skins: **Bagel** (classic tricolor, default & unchanged), **Cookie** (chocolate/liver), **Muffin** (lemon & white), **Pepper** (blue-tick grey). New pure `cosmetics.ts` (skin registry + equipped state, three-free) + `profileStore.ts` (localStorage persistence, guarded, following the mute-preference precedent); `makeBeagle(skin)` + `applyBeagleSkin()` restyle the mesh in place; temporary `#skinBtn` switcher (`ui/skin.ts`, three-free via callback). Cycle+wrap+persist verified; 29 headless assertions incl. a Bagel==old-colors regression guard. `cosmetics.ts`, `profileStore.ts`, `ui/skin.ts`, `characters.ts`, `game.ts`, `index.html`, `style.css`, `scripts/test-cosmetics.ts`. _(a5a0b9f)_
+  - **v2** (2026-08-28) — **Pac-Beagle**, a tribute coat, and the first skin to need the model to
+    change rather than just recolour. Two new OPTIONAL channels on `BeagleCoat`, both no-ops for
+    every coat written before them: `paw` falls back to `white` (which is exactly what paws were
+    painted with), and `brow` is meaningful by its ABSENCE — the beagle has no brows unless a skin
+    asks for them, and it is the brows that make this one read as the tribute rather than a
+    recolour. The meshes are always built and hidden, never conditionally created, because a live
+    skin switch recolours an existing model in place — anything a skin can turn on has to already
+    be there to turn on.
+    Owning it unlocks the **Ghost enemy skin**, which becomes secret and free; the shop asks
+    `visibleEnemySkins()` fresh on every call rather than caching, so the unlock lands while the
+    shop is open. That swap also made the **beetle the free default enemy** (`ghost` -> `beetle`,
+    beetle 25 -> 0 coins).
+    Built in a parallel session; recorded here after the fact rather than left uncounted, since
+    the ledger's invariant is that nothing shipped goes unrecorded. Cross-links [[IDEA-009]] (the
+    enemy-skin system it makes secret) and [[IDEA-012]] (the shop that sells it).
+    One process note worth keeping: the API half of this shipped EARLY and by accident —
+    `npm run sync` regenerates the server catalog from the WORKING TREE, so running it during
+    [[IDEA-045]] baked this skin's price, the new default enemy and the beetle's price change into
+    a deploy that was nominally about fruit. No harm (the API knowing a price before the shop
+    offers it is what API-first is for), but **check `git diff server/src/catalog.generated.ts`
+    before committing a sync.** _(2216ac8)_
 
 ### IDEA-022 — Pull the camera in closer on phones ✅
 - **Area:** ux

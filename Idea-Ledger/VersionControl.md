@@ -16,6 +16,9 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
 > lines here roll up into the numbered version below and this section is cleared (hold a line back
 > only if you explicitly choose to).
 
+- (2026-08-28) IDEA-010 v2 — **Pac-Beagle**: a tribute coat with red boots and angry brows, which
+  needed two new optional coat channels (paws and eyebrows) to exist at all. Owning it unlocks the
+  **Ghost** as a secret free enemy skin, and the beetle becomes the free default in its place.
 - (2026-08-28) IDEA-046 v1+v2 — **power-ups**: five pickups that change how a run plays rather
   than what it scores — double biscuits, double enemies, an anchor that slows the pack, a star
   that scares them and speeds you up, and a shield that takes one hit for you. Some run on a
