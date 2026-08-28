@@ -32,6 +32,19 @@ export interface RunTelemetry {
    * that catches every other inflated count.
    */
   fruitPoints: number;
+  /** IDEA-046: how many power-ups were collected across the run. Bounded
+   *  server-side by POWERUP_THRESHOLDS.length * levels played. */
+  powerupsCollected: number;
+  /**
+   * Which power-ups were collected at least once, by id.
+   *
+   * The server needs this and not just the count, because two of the five
+   * MULTIPLY THE SCORE: without knowing whether a doubler was ever picked up,
+   * the score ceiling would have to assume one always was — which doubles the
+   * headroom available to a faked score on every single run, including the
+   * ones that never saw a power-up.
+   */
+  powerupIds: string[];
   ghostsEaten: number;
   coinsCollected: number;
   livesLost: number;
@@ -56,6 +69,8 @@ export function createRunTelemetry(): RunTelemetry {
     bonesEaten: 0,
     fruitEaten: 0,
     fruitPoints: 0,
+    powerupsCollected: 0,
+    powerupIds: [],
     ghostsEaten: 0,
     coinsCollected: 0,
     livesLost: 0,
@@ -89,6 +104,15 @@ export function recordBone(t: RunTelemetry): void {
 export function recordFruit(t: RunTelemetry, points: number): void {
   t.fruitEaten++;
   t.fruitPoints += points;
+}
+
+/** A power-up pickup (IDEA-046). The id is recorded once — collecting the same
+ *  one twice refreshes it rather than stacking (see powerups.ts), so a second
+ *  pickup of the same id buys no extra score headroom and must not look to the
+ *  server as though it did. */
+export function recordPowerup(t: RunTelemetry, id: string): void {
+  t.powerupsCollected++;
+  if (!t.powerupIds.includes(id)) t.powerupIds.push(id);
 }
 
 export function recordGhost(t: RunTelemetry): void {

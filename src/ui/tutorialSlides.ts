@@ -27,7 +27,7 @@ import type { ControlScheme } from "../game/profileStore";
 /** Which 3D subject the carousel stages behind a slide. Rendered by game.ts
  *  through the existing shopScene, so these are exactly the previews the shop
  *  already knows how to build. */
-export type TutorialStage = "beagle" | "enemy" | "maze" | "goldenBone";
+export type TutorialStage = "beagle" | "enemy" | "maze" | "goldenBone" | "powerup";
 
 /** A flat input diagram, for the one thing 3D cannot show: a gesture. */
 export type TutorialDiagram = "keys" | "swipe" | "dpad";
@@ -69,11 +69,13 @@ function movement(input: DeviceInput): { body: string; diagram: TutorialDiagram 
 }
 
 /**
- * The five slides, in teaching order: how to move, what to collect, what to
- * avoid, how to turn that around, and how to last longer.
+ * The slides, in teaching order: how to move, what to collect, what to avoid,
+ * how to turn that around, what changes the rules, and how to last longer.
  *
- * Five is deliberate. This is a wall between the player and the game they just
- * asked to play, so it has to be finishable in under a minute.
+ * The count is deliberate and kept tight. This is a wall between the player and
+ * the game they just asked to play, so it has to be finishable in under a
+ * minute — IDEA-046 earned its slide by changing what the pickups DO, which is
+ * the one thing a new player cannot work out by looking.
  */
 export function buildSlides(input: DeviceInput): TutorialSlide[] {
   const move = movement(input);
@@ -112,6 +114,17 @@ export function buildSlides(input: DeviceInput): TutorialSlide[] {
         "that is the only time you can eat them. The first is worth 200, " +
         "then 400, 800 and 1600 if you keep going before it wears off.",
       stage: "maze",
+    },
+    {
+      id: "powerups",
+      title: "Power-ups change the rules",
+      body:
+        "Some pickups do not give points — they give you an edge. Doubled points, " +
+        "slower enemies, a star that scares them and speeds you up, or a shield that takes " +
+        "one hit for you. Watch the corner of the screen to see what you are holding: " +
+        "some run on a timer, and the doublers stay with you from map to map until you " +
+        "lose a life.",
+      stage: "powerup",
     },
     {
       id: "lives",

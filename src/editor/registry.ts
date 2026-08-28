@@ -23,6 +23,12 @@ import {
   makeCarrot,
   makeStrawberry,
   makeMango,
+  // IDEA-046: the power-ups, editable like every other maze pickup.
+  makeDoubleBiscuit,
+  makeDoubleGhost,
+  makeAnchor,
+  makeStar,
+  makeShield,
 } from "../render/board";
 import { type SavableFile } from "./saveFile";
 
@@ -201,6 +207,11 @@ export const PICKUPS: readonly CharacterDef[] = [
   pickupDef("strawberry", "Strawberry", "makeStrawberry", makeStrawberry),
   pickupDef("mango", "Mango", "makeMango", makeMango),
   pickupDef("coin", "Coin", "makeCoin", makeCoin),
+  pickupDef("doubleBiscuit", "x2 Biscuits", "makeDoubleBiscuit", makeDoubleBiscuit),
+  pickupDef("doubleGhost", "x2 Enemies", "makeDoubleGhost", makeDoubleGhost),
+  pickupDef("anchor", "Anchor", "makeAnchor", makeAnchor),
+  pickupDef("star", "Star", "makeStar", makeStar),
+  pickupDef("shield", "Shield", "makeShield", makeShield),
 ];
 
 export function getCharacter(id: string): CharacterDef {

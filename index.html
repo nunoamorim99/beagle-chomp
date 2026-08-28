@@ -33,6 +33,16 @@
       <div class="stat" style="text-align:right"><div class="k">Lives</div><div class="lives v" id="lives">🐶🐶🐶</div></div>
     </div>
 
+    <!-- IDEA-046: the active power-up tray. Nuno: "on the UI we should have a
+         space where the active power-ups appear, to let the user know which
+         power-ups they have."
+         Deliberately OUTSIDE .hud, like .hud-buttons: .hud is a space-between
+         row of three and a fourth child would silently re-balance it. Sits
+         under the Score/Coins column on the left, where the eye already goes
+         for run state, and is EMPTY (and therefore invisible) until something
+         is held, so it costs no screen space in the common case. -->
+    <div class="powerups" id="powerups" aria-live="polite" aria-label="Active power-ups"></div>
+
     <!-- IDEA-036 v2: mute / shop / home, laid out as a HORIZONTAL row rather
          than the old vertical stack down the right edge. The stack cost ~120px
          of height and pushed the maze down — noticeable on a phone, and worse

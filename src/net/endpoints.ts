@@ -229,6 +229,11 @@ export interface RunSubmissionPayload {
    *  on a device before this shipped omits it, and the validator falls back to
    *  bounding fruit between the cheapest and dearest entry. */
   fruitPoints?: number;
+  /** IDEA-046: how many power-ups were collected, and which kinds. Optional on
+   *  the wire like fruitPoints — a run queued before this shipped omits both,
+   *  and the validator treats an absent list as "no power-ups". */
+  powerupsCollected?: number;
+  powerupIds?: string[];
   ghostsEaten: number;
   coinsCollected: number;
   livesLost: number;

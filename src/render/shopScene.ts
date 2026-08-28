@@ -29,7 +29,14 @@ import { COLORS } from "../game/config";
 import { type BeagleSkin } from "../game/cosmetics";
 import { getEquippedMazeTheme, getMazeTheme, type MazeTheme } from "../game/themes";
 import { makeBeagle, makeEnemy, applyBeagleSkin, type BeagleParts } from "./characters";
-import { makePropById, makeLifeBone } from "./board";
+import {
+  makePropById,
+  makeLifeBone,
+  // IDEA-046: the three power-ups the tutorial stages (see showPowerups).
+  makeShield,
+  makeAnchor,
+  makeStar,
+} from "./board";
 import { floorPreviewTexture } from "./floorTexture";
 import {
   VIGNETTE_CELLS,
@@ -652,6 +659,12 @@ export interface ShopScene {
    *  makeLifeBone, scaled up and floated above the garden patch, so the player
    *  is shown the exact mesh they need to recognise mid-run. */
   showGoldenBone(): void;
+  /** IDEA-046: stages the three power-ups worth SHOWING — the shield, the
+   *  anchor and the star bone — as a row. The two doublers are deliberately
+   *  left out: they are flat plaques whose whole meaning is the icon on their
+   *  face, and at this camera they read as coloured tiles. The tutorial slide
+   *  describes them in words instead. */
+  showPowerups(): void;
   /** Re-skins the CHARACTER stage (the soil disc, turf rim, hedges and their
    *  blooms) to a maze theme's palette and procedural surfaces, so a player
    *  browsing beagles or enemies stands them on the ground they actually
@@ -913,6 +926,29 @@ export function createShopScene(): ShopScene {
       bone.position.y = 0.44;
       bone.rotation.set(0.32, 0, 0.22);
       wrapper.add(bone);
+      setHero(wrapper, "pickup");
+      restoreAtmosphere();
+    },
+    showPowerups(): void {
+      // A row of three rather than one hero. A power-up means nothing on its
+      // own — the point the slide is making is that there is a FAMILY of them,
+      // and three distinct silhouettes side by side say that faster than any
+      // sentence does.
+      const wrapper = new THREE.Group();
+      ([
+        [makeShield(), -0.72],
+        [makeAnchor(), 0],
+        [makeStar(), 0.72],
+      ] as const).forEach(([mesh, x]) => {
+        // Scaled to roughly the golden bone's presence at this framing: these
+        // are built at board size (~0.44 across), which is a speck here.
+        mesh.scale.multiplyScalar(2.1);
+        mesh.position.set(x, 0.5, 0);
+        wrapper.add(mesh);
+      });
+      // Tilted toward the camera so the flat-fronted shield is not edge-on and
+      // the anchor's crossbar reads.
+      wrapper.rotation.x = 0.1;
       setHero(wrapper, "pickup");
       restoreAtmosphere();
     },

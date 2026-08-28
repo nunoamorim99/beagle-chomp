@@ -94,11 +94,15 @@ async function run(): Promise<void> {
       return sel ? [...sel.options].map((o) => o.textContent ?? "") : [];
     });
     check(
-      "the dropdown lists all eight pickups",
-      ["Power bone", "Bonus-life bone", "Apple", "Banana", "Carrot", "Strawberry", "Mango", "Coin"]
-        .every((l) => options.includes(l)),
+      "the dropdown lists all thirteen pickups",
+      [
+        "Power bone", "Bonus-life bone",
+        "Apple", "Banana", "Carrot", "Strawberry", "Mango", "Coin",
+        // IDEA-046
+        "x2 Biscuits", "x2 Enemies", "Anchor", "Star", "Shield",
+      ].every((l) => options.includes(l)),
     );
-    check("…and nothing else", options.length === 8);
+    check("…and nothing else", options.length === 13);
 
     const title = await page.evaluate(() => document.getElementById("codeTitle")?.textContent ?? "");
     check("the code panel points at board.ts, not characters.ts", /src\/render\/board\.ts/.test(title));
@@ -124,6 +128,17 @@ async function run(): Promise<void> {
       // leaf read as an orange APPLE at game size), so its absence is part of
       // what keeps the 100 and the 500 apart and is worth pinning.
       Mango: ["mango", "blush", "stem"],
+      // IDEA-046. The two doublers share a plaque and differ by what sits on
+      // it, so their part names are what tells them apart in the outliner.
+      "x2 Biscuits": ["plate", "biscuitA", "biscuitB"],
+      "x2 Enemies": ["plate", "ghostA", "ghostB"],
+      Anchor: ["shank", "stock", "arms", "ring"],
+      // One mesh: a five-pointed star is a polygon, so it is a real
+      // THREE.Shape rather than a pile of primitives to be named individually.
+      Star: ["star"],
+      // No "boss": a central dot on a rounded shape rendered as a MAP PIN, so
+      // it was replaced by the heraldic cross. Its absence is load-bearing.
+      Shield: ["top", "point", "crossV", "crossH"],
       Coin: ["body", "rim", "embossFront", "embossBack"],
     };
     for (const [label, parts] of Object.entries(expected)) {

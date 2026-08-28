@@ -76,6 +76,10 @@ export interface Sound {
   /** IDEA-016/IDEA-017: coin banked/collected — bright metallic "ching",
    *  distinct from fruit()'s sweep and bone()'s square-wave chime. */
   coin(): void;
+  /** IDEA-046: a power-up was collected. */
+  powerup(): void;
+  /** IDEA-046: a shield absorbed a hit that would have been a death. */
+  shieldBreak(): void;
   /** IDEA-018: bonus life granted (maze pickup, points milestone, or perfect
    *  fright) — a distinct, happy ascending 3-note jingle, brighter/longer
    *  than coin()'s ching so it unmistakably reads as a "1-UP" moment. */
@@ -217,6 +221,32 @@ export function createSound(): Sound {
     ]);
   }
 
+  function powerup(): void {
+    // A four-note rising arpeggio on a triangle. Deliberately the LONGEST and
+    // most "arrival"-shaped cue in the game after extraLife(): a power-up
+    // changes the rules for a while, so it should land like an event rather
+    // than like another pickup blip. Triangle rather than the sine everything
+    // else uses, so it is a different TIMBRE and not just a different tune —
+    // which is what survives being heard over the engine's other cues.
+    playSequence([
+      { type: "triangle", freq: 523, duration: 0.09, peak: 0.2, attack: 0.004 },
+      { type: "triangle", freq: 659, duration: 0.09, peak: 0.21, attack: 0.004, delay: 0.07 },
+      { type: "triangle", freq: 784, duration: 0.09, peak: 0.22, attack: 0.004, delay: 0.14 },
+      { type: "triangle", freq: 1046, duration: 0.26, peak: 0.24, attack: 0.004, delay: 0.21 },
+    ]);
+  }
+
+  function shieldBreak(): void {
+    // A hit you SURVIVED. The hard part is that this must not be mistaken for
+    // death() — the player has a fraction of a second to understand they are
+    // still alive and still running. So it is short, and it rises where
+    // death() falls: a bright clang, then a quick lift.
+    playSequence([
+      { type: "square", freq: 300, duration: 0.06, peak: 0.2, attack: 0.001 },
+      { type: "sine", freq: 880, duration: 0.16, endFreq: 1320, peak: 0.2, attack: 0.004, delay: 0.05 },
+    ]);
+  }
+
   function extraLife(): void {
     // Unmistakably "1-UP": a happy 3-note ascending arpeggio, brighter and a
     // touch longer than coin()'s two-note ching (and lower-pitched than its
@@ -342,6 +372,8 @@ export function createSound(): Sound {
     bone,
     fruit,
     coin,
+    powerup,
+    shieldBreak,
     extraLife,
     frightStart,
     eatGhost,

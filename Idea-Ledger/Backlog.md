@@ -21,34 +21,6 @@ _(empty — nothing to triage)_
 ## Backlog (open ideas)
 > New registered ideas go here. Next free ID: IDEA-047
 
-### IDEA-046 — Power-ups: pickups that change how the run plays 💡
-- **Priority:** 🔴
-- **Area:** gameplay
-- **Registered:** 2026-08-28
-- **Description:** (Nuno) "I was thinking of adding components we can take to give us advantages…
-  instead of points these give advantages." Five of them, each with its own visual: **x2 biscuits**
-  (a x2 badge), **x2 enemy** (the same x2 in another colour), **slow down the enemies** (an anchor),
-  **a flashing bone** that frightens the pack AND makes the beagle faster, like Mario's star, and a
-  **shield** that lets one enemy catch you without losing a life. They appear at random on the maze
-  like the fruits do. "On the UI we should have a space where the active power-ups appear, to let the
-  user know which power-ups they have."
-- **Notes:** The lifetime rules are Nuno's and they are the interesting part — three different kinds
-  of "until":
-  · **timed** — anchor and star run on a countdown;
-  · **until you die** — x2 biscuits and x2 enemy persist, *and survive clearing the map*;
-  · **until you are caught** — the shield is spent on the hit that would have killed you.
-  "When the user has power-up 1 and 2 and 5 but gets caught, they only lose the 5 and keep the others
-  until they die." So a shielded hit is explicitly NOT a death: it consumes the shield and the two
-  doublers live on. Decided 2026-08-28: **classic mode only** — challenge levels are meant to be pure
-  dial-twists on the proven engine, and letting power-ups in would make every challenge score already
-  on record incomparable. Spawning reuses `pickRandomFreeTile` + the once-per-threshold gate from
-  `pickups.ts` (the anti-farming fix) rather than a new mechanism. The doublers multiply score, so
-  `plausibility.ts`'s ceilings have to be raised in proportion or honest runs get rejected —
-  `runTelemetry` needs to report what was collected so the server can size the bound. New tutorial
-  slides land as an **[[IDEA-040]] v3**, not a new id. Sibling of [[IDEA-045]].
-- **Dependencies:** [[IDEA-045]] (shares the spawn/threshold plumbing and the same validator surgery —
-  building the fruits first means the power-ups inherit a pipeline that already works)
-
 ### IDEA-028 — Challenge twist: moving walls / maze changes mid-level 💡
 - **Priority:** 🟢
 - **Area:** modes
@@ -64,27 +36,6 @@ _(empty — nothing to triage)_
 
 ## In progress 🔨
 
-### IDEA-045 — A basket of fruits, each worth a different score 🔨
-- **Priority:** 🟡
-- **Area:** gameplay
-- **Registered:** 2026-08-28
-- **Description:** (Nuno) "Beside the inspiration for the game being Pac-Man, we changed the concept
-  to a real-life case. Now let's start adding little things that will make this game feel like a
-  different thing." Today there is one fruit worth a flat 100. Instead: five fruits with five
-  values — Apple 100, Banana 200, Carrot 300, Strawberry 400, Mango 500 — and "the fruits with more
-  value appear less times, in order to give the user a reason to take the opportunity and change the
-  gameplay."
-- **Notes:** Decided with Nuno on 2026-08-28: **4 fruits per map** (up from 2) so the tier ladder is
-  actually readable inside a single map, and a **single weighted roll** used on every map (Apple 40 /
-  Banana 25 / Carrot 18 / Strawberry 12 / Mango 5) rather than a level-gated ladder — a Mango on map 1
-  is a lucky moment, which is the whole point. Five meshes replace `makeFruit()` in `board.ts`, all
-  five registered in the editor's **Pickups** tab ([[IDEA-042]]) so they are editable like any other
-  pickup. The awkward part is NOT the game: `server/src/validation/plausibility.ts` prices fruit at a
-  single `SCORING.fruit`, so both MAX-1 (`maxLevelScore`) and MAX-5 (`itemFloor`/`itemCeiling`) must
-  learn a min/max fruit value or every honest run starts failing SCORE_ITEM_MISMATCH. `npm run sync`
-  in `server/` is mandatory after this. Tutorial copy names "100" out loud and must change ([[IDEA-040]]).
-  Sibling of [[IDEA-046]] — same session, deliberately split so the fruits can ship on their own.
-- **Dependencies:** —
 ### IDEA-025 v3 — The editor saves REAL source, not an override block 🔨
 - **Priority:** 🔴
 - **Area:** tooling
@@ -131,6 +82,123 @@ _(empty — nothing to triage)_
 
 ## Delivered ✅
 > Already in production. Do NOT delete. Each keeps its version history.
+
+
+
+### IDEA-046 — Power-ups: pickups that change how the run plays ✅
+- **Priority:** 🔴
+- **Area:** gameplay
+- **Registered:** 2026-08-28
+- **Description:** (Nuno) "I was thinking of adding components we can take to give us advantages…
+  instead of points these give advantages." Five of them, each with its own visual: **x2 biscuits**
+  (a x2 badge), **x2 enemy** (the same x2 in another colour), **slow down the enemies** (an anchor),
+  **a flashing bone** that frightens the pack AND makes the beagle faster, like Mario's star, and a
+  **shield** that lets one enemy catch you without losing a life. They appear at random on the maze
+  like the fruits do. "On the UI we should have a space where the active power-ups appear, to let the
+  user know which power-ups they have."
+- **Notes:** The lifetime rules are Nuno's and they are the interesting part — three different kinds
+  of "until":
+  · **timed** — anchor and star run on a countdown;
+  · **until you die** — x2 biscuits and x2 enemy persist, *and survive clearing the map*;
+  · **until you are caught** — the shield is spent on the hit that would have killed you.
+  "When the user has power-up 1 and 2 and 5 but gets caught, they only lose the 5 and keep the others
+  until they die." So a shielded hit is explicitly NOT a death: it consumes the shield and the two
+  doublers live on. Decided 2026-08-28: **classic mode only** — challenge levels are meant to be pure
+  dial-twists on the proven engine, and letting power-ups in would make every challenge score already
+  on record incomparable. Spawning reuses `pickRandomFreeTile` + the once-per-threshold gate from
+  `pickups.ts` (the anti-farming fix) rather than a new mechanism. The doublers multiply score, so
+  `plausibility.ts`'s ceilings have to be raised in proportion or honest runs get rejected —
+  `runTelemetry` needs to report what was collected so the server can size the bound. New tutorial
+  slides land as an **[[IDEA-040]] v3**, not a new id. Sibling of [[IDEA-045]].
+- **Dependencies:** [[IDEA-045]] ✅ shipped 2026-08-28 (shares the spawn/threshold plumbing and the same validator surgery —
+  building the fruits first means the power-ups inherit a pipeline that already works)
+- **History:**
+  - **v1** (2026-08-28) — five power-ups that change how a run plays instead of what it scores:
+    **x2 biscuits**, **x2 enemies**, an **anchor** that slows the pack, a **star** that frightens
+    them and speeds the beagle, and a **shield**. The design lives in a pure `powerups.ts` and
+    exists for one sentence of Nuno's — *"when the user has power-up 1 and 2 and 5 but gets caught,
+    they only lose the 5 and keep the others until they die"* — which says a **shielded hit is not
+    a death**. `onCaught()` returns `"shielded" | "died"`, a third outcome between "nothing
+    happened" and "you lost a life", so the doublers provably survive it; spread across the
+    collision handler that distinction would be one `if` somebody later simplifies away.
+    Three lifetimes (`timed` / `untilDeath` / `untilHit`) and the asymmetry between them IS the
+    feature: the doublers and the shield also survive clearing a map, which is why `PowerupState`
+    is run-scoped on `Game` and not on `LevelAssets`. `game.ts` gained no new mechanisms — the
+    anchor is one more factor on the ghost-speed multiplier that was already there and the star
+    calls the existing `triggerFright()`. HUD tray with a drain bar for the timed pair and a
+    coloured edge for the persistent ones. Classic only. 50 headless checks.
+    _(commits pending)_
+  - **v2** (2026-08-28) — three rounds of live play, and the fix that mattered was a **bug, not a
+    number**. **The shield was a trap.** Absorbing a hit left the beagle still inside
+    `COLLISION_RADIUS`, so the next frame ran the check again with no shield left and killed the
+    player anyway — spending the shield, the life AND every other power-up held. Worst in the
+    head-on case, where the ghost reverses into the beagle's own direction and the beagle is
+    FASTER than a ghost (5.2 vs 4.6), so it closes rather than escapes. Now a **1.5s untouchable
+    window** with a blink, covering every ghost rather than the one that hit — being bounced into
+    a second pursuer would have made the first shield worthless. This is what makes it the
+    "second chance" the idea asked for; without it "preserve everything" was true for one frame.
+    Also from play: **spawn counts up** (power-ups 2 → 3 → 4, coins 4 → 5, fruit and the golden
+    bone unchanged — 14 spawn events a map now, no two sharing a pellet tick), and **the weights
+    re-derived from LIFETIME rather than power** (timed 26 each, shield 20, doublers 14). That
+    ordering reads backwards until you see it: a doubler is kept until you die, so a player who
+    has one does not need another — and a duplicate spawn of one already held is a literal no-op,
+    since `collect()` refreshes a timer that is zero. Weighting them by strength, as v1 did, spent
+    most spawns on nothing: Nuno saw both doublers twice in one map and never once saw the star or
+    the anchor. Finally the **star stopped being a bone**: it was a glowing power bone on the
+    reasoning that it does what a bone does, and the maze is full of bones — so the one pickup
+    that should stop you mid-corridor looked like scenery. _(commits pending)_
+
+### IDEA-045 — A basket of fruits, each worth a different score ✅
+- **Priority:** 🟡
+- **Area:** gameplay
+- **Registered:** 2026-08-28
+- **Description:** (Nuno) "Beside the inspiration for the game being Pac-Man, we changed the concept
+  to a real-life case. Now let's start adding little things that will make this game feel like a
+  different thing." Today there is one fruit worth a flat 100. Instead: five fruits with five
+  values — Apple 100, Banana 200, Carrot 300, Strawberry 400, Mango 500 — and "the fruits with more
+  value appear less times, in order to give the user a reason to take the opportunity and change the
+  gameplay."
+- **Notes:** Decided with Nuno on 2026-08-28: **4 fruits per map** (up from 2) so the tier ladder is
+  actually readable inside a single map, and a **single weighted roll** used on every map (Apple 40 /
+  Banana 25 / Carrot 18 / Strawberry 12 / Mango 5) rather than a level-gated ladder — a Mango on map 1
+  is a lucky moment, which is the whole point. Five meshes replace `makeFruit()` in `board.ts`, all
+  five registered in the editor's **Pickups** tab ([[IDEA-042]]) so they are editable like any other
+  pickup. The awkward part is NOT the game: `server/src/validation/plausibility.ts` prices fruit at a
+  single `SCORING.fruit`, so both MAX-1 (`maxLevelScore`) and MAX-5 (`itemFloor`/`itemCeiling`) must
+  learn a min/max fruit value or every honest run starts failing SCORE_ITEM_MISMATCH. `npm run sync`
+  in `server/` is mandatory after this. Tutorial copy names "100" out loud and must change ([[IDEA-040]]).
+  Sibling of [[IDEA-046]] — same session, deliberately split so the fruits can ship on their own.
+- **Closed out:** the look pass flagged on 2026-08-28 turned out not to be needed — after playing
+  with the four-per-map pacing Nuno's verdict was "the fruits is perfect". Recorded rather than
+  silently dropped, since the note was written here in the first place.
+- **Dependencies:** —
+- **History:**
+  - **v1** (2026-08-28) — five fruits on a weighted roll: apple 100 / banana 200 / carrot 300 /
+    strawberry 400 / mango 500, at 40/25/18/12/5, four spawns a level instead of two. The kind is
+    rolled at SPAWN and remembered, never re-rolled on eat — otherwise the mango you crossed the
+    maze for could pay out as an apple. `FRUIT_THRESHOLDS` moved from a module-local const in
+    `game.ts` to `config.ts` beside the new `FRUITS` table, because the server's sync step reads
+    both from that one file. New pure `fruits.ts` (`rollFruit` takes an injectable rand, so the
+    distribution is asserted at its exact boundaries rather than sampled) and
+    `scripts/test-fruits.ts`, 34 checks.
+    **Two things the meshes taught us, both caught by LOOKING rather than by tests:** the first
+    mango was a near-round gold ball with a green leaf and rendered as an orange APPLE — the 100 and
+    the 500 sharing a silhouette, which is the one thing this set cannot afford; and the banana,
+    sized to match the apple on paper, read as a sliver, because a crescent is mostly empty space
+    inside its own bounding box. Shapes get judged against their NEIGHBOURS at the size they are
+    actually seen. Same lesson as [[IDEA-006]] v3.
+    **The awkward half was the server**, as triage predicted: `plausibility.ts` priced fruit at one
+    `SCORING.fruit`, so MAX-1 and MAX-5 both had to learn a range, the client now reports
+    `fruitPoints` (pinned from both sides — under-reporting drags the score floor down and buys room
+    to invent points elsewhere), and a latent bug surfaced: `maxLevelScore` bounded fruit by
+    `min(fruitTiles, thresholds)`, but only one fruit is ever on the board and `spawnFruit` REPLACES
+    it, so the `F` tile count was never the real limit — it just happened to equal 2 as well. At
+    four thresholds that would have rejected anyone who ate four fruits. A regression test also
+    turned out to be checking nothing: "score ONE point over the ceiling" hardcoded 8001 against a
+    ceiling written as 8000 elsewhere, and silently started ACCEPTING once the ceiling moved.
+    Shipped as two commits, API first — a client scoring 500s against the old validator is rejected
+    by SCORE_ITEM_MISMATCH, while old-client/new-API is safe by construction.
+    _(a7bb449 api, 3ed425d frontend)_
 
 ### IDEA-039 — Server scale hygiene: metrics, session retention, Redis threshold ✅
 - **Priority:** 🟡
@@ -296,6 +364,19 @@ _(empty — nothing to triage)_
     `src/render/{shopScene,board}.ts`, `src/game/game.ts`, `src/main.ts`, `index.html`, `style.css`,
     `scripts/test-tutorial-carousel.ts` (new, replacing `test-tutorial.ts`),
     `scripts/test-tutorial-ui.ts`. _(1b02d5c)_
+  - **v3** (2026-08-28) — fix: **the server never knew which level you were on.** `levelIdxSequence`
+    was collected by `runTelemetry` and understood by the validator from the day v1 shipped, and was
+    neither SENT by the client nor READ by the server — two independent halves of the same gap. So
+    every classic run was judged as though it had three enemies, and stage 3 (classic level 12+) has
+    four: a strong run there legitimately outscores what three allow and was rejected as
+    LEVEL_SCORE_CAP_EXCEEDED. Real lost scores, same family as v5.1's three.
+    Neither half was catchable, and that is the part worth keeping: the body parser lived in
+    `scoreService.ts`, which opens a Postgres pool on import, so no DB-free test could build a body
+    and check what came out. It moved to a pure `server/src/validation/wire.ts` with a round-trip
+    test that fails when a field of `RunSubmission` is forgotten in the parser — **every field the
+    client sends must be named there or it is silently dropped.** The bug is pinned both ways:
+    accepted with the sequence, LEVEL_SCORE_CAP_EXCEEDED without it. Found while shipping
+    [[IDEA-045]], which touched the same payload. _(a7bb449 api, 3ed425d frontend)_
 
 ### IDEA-035 — Login screen: favicon, title, and Create-account / Login tabs ✅
 - **Priority:** 🟡
@@ -1201,6 +1282,17 @@ _(empty — nothing to triage)_
     caught by LOOKING at screenshots rather than by assertions that all passed: the ✕ stranded on
     its own line, and the banner over the title. `install.css`, `install.ts`, `style.css`,
     `scripts/test-menu-ui.ts` (new, 45 checks across desktop + phone). _(cc4b5d1)_
+  - **v4** (2026-08-28) — removed the GitHub Pages deploy this idea introduced in v1. It was right
+    for v1.0, when the game was a static offline PWA; the host moved to **Cloudflare Pages at v5.0**
+    when the game became full-stack, and the workflow was never deleted. Since then it had been
+    publishing a build with no `VITE_API_URL` on every frontend push — a public copy of the game
+    that boots straight into "cannot reach its server" (`api.ts` falls back to `""`, and `boot.ts`
+    treats that as unrecoverable). Nuno unpublished the Pages site; the workflow and the dead README
+    link are gone. STACK.md is deliberately untouched — "GitHub Pages acceptable for throwaways" is
+    still the standing cross-project policy, it just is not this project any more. Also worth an
+    ops check: `CORS_ORIGINS` in Dokploy should list the Cloudflare origin and nothing else, since
+    an Origin is scheme+host+port and a `github.io` entry allows EVERY project on that account.
+    _(31fef47)_
 
 ### IDEA-007 — Beagle app icon & favicon artwork ✅
 - **Area:** brand

@@ -87,20 +87,28 @@ export const COINS = {
   lifespanSeconds: 18,
 } as const;
 
-// IDEA-017 follow-up: pellets-eaten thresholds at which a bonus coin appears
-// in the maze — 4 per level, starting EARLY so the player reliably encounters
-// coins (across a ~179-pellet map; see LevelAssets.startPelletCount). Chosen
-// as 20 / 60 / 105 / 150:
-//   - First coin at just 20 pellets in, so one shows up soon after the level
-//     starts rather than a third of the way through (the old 45 was too deep —
-//     players finished a level or two without ever seeing one).
-//   - Spaced ~40-45 pellets apart, comfortably more than the 18s lifespan
-//     takes to expire at normal eating pace, so a prior coin has despawned (or
-//     been grabbed) before the next threshold — maybeSpawnCoin's
-//     `if (this.level.board.coin) return` guard never blocks a later spawn.
-//   - Offset from FRUIT_THRESHOLDS (40/80/120/160) so a coin and a fruit
-//     never appear on the exact same tick.
-export const COIN_THRESHOLDS = [20, 60, 105, 150] as const;
+// IDEA-017 follow-up: pellets-eaten thresholds at which a bonus coin appears —
+// FIVE per level (was four at 20/60/105/150), spaced ~35 pellets apart across a
+// ~179-pellet map.
+//
+// The original four were chosen to start EARLY, because players were finishing
+// whole levels without seeing one. That reasoning still holds; this is the same
+// argument applied once more after live play (2026-08-28), alongside the
+// power-ups going to four. First coin at 15 so one shows up almost immediately.
+//
+// The whole pickup schedule is now interleaved, and NOTHING may share a tick
+// with anything else — coins 15/55/90/125/155, power-ups 30/70/105/145, fruit
+// 40/80/120/160, the golden bone 130. scripts/test-fruits.ts and
+// scripts/test-powerups.ts both check that against the real lists rather than a
+// copy of them, so a future retune of any one list fails loudly instead of
+// quietly racing two spawns into the same frame.
+//
+// One consequence worth knowing: at ~35 pellets apart these are now closer
+// together than COINS.lifespanSeconds (18s) takes to expire, so an ungrabbed
+// coin can still be on the board when the next threshold arrives. That does not
+// lose the spawn — maybeSpawnCoin's board-occupied guard sits BEFORE the
+// threshold check, so the threshold simply waits rather than being consumed.
+export const COIN_THRESHOLDS = [15, 55, 90, 125, 155] as const;
 
 // IDEA-018: bonus lives — same "earn a scarce resource" shape as COINS above,
 // but for per-run lives instead of the persisted wallet. Three triggers all
@@ -127,13 +135,173 @@ export const LIVES = {
 // IDEA-018: pellets-eaten threshold for the maze life pickup — ONE golden
 // bone per level (rarer than coins by design: bonus lives are a stronger
 // reward than bonus currency). 130 is deliberately offset from both
-// COIN_THRESHOLDS (20/60/105/150) and FRUIT_THRESHOLDS (40/80/120/160) so nothing
+// COIN_THRESHOLDS (15/55/90/125/155) and FRUIT_THRESHOLDS (40/80/120/160) so nothing
 // collides on the same eaten-pellet tick, and late enough (comfortably past
 // every coin/fruit threshold) that it reads as a rarer, later-game bonus
 // rather than competing with the earlier pickups for attention. Every
 // validated maze has 179+ pellets (see mazes.json), so 130 is always
 // reachable with room to spare before the level clears.
 export const LIFE_THRESHOLDS = [130] as const;
+
+// IDEA-046: POWER-UPS.
+//
+// Five pickups that change how the run plays rather than adding to the score.
+// The table below is the whole design; powerups.ts owns the state machine and
+// game.ts only reads the multipliers off it.
+//
+// What makes these different from every pickup before them is that they EXPIRE
+// THREE DIFFERENT WAYS, which is the thing to get right:
+//
+//   "timed"      — a countdown. Loud, brief, and gone.
+//   "untilDeath" — held until an enemy actually kills you, and SURVIVES
+//                  clearing the map. This is the one that changes how a run
+//                  feels: a doubler carried through three maps is a run you
+//                  are protecting, not just a bonus you collected.
+//   "untilHit"   — spent by the next contact, which it converts from a death
+//                  into a bounce.
+//
+// Nuno's rule, and the reason those last two are separate kinds: "when the user
+// has power-up 1 and 2 and 5 but gets caught, they only lose the 5 and keep the
+// others until they die." A shielded hit is therefore NOT a death — it consumes
+// the shield and the doublers live on. scripts/test-powerups.ts pins exactly
+// that sentence, because it is the difference between a shield being a real
+// decision and being a one-hit reprieve nobody notices.
+//
+// THE WEIGHTS ARE A FUNCTION OF LIFETIME, which is Nuno's rule from live play
+// and reads backwards until you see it:
+//
+//   timed (26 each)      — the anchor and the star are gone in seconds, so a
+//                          spawn is the ONLY way to ever have one. They should
+//                          be the most common thing on the table.
+//   shield (20)          — neutral.
+//   doublers (14 each)   — you keep these until you die, possibly for several
+//                          maps. A player who has one does not need another,
+//                          and a duplicate spawn of one you already hold is a
+//                          literal no-op (collect() refreshes a timer that is
+//                          zero). Weighting them heavily spends spawns on
+//                          nothing.
+//
+// The first cut had this exactly inverted (doublers 26/22, star 16, shield 14)
+// and the symptom was immediate: two doublers in one map, and the star and
+// anchor unseen across a whole session.
+//
+// CLASSIC ONLY. Challenge levels are deliberately pure dial-twists on the same
+// engine (see challenges.ts), and letting power-ups in would make every
+// challenge score already on the board incomparable. The server enforces it:
+// a challenge run reporting any power-up is rejected outright.
+export const POWERUPS = [
+  {
+    id: "doubleBiscuit",
+    label: "Double biscuits",
+    kind: "untilDeath",
+    seconds: 0,
+    weight: 14,
+  },
+  {
+    id: "doubleGhost",
+    label: "Double enemies",
+    kind: "untilDeath",
+    seconds: 0,
+    weight: 14,
+  },
+  {
+    // 8s at 0.6x. Long enough to actually spend — crossing the map takes a few
+    // seconds — without being long enough to clear a whole level under.
+    id: "slowGhosts",
+    label: "Slow enemies",
+    kind: "timed",
+    seconds: 8,
+    weight: 26,
+  },
+  {
+    // Deliberately the same length as a bone's fright window (TIMING.frightSeconds)
+    // rather than a number of its own: this IS a fright window, with the beagle
+    // sped up on top, so two different durations would just be a second thing to
+    // keep in sync for no gain.
+    //
+    // It was a glowing BONE at first, for exactly that reason — same effect,
+    // so make it look like a charged version of the thing that already causes
+    // it. In play that was the flaw: the maze is full of bones, so the one
+    // pickup that should stop you in your tracks was the one that looked most
+    // like scenery. It is a star now (Nuno's call, and the Mario reference he
+    // reached for in the first place).
+    id: "star",
+    label: "Star",
+    kind: "timed",
+    seconds: TIMING.frightSeconds,
+    weight: 26,
+  },
+  {
+    // NEUTRAL weight, between the timed pair and the doublers. It was the
+    // rarest at first, on the reasoning that it is the strongest thing here —
+    // and in play that made it something a player might never meet at all,
+    // which is worse than it being slightly too available.
+    id: "shield",
+    label: "Shield",
+    kind: "untilHit",
+    seconds: 0,
+    weight: 20,
+  },
+] as const;
+
+export type PowerupId = (typeof POWERUPS)[number]["id"];
+export type PowerupKind = (typeof POWERUPS)[number]["kind"];
+export type Powerup = (typeof POWERUPS)[number];
+
+/** How much the two doublers double by. Named rather than inlined as `2` so a
+ *  future "triple" is a number here and not a hunt through game.ts. */
+export const POWERUP_MULTIPLIER = 2;
+
+/** Enemy speed while the anchor is up. 0.6 is a big, obvious change — a subtle
+ *  slow reads as lag rather than as a power-up you earned. */
+export const POWERUP_SLOW_MULT = 0.6;
+
+/** Beagle speed while the star is up. Deliberately modest next to the 0.6
+ *  above: the star already frightens the whole pack, and stacking a large speed
+ *  boost on top makes the beagle overshoot turns, which reads as losing control
+ *  rather than gaining power. */
+export const POWERUP_STAR_SPEED_MULT = 1.25;
+
+// IDEA-046: pellets-eaten thresholds at which a power-up appears — FOUR per
+// level, roughly one per quarter of the map.
+//
+// This has moved twice, and the reason is the same both times. It shipped at
+// two (55/145), deliberately conservative — a power-up changes the rules for a
+// while, and it seemed safer to be told it was stingy. Nuno played it: "only
+// two looks a few". At three he played again and had still never seen the star
+// or the anchor, while seeing both doublers twice in one map.
+//
+// That second report is the interesting one, because it is not really about the
+// count. Each spawn is an INDEPENDENT weighted roll, so with only a handful of
+// rolls per map the rarer entries genuinely may not appear for several maps
+// running, and duplicates are common — which Nuno likes ("that is the kind of
+// situation that makes you think"), so the independence stays. Four rolls a map
+// is what makes the long tail actually show up.
+//
+// Still fewer than the coins (5) and level with the fruit (4): a power-up
+// should be an event, just not one you can miss for three maps.
+export const POWERUP_THRESHOLDS = [30, 70, 105, 145] as const;
+
+/**
+ * How long the beagle is untouchable after a shield absorbs a hit.
+ *
+ * WITHOUT THIS THE SHIELD IS A TRAP, and it shipped that way. Absorbing a hit
+ * left the beagle still inside COLLISION_RADIUS of the ghost that hit it, so
+ * checkCollisions ran again on the very next frame with no shield left and
+ * killed the player anyway — spending the shield AND the life AND every other
+ * power-up held. The head-on case is the worst: the ghost reverses into the
+ * beagle's own direction of travel, and the beagle is FASTER than a ghost
+ * (5.2 vs 4.6), so it closes on it and stays in contact rather than escaping.
+ *
+ * 1.5s is about seven tiles of ghost movement — enough to actually get out,
+ * which is what "a second chance" has to mean to be worth crossing a maze for.
+ */
+export const POWERUP_SHIELD_GRACE_SECONDS = 1.5;
+
+/** The power-up despawns if not grabbed, like the coin and the golden bone.
+ *  Same 18s: long enough that one spawning across the map is still reachable,
+ *  short enough that it clears before the next threshold. */
+export const POWERUP_LIFESPAN_SECONDS = 18;
 
 // Palette (hex) — shared by renderer and UI
 // Bright daytime garden (IDEA-008): soft sky, hedge-green walls, warm soil
