@@ -223,6 +223,12 @@ export interface RunSubmissionPayload {
   pelletsEaten: number;
   bonesEaten: number;
   fruitEaten: number;
+  /** IDEA-045: the total points those fruits were worth. Fruit stopped having
+   *  a single price, so the count alone no longer tells the server what the
+   *  fruit contribution to the score was. Optional on the wire: a run queued
+   *  on a device before this shipped omits it, and the validator falls back to
+   *  bounding fruit between the cheapest and dearest entry. */
+  fruitPoints?: number;
   ghostsEaten: number;
   coinsCollected: number;
   livesLost: number;

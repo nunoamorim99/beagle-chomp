@@ -19,7 +19,35 @@ Living backlog of ideas. Two purposes:
 _(empty — nothing to triage)_
 
 ## Backlog (open ideas)
-> New registered ideas go here. Next free ID: IDEA-045
+> New registered ideas go here. Next free ID: IDEA-047
+
+### IDEA-046 — Power-ups: pickups that change how the run plays 💡
+- **Priority:** 🔴
+- **Area:** gameplay
+- **Registered:** 2026-08-28
+- **Description:** (Nuno) "I was thinking of adding components we can take to give us advantages…
+  instead of points these give advantages." Five of them, each with its own visual: **x2 biscuits**
+  (a x2 badge), **x2 enemy** (the same x2 in another colour), **slow down the enemies** (an anchor),
+  **a flashing bone** that frightens the pack AND makes the beagle faster, like Mario's star, and a
+  **shield** that lets one enemy catch you without losing a life. They appear at random on the maze
+  like the fruits do. "On the UI we should have a space where the active power-ups appear, to let the
+  user know which power-ups they have."
+- **Notes:** The lifetime rules are Nuno's and they are the interesting part — three different kinds
+  of "until":
+  · **timed** — anchor and star run on a countdown;
+  · **until you die** — x2 biscuits and x2 enemy persist, *and survive clearing the map*;
+  · **until you are caught** — the shield is spent on the hit that would have killed you.
+  "When the user has power-up 1 and 2 and 5 but gets caught, they only lose the 5 and keep the others
+  until they die." So a shielded hit is explicitly NOT a death: it consumes the shield and the two
+  doublers live on. Decided 2026-08-28: **classic mode only** — challenge levels are meant to be pure
+  dial-twists on the proven engine, and letting power-ups in would make every challenge score already
+  on record incomparable. Spawning reuses `pickRandomFreeTile` + the once-per-threshold gate from
+  `pickups.ts` (the anti-farming fix) rather than a new mechanism. The doublers multiply score, so
+  `plausibility.ts`'s ceilings have to be raised in proportion or honest runs get rejected —
+  `runTelemetry` needs to report what was collected so the server can size the bound. New tutorial
+  slides land as an **[[IDEA-040]] v3**, not a new id. Sibling of [[IDEA-045]].
+- **Dependencies:** [[IDEA-045]] (shares the spawn/threshold plumbing and the same validator surgery —
+  building the fruits first means the power-ups inherit a pipeline that already works)
 
 ### IDEA-028 — Challenge twist: moving walls / maze changes mid-level 💡
 - **Priority:** 🟢
@@ -35,6 +63,28 @@ _(empty — nothing to triage)_
 - **Dependencies:** —
 
 ## In progress 🔨
+
+### IDEA-045 — A basket of fruits, each worth a different score 🔨
+- **Priority:** 🟡
+- **Area:** gameplay
+- **Registered:** 2026-08-28
+- **Description:** (Nuno) "Beside the inspiration for the game being Pac-Man, we changed the concept
+  to a real-life case. Now let's start adding little things that will make this game feel like a
+  different thing." Today there is one fruit worth a flat 100. Instead: five fruits with five
+  values — Apple 100, Banana 200, Carrot 300, Strawberry 400, Mango 500 — and "the fruits with more
+  value appear less times, in order to give the user a reason to take the opportunity and change the
+  gameplay."
+- **Notes:** Decided with Nuno on 2026-08-28: **4 fruits per map** (up from 2) so the tier ladder is
+  actually readable inside a single map, and a **single weighted roll** used on every map (Apple 40 /
+  Banana 25 / Carrot 18 / Strawberry 12 / Mango 5) rather than a level-gated ladder — a Mango on map 1
+  is a lucky moment, which is the whole point. Five meshes replace `makeFruit()` in `board.ts`, all
+  five registered in the editor's **Pickups** tab ([[IDEA-042]]) so they are editable like any other
+  pickup. The awkward part is NOT the game: `server/src/validation/plausibility.ts` prices fruit at a
+  single `SCORING.fruit`, so both MAX-1 (`maxLevelScore`) and MAX-5 (`itemFloor`/`itemCeiling`) must
+  learn a min/max fruit value or every honest run starts failing SCORE_ITEM_MISMATCH. `npm run sync`
+  in `server/` is mandatory after this. Tutorial copy names "100" out loud and must change ([[IDEA-040]]).
+  Sibling of [[IDEA-046]] — same session, deliberately split so the fruits can ship on their own.
+- **Dependencies:** —
 ### IDEA-025 v3 — The editor saves REAL source, not an override block 🔨
 - **Priority:** 🔴
 - **Area:** tooling

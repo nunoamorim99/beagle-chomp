@@ -22,7 +22,24 @@ import {
   MAPS_PER_LAP,
   GHOSTS_STAGE_3,
 } from "./progression";
-import { SPEEDS, SCORE, TIMING, COLORS, COINS, COIN_THRESHOLDS, LIVES, LIFE_THRESHOLDS } from "./config";
+import {
+  SPEEDS,
+  SCORE,
+  TIMING,
+  COLORS,
+  COINS,
+  COIN_THRESHOLDS,
+  LIVES,
+  LIFE_THRESHOLDS,
+  // IDEA-045: the fruit ladder. FRUIT_THRESHOLDS used to be a module-local
+  // const right here in game.ts; it moved to config.ts when there was a
+  // value TABLE for it to sit next to, and because the server's sync step
+  // now reads both out of that one file.
+  FRUIT_THRESHOLDS,
+  FRUITS,
+  type Fruit,
+} from "./config";
+import { rollFruit } from "./fruits";
 import { coinsDueFromScore } from "./coins";
 import { shouldFireThreshold } from "./pickups";
 import { type GameMode, createInitialGameState } from "./state";
@@ -151,10 +168,14 @@ const RELEASE_STAGGER = 0.9;
 // const rather than a magic literal inline.
 const COLLISION_RADIUS = 0.55;
 
-// Pellets-eaten thresholds at which a fruit bonus appears (prototype
-// maybeSpawnFruit: eaten===70 || eaten===140). Content pacing, not a balance
-// dial in config.ts, so kept as a named local const.
-const FRUIT_THRESHOLDS = [70, 140] as const;
+// IDEA-045: what `fruitKind` holds when no fruit is on the board.
+//
+// A real entry rather than null, so the eat path never has to null-check a
+// value it can only reach when a fruit IS present (fruitTile is the field
+// that says whether one is). The apple is the right placeholder because it
+// is the cheapest: if this were ever read through a bug, it pays out the
+// smallest possible amount rather than the largest.
+const FRUITS_DEFAULT: Fruit = FRUITS[0];
 
 interface GhostRig {
   gh: Ghost;
@@ -298,7 +319,13 @@ export class Game {
   // Current fruit tile, if any (board.fruit is only the mesh — the logic
   // needs the tile to know when the beagle has stepped onto it, and the
   // fruit-tile list to place new ones).
+  //
+  // IDEA-045: now carries WHICH fruit is sitting there as well as where. The
+  // kind has to be remembered at SPAWN time rather than re-rolled at eat time:
+  // re-rolling would mean the mango you drove across the maze for could pay out
+  // as an apple, which is precisely the promise the ladder makes and must keep.
   private fruitTile: Vec2 | null = null;
+  private fruitKind: Fruit = FRUITS_DEFAULT;
 
   // IDEA-016/IDEA-017: current maze coin tile, if any (board.coin is only the
   // mesh — mirrors fruitTile exactly).
@@ -1047,13 +1074,19 @@ export class Game {
       }
     }
 
+    // IDEA-045: the fruit is worth whatever the fruit sitting there is worth
+    // (100 for an apple through 500 for a mango), read off the kind chosen when
+    // it spawned. The score popup shows that number, which is the only feedback
+    // telling the player the ladder is real — a flat "+100" over a mango would
+    // make the whole feature invisible.
     if (this.fruitTile && this.fruitTile.x === tx && this.fruitTile.y === ty) {
+      const points = this.fruitKind.points;
       clearFruit(this.level.board, this.rig.scene);
       this.fruitTile = null;
-      this.score += SCORE.fruit;
-      recordFruit(this.telemetry);
+      this.score += points;
+      recordFruit(this.telemetry, points);
       this.effects.pelletEaten(worldX(tx), worldZ(ty), "biscuit");
-      this.effects.scorePopup(worldX(tx), worldZ(ty), SCORE.fruit);
+      this.effects.scorePopup(worldX(tx), worldZ(ty), points);
       this.hud.setScore(this.score);
       this.maybeAwardCoinsFromScore();
       this.maybeAwardLivesFromScore();
@@ -1336,12 +1369,16 @@ export class Game {
    * — eating fruit doesn't change `eaten`, so the very next maybeSpawnFruit()
    * call (same beagle arrival, right after eatAt's fruit-pickup branch) would
    * see `board.fruit` null again and the threshold still matching, and
-   * respawn fruit the player could farm for repeated +100s by oscillating
+   * respawn fruit the player could farm for repeated payouts by oscillating
    * over the tile. Now gated by `shouldFireThreshold` against a monotonic
    * per-level index pointer (`this.level.nextFruitThresholdIdx`, reset once
    * per fresh level in buildLevel — see LevelAssets), so each of
-   * FRUIT_THRESHOLDS' 2 entries fires exactly once per level no matter how
+   * FRUIT_THRESHOLDS' entries fires exactly once per level no matter how
    * many times fruit is spawned/eaten in between.
+   *
+   * IDEA-045 raised that from 2 entries to 4, which makes the pointer MORE
+   * load-bearing rather than less: with five values on the table, a
+   * refiring threshold would let a player farm 500s off a single tile.
    */
   private maybeSpawnFruit(): void {
     if (this.level.board.fruit || !this.level.fruitTiles.length) return;
@@ -1349,8 +1386,12 @@ export class Game {
     if (shouldFireThreshold(eaten, FRUIT_THRESHOLDS, this.level.nextFruitThresholdIdx)) {
       const tile = this.level.fruitTiles[(Math.random() * this.level.fruitTiles.length) | 0];
       this.level.nextFruitThresholdIdx++;
+      // IDEA-045: which fruit, decided ONCE, here. rollFruit is the weighted
+      // pick from config.ts's FRUITS (pure, in fruits.ts, so the distribution
+      // is asserted in Node rather than hoped for).
+      this.fruitKind = rollFruit();
       this.fruitTile = tile;
-      spawnFruit(this.level.board, this.rig.scene, tile.x, tile.y);
+      spawnFruit(this.level.board, this.rig.scene, tile.x, tile.y, this.fruitKind.id);
     }
   }
 
@@ -1730,9 +1771,28 @@ export class Game {
       score: this.score,
       levelsCleared: this.telemetry.levelsCleared,
       mazeIdxSequence: this.telemetry.mazeIdxSequence,
+      // IDEA-040 v3: the classic level index of each level played.
+      //
+      // This was collected by runTelemetry and understood by the server from
+      // the day IDEA-040 shipped, and never actually SENT — so every classic
+      // run was judged as though it had three enemies. Stage 3 has four, and a
+      // strong run there can legitimately outscore what three enemies allow,
+      // which the server then rejected as LEVEL_SCORE_CAP_EXCEEDED.
+      //
+      // Omitted rather than sent empty for a challenge run: a challenge level's
+      // modifiers come from CHALLENGE_LEVELS, not from a classic level index,
+      // and `undefined` is what tells the server which of those two it has.
+      ...(this.telemetry.levelIdxSequence.length > 0
+        ? { levelIdxSequence: this.telemetry.levelIdxSequence }
+        : {}),
       pelletsEaten: this.telemetry.pelletsEaten,
       bonesEaten: this.telemetry.bonesEaten,
       fruitEaten: this.telemetry.fruitEaten,
+      // IDEA-045: what those fruits were actually worth. Without it the server
+      // can only bound the fruit contribution between 100 and 500 each, and an
+      // honest run that ate four mangos looks the same to it as one that ate
+      // four apples and inflated its score.
+      fruitPoints: this.telemetry.fruitPoints,
       ghostsEaten: this.telemetry.ghostsEaten,
       coinsCollected: this.telemetry.coinsCollected,
       livesLost: this.telemetry.livesLost,

@@ -27,6 +27,8 @@ import {
   ENEMY_SKINS,
   getEquippedBeagleSkinId,
   getEquippedEnemySkinId,
+  visibleEnemySkins,
+  TRIBUTE_BEAGLE_SKIN_ID,
   type BeagleSkin,
   type EnemySkin,
 } from "../game/cosmetics";
@@ -197,7 +199,14 @@ export function attachShop(root: ParentNode, callbacks: ShopCallbacks = {}): Sho
 
   function currentRegistry(): readonly ShopItem[] {
     if (tab === "beagle") return BEAGLE_SKINS;
-    if (tab === "enemy") return ENEMY_SKINS;
+    // Not ENEMY_SKINS: the ghost is hidden until it is earned — see
+    // cosmetics.ts's visibleEnemySkins for the rule. Asked fresh on every call
+    // rather than cached, because the unlock can happen WHILE the shop is open:
+    // buy the Pac-Beagle coat on the Beagle tab, switch to Enemies, and the
+    // ghost is waiting there.
+    if (tab === "enemy") {
+      return visibleEnemySkins(isBeagleSkinOwned(TRIBUTE_BEAGLE_SKIN_ID), isEnemySkinOwned);
+    }
     return MAZE_THEMES;
   }
 

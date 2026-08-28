@@ -4,12 +4,15 @@ A responsive, installable **PWA** maze-chase game built with **three.js + TypeSc
 Guide a beagle around a maze, munch every dog biscuit to clear the map, and chomp a bone to
 turn the ghosts scared and edible.
 
-> This repo ships with the **hard logic already built and validated** (mazes, movement,
-> ghost AI) plus a full working single-file **prototype** as the reference. The remaining
-> work (rendering, loop, UI, PWA, touch) is scaffolded as typed stubs, ready to build with
-> the included Claude Code agents.
+**Play it:** https://beaglechomp.nunoamorim.dev
 
-https://nunoamorim99.github.io/beagle-chomp/
+Hosted on Cloudflare Pages, with its API (`server/`) on the VPS — see `STACK.md`.
+Sign-in is required before play; there is no guest mode.
+
+> The GitHub Pages deploy this README used to link to is gone. It dated from v1.0,
+> when the game was a static offline PWA; the move to Cloudflare Pages happened at
+> v5.0 when it became full-stack, and the old workflow published a build with no
+> `VITE_API_URL` — i.e. a copy that could never reach its server.
 
 ## Quick start
 ```bash

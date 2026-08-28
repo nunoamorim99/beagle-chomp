@@ -99,7 +99,12 @@ section("The rules the brief asked for are all covered");
   const all = desktop.map((s) => `${s.title} ${s.body}`).join(" ");
   ok("biscuits are worth 10", /10 points/i.test(all));
   ok("clearing them finishes the map", /finish(es)? the map/i.test(all));
-  ok("fruit is worth 100", /100/.test(all));
+  // IDEA-045: fruit no longer has "a" value, so the copy has to give the range
+  // rather than a single number. Both ends are pinned — a tutorial that named
+  // only the 100 would undersell the whole feature, and one that named only the
+  // 500 would oversell it.
+  ok("the fruit range is given, both ends", /100/.test(all) && /500/.test(all));
+  ok("…and it says the good ones are rare", /show up least|least often|rare/i.test(all));
   ok("a bone makes enemies edible", /(scared and edible|only time you can eat)/i.test(all));
   ok("the ghost chain is spelled out", /200/.test(all) && /1600/.test(all));
   ok("touching an enemy costs a life", /costs a life/i.test(all));

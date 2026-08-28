@@ -17,6 +17,21 @@ export interface RunTelemetry {
   pelletsEaten: number;
   bonesEaten: number;
   fruitEaten: number;
+  /**
+   * IDEA-045: the total POINTS those fruits were worth.
+   *
+   * The count alone stopped being enough the moment fruit stopped having one
+   * price: two fruits can now be anything from 200 (two Apples) to 1000 (two
+   * Mangos), and the server checks the reported score against the reported
+   * items. Without this it would have to assume the widest possible range on
+   * every run, which is exactly the kind of slack a validator exists to avoid.
+   *
+   * The server still does NOT trust it — it bounds this against
+   * fruitEaten * MAX_FRUIT_POINTS and fruitEaten * MIN_FRUIT_POINTS, so a
+   * client claiming four Mangos it never ate is caught by the same arithmetic
+   * that catches every other inflated count.
+   */
+  fruitPoints: number;
   ghostsEaten: number;
   coinsCollected: number;
   livesLost: number;
@@ -40,6 +55,7 @@ export function createRunTelemetry(): RunTelemetry {
     pelletsEaten: 0,
     bonesEaten: 0,
     fruitEaten: 0,
+    fruitPoints: 0,
     ghostsEaten: 0,
     coinsCollected: 0,
     livesLost: 0,
@@ -62,8 +78,17 @@ export function recordBone(t: RunTelemetry): void {
   t.bonesEaten++;
 }
 
-export function recordFruit(t: RunTelemetry): void {
+/**
+ * A fruit, and what it was worth (IDEA-045).
+ *
+ * `points` is required rather than defaulted: every fruit in the game has a
+ * price now, and a default would quietly let a future call site forget to pass
+ * one and under-report the score, which the server would then reject as a
+ * mismatch. Better a compile error here than a rejected run in production.
+ */
+export function recordFruit(t: RunTelemetry, points: number): void {
   t.fruitEaten++;
+  t.fruitPoints += points;
 }
 
 export function recordGhost(t: RunTelemetry): void {

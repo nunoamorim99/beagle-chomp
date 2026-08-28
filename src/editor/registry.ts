@@ -10,7 +10,20 @@ import { OX, OZ } from "../game/grid";
 import { type GhostState } from "../game/ghostAI";
 import { getBeagleSkin } from "../game/cosmetics";
 import { COLORS } from "../game/config";
-import { makeBone, makeLifeBone, makeFruit, makeCoin } from "../render/board";
+import {
+  makeBone,
+  makeLifeBone,
+  makeCoin,
+  // IDEA-045: five fruits where there was one. They are listed out
+  // individually rather than looped from FRUIT_BUILDERS because the
+  // editor needs each builder's real NAME as a string — that is what
+  // the source panel greps for and what Save rewrites in place.
+  makeApple,
+  makeBanana,
+  makeCarrot,
+  makeStrawberry,
+  makeMango,
+} from "../render/board";
 import { type SavableFile } from "./saveFile";
 
 /**
@@ -182,7 +195,11 @@ function pickupDef(
 export const PICKUPS: readonly CharacterDef[] = [
   pickupDef("bone", "Power bone", "makeBone", makeBone),
   pickupDef("lifeBone", "Bonus-life bone", "makeLifeBone", makeLifeBone),
-  pickupDef("fruit", "Fruit", "makeFruit", makeFruit),
+  pickupDef("apple", "Apple", "makeApple", makeApple),
+  pickupDef("banana", "Banana", "makeBanana", makeBanana),
+  pickupDef("carrot", "Carrot", "makeCarrot", makeCarrot),
+  pickupDef("strawberry", "Strawberry", "makeStrawberry", makeStrawberry),
+  pickupDef("mango", "Mango", "makeMango", makeMango),
   pickupDef("coin", "Coin", "makeCoin", makeCoin),
 ];
 
