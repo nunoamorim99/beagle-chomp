@@ -22,7 +22,16 @@ import {
   type RunContext,
   type RejectionReason,
 } from "../src/validation/plausibility.js";
-import { MAZE_FACTS, SCORING, CHALLENGE_LEVELS } from "../src/catalog.generated.js";
+import { readSubmission } from "../src/validation/wire.js";
+import {
+  planLevel,
+  MAZE_FACTS,
+  SCORING,
+  CHALLENGE_LEVELS,
+  FRUIT_THRESHOLDS,
+  MAX_FRUIT_POINTS,
+  MIN_FRUIT_POINTS,
+} from "../src/catalog.generated.js";
 
 let passed = 0;
 let failed = 0;
@@ -52,6 +61,11 @@ function makeRun(over: Partial<RunSubmission> = {}): RunSubmission {
     pelletsEaten: 175,
     bonesEaten: 4,
     fruitEaten: 2,
+    // IDEA-045: fruit has five prices now, so a self-consistent run has to say
+    // what its fruit was worth. Cheapest-possible (all apples) by default,
+    // which keeps the constructed score at the FLOOR of what the validator
+    // allows — the same reason ghosts are valued at the chain minimum below.
+    fruitPoints: 2 * MIN_FRUIT_POINTS,
     ghostsEaten: 6,
     coinsCollected: 2,
     livesLost: 1,
@@ -59,16 +73,27 @@ function makeRun(over: Partial<RunSubmission> = {}): RunSubmission {
   };
   const merged = { ...base, ...over };
 
+  // Keep fruitPoints consistent with fruitEaten unless a test is deliberately
+  // setting it — otherwise every `fruitEaten:` override would trip MAX-4c and
+  // the test would be measuring the wrong rejection.
+  if (over.fruitPoints === undefined) {
+    merged.fruitPoints = merged.fruitEaten * MIN_FRUIT_POINTS;
+  }
+
   if (over.score === undefined) {
     // Ghosts valued at the chain minimum keeps us inside [floor, ceiling].
     merged.score =
       merged.pelletsEaten * SCORING.biscuit +
       merged.bonesEaten * SCORING.bone +
-      merged.fruitEaten * SCORING.fruit +
+      (merged.fruitPoints ?? merged.fruitEaten * MIN_FRUIT_POINTS) +
       merged.ghostsEaten * SCORING.ghostBase;
   }
   return merged;
 }
+
+/** The 1600 the ghost chain caps at — mirrors ghostPointsForChainPosition(4).
+ *  Local to the tests because the validator keeps that function private. */
+const ghostChainCap = SCORING.ghostBase * 8;
 
 function classicCtx(over: Partial<RunContext> = {}): RunContext {
   return {
@@ -131,10 +156,22 @@ ok(
 // A bonus level therefore has no reachable ghost points at all.
 ok(
   "a bonus level's ceiling contains no ghost points",
-  maxLevelScore(15, 1) === MAZE_FACTS[15].biscuits * SCORING.biscuit + 2 * SCORING.fruit,
+  maxLevelScore(15, 1) ===
+    MAZE_FACTS[15].biscuits * SCORING.biscuit + FRUIT_THRESHOLDS.length * MAX_FRUIT_POINTS,
   maxLevelScore(15, 1),
 );
+// Still true, and still worth pinning — but note it is NOT what bounds fruit
+// per level any more (IDEA-045). Only one fruit is on the board at a time and
+// spawnFruit replaces it, so four thresholds yield four fruits from two tiles.
 ok("every maze has exactly 2 fruit tiles", MAZE_FACTS.every((f) => f.fruitTiles === 2));
+ok(
+  "…and a level can still yield one fruit per threshold, tiles notwithstanding",
+  maxLevelScore(0, 3) - maxLevelScore(0, 3) === 0 &&
+    FRUIT_THRESHOLDS.length === 4 &&
+    MAX_FRUIT_POINTS === 500 &&
+    MIN_FRUIT_POINTS === 100,
+  `${FRUIT_THRESHOLDS.length} thresholds, ${MIN_FRUIT_POINTS}..${MAX_FRUIT_POINTS}`,
+);
 
 // 3 ghosts: 200+400+800 = 1400 per fright, × 4 bones = 5600
 ok("3-ghost level yields at most 5600 ghost points", maxGhostPointsPerLevel(4, 3) === 5600, maxGhostPointsPerLevel(4, 3));
@@ -143,12 +180,17 @@ ok("4-ghost level yields at most 12000", maxGhostPointsPerLevel(4, 4) === 12000,
 // 5 ghosts: the chain multiplier CAPS at 1600, so the 5th is also 1600
 ok("5-ghost level yields at most 18400 (chain caps at 1600)", maxGhostPointsPerLevel(4, 5) === 18400, maxGhostPointsPerLevel(4, 5));
 
-// maze 2, classic: 200*10 + 4*50 + 2*100 + 5600 = 8000. THE canonical number.
-ok("maxLevelScore(maze 2, 3 ghosts) === 8000", maxLevelScore(2, 3) === 8000, maxLevelScore(2, 3));
-// maze 0: 175*10 + 4*50 + 2*100 + 5600 = 1750 + 200 + 200 + 5600 = 7750
-ok("maxLevelScore(maze 0, 3 ghosts) === 7750", maxLevelScore(0, 3) === 7750, maxLevelScore(0, 3));
-// Same maze on a 5-ghost challenge level: 2400 + 18400
-ok("maxLevelScore(maze 2, 5 ghosts) === 20800", maxLevelScore(2, 5) === 20800, maxLevelScore(2, 5));
+// IDEA-045 moved all three of these by exactly +1800: the fruit term went from
+// 2 thresholds * 100 (one flat-priced fruit) to 4 * 500 (four spawns, each
+// potentially a mango). They stay written as literals on purpose — the whole
+// value of this block is that a rebalance has to come and change the number by
+// hand, so nobody widens the ceiling by accident.
+// maze 2, classic: 200*10 + 4*50 + 2000 + 5600 = 9800. THE canonical number.
+ok("maxLevelScore(maze 2, 3 ghosts) === 9800", maxLevelScore(2, 3) === 9800, maxLevelScore(2, 3));
+// maze 0: 175*10 + 4*50 + 2000 + 5600 = 1750 + 200 + 2000 + 5600 = 9550
+ok("maxLevelScore(maze 0, 3 ghosts) === 9550", maxLevelScore(0, 3) === 9550, maxLevelScore(0, 3));
+// Same maze on a 5-ghost challenge level: 4200 + 18400
+ok("maxLevelScore(maze 2, 5 ghosts) === 22600", maxLevelScore(2, 5) === 22600, maxLevelScore(2, 5));
 
 // 179 pellets / 5.2 tiles-per-sec + 1.6 + 1.3 ≈ 37.3s
 const m0Min = minLevelSeconds(0, 1);
@@ -229,16 +271,31 @@ expectAccept(
 // ===========================================================================
 section("MAX-1 — per-level score ceiling");
 
+// Derived from maxLevelScore rather than written out as 9800, because these two
+// are testing the BOUNDARY, not the value — pinning the value is the block
+// above's job, and hardcoding it in both places means a rebalance has to be
+// remembered twice or this pair silently stops testing the edge at all. Which
+// is exactly what happened: 8001 against the new 9800 ceiling was accepted.
+const maze2Ceiling = maxLevelScore(2, 3);
+
 expectAccept(
   "score exactly AT the ceiling is accepted",
-  makeRun({ mazeIdxSequence: [2], pelletsEaten: 200, bonesEaten: 4, fruitEaten: 2, ghostsEaten: 12, score: 8000 }),
+  makeRun({
+    mazeIdxSequence: [2], pelletsEaten: 200, bonesEaten: 4,
+    fruitEaten: 4, fruitPoints: 4 * MAX_FRUIT_POINTS,
+    ghostsEaten: 12, score: maze2Ceiling,
+  }),
   classicCtx(),
 );
 
 expectReject(
   "score ONE point over the ceiling is rejected",
   "LEVEL_SCORE_CAP_EXCEEDED",
-  makeRun({ mazeIdxSequence: [2], pelletsEaten: 200, bonesEaten: 4, fruitEaten: 2, ghostsEaten: 12, score: 8001 }),
+  makeRun({
+    mazeIdxSequence: [2], pelletsEaten: 200, bonesEaten: 4,
+    fruitEaten: 4, fruitPoints: 4 * MAX_FRUIT_POINTS,
+    ghostsEaten: 12, score: maze2Ceiling + 1,
+  }),
   classicCtx(),
 );
 
@@ -564,6 +621,217 @@ section("IDEA-040 — per-level ghost counts");
     "an honest 5-level stage-1 run with level indices is accepted",
     result.accepted,
     result.accepted ? "" : result.reasonCode,
+  );
+}
+
+// ---------------------------------------------------------------------------
+section("IDEA-045 — the fruit ladder");
+
+// The whole point of reporting fruitPoints: a run that really did eat four
+// mangos scores 2000 from fruit alone, and must be accepted.
+{
+  const allMangos = makeRun({
+    mazeIdxSequence: [0],
+    fruitEaten: 4,
+    fruitPoints: 4 * MAX_FRUIT_POINTS,
+  });
+  const result = validateRun(allMangos, classicCtx());
+  ok(
+    "a level of four mangos is ACCEPTED",
+    result.accepted,
+    result.accepted ? "" : result.reasonCode,
+  );
+}
+
+// …and the mirror image: claiming mango money for fruit you did not report.
+expectReject(
+  "claiming more fruit value than the reported fruit could be worth",
+  "ITEM_COUNT_IMPOSSIBLE",
+  makeRun({ mazeIdxSequence: [0], fruitEaten: 1, fruitPoints: MAX_FRUIT_POINTS + 1 }),
+  classicCtx(),
+);
+
+// Under-reporting is rejected too. It looks harmless, but a low fruit total
+// drags the score FLOOR down and buys room to invent points somewhere else.
+expectReject(
+  "claiming less fruit value than the cheapest fruit costs",
+  "ITEM_COUNT_IMPOSSIBLE",
+  makeRun({ mazeIdxSequence: [0], fruitEaten: 2, fruitPoints: MIN_FRUIT_POINTS }),
+  classicCtx(),
+);
+
+expectReject(
+  "a non-integer fruit value",
+  "MALFORMED_SUBMISSION",
+  makeRun({ mazeIdxSequence: [0], fruitEaten: 1, fruitPoints: 150.5 }),
+  classicCtx(),
+);
+
+// BACKWARD COMPATIBILITY. This is the case that decides whether the deploy
+// eats anyone's score: a run queued on a phone before IDEA-045 shipped has no
+// fruitPoints at all, and every one of those ate 100-point fruit.
+{
+  const old = makeRun({ mazeIdxSequence: [0], fruitEaten: 2 });
+  delete (old as { fruitPoints?: number }).fruitPoints;
+  old.score =
+    old.pelletsEaten * SCORING.biscuit +
+    old.bonesEaten * SCORING.bone +
+    2 * 100 +
+    old.ghostsEaten * SCORING.ghostBase;
+  const result = validateRun(old, classicCtx());
+  ok(
+    "a pre-IDEA-045 run with no fruitPoints is still ACCEPTED",
+    result.accepted,
+    result.accepted ? "" : result.reasonCode,
+  );
+}
+
+// The old client's wide window must not become a hiding place either: without
+// fruitPoints the ceiling allows 500 a fruit, and a point over that is caught.
+{
+  const old = makeRun({ mazeIdxSequence: [0], fruitEaten: 2 });
+  delete (old as { fruitPoints?: number }).fruitPoints;
+  old.score =
+    old.pelletsEaten * SCORING.biscuit +
+    old.bonesEaten * SCORING.bone +
+    2 * MAX_FRUIT_POINTS +
+    old.ghostsEaten * ghostChainCap +
+    1;
+  const result = validateRun(old, classicCtx());
+  ok(
+    "…but a score above even the all-mango reading is REJECTED",
+    !result.accepted,
+    result.accepted ? "accepted" : result.reasonCode,
+  );
+}
+
+// The four thresholds are what bounds fruit per level now, not the 2 `F` tiles.
+expectReject(
+  "five fruits on a one-level run (only four thresholds fire)",
+  "ITEM_COUNT_IMPOSSIBLE",
+  makeRun({ mazeIdxSequence: [0], fruitEaten: 5, fruitPoints: 5 * MIN_FRUIT_POINTS }),
+  classicCtx(),
+);
+
+// ===========================================================================
+section("IDEA-040 v3 — the wire format");
+
+// The regression this exists for: `levelIdxSequence` was collected by the
+// client, typed in the payload, and understood by the validator — and was
+// neither SENT by the client nor READ by the server. It went unnoticed for a
+// whole release because the parser lived in a module that opens a Postgres pool
+// on import, so no DB-free test could reach it.
+//
+// The guard is a round trip: build the exact body the client posts, parse it,
+// and require every field to survive. A field added to RunSubmission and
+// forgotten in the parser fails HERE.
+{
+  const body: Record<string, unknown> = {
+    score: 12345,
+    levelsCleared: 3,
+    mazeIdxSequence: [0, 1, 2],
+    levelIdxSequence: [10, 11, 12],
+    pelletsEaten: 500,
+    bonesEaten: 8,
+    fruitEaten: 6,
+    fruitPoints: 1400,
+    ghostsEaten: 14,
+    coinsCollected: 5,
+    livesLost: 2,
+    playSeconds: 640,
+  };
+  const parsed = readSubmission(body);
+
+  // Every key the client sends must come out the other side with its value.
+  const dropped = Object.keys(body).filter((key) => {
+    const got = (parsed as unknown as Record<string, unknown>)[key];
+    const want = body[key];
+    return Array.isArray(want)
+      ? JSON.stringify(got) !== JSON.stringify(want)
+      : got !== want;
+  });
+  ok("every field the client sends survives the parse", dropped.length === 0, dropped.join(","));
+
+  // And the sequence has to arrive intact, because it is what the validator
+  // sizes each level's ghost count from. Dropped here, every classic run is
+  // judged as though it had three enemies.
+  ok(
+    "…and the parsed levelIdxSequence reaches the validator",
+    parsed.levelIdxSequence !== undefined && parsed.levelIdxSequence.length === 3,
+    JSON.stringify(parsed.levelIdxSequence),
+  );
+}
+
+// ABSENT and EMPTY are different things and must stay different: absent means
+// "old client, assume 3 ghosts", empty is what a challenge run legitimately
+// sends. Collapsing them would throw away the only signal that tells them apart.
+{
+  const withoutIt = readSubmission({ score: 0, mazeIdxSequence: [0] });
+  ok("an absent levelIdxSequence stays undefined", withoutIt.levelIdxSequence === undefined);
+
+  const withEmpty = readSubmission({ score: 0, mazeIdxSequence: [0], levelIdxSequence: [] });
+  ok(
+    "an empty one stays an empty array, not undefined",
+    Array.isArray(withEmpty.levelIdxSequence) && withEmpty.levelIdxSequence.length === 0,
+  );
+}
+
+// A junk body must shape into something the validator REJECTS, not something
+// that throws on the way in — parsing judges nothing, it only shapes.
+{
+  const junk = readSubmission({ score: "lots", mazeIdxSequence: "everywhere" });
+  ok("a non-numeric score becomes NaN rather than throwing", Number.isNaN(junk.score));
+  ok("a non-array maze sequence becomes []", Array.isArray(junk.mazeIdxSequence) && junk.mazeIdxSequence.length === 0);
+  const verdict = validateRun(junk, classicCtx());
+  ok(
+    "…and the validator refuses it",
+    !verdict.accepted && verdict.reasonCode === "MALFORMED_SUBMISSION",
+    verdict.accepted ? "accepted" : verdict.reasonCode,
+  );
+}
+
+// The end-to-end shape of the bug: the SAME maze, sized with and without the
+// level indices. planLevel says which stage a classic level index lands in, and
+// stage 3 has four enemies — so the sequence buys a higher ceiling than the
+// 3-ghost fallback, and that difference IS the honest score the fix recovers.
+{
+  const stage3 = planLevel(12);
+  ok("classic level 12 really is a 4-enemy level", stage3.ghostCount === 4, stage3.ghostCount);
+  const sized = maxLevelScore(stage3.mazeIdx, stage3.ghostCount);
+  const fallback = maxLevelScore(stage3.mazeIdx, 3);
+  ok(
+    "sizing it at 4 enemies raises the ceiling above the 3-enemy fallback",
+    sized > fallback,
+    `${fallback} -> ${sized}`,
+  );
+  // A score in that gap is exactly what used to be thrown away: legitimate on
+  // the level actually played, impossible under the fallback.
+  const inTheGap = fallback + Math.floor((sized - fallback) / 2);
+  const run = makeRun({
+    score: inTheGap,
+    mazeIdxSequence: [stage3.mazeIdx],
+    levelIdxSequence: [12],
+    pelletsEaten: 175, bonesEaten: 4,
+    fruitEaten: 4, fruitPoints: 4 * MAX_FRUIT_POINTS,
+    // 12, not 16: without the sequence the item bound is bones * 3 = 12, and
+    // exceeding THAT would reject the stripped run for the wrong reason —
+    // ITEM_COUNT_IMPOSSIBLE rather than the ceiling this test is about.
+    ghostsEaten: 12, coinsCollected: 0, livesLost: 0,
+  });
+  const withSeq = validateRun(run, classicCtx({ elapsedServerSeconds: 600 }));
+  ok(
+    "a stage-3 score in that gap is ACCEPTED when the sequence is sent",
+    withSeq.accepted,
+    withSeq.accepted ? "" : withSeq.reasonCode,
+  );
+
+  const stripped = { ...run };
+  delete (stripped as { levelIdxSequence?: number[] }).levelIdxSequence;
+  const withoutSeq = validateRun(stripped, classicCtx({ elapsedServerSeconds: 600 }));
+  ok(
+    "…and REJECTED without it — the bug, reproduced",
+    !withoutSeq.accepted && withoutSeq.reasonCode === "LEVEL_SCORE_CAP_EXCEEDED",
+    withoutSeq.accepted ? "accepted" : withoutSeq.reasonCode,
   );
 }
 

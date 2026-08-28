@@ -15,14 +15,15 @@ export const BEAGLE_SKINS: readonly CatalogItem[] = [
   { id: "bagel", price: 0 },
   { id: "cookie", price: 25 },
   { id: "muffin", price: 25 },
+  { id: "pacbeagle", price: 50 },
   { id: "pepper", price: 25 },
 ];
 
 export const ENEMY_SKINS: readonly CatalogItem[] = [
-  { id: "ghost", price: 0 },
-  { id: "beetle", price: 25 },
+  { id: "beetle", price: 0 },
   { id: "bee", price: 25 },
   { id: "ladybug", price: 25 },
+  { id: "ghost", price: 0 },
 ];
 
 export const MAZE_THEMES: readonly CatalogItem[] = [
@@ -35,7 +36,7 @@ export const MAZE_THEMES: readonly CatalogItem[] = [
 ];
 
 export const DEFAULT_BEAGLE_SKIN_ID = "bagel";
-export const DEFAULT_ENEMY_SKIN_ID = "ghost";
+export const DEFAULT_ENEMY_SKIN_ID = "beetle";
 export const DEFAULT_MAZE_THEME_ID = "garden";
 
 /** Challenge level count — the upper bound on users.challenge_progress.
@@ -44,14 +45,13 @@ export const CHALLENGE_LEVEL_COUNT = 8;
 
 // ---------------------------------------------------------------------------
 // Scoring + timing constants, mirrored from src/game/config.ts (and
-// FRUIT_THRESHOLDS from game.ts). The plausibility validator scores every
+// FRUIT_THRESHOLDS and FRUITS from config.ts). The plausibility validator scores every
 // submitted run against these, so they MUST track the game: if the game
 // rebalances and the server doesn't, honest runs start getting rejected.
 
 export const SCORING = {
   biscuit: 10,
   bone: 50,
-  fruit: 100,
   ghostBase: 200,
   /** Tiles per second at speedMult 1. */
   beagleSpeed: 5.2,
@@ -68,7 +68,13 @@ export const SCORING = {
  *  array LENGTH is the per-level cap on each pickup. */
 export const COIN_THRESHOLDS = [20,60,105,150] as const;
 export const LIFE_THRESHOLDS = [130] as const;
-export const FRUIT_THRESHOLDS = [70,140] as const;
+export const FRUIT_THRESHOLDS = [40,80,120,160] as const;
+
+/** IDEA-045: every fruit value the game can pay out, in FRUITS order.
+ *  MAX_FRUIT_POINTS sizes the score ceiling, MIN_FRUIT_POINTS the floor. */
+export const FRUIT_VALUES = [100,200,300,400,500] as const;
+export const MAX_FRUIT_POINTS = 500;
+export const MIN_FRUIT_POINTS = 100;
 
 /** What each maze actually CONTAINS, derived from mazes.json rather than
  *  hand-copied. These are the hard ceilings the validator rests on: a run

@@ -4,12 +4,18 @@
 //
 // Two things worth knowing, because both have bitten people before:
 //
-// 1. An `Origin` header is scheme + host + port ONLY. The Pages deploy lives at
-//    https://beaglechomp.nunoamorim.dev/ and (historically) at
-//    https://nunoamorim99.github.io/beagle-chomp/ — but the PATH is never part
-//    of the Origin. So the github.io allowlist entry is the bare origin, and it
-//    would also allow any OTHER project on that same github.io account. That is
-//    one more reason the plan moves the frontend to its own subdomain.
+// 1. An `Origin` header is scheme + host + port ONLY. The frontend lives at
+//    https://beaglechomp.nunoamorim.dev/ — the PATH is never part of the
+//    Origin, which is why the allowlist is a list of bare origins.
+//
+//    That distinction used to matter a lot: the game was also published to
+//    https://nunoamorim99.github.io/beagle-chomp/, and since the path is not
+//    part of the Origin, allowing it meant allowing EVERY project on that
+//    github.io account to call this API. That deploy is gone (the workflow
+//    predated the move to Cloudflare Pages at v5.0 and was never removed; the
+//    site is now unpublished), so CORS_ORIGINS should list the Cloudflare
+//    origin and nothing else. If a github.io entry is still set in Dokploy's
+//    env, remove it — it grants a shared origin nothing here needs.
 //
 // 2. `credentials` is deliberately NOT enabled. We use bearer tokens
 //    (STACK.md §2.2), so cookies are never sent cross-origin, and leaving

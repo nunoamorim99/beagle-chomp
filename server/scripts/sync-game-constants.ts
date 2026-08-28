@@ -1,7 +1,19 @@
 // OWNER: backend
 //
 // Generates server/src/catalog.generated.ts from the REAL game modules in
-// ../src/game. Run by `npm run sync` and in the Docker build.
+// ../src/game. Run BY HAND with `npm run sync`, and only by hand.
+//
+// It is NOT part of the Docker build, and cannot be: server/Dockerfile copies
+// only server/** into the image and never src/game/, so there would be nothing
+// to read. catalog.generated.ts is COMMITTED and shipped exactly as it sits in
+// the repo.
+//
+// That is load-bearing rather than incidental — it is what lets the API be
+// deployed AHEAD of the frontend. A server-only commit builds and ships with
+// the new constants already baked in, without a single frontend file present.
+// The cost is that between an API-first commit and its frontend counterpart,
+// `npm run test:catalog` fails: it compares this generated file against
+// src/game/*, which are deliberately out of step for that one commit.
 //
 // Why generate instead of importing directly:
 //   - themes.ts is ~600 lines of palettes, prop placements and wall decor. The
@@ -116,9 +128,9 @@ function numberConst(source: string, constName: string): number {
   return Number(m[1]);
 }
 
-/** `export` is optional: FRUIT_THRESHOLDS is a module-local const in game.ts
- *  (deliberately, per that file's comment) while the others are exported from
- *  config.ts. */
+/** `export` is optional purely for robustness — every threshold array this
+ *  reads is exported from config.ts today (FRUIT_THRESHOLDS moved there from
+ *  game.ts in IDEA-045, when it gained a value table to sit beside). */
 function numberArray(source: string, constName: string): number[] {
   const m = new RegExp(`(?:export )?const ${constName}[^=]*=\\s*\\[([^\\]]*)\\]`).exec(source);
   if (!m) throw new Error(`could not find ${constName}`);
@@ -130,14 +142,10 @@ function numberArray(source: string, constName: string): number[] {
 
 const configSrc = readFileSync(join(GAME_DIR, "config.ts"), "utf-8");
 const challengesSrc = readFileSync(join(GAME_DIR, "challenges.ts"), "utf-8");
-// FRUIT_THRESHOLDS lives in game.ts, not config.ts — deliberately, per that
-// file's own comment. The validator still needs it to bound fruit per level.
-const gameSrc = readFileSync(join(GAME_DIR, "game.ts"), "utf-8");
 
 const scoring = {
   biscuit: numberField(configSrc, "SCORE", "biscuit"),
   bone: numberField(configSrc, "SCORE", "bone"),
-  fruit: numberField(configSrc, "SCORE", "fruit"),
   ghostBase: numberField(configSrc, "SCORE", "ghostBase"),
   beagleSpeed: numberField(configSrc, "SPEEDS", "beagle"),
   readySeconds: numberField(configSrc, "TIMING", "readySeconds"),
@@ -148,9 +156,38 @@ const scoring = {
   livesMilestonePoints: numberField(configSrc, "LIVES", "milestonePoints"),
 };
 
+/** IDEA-045: every fruit's point value, pulled out of config.ts's FRUITS.
+ *
+ *  The validator needs the whole SET, not one number: the per-level ceiling is
+ *  sized on the dearest fruit and the score floor on the cheapest, and a run
+ *  reports the exact total it claims to have eaten. Hand-copying five numbers
+ *  that price a leaderboard is exactly the kind of thing this script exists to
+ *  prevent — see the header. */
+function extractFruitValues(source: string): number[] {
+  const arr = sliceArray(source, "FRUITS");
+  const values = [...arr.matchAll(/\bpoints:\s*(\d+)/g)].map((m) => Number(m[1]));
+  if (values.length === 0) {
+    throw new Error("could not find any FRUITS points values in config.ts");
+  }
+  return values;
+}
+
+const fruitValues = extractFruitValues(configSrc);
+
 const coinThresholds = numberArray(configSrc, "COIN_THRESHOLDS");
 const lifeThresholds = numberArray(configSrc, "LIFE_THRESHOLDS");
-const fruitThresholds = numberArray(gameSrc, "FRUIT_THRESHOLDS");
+// The same "loud failure rather than a silently short catalog" argument as the
+// challenge-level count guard below: a regex that quietly matched three of the
+// five fruits would ship a ceiling too low and start rejecting honest runs.
+if (fruitValues.length !== 5) {
+  console.error(
+    `[sync] extracted ${fruitValues.length} fruit values, expected 5 — ` +
+      `the FRUITS format in config.ts probably changed.`,
+  );
+  process.exit(1);
+}
+
+const fruitThresholds = numberArray(configSrc, "FRUIT_THRESHOLDS");
 
 /** Per-maze pellet/bone/fruit counts, derived from the REAL maze data rather
  *  than hand-copied. These are the hard ceilings MAX-1 and MAX-4 rest on. */
@@ -331,14 +368,13 @@ export const CHALLENGE_LEVEL_COUNT = ${challengeLevels.length};
 
 // ---------------------------------------------------------------------------
 // Scoring + timing constants, mirrored from src/game/config.ts (and
-// FRUIT_THRESHOLDS from game.ts). The plausibility validator scores every
+// FRUIT_THRESHOLDS and FRUITS from config.ts). The plausibility validator scores every
 // submitted run against these, so they MUST track the game: if the game
 // rebalances and the server doesn't, honest runs start getting rejected.
 
 export const SCORING = {
   biscuit: ${scoring.biscuit},
   bone: ${scoring.bone},
-  fruit: ${scoring.fruit},
   ghostBase: ${scoring.ghostBase},
   /** Tiles per second at speedMult 1. */
   beagleSpeed: ${scoring.beagleSpeed},
@@ -356,6 +392,12 @@ export const SCORING = {
 export const COIN_THRESHOLDS = ${JSON.stringify(coinThresholds)} as const;
 export const LIFE_THRESHOLDS = ${JSON.stringify(lifeThresholds)} as const;
 export const FRUIT_THRESHOLDS = ${JSON.stringify(fruitThresholds)} as const;
+
+/** IDEA-045: every fruit value the game can pay out, in FRUITS order.
+ *  MAX_FRUIT_POINTS sizes the score ceiling, MIN_FRUIT_POINTS the floor. */
+export const FRUIT_VALUES = ${JSON.stringify(fruitValues)} as const;
+export const MAX_FRUIT_POINTS = ${Math.max(...fruitValues)};
+export const MIN_FRUIT_POINTS = ${Math.min(...fruitValues)};
 
 /** What each maze actually CONTAINS, derived from mazes.json rather than
  *  hand-copied. These are the hard ceilings the validator rests on: a run
