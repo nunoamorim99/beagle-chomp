@@ -27,7 +27,7 @@ import * as THREE from "three";
 import { Grid, COLS, ROWS, TILE, worldX, worldZ } from "../game/grid";
 // IDEA-045: the fruit ids the board can spawn. Render importing pure game
 // data is the allowed direction (CLAUDE.md); the reverse never happens.
-import { type FruitId } from "../game/config";
+import { type FruitId, type PowerupId } from "../game/config";
 import { getEquippedMazeTheme, type MazeTheme, type ThemePalette, type PropPlacement, type WallDecorPlacement } from "../game/themes";
 import {
   getPropDef,
@@ -65,6 +65,10 @@ export interface Board {
    *  (which tile, when) is gameplay's call (src/game/game.ts); this field
    *  just tracks the mesh so eating/spinDecor/teardown can find it. */
   coin: THREE.Object3D | null;
+  /** IDEA-046: the current power-up pickup, if any (see spawnPowerup/
+   *  clearPowerup) — parallels `coin`/`fruit`/`life` exactly. Placement and
+   *  WHICH power-up are gameplay's decision; this is only the mesh. */
+  powerup: THREE.Object3D | null;
   /** IDEA-018: the current maze bonus-life pickup (a golden bone), if any
    *  (see spawnLife/clearLife below) — parallels `coin`/`fruit` exactly.
    *  Placement (which tile, when) is gameplay's call (src/game/game.ts); this
@@ -598,6 +602,307 @@ export const FRUIT_BUILDERS: Record<FruitId, () => THREE.Group> = {
   mango: makeMango,
 };
 
+/**
+ * THE POWER-UPS (IDEA-046).
+ *
+ * Five pickups that change the rules rather than the score, so they have a
+ * harder job than the fruits: a fruit only has to be TOLD APART, a power-up has
+ * to be READ — you decide whether to cross the maze for it based on what you
+ * think it does, before you have ever picked one up.
+ *
+ * So each one is built as an ICON, not as an object:
+ *
+ *  - The two doublers share one plaque shape and differ by colour AND by what
+ *    is sitting on them: two biscuits, or two enemy domes. A literal "x2" was
+ *    the obvious idea and is the wrong one — a glyph that small is unreadable
+ *    at the game camera (a tile face is ~25px), whereas "two of the thing"
+ *    survives being tiny and needs no reading at all.
+ *  - The anchor, the star-bone and the shield each own a silhouette nothing
+ *    else on the board has.
+ *
+ * Same fixed identity colours as every other pickup — they do not follow the
+ * maze theme — and the same toon() + soft-glow emissive language.
+ */
+
+/** The shared plaque the two doublers sit on. Rounded by bevelling with a
+ *  second, slightly larger box behind it rather than by a rounded-box helper
+ *  three.js does not ship at r169. */
+function makeDoublerPlaque(color: number, emissive: number): THREE.Group {
+  const g = new THREE.Group();
+  const plate = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.23, 0.23, 0.07, 6),
+    toon({ color, emissive, emissiveIntensity: 0.5 }),
+  );
+  plate.name = "plate";
+  // Face-on to the camera rather than lying flat: the board is viewed from
+  // above and in front, and a flat disc would show as a thin line.
+  plate.rotation.x = Math.PI / 2;
+  g.add(plate);
+  return g;
+}
+
+/**
+ * Double biscuits — gold, with two biscuits on it.
+ */
+export function makeDoubleBiscuit(): THREE.Group {
+  const g = makeDoublerPlaque(0xf2c832, 0x5c4408);
+  const biscuitMat = toon({
+    color: 0xf0cf8e,
+    emissive: 0x4a3a18,
+    emissiveIntensity: 0.4,
+  });
+  // Two, offset diagonally so they read as a PAIR rather than as one blob with
+  // a bite out of it. Proud of the plate on Z so they catch their own light.
+  ([
+    ["biscuitA", -0.075, 0.055],
+    ["biscuitB", 0.075, -0.055],
+  ] as const).forEach(([name, x, y]) => {
+    const b = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.085, 0.05, 12), biscuitMat);
+    b.name = name;
+    b.rotation.x = Math.PI / 2;
+    b.position.set(x, y, 0.05);
+    g.add(b);
+  });
+  g.traverse((o) => {
+    o.castShadow = true;
+  });
+  return g;
+}
+
+/**
+ * Double enemies — teal, with two enemy domes on it. Same plaque, so the two
+ * doublers read as a matched pair of the same KIND of thing, which is what
+ * tells the player they behave alike.
+ */
+export function makeDoubleGhost(): THREE.Group {
+  const g = makeDoublerPlaque(0x53c7c0, 0x0d3a38);
+  const domeMat = toon({
+    color: 0xeaf6f5,
+    emissive: 0x2a4a48,
+    emissiveIntensity: 0.4,
+  });
+  ([
+    ["ghostA", -0.075, 0.055],
+    ["ghostB", 0.075, -0.055],
+  ] as const).forEach(([name, x, y]) => {
+    // A half-sphere: the enemy silhouette this game has used since v1.0.
+    const d = new THREE.Mesh(
+      new THREE.SphereGeometry(0.085, 10, 8, 0, Math.PI * 2, 0, Math.PI / 2),
+      domeMat,
+    );
+    d.name = name;
+    d.rotation.x = Math.PI / 2;
+    d.position.set(x, y, 0.05);
+    g.add(d);
+  });
+  g.traverse((o) => {
+    o.castShadow = true;
+  });
+  return g;
+}
+
+/**
+ * Slow enemies — an anchor.
+ *
+ * Chosen over a snail, a clock or an hourglass because an anchor is the only
+ * one of those whose outline survives being 25 pixels tall: a vertical bar, one
+ * crossbar, one hook. The other three are all detail.
+ */
+export function makeAnchor(): THREE.Group {
+  const g = new THREE.Group();
+  const iron = toon({
+    color: 0x8fa6b8,
+    emissive: 0x1e2c38,
+    emissiveIntensity: 0.45,
+  });
+
+  const shank = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.42, 8), iron);
+  shank.name = "shank";
+  g.add(shank);
+
+  const stock = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.3, 8), iron);
+  stock.name = "stock";
+  stock.rotation.z = Math.PI / 2;
+  stock.position.y = 0.12;
+  g.add(stock);
+
+  // The hook: a half-torus, which gives the anchor's curved arms in one mesh.
+  const arms = new THREE.Mesh(new THREE.TorusGeometry(0.15, 0.035, 8, 16, Math.PI), iron);
+  arms.name = "arms";
+  arms.rotation.z = Math.PI; // opening upward, so the arms sweep out and up
+  arms.position.y = -0.19;
+  g.add(arms);
+
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.07, 0.022, 8, 14), iron);
+  ring.name = "ring";
+  ring.position.y = 0.26;
+  g.add(ring);
+
+  g.traverse((o) => {
+    o.castShadow = true;
+  });
+  return g;
+}
+
+/**
+ * The STAR — flashes through the spectrum, Mario-style.
+ *
+ * This was a glowing BONE at first, and the reasoning was sound on paper: it
+ * does what a power bone does and more, so make it look like a charged version
+ * of the thing that already causes it. Play proved it wrong. The maze is full
+ * of bones, so the one pickup that should stop you mid-corridor was the one
+ * that looked most like scenery — Nuno played two sessions and never once
+ * noticed it. A star shares its outline with nothing else in the game, which is
+ * the entire job.
+ *
+ * Built from a real THREE.Shape rather than assembled from primitives: a
+ * five-pointed star is a polygon, and ten line segments describe it exactly
+ * where a pile of stretched boxes only approximates it. Extruded with a small
+ * bevel so the points catch a different band of the toon ramp from the faces —
+ * without it a flat extrusion reads as a paper cut-out.
+ *
+ * The colour cycling is applied by spinDecor via powerupFlash, not baked here.
+ */
+export function makeStar(): THREE.Group {
+  const g = new THREE.Group();
+
+  const OUTER = 0.26;
+  // 0.40 of the outer radius. Deeper notches (a smaller ratio) give a spikier,
+  // sharper star that loses its points to aliasing at the game camera; shallower
+  // ones round off into a blob. This is the value that still reads as a star at
+  // ~25px.
+  const INNER = OUTER * 0.4;
+  const POINTS = 5;
+
+  const shape = new THREE.Shape();
+  for (let i = 0; i < POINTS * 2; i++) {
+    const radius = i % 2 === 0 ? OUTER : INNER;
+    // -PI/2 puts a POINT at the top. Without it the star sits rotated by half a
+    // segment and reads as a flower.
+    const angle = (i / (POINTS * 2)) * Math.PI * 2 - Math.PI / 2;
+    const x = Math.cos(angle) * radius;
+    const y = Math.sin(angle) * radius;
+    if (i === 0) shape.moveTo(x, y);
+    else shape.lineTo(x, y);
+  }
+  shape.closePath();
+
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth: 0.08,
+    bevelEnabled: true,
+    bevelThickness: 0.022,
+    bevelSize: 0.022,
+    bevelSegments: 2,
+  });
+  // ExtrudeGeometry builds from z=0 forward, so the mesh would hang off its own
+  // origin and the spin in spinDecor would swing it around rather than turn it
+  // in place.
+  geo.center();
+
+  const star = new THREE.Mesh(
+    geo,
+    toon({
+      color: 0xf7d873,
+      emissive: 0x806000,
+      emissiveIntensity: 0.6,
+    }),
+  );
+  star.name = "star";
+  g.add(star);
+
+  g.traverse((o) => {
+    o.castShadow = true;
+  });
+  return g;
+}
+
+/**
+ * Shield — a dome.
+ *
+ * Deliberately NOT transparent. A transparent shell is what a shield "should"
+ * look like and it is the wrong call twice over here: alpha blending has to be
+ * sorted against every other transparent thing in the scene, and a cel-shaded
+ * ramp through a 40%-opacity surface loses the band edges that make the whole
+ * scene read as one style. A solid dome with a bright rim says the same thing
+ * and costs nothing.
+ */
+export function makeShield(): THREE.Group {
+  const g = new THREE.Group();
+  const face = toon({ color: 0x5ec8f0, emissive: 0x0d3a4a, emissiveIntensity: 0.55 });
+  const trim = toon({ color: 0xd8f2ff, emissive: 0x2a5a6a, emissiveIntensity: 0.5 });
+
+  // A heater shield: broad at the top, tapering to a point at the bottom. That
+  // IS the shape — a cone pointing down, then flattened on Z into a plate that
+  // faces the player.
+  //
+  // The first attempt was a dome with a rim, which is what a "shield bubble"
+  // suggests, and it rendered as a serving-dish cloche: the rim read as a
+  // plate and the brace read as the handle. The lesson is the fruits' one
+  // again — an object is its OUTLINE first, and a dome's outline is a dome's.
+  // A heater shield: a nearly FLAT top with rounded shoulders, tapering to a
+  // point. Flattened on Z into a plate that faces the player.
+  //
+  // Three wrong turns got here, and they are all the same mistake — reaching
+  // for what a shield IS instead of what its outline is:
+  //   a dome with a rim  -> a serving-dish cloche (rim = plate, brace = handle)
+  //   a plain cone       -> a downward triangle, i.e. a pennant
+  //   a round top + dot  -> a MAP PIN, unmistakably
+  // The fix is the proportion, not the parts: the top is a SHALLOW dome (0.45
+  // on Y, not 0.85), so it reads as a flat edge with rounded corners, and the
+  // taper below it is longer than the dome is tall.
+  const top = new THREE.Mesh(
+    new THREE.SphereGeometry(0.24, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2),
+    face,
+  );
+  top.name = "top";
+  top.scale.set(1, 0.45, 0.34);
+  top.position.y = 0.06;
+  g.add(top);
+
+  // Base sits exactly on the dome's flat edge, derived from the cone's own
+  // half-height rather than typed in, so retuning either keeps them joined.
+  const coneHeight = 0.4;
+  const point = new THREE.Mesh(new THREE.ConeGeometry(0.24, coneHeight, 12), face);
+  point.name = "point";
+  point.rotation.z = Math.PI;
+  point.scale.z = 0.34;
+  point.position.y = 0.06 - coneHeight / 2;
+  g.add(point);
+
+  // A heraldic cross rather than a central boss. The boss was a white dot in
+  // the middle of a rounded shape, which is precisely the map-pin read above; a
+  // cross is the one marking nothing else in this game wears, and it survives
+  // being 25 pixels tall because both bars are straight.
+  const crossV = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.34, 0.06), trim);
+  crossV.name = "crossV";
+  // -0.01, not 0: at 0 the bar poked a hair above the dome's crown.
+  crossV.position.set(0, -0.01, 0.055);
+  g.add(crossV);
+
+  const crossH = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.055, 0.06), trim);
+  crossH.name = "crossH";
+  crossH.position.set(0, 0.09, 0.055);
+  g.add(crossH);
+
+  g.traverse((o) => {
+    o.castShadow = true;
+  });
+  return g;
+}
+
+/**
+ * id -> builder. Same full-Record trick as FRUIT_BUILDERS: adding a sixth
+ * power-up to config.ts without building a mesh for it is a TYPE ERROR, not a
+ * power-up that silently never appears.
+ */
+export const POWERUP_BUILDERS: Record<PowerupId, () => THREE.Group> = {
+  doubleBiscuit: makeDoubleBiscuit,
+  doubleGhost: makeDoubleGhost,
+  slowGhosts: makeAnchor,
+  star: makeStar,
+  shield: makeShield,
+};
+
 // IDEA-017: real gold coin geometry/materials, sized to match the fruit's
 // ~0.22 visual footprint. A short cylinder is the coin body; a thin torus
 // hugs its rim for a raised-edge read; a smaller inset disc on each face
@@ -719,7 +1024,18 @@ export function buildBoard(scene: THREE.Object3D, grid: Grid): Board {
   const hedgeDecor = buildWallTopDecor(scene, grid, theme);
   const props = buildProps(scene, theme);
 
-  return { pelletMeshes, pelletsLeft, walls, floor, fruit: null, coin: null, life: null, hedgeDecor, props };
+  return {
+    pelletMeshes,
+    pelletsLeft,
+    walls,
+    floor,
+    fruit: null,
+    coin: null,
+    life: null,
+    powerup: null,
+    hedgeDecor,
+    props,
+  };
 }
 
 /**
@@ -2031,6 +2347,35 @@ export function clearLife(board: Board, scene: THREE.Object3D): void {
 }
 
 /**
+ * Spawns a power-up mesh at tile (tx,ty), replacing any already on the board
+ * (mirrors spawnFruit/spawnCoin — only one at a time).
+ *
+ * WHICH power-up is gameplay's decision, not this function's: the weighted roll
+ * lives in src/game/powerups.ts's caller so it can be tested in Node.
+ */
+export function spawnPowerup(
+  board: Board,
+  scene: THREE.Object3D,
+  tx: number,
+  ty: number,
+  kind: PowerupId,
+): void {
+  if (board.powerup) clearPowerup(board, scene);
+  const mesh = POWERUP_BUILDERS[kind]();
+  mesh.position.set(worldX(tx), 0.4, worldZ(ty));
+  mesh.userData.powerupId = kind;
+  scene.add(mesh);
+  board.powerup = mesh;
+}
+
+/** Removes the current power-up mesh (if any) from the scene and the board. */
+export function clearPowerup(board: Board, scene: THREE.Object3D): void {
+  if (!board.powerup) return;
+  scene.remove(board.powerup);
+  board.powerup = null;
+}
+
+/**
  * Gentle idle spin for decorative pickups (prototype syncMeshes, lines
  * 582-583): bones spin a bit faster than the fruit. Biscuits don't spin in
  * the prototype, so they're left untouched here.
@@ -2050,4 +2395,39 @@ export function spinDecor(board: Board, dt: number): void {
   if (board.fruit) board.fruit.rotation.y += dt * 1.5;
   if (board.coin) board.coin.rotation.y += dt * 3;
   if (board.life) board.life.rotation.y += dt * 3;
+
+  // IDEA-046: the power-up spins like the other bonus pickups, and the STAR
+  // bone additionally cycles its emissive through the spectrum — the Mario-star
+  // read Nuno asked for. Driven from an accumulator on the mesh rather than a
+  // wall clock so it pauses when the game does, like everything else here.
+  if (board.powerup) {
+    board.powerup.rotation.y += dt * 2.5;
+    if (board.powerup.userData.powerupId === "star") {
+      const t = ((board.powerup.userData.flash as number) ?? 0) + dt;
+      board.powerup.userData.flash = t;
+      powerupFlash(board.powerup, t);
+    }
+  }
+}
+
+/**
+ * Cycles the star bone's emissive through the spectrum.
+ *
+ * Emissive rather than `color`: on a toon material the base colour is quantised
+ * into the ramp's three bands, so a hue sweep there arrives as three flat steps
+ * and reads as a fault. The emissive is added AFTER the ramp, so it sweeps
+ * smoothly — which is the whole point of a flashing pickup.
+ *
+ * Exported for the editor and the tests; game code reaches it via spinDecor.
+ */
+export function powerupFlash(mesh: THREE.Object3D, t: number): void {
+  // ~2.5 cycles a second: fast enough to read as "charged", slow enough not to
+  // be a strobe. The bone lasts a fright window, so this runs for ~7s at most.
+  const hue = (t * 0.4) % 1;
+  mesh.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (!m.isMesh) return;
+    const mat = m.material as THREE.MeshToonMaterial;
+    if (mat.emissive) mat.emissive.setHSL(hue, 0.85, 0.35);
+  });
 }

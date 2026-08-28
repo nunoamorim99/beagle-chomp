@@ -16,6 +16,24 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
 > lines here roll up into the numbered version below and this section is cleared (hold a line back
 > only if you explicitly choose to).
 
+- (2026-08-28) IDEA-046 v1+v2 — **power-ups**: five pickups that change how a run plays rather
+  than what it scores — double biscuits, double enemies, an anchor that slows the pack, a star
+  that scares them and speeds you up, and a shield that takes one hit for you. Some run on a
+  timer; the doublers and the shield stay with you from map to map until you lose a life. The
+  shield shipped as a trap in the first cut — it absorbed the hit and then let the very next
+  frame kill you — and now buys a real moment of invulnerability, which is the whole point of it.
+- (2026-08-28) IDEA-045 v1 — the fruit became a ladder: apple 100, banana 200, carrot 300,
+  strawberry 400, mango 500, on a weighted roll and four spawns a level instead of two. The rare
+  ones are worth cutting across the maze for, and each one had to commit to its own silhouette —
+  the first mango read as an orange apple, which would have made the 100 and the 500 look alike.
+- (2026-08-28) IDEA-040 v3 — fix: the server never knew which level you were on. `levelIdxSequence`
+  was neither sent by the client nor read by the server, so every classic run was judged as though
+  it had three enemies — and a strong stage-3 run (four enemies) was rejected as impossible. Real
+  lost scores. The body parser moved out of the module that opens a database pool, so the gap is
+  testable now instead of invisible.
+- (2026-08-28) IDEA-006 v4 — removed the GitHub Pages deploy. Right for v1.0's static PWA, dead
+  since the move to Cloudflare Pages at v5.0, and quietly publishing a copy of the game with no API
+  URL on every push since.
 - (2026-08-27) IDEA-044 v1 — themed floor surfaces, painted from the maze grid: a trail of
   stepping stones through the garden's lawn, forest earth, beach sand, a park lawn with a
   gravel walk under the biscuits, and night-city asphalt with dashed lane markings.

@@ -1,14 +1,31 @@
 # Local development stack (STACK.md §1: "Docker Compose — frontend + backend +
 # Postgres, with hot reload").
 #
-# Usual workflow on Windows:
-#     docker compose up db api        # Postgres + the API in containers
-#     npm run dev                     # Vite on the host — much faster HMR
+#     docker compose up -d        # db + api + the frontend, all three
 #
-# The `web` service exists so the full stack can run in Docker when needed
-# (e.g. verifying a clean machine), but bind-mounting node_modules on Windows is
-# slow, so the host-Vite path above is the default. Start it explicitly with:
-#     docker compose --profile full up
+# Then http://localhost:5173 for the game and http://localhost:5173/editor/ for
+# the character editor. There is no second command and no second port: the
+# editor is just a route on the same dev server, which is what removes the
+# "why are there two of these running" problem entirely.
+#
+# WHY THE FRONTEND IS IN HERE NOW. It used to sit behind a `full` profile with
+# the host running `npm run dev`, because bind-mounting node_modules on Windows
+# is slow. That trade was reconsidered after two orphaned host dev servers (one
+# ten days old, one three) were found squatting 5173 and 5175 — a process you
+# start by hand is a process you forget to stop, and `docker compose ps` shows
+# you the truth in a way a stray terminal never will. The slowness is dealt with
+# below rather than avoided: node_modules lives in a NAMED volume (never the
+# host's, which would also mix Windows and Linux native binaries), and install
+# only re-runs when the lockfile actually changes.
+#
+# The host path still works and is still faster for a tight edit loop:
+#     npm run dev
+# Stop the container first, or the port is taken — vite.config.ts uses
+# strictPort, so it will say so rather than quietly starting a second copy.
+#
+# TESTS STILL RUN ON THE HOST. `npm run test`, `tsc` and the Playwright editor
+# suites spin up their own Vite via createServer() and do not touch this stack,
+# so `npm install` on the host is still needed for those.
 
 services:
   db:
@@ -68,19 +85,49 @@ services:
     mem_limit: 384m   # STACK.md §3.2 — one service can't starve Postgres
 
   web:
-    profiles: ["full"]
     image: node:22-bookworm-slim
     working_dir: /app
-    command: sh -c "npm ci && npm run dev -- --host 0.0.0.0"
+    restart: unless-stopped
+    # Install only when the lockfile has actually changed.
+    #
+    # The old command ran `npm ci` on every single start, which meant a full
+    # reinstall every time the stack came up — the main reason this service was
+    # unpleasant enough to keep behind a profile. The stamp file lives inside
+    # the node_modules volume, so it survives restarts along with the install
+    # it describes, and `-nt` re-runs the install the moment package-lock.json
+    # is newer than it.
+    command: >
+      sh -c '
+        if [ ! -f node_modules/.installed ] || [ package-lock.json -nt node_modules/.installed ]; then
+          echo "[web] lockfile changed (or first run) — installing dependencies…";
+          npm ci && touch node_modules/.installed;
+        else
+          echo "[web] dependencies up to date";
+        fi
+        exec npm run dev
+      '
     environment:
-      # Matches the api service's host-side port mapping above.
+      # Read by the BROWSER, which runs on the host — so this is the host-side
+      # mapping (3001), NOT the api service name. Pointing it at http://api:3000
+      # is the classic mistake here and fails for everyone except the container.
       VITE_API_URL: http://localhost:3001
+      # Turns on watcher polling in vite.config.ts. Only set here: file events
+      # do not cross a Windows bind mount, so without it HMR silently never
+      # fires; on the host, native events work and polling would just burn CPU.
+      DOCKER_DEV: "1"
     ports:
       - "5173:5173"
     volumes:
       - ./:/app
-      - /app/node_modules
+      # A NAMED volume, not the anonymous one this used to have. Anonymous
+      # volumes are discarded when the container is recreated, so every
+      # `compose up --force-recreate` threw the install away. It must also stay
+      # separate from the host's node_modules either way: esbuild and rollup
+      # ship platform-specific binaries, and mixing Windows and Linux ones
+      # breaks both.
+      - beaglechomp_web_modules:/app/node_modules
     mem_limit: 1g
 
 volumes:
   beaglechomp_pgdata:
+  beaglechomp_web_modules:

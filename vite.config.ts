@@ -74,6 +74,31 @@ function editorSaveFile(): Plugin {
 
 export default defineConfig({
   base: "./",
+  server: {
+    // Bind on all interfaces so the container's port mapping reaches the dev
+    // server. Harmless on the host — Vite still prints localhost.
+    host: true,
+    port: 5173,
+    // Fail loudly instead of hopping to 5174/5175 when the port is taken.
+    //
+    // This is here because of a real half-hour lost: two orphaned dev servers
+    // (one ten days old) were squatting 5173 and 5175, and Vite's default
+    // "just take the next port" meant nothing ever complained — you simply had
+    // several copies of the game running and no idea which one you were
+    // looking at. A refused start is the useful behaviour.
+    strictPort: true,
+    watch: {
+      // Docker on Windows: file events do not cross the bind mount, so the
+      // watcher has to poll or HMR silently never fires — you edit, nothing
+      // happens, and it looks like your change did not work.
+      //
+      // Polling is genuinely worse (it burns CPU walking the tree), so it is
+      // enabled ONLY inside the container, where it is the difference between
+      // working and not. The host path is untouched and keeps native events.
+      usePolling: process.env.DOCKER_DEV === "1",
+      interval: 250,
+    },
+  },
   build: {
     rollupOptions: {
       output: {

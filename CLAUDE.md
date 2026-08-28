@@ -63,6 +63,22 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v6.
   in `FRUITS` and you must run `npm run sync` in `server/`** or honest runs start
   failing `SCORE_ITEM_MISMATCH`. `FRUIT_THRESHOLDS` moved from `game.ts` to
   `config.ts` for the same reason.
+- **POWER-UPS change the rules, not the score** (IDEA-046): five pickups —
+  x2 biscuits, x2 enemies, an anchor that slows the pack, a star that
+  frightens them and speeds the beagle, and a shield. The design is in
+  `src/game/powerups.ts`, which is pure and exists for one sentence: **a
+  shielded hit is NOT a death.** `onCaught()` returns `"shielded" | "died"` —
+  a third outcome between "nothing happened" and "you lost a life" — so the
+  two doublers survive it. They also survive clearing a map, which is why
+  `PowerupState` is RUN-scoped on `Game` and not on `LevelAssets`. Three
+  lifetimes (`timed` / `untilDeath` / `untilHit`) and the asymmetry between
+  them is the feature, not an implementation detail. **Classic only** —
+  a challenge run reporting a power-up is rejected outright, because every
+  challenge score already on the board was set without them. The two doublers
+  multiply score, so `plausibility.ts`'s ceiling is sized from what the run
+  actually REPORTS collecting; the score FLOOR is deliberately left
+  un-multiplied, since a doubler collected late means most pellets were eaten
+  at face value.
 - **Pure logic** (`src/game/*`): `mazes.json`+`mazes.ts` (two **validated** mazes —
   connected, all pellets reachable, ghosts can leave the pen), `grid.ts` (tiles, tunnel
   wrap, walkability), `movement.ts` (tile-stepping model), `ghostAI.ts` (targeting with a
@@ -152,7 +168,9 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v6.
   off the def rather than assuming one file. Adding a mesh tab means adding a
   registry entry — not a parallel copy of the editor.
 - **Tests**: `scripts/validate-maze.ts`, `scripts/sim-logic.ts` — import the real modules.
-  `scripts/test-fruits.ts` covers the fruit ladder: the weighted roll's exact boundaries
+  `scripts/test-powerups.ts` covers the power-up state machine — most of it is the
+  shielded-hit rule, in the exact combination Nuno described (holding 1, 2 and 5, caught,
+  keeps 1 and 2). `scripts/test-fruits.ts` covers the fruit ladder: the weighted roll's exact boundaries
   (deterministic — `rollFruit` takes an injectable rand), that value rises as weight falls,
   that no fruit threshold collides with a coin or bonus-life one, and that each threshold
   still fires exactly once per level (the v1.0 farming exploit, now worth 500 a pop).

@@ -37,8 +37,29 @@ import {
   // now reads both out of that one file.
   FRUIT_THRESHOLDS,
   FRUITS,
+  POWERUPS,
   type Fruit,
+  // IDEA-046: power-ups. Classic only — see POWERUPS' comment for why.
+  POWERUP_THRESHOLDS,
+  POWERUP_LIFESPAN_SECONDS,
+  POWERUP_SHIELD_GRACE_SECONDS,
+  type Powerup,
 } from "./config";
+import {
+  createPowerupState,
+  rollPowerup,
+  collect as collectPowerup,
+  tick as tickPowerups,
+  onCaught,
+  onDeath as powerupsOnDeath,
+  onLevelClear as powerupsOnLevelClear,
+  biscuitMult,
+  ghostMult,
+  ghostSpeedMult as powerupGhostSpeedMult,
+  beagleSpeedMult as powerupBeagleSpeedMult,
+  starActive,
+  type PowerupState,
+} from "./powerups";
 import { rollFruit } from "./fruits";
 import { coinsDueFromScore } from "./coins";
 import { shouldFireThreshold } from "./pickups";
@@ -55,6 +76,7 @@ import {
   recordPellet,
   recordBone,
   recordFruit,
+  recordPowerup,
   recordGhost,
   recordCoin,
   recordDeath,
@@ -91,6 +113,8 @@ import {
   eatPellet,
   spawnFruit,
   clearFruit,
+  spawnPowerup,
+  clearPowerup,
   spawnCoin,
   clearCoin,
   spawnLife,
@@ -177,6 +201,12 @@ const COLLISION_RADIUS = 0.55;
 // smallest possible amount rather than the largest.
 const FRUITS_DEFAULT: Fruit = FRUITS[0];
 
+// IDEA-046: what `powerupKind` holds when none is on the board. Same argument
+// as FRUITS_DEFAULT — a real entry rather than null so the eat path never has
+// to null-check a value it can only reach when one IS present (powerupTile is
+// the field that says whether it is).
+const POWERUPS_DEFAULT: Powerup = POWERUPS[0];
+
 interface GhostRig {
   gh: Ghost;
   mesh: ReturnType<typeof makeGhost>;
@@ -215,6 +245,8 @@ interface LevelAssets {
   nextLifeThresholdIdx: number;
   /** Index into FRUIT_THRESHOLDS of the next not-yet-fired threshold this level. */
   nextFruitThresholdIdx: number;
+  /** IDEA-046: index into POWERUP_THRESHOLDS of the next not-yet-fired one. */
+  nextPowerupThresholdIdx: number;
 }
 
 export class Game {
@@ -326,6 +358,26 @@ export class Game {
   // as an apple, which is precisely the promise the ladder makes and must keep.
   private fruitTile: Vec2 | null = null;
   private fruitKind: Fruit = FRUITS_DEFAULT;
+
+  // IDEA-046: what the player is currently holding.
+  //
+  // Lives on the GAME, not on LevelAssets, and that is the whole design: the
+  // two doublers and the shield survive clearing a map, so their state cannot
+  // be rebuilt per level like the threshold pointers are. It is reset per RUN
+  // (startClassicRun / startChallenge), which is exactly "until you die" once
+  // the last life goes.
+  private powerups: PowerupState = createPowerupState();
+
+  // The power-up currently sitting on the board, if any — tile, which one, and
+  // how long before it despawns ungrabbed (mirrors coinTile/coinTimer).
+  private powerupTile: Vec2 | null = null;
+  private powerupKind: Powerup = POWERUPS_DEFAULT;
+  private powerupTimer = 0;
+
+  // IDEA-046 v2: seconds of invulnerability remaining after a shield absorbed a
+  // hit. See POWERUP_SHIELD_GRACE_SECONDS for why this is not optional — the
+  // shield was previously spent AND fatal on the following frame.
+  private shieldGrace = 0;
 
   // IDEA-016/IDEA-017: current maze coin tile, if any (board.coin is only the
   // mesh — mirrors fruitTile exactly).
@@ -621,8 +673,14 @@ export class Game {
     this.lives = initial.lives;
     this.coinsAwardedFromScore = 0;
     this.livesAwardedFromScore = 0;
+    // IDEA-046: power-ups are RUN-scoped — "until you die" means until the run
+    // ends, and a new run must not inherit the last one's doublers. Reset here
+    // (and in startChallenge, where they are simply never granted) rather than
+    // per level, which is exactly what lets them survive a cleared map.
+    this.powerups = createPowerupState();
     this.hud.setScore(this.score);
     this.hud.setLives(this.lives);
+    this.syncPowerupHud();
     this.hud.setLevel("1");
     // IDEA-016/IDEA-017: reflect the persisted wallet immediately on boot,
     // before any run-scoped scoring/pickups happen (coins survive across runs
@@ -746,6 +804,7 @@ export class Game {
       nextCoinThresholdIdx: 0,
       nextLifeThresholdIdx: 0,
       nextFruitThresholdIdx: 0,
+      nextPowerupThresholdIdx: 0,
     };
   }
 
@@ -754,6 +813,7 @@ export class Game {
     this.rig.scene.remove(level.board.walls, level.board.floor);
     level.board.pelletMeshes.forEach((p) => p.mesh.removeFromParent());
     if (level.board.fruit) this.rig.scene.remove(level.board.fruit);
+    if (level.board.powerup) this.rig.scene.remove(level.board.powerup);
     if (level.board.coin) this.rig.scene.remove(level.board.coin);
     if (level.board.life) this.rig.scene.remove(level.board.life);
     level.board.hedgeDecor.forEach((m) => this.rig.scene.remove(m));
@@ -877,6 +937,11 @@ export class Game {
       0,
       Math.min(safeIdxForSession, CHALLENGE_LEVEL_COUNT - 1),
     );
+    // IDEA-046: challenge runs never carry power-ups (maybeSpawnPowerup refuses
+    // to spawn them there), but a run started straight after a classic one must
+    // not inherit that run's doublers either.
+    this.powerups = createPowerupState();
+    this.syncPowerupHud();
     void this.beginRunSession("challenge", resolvedForSession).then((ok) => {
       if (ok) this.startChallengeLevel(resolvedForSession);
     });
@@ -927,6 +992,11 @@ export class Game {
     // speedMult is 1, so this is a byte-for-byte no-op for every classic
     // call site (startLevel's death-respawn/level-transition resets).
     this.beagle = makeEntity(this.level.beagleSpawn.x, this.level.beagleSpawn.y, SPEEDS.beagle * this.activeModifiers.speedMult);
+    // IDEA-046 v2: a fresh actor reset (respawn, next level) must never inherit
+    // a half-run grace window, and must never leave the beagle on a blink's
+    // "off" frame — which would be invisible for the whole READY countdown.
+    this.shieldGrace = 0;
+    if (this.beagleMesh) this.beagleMesh.visible = true;
     this.beagle.dir = { x: 0, y: 0 };
     this.beagle.queued = { x: -1, y: 0 };
     this.beagle.facing = { x: 0, y: 1 };
@@ -967,6 +1037,10 @@ export class Game {
 
     if (this.level.board.fruit) clearFruit(this.level.board, this.rig.scene);
     this.fruitTile = null;
+    // IDEA-046: the board mesh goes with the level; the HELD power-ups do not
+    // (that is the point of them). Only the pickup lying on the floor is
+    // cleared here — this.powerups is run-scoped and reset in startClassicRun.
+    this.despawnPowerup();
 
     this.despawnCoin();
     this.despawnLife();
@@ -1044,6 +1118,7 @@ export class Game {
     this.maybeSpawnFruit();
     this.maybeSpawnCoin();
     this.maybeSpawnLife();
+    this.maybeSpawnPowerup();
   };
 
   private eatAt(tx: number, ty: number): void {
@@ -1053,16 +1128,23 @@ export class Game {
       if (kind) {
         this.level.pellets.delete(key);
         this.effects.pelletEaten(worldX(tx), worldZ(ty), kind);
+        // IDEA-046: the biscuit doubler pays on bones too. A bone IS a pellet
+        // (it is one of the tiles you have to clear), so paying double on the
+        // biscuits and not on the bones would be an exception the player has no
+        // way to learn and no reason to expect.
+        const mult = biscuitMult(this.powerups);
         if (kind === "bone") {
-          this.score += SCORE.bone;
+          const points = SCORE.bone * mult;
+          this.score += points;
           recordBone(this.telemetry);
-          this.effects.scorePopup(worldX(tx), worldZ(ty), SCORE.bone);
+          this.effects.scorePopup(worldX(tx), worldZ(ty), points);
           this.sound.bone();
           this.triggerFright();
         } else {
-          this.score += SCORE.biscuit;
+          const points = SCORE.biscuit * mult;
+          this.score += points;
           recordPellet(this.telemetry);
-          this.effects.scorePopup(worldX(tx), worldZ(ty), SCORE.biscuit);
+          this.effects.scorePopup(worldX(tx), worldZ(ty), points);
           this.sound.biscuit();
         }
         this.hud.setScore(this.score);
@@ -1105,6 +1187,22 @@ export class Game {
       this.hud.setCoins(getCoins());
       this.effects.pelletEaten(worldX(tx), worldZ(ty), "biscuit");
       this.sound.coin();
+    }
+
+    // IDEA-046: the power-up pickup. No points at all — the whole point is that
+    // it changes how the run plays rather than what it scores.
+    if (this.powerupTile && this.powerupTile.x === tx && this.powerupTile.y === ty) {
+      const kind = this.powerupKind;
+      this.despawnPowerup();
+      collectPowerup(this.powerups, kind.id);
+      recordPowerup(this.telemetry, kind.id);
+      // The star IS a fright window with a speed boost on top, so collecting it
+      // opens one exactly as a bone does — same code path, so the ghost states,
+      // the reversal and the eat-chain reset can never drift apart from it.
+      if (kind.id === "star") this.triggerFright();
+      this.effects.pelletEaten(worldX(tx), worldZ(ty), "bone");
+      this.sound.powerup();
+      this.syncPowerupHud();
     }
 
     // IDEA-018: maze bonus-life pickup (a golden bone) — grants a life
@@ -1395,6 +1493,66 @@ export class Game {
     }
   }
 
+  // ---- power-ups (IDEA-046, mirrors maybeSpawnCoin) ----
+
+  /**
+   * Spawns a power-up when the next threshold is reached.
+   *
+   * Placed on a RANDOM walkable tile rather than on fixed `F`-style tiles, so
+   * it is a thing you go and get rather than a thing that appears where you
+   * already are — the fruit's fixed tiles are near the pen, which would make a
+   * shield far too easy to collect on the way past.
+   *
+   * Gated by shouldFireThreshold for the same reason every other pickup is (see
+   * pickups.ts), and it matters more here than anywhere: a refiring threshold
+   * on a fruit was worth a repeated 500, but on a SHIELD it would be an
+   * effectively unkillable run.
+   */
+  private maybeSpawnPowerup(): void {
+    // Classic only. A challenge level's whole design is that it is the same
+    // engine with different dials, and the server rejects any challenge run
+    // that reports a power-up — so spawning one here would be handing the
+    // player a run that gets thrown away.
+    if (this.gameKind !== "classic") return;
+    if (this.powerupTile) return;
+
+    const eaten = this.level.startPelletCount - this.level.pellets.size;
+    if (!shouldFireThreshold(eaten, POWERUP_THRESHOLDS, this.level.nextPowerupThresholdIdx)) return;
+
+    const exclude: Vec2[] = [{ x: this.beagle.tx, y: this.beagle.ty }];
+    if (this.fruitTile) exclude.push(this.fruitTile);
+    if (this.coinTile) exclude.push(this.coinTile);
+    if (this.lifeTile) exclude.push(this.lifeTile);
+    const tile = this.pickRandomFreeTile(exclude);
+    if (!tile) return;
+
+    this.level.nextPowerupThresholdIdx++;
+    this.powerupKind = rollPowerup();
+    this.powerupTile = tile;
+    this.powerupTimer = POWERUP_LIFESPAN_SECONDS;
+    spawnPowerup(this.level.board, this.rig.scene, tile.x, tile.y, this.powerupKind.id);
+  }
+
+  /** Clears the board power-up and its countdown together, so no stale timer is
+   *  left running against whatever spawns next (mirrors despawnCoin). */
+  private despawnPowerup(): void {
+    clearPowerup(this.level.board, this.rig.scene);
+    this.powerupTile = null;
+    this.powerupTimer = 0;
+  }
+
+  private tickPowerupLifespan(dt: number): void {
+    if (!this.powerupTile) return;
+    this.powerupTimer -= dt;
+    if (this.powerupTimer <= 0) this.despawnPowerup();
+  }
+
+  /** Pushes the active list to the HUD tray. Called on every event that can
+   *  change it — collect, expire, death, level clear. */
+  private syncPowerupHud(): void {
+    this.hud.setPowerups(this.powerups.active);
+  }
+
   // ---- scatter/chase schedule (prototype updatePlay, lines 504-517) ----
 
   private advanceSchedule(dt: number): void {
@@ -1433,12 +1591,20 @@ export class Game {
         if (gh.state === "frightened") {
           gh.state = "eaten";
           this.ghostEatChain++;
-          this.score += SCORE.ghostBase * Math.pow(2, Math.min(this.ghostEatChain - 1, 3));
+          // IDEA-046: the enemy doubler multiplies the CHAIN VALUE, it does not
+          // advance the chain — a doubled 4th ghost is 1600 x 2, not a 5th step
+          // — so the chain stays capped where it always was and the server's
+          // ceiling only has to allow one extra factor of two.
+          const chainScore =
+            SCORE.ghostBase *
+            Math.pow(2, Math.min(this.ghostEatChain - 1, 3)) *
+            ghostMult(this.powerups);
+          this.score += chainScore;
           recordGhost(this.telemetry);
           this.hud.setScore(this.score);
           this.maybeAwardCoinsFromScore();
           this.maybeAwardLivesFromScore();
-          this.effects.ghostEaten(gw.x, gw.z, SCORE.ghostBase * Math.pow(2, Math.min(this.ghostEatChain - 1, 3)));
+          this.effects.ghostEaten(gw.x, gw.z, chainScore);
           // 0-based within the fright window: ghostEatChain was just
           // incremented above, so the first ghost eaten has chain=1 here ->
           // pass chain-1=0, matching the exponent math on the two lines above.
@@ -1457,6 +1623,24 @@ export class Game {
           // between.
           if (this.ghostEatChain === this.activeModifiers.ghostCount) this.grantLife();
         } else if (gh.state !== "eaten") {
+          // IDEA-046 v2: untouchable for a moment after a shield absorbed a
+          // hit. Checked BEFORE onCaught so the window cannot burn a second
+          // shield either, and it covers every ghost rather than the one that
+          // hit — being bounced into a second pursuer would make the first
+          // shield worthless.
+          if (this.shieldGrace > 0) continue;
+          // IDEA-046: a shield turns this contact into a bounce rather than a
+          // death — and crucially LEAVES THE DOUBLERS ALONE (Nuno's rule; see
+          // powerups.ts). The ghost is reversed so it does not immediately
+          // re-touch the beagle on the next frame and spend a second shield.
+          if (onCaught(this.powerups) === "shielded") {
+            this.shieldGrace = POWERUP_SHIELD_GRACE_SECONDS;
+            this.reverseGhost(gh);
+            this.effects.frightStarted();
+            this.sound.shieldBreak();
+            this.syncPowerupHud();
+            return;
+          }
           this.beagleDies();
           return;
         }
@@ -1468,6 +1652,12 @@ export class Game {
     this.mode = "dying";
     this.stateTimer = TIMING.deathSeconds;
     this.lives--;
+    // IDEA-046: "until you die" resolves HERE, not in onCaught — a shielded hit
+    // never reaches this method, which is the whole distinction.
+    powerupsOnDeath(this.powerups);
+    this.shieldGrace = 0;
+    this.beagleMesh.visible = true;
+    this.syncPowerupHud();
     recordDeath(this.telemetry);
     this.hud.setLives(this.lives);
     const bw = entityWorld(this.beagle);
@@ -1509,12 +1699,18 @@ export class Game {
     if (stage === "beagle") this.shopScene.showBeagle(getEquippedBeagleSkin());
     else if (stage === "enemy") this.shopScene.showEnemy(getEquippedEnemySkinId());
     else if (stage === "goldenBone") this.shopScene.showGoldenBone();
+    else if (stage === "powerup") this.shopScene.showPowerups();
     else this.shopScene.showTheme(getEquippedMazeThemeId());
   }
 
   private levelClear(): void {
     this.mode = "levelclear";
     recordLevelCleared(this.telemetry);
+    // IDEA-046: the doublers and the shield carry to the next map; the timed
+    // ones do not. Handing the player two seconds of an eight-second anchor
+    // after the clear banner and the READY pause reads as a bug, not a bonus.
+    powerupsOnLevelClear(this.powerups);
+    this.syncPowerupHud();
     this.stateTimer = TIMING.readySeconds;
     this.hud.showBanner("Map Cleared!");
     this.effects.levelCleared();
@@ -1793,6 +1989,11 @@ export class Game {
       // honest run that ate four mangos looks the same to it as one that ate
       // four apples and inflated its score.
       fruitPoints: this.telemetry.fruitPoints,
+      // IDEA-046: the two doublers multiply score, so the server sizes its
+      // ceiling from what was actually collected rather than assuming the
+      // best case on every run.
+      powerupsCollected: this.telemetry.powerupsCollected,
+      powerupIds: this.telemetry.powerupIds,
       ghostsEaten: this.telemetry.ghostsEaten,
       coinsCollected: this.telemetry.coinsCollected,
       livesLost: this.telemetry.livesLost,
@@ -2065,7 +2266,44 @@ export class Game {
     this.advanceSchedule(dt);
     this.tickCoinLifespan(dt);
     this.tickLifeLifespan(dt);
+    this.tickPowerupLifespan(dt);
 
+    // IDEA-046: burn down the timed power-ups, and refresh the tray when one of
+    // them goes. Comparing the count is enough — the only thing tick() can do
+    // is remove an expired entry.
+    const heldBefore = this.powerups.active.length;
+    tickPowerups(this.powerups, dt);
+    if (this.powerups.active.length !== heldBefore) this.syncPowerupHud();
+
+    // The post-shield grace window, and the blink that tells the player it is
+    // running. Toggling `visible` rather than fading: a toon material has no
+    // opacity to animate without turning on transparency (which would cost a
+    // sorting pass on the hero mesh), and a hard blink is the clearer read
+    // anyway — it is the language every game uses for "you cannot be hit".
+    if (this.shieldGrace > 0) {
+      this.shieldGrace -= dt;
+      const blinkOn = Math.floor(this.shieldGrace * 12) % 2 === 0;
+      this.beagleMesh.visible = blinkOn;
+      if (this.shieldGrace <= 0) {
+        this.shieldGrace = 0;
+        // Always restore: the beagle must never be left invisible because the
+        // window happened to end on an "off" frame.
+        this.beagleMesh.visible = true;
+      }
+    }
+
+    // The star keeps the pack frightened for as long as it is up. Without this
+    // the fright window opened when it was collected would run out on its own
+    // schedule and the star's last second or two would have the ghosts hunting
+    // again — the one thing a star must never do.
+    if (starActive(this.powerups) && this.frightTimer < 0.25) {
+      this.frightTimer = 0.25;
+    }
+
+    // IDEA-046: the star's speed boost. Applied here rather than baked into the
+    // entity at collect time so it simply stops applying when the star expires,
+    // with no restore step to forget.
+    this.beagle.speed = SPEEDS.beagle * this.activeModifiers.speedMult * powerupBeagleSpeedMult(this.powerups);
     stepEntity(this.beagle, dt, this.level.grid, false, this.onBeagleArrive);
     syncToEntity(this.beagleMesh, this.beagle, dt);
 
@@ -2083,7 +2321,9 @@ export class Game {
       // frightened ghosts stay just as proportionally fast/slow as its
       // normal-state ghosts, keeping the whole speed relationship coherent
       // rather than only the "normal" tier scaling up.
-      const ghostSpeedMult = this.activeModifiers.ghostSpeedMult;
+      // IDEA-046: the anchor is one more factor on the multiplier that is
+      // already here — which is why slowing the pack needed no new mechanism.
+      const ghostSpeedMult = this.activeModifiers.ghostSpeedMult * powerupGhostSpeedMult(this.powerups);
       gh.e.speed = (gh.state === "eaten" ? SPEEDS.eaten : gh.state === "frightened" ? SPEEDS.frightened : SPEEDS.ghost) * ghostSpeedMult;
       stepEntity(gh.e, dt, this.level.grid, true, (e) => {
         if (gh.state === "eaten" && e.tx === spawn.x && e.ty === spawn.y) {

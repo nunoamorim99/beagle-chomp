@@ -1211,3 +1211,35 @@ body.tutorial-open #mainMenu{display:none}
   .tut-swipe-dot{animation:none}
   .tut-dot{transition:none}
 }
+
+/* IDEA-046: active power-up tray.
+   Pinned under the HUD's left column rather than placed in the .hud flex row —
+   .hud is a three-way space-between and a fourth child would re-balance Score /
+   Map / Lives. `pointer-events:none` for the same reason .hud has it: this is a
+   readout, and it sits over the play area.
+   The chips are chunky on purpose. This is read mid-chase, at a glance, on a
+   phone — a subtle badge is a badge nobody sees. */
+.powerups{position:fixed;left:12px;top:96px;display:flex;flex-direction:column;gap:6px;
+  pointer-events:none;z-index:3}
+.powerup{display:flex;align-items:center;gap:7px;padding:5px 9px 5px 7px;border-radius:10px;
+  background:rgba(12,20,28,.62);backdrop-filter:blur(3px);
+  box-shadow:0 1px 4px rgba(0,0,0,.35);min-width:104px}
+.powerup .icon{font-size:16px;line-height:1}
+.powerup .name{font-family:ui-monospace,"SF Mono",monospace;font-size:10px;letter-spacing:.08em;
+  text-transform:uppercase;color:#fff;white-space:nowrap}
+/* The drain bar only exists for the timed ones. Its width IS the remaining
+   fraction, set inline by hud.ts — the one thing here that changes per frame. */
+.powerup .bar{position:absolute;left:0;bottom:0;height:3px;border-radius:0 0 10px 10px;
+  background:#7fe0a0;transition:width .1s linear}
+.powerup{position:relative;overflow:hidden}
+/* Held-until-death / until-hit chips get a left edge instead of a bar, so the
+   two lifetimes are distinguishable without reading the label. */
+.powerup.persistent{border-left:3px solid #f2c832;padding-left:6px}
+.powerup.shielded{border-left:3px solid #5ec8f0;padding-left:6px}
+/* Running out. Three seconds is about one corridor — long enough to act on. */
+.powerup.expiring .bar{background:#e8724f}
+.powerup.expiring .name{color:#ffd9cc}
+
+body.menu-open .powerups,
+body.shop-open .powerups,
+body.map-open .powerups{display:none}

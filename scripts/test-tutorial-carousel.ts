@@ -36,21 +36,30 @@ const phoneSwipe = buildSlides({ coarsePointer: true, scheme: "swipe" });
 const phonePad = buildSlides({ coarsePointer: true, scheme: "dpad" });
 
 section("Shape");
-ok("there are five slides", desktop.length === 5, desktop.length);
+// Six since IDEA-046. The count is pinned rather than left open because the
+// tutorial is a wall between the player and the game they asked to play — a
+// slide has to EARN its place, and a test that just counts whatever exists
+// would never notice the wall getting taller.
+ok("there are six slides", desktop.length === 6, desktop.length);
 ok("every slide has a title and body",
   desktop.every((s) => s.title.length > 0 && s.body.length > 0));
 ok("slide ids are unique", new Set(desktop.map((s) => s.id)).size === desktop.length);
 ok("every slide stages a 3D subject",
-  desktop.every((s) => ["beagle", "enemy", "maze", "goldenBone"].includes(s.stage)),
+  desktop.every((s) => ["beagle", "enemy", "maze", "goldenBone", "powerup"].includes(s.stage)),
   desktop.map((s) => s.stage).join(","));
 // The lives slide shows the pickup it is describing, not a stand-in: the
 // golden bone is the least familiar thing in the game, so a player needs to
 // know what to look for.
+// The power-ups slide stages real power-up meshes for the same reason the lives
+// slide stages the real golden bone: these are the least familiar objects in the
+// game, and a player needs to know what to LOOK for.
+ok("the power-ups slide stages the power-ups",
+  desktop.find((s) => s.id === "powerups")?.stage === "powerup");
 ok("the lives slide stages the golden bone",
   desktop.find((s) => s.id === "lives")?.stage === "goldenBone",
   desktop.find((s) => s.id === "lives")?.stage);
-ok("the order teaches move → collect → avoid → bones → lives",
-  desktop.map((s) => s.id).join(",") === "move,biscuits,pack,bones,lives",
+ok("the order teaches move → collect → avoid → bones → power-ups → lives",
+  desktop.map((s) => s.id).join(",") === "move,biscuits,pack,bones,powerups,lives",
   desktop.map((s) => s.id).join(","));
 
 section("Movement copy follows the DEVICE, not the account");
