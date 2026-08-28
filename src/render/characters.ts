@@ -41,6 +41,10 @@ export interface BeagleCoatMats {
   white: THREE.MeshToonMaterial;
   black: THREE.MeshToonMaterial;
   ear: THREE.MeshToonMaterial;
+  /** Paws only. Falls back to the coat's `white` when a skin omits it. */
+  paw: THREE.MeshToonMaterial;
+  /** Brows only. Meaningless while the brows are hidden, which is the default. */
+  brow: THREE.MeshToonMaterial;
 }
 
 /**
@@ -139,6 +143,30 @@ export interface BeagleCoatMats {
  * materials land in `g.userData.coatMats` so applyBeagleSkin restyles every
  * coat-colored surface of the dog in place for all 4 skins.
  */
+/**
+ * The Pac-Beagle brow, as two bars meeting at an apex — a triangle with its
+ * bottom line left off.
+ *
+ * HAND-AUTHORED, not derived. The first version computed both bars from a
+ * spread angle and an apex height, which is tidier to read and was simply the
+ * wrong shape; these are the values Nuno dialled in on the LEFT brow in the
+ * character editor, transcribed here and mirrored to the right (see `m` at the
+ * call site).
+ *
+ * They had to be transcribed BY HAND because the editor could not save them
+ * itself, and that is a documented limit rather than a bug: sourceRewrite.ts
+ * can only edit a part that has its own `const` line to rewrite, and these
+ * bars are built inside the per-side loop — same as the ears, side caps and
+ * legs. The editor reports the refusal instead of writing something that would
+ * not compile. Reach for "Copy edits" and paste into this table.
+ *
+ * Local to the brow group, which the pivot has already aimed down the gaze.
+ */
+const BROW_BARS = [
+  { tag: "Inner", pos: [-0.047, 0.087, 0.007], rot: [-0.137, 0.06, -1.001] },
+  { tag: "Outer", pos: [0.018, 0.093, 0.005], rot: [0.248, -0.007, 1.199] },
+] as const;
+
 export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Group {
   const g = new THREE.Group();
   const { coat } = skin;
@@ -146,6 +174,16 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
   const white = toon({ color: coat.white });
   const black = toon({ color: coat.black });
   const earMat = toon({ color: coat.ear });
+  // The paws had always been painted with `white`, along with the belly, snout,
+  // chest, blaze and jaw. Their own material now, so a coat can give the dog
+  // coloured boots without turning its whole underside the same colour. A coat
+  // that says nothing about paws gets `white` back, so nothing changes for the
+  // four coats written before this existed.
+  const pawMat = toon({ color: coat.paw ?? coat.white });
+  // Brows are OFF unless a coat asks for them — see BeagleCoat.brow. Built
+  // regardless, because applyBeagleSkin recolours a live model in place and
+  // cannot conjure geometry mid-switch.
+  const browMat = toon({ color: coat.brow ?? 0x141210 });
 
   // Decal-shell builder (see the doc comment): a cap of a sphere `factor`
   // larger than `baseR`, pole aimed by rotating the GEOMETRY (rx about X,
@@ -310,6 +348,8 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
   const GLINT_RY = 0.5;
 
   const legs: THREE.Group[] = [];
+  /** Brow pivots, hidden unless the equipped coat carries a `brow` colour. */
+  const brows: THREE.Object3D[] = [];
   ([-1, 1] as const).forEach((s) => {
     // EAR-BROWN head-side cap: pole aimed at the ear root (unit direction
     // ~(±0.78, 0.59, 0.22)), angular radius 0.95 â€” sweeps around the eye
@@ -414,6 +454,78 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
     glint.position.copy(HEAD_POS);
     g.add(glint);
 
+    // BROW: the reference's own mark — a peak, i.e. a triangle with its bottom
+    // line left off. Two straight strokes meeting at an apex above the eye,
+    // hidden unless the coat asks for them.
+    //
+    // NOT a decal shell, for the same reason the beetle's brow isn't one: a
+    // shell is a cap of the head sphere, so its edge is always a circle centred
+    // on the eye. It can ring the eye; it cannot put a short straight stroke
+    // above it at a chosen angle, and the angle is the whole expression. And
+    // not the torus arc this replaced either — an arc reads as a raised
+    // eyebrow, where the mark being quoted here is hard and angular.
+    //
+    // Carried on a pivot aimed down the gaze direction, so the chevron sits
+    // against the head where the eye is; its own rotation.z sets the slant.
+    const gaze = new THREE.Vector3(0, 1, 0)
+      .applyAxisAngle(new THREE.Vector3(1, 0, 0), EYE_RX)
+      .applyAxisAngle(new THREE.Vector3(0, 1, 0), EYE_RY * s);
+    const browPivot = new THREE.Group();
+    browPivot.name = s < 0 ? "browPivotL" : "browPivotR";
+    // Sunk slightly INTO the head (0.97 rather than sitting on 1.0). A chevron
+    // is flat and the skull is not, so its far ends ride up off the surface;
+    // burying the apex trades that lift for the ends landing near flush, which
+    // is what keeps two straight bars looking painted on rather than propped
+    // against the face.
+    browPivot.position.copy(HEAD_POS).addScaledVector(gaze, HEAD_R * 0.97);
+    // A FULL basis, not setFromUnitVectors. That only constrains where the
+    // pivot's +Z ends up and leaves the ROLL about it arbitrary — so the
+    // chevron came out rotated by however three happened to solve it, one way
+    // on the left brow and another on the right. Building the basis explicitly
+    // pins local +Y to the head's up (world up, projected square to the gaze),
+    // which is what makes a peak point upward and both brows match.
+    const browRight = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), gaze).normalize();
+    const browUp = new THREE.Vector3().crossVectors(gaze, browRight).normalize();
+    browPivot.quaternion.setFromRotationMatrix(
+      new THREE.Matrix4().makeBasis(browRight, browUp, gaze),
+    );
+
+    const brow = new THREE.Group();
+    brow.name = s < 0 ? "browL" : "browR";
+    const BROW_LEN = HEAD_R * 0.28;
+    const BROW_THICK = HEAD_R * 0.062;
+    // MIRRORING. The two pivots are not simple reflections of each other: each
+    // builds its basis from `worldUp x gaze`, and reflecting the left one's
+    // local +X gives the NEGATIVE of the right one's. So a bar at local -x on
+    // the left is at local +x on the right, and a rotation (rx, ry, rz)
+    // reflects to (rx, -ry, -rz) — rotation about the reflected axis keeps its
+    // sign, the other two flip. That is the whole of `m` below.
+    //
+    // (One consequence worth knowing when reading the names: on the LEFT brow
+    // local -X points away from the midline, so "Inner" is actually the
+    // outboard bar. The names come from the build order and are kept because
+    // they are what the editor's part tree shows.)
+    const m = s < 0 ? 1 : -1;
+    BROW_BARS.forEach(({ tag, pos, rot }) => {
+      const bar = new THREE.Mesh(
+        new THREE.BoxGeometry(BROW_THICK, BROW_LEN, BROW_THICK * 0.55),
+        browMat,
+      );
+      bar.name = (s < 0 ? "browL" : "browR") + tag;
+      bar.position.set(pos[0] * m, pos[1], pos[2]);
+      bar.rotation.set(rot[0], rot[1] * m, rot[2] * m);
+      brow.add(bar);
+    });
+    // Tilt the whole peak so its outer end lifts and its inner end drops toward
+    // the nose. Small on purpose: the bars already sit at ~1.0-1.2 rad off
+    // vertical, and a tilt near that figure flattens one to horizontal and
+    // stands the other on end — the peak stops reading and it looks like one
+    // bent line.
+    brow.rotation.z = 0.13 * s;
+    browPivot.add(brow);
+    g.add(browPivot);
+    brows.push(browPivot);
+
     // Legs: approved stubby proportions â€” pivot at the hip (inside the
     // body), short chunky cylinder, white paw/sock blob INSIDE the pivot so
     // it trots with the leg. Paw bottom lands at y~0.00 (ground contact).
@@ -447,7 +559,7 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
       // reaches z -0.070 with 0.015 to spare behind the leg, and still has
       // 0.031 of height there — enough to close over the rim. Bottom sits on
       // y = 0 exactly, as before.
-      const paw = new THREE.Mesh(new THREE.SphereGeometry(0.06, 24, 16), white);
+      const paw = new THREE.Mesh(new THREE.SphereGeometry(0.06, 24, 16), pawMat);
       paw.name = `${legName}Paw`;
       paw.scale.set(1.18, 0.7, 1.34);
       paw.position.set(0, -0.157, 0.03);
@@ -515,8 +627,12 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
   delete g.userData.__earR;
   g.userData.parts = parts;
 
-  const coatMats: BeagleCoatMats = { tan, white, black, ear: earMat };
+  const coatMats: BeagleCoatMats = { tan, white, black, ear: earMat, paw: pawMat, brow: browMat };
   g.userData.coatMats = coatMats;
+  g.userData.brows = brows;
+  // A coat with no `brow` hides them — applied here as well as in
+  // applyBeagleSkin so a freshly built model and a live switch agree.
+  for (const b of brows) b.visible = coat.brow !== undefined;
 
   // --- Character Editor edits (generated by /editor/) ---
   haunch.scale.set(3, 0.9, 0.95);
@@ -545,6 +661,13 @@ export function applyBeagleSkin(group: THREE.Group, skin: BeagleSkin): void {
   mats.white.color.setHex(coat.white);
   mats.black.color.setHex(coat.black);
   mats.ear.color.setHex(coat.ear);
+  // Optional channels. `paw` falls back to the belly white, which is what the
+  // paws wore before the channel existed; `brow` falling back means HIDDEN, so
+  // switching away from a browed coat takes the brows off again.
+  mats.paw.color.setHex(coat.paw ?? coat.white);
+  if (coat.brow !== undefined) mats.brow.color.setHex(coat.brow);
+  const brows = group.userData.brows as THREE.Object3D[] | undefined;
+  if (brows) for (const b of brows) b.visible = coat.brow !== undefined;
 }
 
 export interface InsectLimbs {

@@ -20,6 +20,26 @@ export interface BeagleCoat {
   white: number;
   black: number;
   ear: number;
+  /**
+   * Paw/sock colour. OPTIONAL, and falls back to `white` when absent — which
+   * is exactly what the paws used to be painted with, so every coat written
+   * before this channel existed is a byte-for-byte no-op.
+   *
+   * It exists because a skin can want feet that are not the same colour as the
+   * belly and snout (see `pacbeagle`'s red boots), and those three shared one
+   * material until now.
+   */
+  paw?: number;
+  /**
+   * Eyebrow colour. OPTIONAL, and its ABSENCE is meaningful: the beagle has no
+   * brows by default, so a coat that omits this hides them entirely. Only a
+   * skin that wants that expression asks for it.
+   *
+   * The meshes are always built (hidden), never conditionally created — a live
+   * skin switch recolours an existing model in place (see applyBeagleSkin), so
+   * anything a skin can turn on has to already be there to turn on.
+   */
+  brow?: number;
 }
 
 export interface BeagleSkin {
@@ -69,6 +89,38 @@ export const BEAGLE_SKINS: readonly BeagleSkin[] = [
     // tricolor; ear a gentle tan-brown that stays close to the body tone.
     coat: { tan: 0xe4c58a, white: 0xfaf6ee, black: 0x9c7248, ear: 0xb6864f },
     price: 25,
+  },
+  {
+    id: "pacbeagle",
+    name: "Pac-Beagle",
+    // A tip of the collar to the game this one is descended from. The mapping
+    // of the reference onto the beagle's own material groups is deliberate
+    // rather than a flat repaint:
+    //   tan   -> the body yellow
+    //   white -> a PALER yellow, not white, so belly/snout/blaze stay in family
+    //   black -> the deep orange the saddle and nose wear (a black saddle on a
+    //            yellow dog reads as a shadow, not a marking)
+    //   ear   -> the mid orange, sitting between the two above
+    //   paw   -> the red boots
+    //   brow  -> the angry black brows, the one thing that makes it read as a
+    //            tribute rather than as a yellow dog
+    // Buying this also unlocks the Ghost — see TRIBUTE_ENEMY_SKIN_ID.
+    // Brighter than the first pass across the board. The cel ramp quantises a
+    // lit surface into three bands, and its middle band pulled a 0xf7c600 body
+    // down to a mustard/olive — the one colour a Pac-Man tribute cannot be. The
+    // hexes are chosen for what comes OUT of the ramp, not what looks right in
+    // a swatch.
+    coat: {
+      tan: 0xffd21e,
+      white: 0xffeeaa,
+      black: 0xd96a0c,
+      ear: 0xf28f1c,
+      paw: 0xe01f26,
+      brow: 0x141210,
+    },
+    // Dearer than the plain coats: it is the only skin that unlocks another
+    // one, and the only one that changes the model's silhouette (brows).
+    price: 50,
   },
   {
     id: "pepper",
@@ -165,6 +217,14 @@ export function cycleBeagleSkinId(currentId: string): string {
 export interface EnemySkin {
   id: string;
   name: string;
+  /**
+   * Hidden from the shop until the player has earned the right to see it.
+   *
+   * Ownership is still the real gate — this only controls LISTING, so a secret
+   * skin the player already owns shows up normally (which is how every account
+   * from before the ghost became secret keeps the ghost it already had).
+   */
+  secret?: boolean;
   /** Shop price in coins (IDEA-012). 0 means "owned from the start, never
    *  purchasable" — currently true only for the default skin. */
   price: number;
@@ -172,14 +232,52 @@ export interface EnemySkin {
 
 export const ENEMY_SKINS: readonly EnemySkin[] = [
   // Default skin: free and always owned (see profileStore.ts's
-  // defaultProfile()).
-  { id: "ghost", name: "Ghost", price: 0 },
-  { id: "beetle", name: "Beetle", price: 25 },
+  // defaultProfile()). The beetle took this over from the ghost — the game is
+  // a garden, and a beetle belongs in it in a way a ghost never did.
+  { id: "beetle", name: "Beetle", price: 0 },
   { id: "bee", name: "Bee", price: 25 },
   { id: "ladybug", name: "Ladybug", price: 25 },
+  // THE EASTER EGG. Free, but not listed until it is revealed, and revealed by
+  // owning the Pac-Beagle coat: the two tributes to the arcade game this one
+  // descends from unlock each other, which needs no UI copy to explain. Price 0
+  // is what makes the grant work without a special path — profileStore's buy
+  // check is `coins < price`, so a 0-coin purchase always succeeds and the
+  // server's own catalog check agrees.
+  { id: "ghost", name: "Ghost", price: 0, secret: true },
 ] as const;
 
-export const DEFAULT_ENEMY_SKIN_ID = "ghost";
+export const DEFAULT_ENEMY_SKIN_ID = "beetle";
+
+/**
+ * The pair that unlocks each other.
+ *
+ * Held here, next to both registries, rather than in the shop UI: "owning X
+ * grants Y" has to hold however the purchase was made, and the shop is only
+ * one caller. profileStore.buyBeagleSkin does the granting; ui/shop.ts does
+ * the revealing.
+ */
+export const TRIBUTE_BEAGLE_SKIN_ID = "pacbeagle";
+export const TRIBUTE_ENEMY_SKIN_ID = "ghost";
+
+/**
+ * The enemy skins a player can SEE, given what they own.
+ *
+ * A secret skin is listed once it has been earned — either because the tribute
+ * coat that unlocks it is owned, or because the skin itself already is. That
+ * second clause is not redundant: every account created before the ghost became
+ * secret already owns it, and hiding a skin somebody owns (and may have
+ * equipped) would read as it being taken away.
+ *
+ * Lives here rather than in ui/shop.ts because it is a rule about the
+ * REGISTRY, not about markup — which also lets it be tested without a browser.
+ * Ownership stays the real gate everywhere else; this only decides listing.
+ */
+export function visibleEnemySkins(
+  ownsTributeCoat: boolean,
+  isOwned: (id: string) => boolean,
+): readonly EnemySkin[] {
+  return ENEMY_SKINS.filter((s) => !s.secret || ownsTributeCoat || isOwned(s.id));
+}
 
 /** Returns an enemy skin's shop price, 0 for the default/unknown id. Never
  *  throws — mirrors getEnemySkin's fallback-to-default behaviour. */

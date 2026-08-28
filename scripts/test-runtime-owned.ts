@@ -139,7 +139,21 @@ console.log("\n--- the registry agrees with the REAL animation code ---");
     "no absolute hem height survives",
     !/hem\[i\]\.position\.y = 0\.02 \+/.test(SRC),
   );
-  check("applyBeagleSkin still resets all 4 coat colours", (SRC.match(/mats\.\w+\.color\.setHex/g) ?? []).length === 4);
+  // Every coat material must be written on a live skin switch. Checked channel
+  // by channel rather than by counting: a channel added to BeagleCoatMats and
+  // not written here is a skin that silently keeps the PREVIOUS skin's colour
+  // on that part, which is invisible until someone notices the wrong paws after
+  // a re-equip. `paw` is the newest — it was split out of `white` so a coat can
+  // give the dog coloured boots.
+  for (const channel of ["tan", "white", "black", "ear", "paw", "brow"]) {
+    check(
+      `applyBeagleSkin writes the ${channel} coat colour`,
+      new RegExp("mats\." + channel + "\.color\.setHex").test(SRC),
+    );
+  }
+  // `brow` is the one written CONDITIONALLY, because its absence is meaningful:
+  // no brow colour means no brows, so it is a visibility toggle as well.
+  check("…and toggles the brows a coat may not want", /b\.visible = coat\.brow !== undefined/.test(SRC));
   check("applyGhostState still recolours bodyMat", /ud\.bodyMat\.color\.setHex/.test(SRC));
   check(
     "…and ROTATES every enemy's pupil pivots",

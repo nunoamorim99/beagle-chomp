@@ -42,6 +42,8 @@ import {
   DEFAULT_ENEMY_SKIN_ID,
   setEquippedEnemySkinId,
   getEnemySkinPrice,
+  TRIBUTE_BEAGLE_SKIN_ID,
+  TRIBUTE_ENEMY_SKIN_ID,
 } from "./cosmetics";
 import { CHALLENGE_LEVEL_COUNT } from "./challenges";
 import {
@@ -315,7 +317,18 @@ function buyCosmetic(
 }
 
 export function buyBeagleSkin(id: string): BuyResult {
-  return buyCosmetic(id, "beagle", isKnownSkinId, getBeagleSkinPrice, "ownedBeagleSkinIds");
+  const result = buyCosmetic(id, "beagle", isKnownSkinId, getBeagleSkinPrice, "ownedBeagleSkinIds");
+  // The tribute coat unlocks the tribute enemy. Done HERE rather than in the
+  // shop UI because it has to hold however the purchase was made — the shop is
+  // only one caller of this.
+  //
+  // The grant is an ordinary purchase of a free item, so it needs no special
+  // path and the server agrees with it (its own catalog says the price is 0).
+  // Its result is deliberately ignored: an account that already owns the ghost
+  // — every account from before it became secret — gets "already-owned" back,
+  // which is the correct outcome, not a failure.
+  if (result.ok && id === TRIBUTE_BEAGLE_SKIN_ID) buyEnemySkin(TRIBUTE_ENEMY_SKIN_ID);
+  return result;
 }
 
 export function buyEnemySkin(id: string): BuyResult {
@@ -366,6 +379,19 @@ export function equipMazeTheme(id: string): boolean {
  * loudly rather than silently equipping defaults.
  */
 export function initProfileFromCache(): void {
+  // The free default skin must actually be OWNED, and for an existing account
+  // it may not be: the default enemy skin changed from the ghost to the beetle,
+  // and accounts created before that were only ever granted the ghost. Buying
+  // it costs 0 coins, so this self-heals through the normal purchase path
+  // rather than needing a database migration — and it is a no-op ("already
+  // owned") for everyone else, including every new account.
+  //
+  // Deliberately BEFORE the equipped-id checks below, which fall back to the
+  // default: without this they could hand the player a default they don't own,
+  // and the server would then refuse the equip.
+  if (!isEnemySkinOwned(DEFAULT_ENEMY_SKIN_ID)) buyEnemySkin(DEFAULT_ENEMY_SKIN_ID);
+  if (!isBeagleSkinOwned(DEFAULT_BEAGLE_SKIN_ID)) buyBeagleSkin(DEFAULT_BEAGLE_SKIN_ID);
+
   const profile = getProfileCache();
 
   // Belt-and-braces: an equipped id must also be owned. fromServerProfile
