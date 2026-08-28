@@ -38,6 +38,12 @@ function numArray(value: unknown): number[] {
   return Array.isArray(value) ? (value as number[]) : [];
 }
 
+/** An array of strings, or []. Contents unchecked here — the validator refuses
+ *  any id that is not in the catalog. */
+function strArray(value: unknown): string[] {
+  return Array.isArray(value) ? (value as unknown[]).map((v) => String(v)) : [];
+}
+
 export function readSubmission(body: Record<string, unknown>): RunSubmission {
   return {
     score: num(body.score),
@@ -59,6 +65,12 @@ export function readSubmission(body: Record<string, unknown>): RunSubmission {
     // run queued before the update) omits it, which the validator handles by
     // falling back to the wide fruit-value bound.
     fruitPoints: body.fruitPoints === undefined ? undefined : num(body.fruitPoints),
+    // IDEA-046: optional on the wire, same backward-compat rule as fruitPoints.
+    // An ABSENT list means "no power-ups", which is what every run queued before
+    // this shipped truthfully was.
+    powerupsCollected:
+      body.powerupsCollected === undefined ? undefined : num(body.powerupsCollected),
+    powerupIds: body.powerupIds === undefined ? undefined : strArray(body.powerupIds),
     ghostsEaten: num(body.ghostsEaten),
     coinsCollected: num(body.coinsCollected),
     livesLost: num(body.livesLost),

@@ -189,6 +189,24 @@ if (fruitValues.length !== 5) {
 
 const fruitThresholds = numberArray(configSrc, "FRUIT_THRESHOLDS");
 
+// IDEA-046: power-ups. The server needs three things and no more: how many can
+// spawn per level (to bound the count), which ids exist (to reject a fabricated
+// one), and which of them MULTIPLY SCORE — because those two raise the ceiling
+// and the ceiling is the bound that actually binds.
+const powerupThresholds = numberArray(configSrc, "POWERUP_THRESHOLDS");
+const powerupIds = [...sliceArray(configSrc, "POWERUPS").matchAll(/\bid:\s*"([a-zA-Z0-9-]+)"/g)].map(
+  (m) => m[1],
+);
+const powerupMultiplier = numberConst(configSrc, "POWERUP_MULTIPLIER");
+
+if (powerupIds.length !== 5) {
+  console.error(
+    `[sync] extracted ${powerupIds.length} power-up ids, expected 5 — ` +
+      `the POWERUPS format in config.ts probably changed.`,
+  );
+  process.exit(1);
+}
+
 /** Per-maze pellet/bone/fruit counts, derived from the REAL maze data rather
  *  than hand-copied. These are the hard ceilings MAX-1 and MAX-4 rest on. */
 interface MazeFacts {
@@ -398,6 +416,15 @@ export const FRUIT_THRESHOLDS = ${JSON.stringify(fruitThresholds)} as const;
 export const FRUIT_VALUES = ${JSON.stringify(fruitValues)} as const;
 export const MAX_FRUIT_POINTS = ${Math.max(...fruitValues)};
 export const MIN_FRUIT_POINTS = ${Math.min(...fruitValues)};
+
+/** IDEA-046: how many power-ups can spawn per level, every id that exists, and
+ *  by how much the two doublers double. SCORE_DOUBLING_POWERUPS is the pair the
+ *  score ceiling has to account for; the other three change speed or absorb a
+ *  hit and cannot add a point. */
+export const POWERUP_THRESHOLDS = ${JSON.stringify(powerupThresholds)} as const;
+export const POWERUP_IDS = ${JSON.stringify(powerupIds)} as const;
+export const POWERUP_MULTIPLIER = ${powerupMultiplier};
+export const SCORE_DOUBLING_POWERUPS = { biscuit: "doubleBiscuit", ghost: "doubleGhost" } as const;
 
 /** What each maze actually CONTAINS, derived from mazes.json rather than
  *  hand-copied. These are the hard ceilings the validator rests on: a run

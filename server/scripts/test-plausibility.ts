@@ -31,6 +31,8 @@ import {
   FRUIT_THRESHOLDS,
   MAX_FRUIT_POINTS,
   MIN_FRUIT_POINTS,
+  POWERUP_THRESHOLDS,
+  POWERUP_MULTIPLIER,
 } from "../src/catalog.generated.js";
 
 let passed = 0;
@@ -833,6 +835,181 @@ section("IDEA-040 v3 — the wire format");
     !withoutSeq.accepted && withoutSeq.reasonCode === "LEVEL_SCORE_CAP_EXCEEDED",
     withoutSeq.accepted ? "accepted" : withoutSeq.reasonCode,
   );
+}
+
+
+// ===========================================================================
+section("IDEA-046 — power-ups");
+
+// The ceiling has to RISE when a doubler is reported, or an honest run that
+// held one is rejected for scoring more than a level "can" produce.
+{
+  const plain = maxLevelScore(0, 3);
+  const doubled = maxLevelScore(0, 3, { biscuit: POWERUP_MULTIPLIER });
+  ok("a biscuit doubler raises the level ceiling", doubled > plain, `${plain} -> ${doubled}`);
+
+  // It must lift the BONES too. A bone is a pellet you have to clear, and
+  // game.ts pays the doubler on both — a ceiling that only doubled the biscuits
+  // would reject a run that ate every bone under one.
+  const facts = MAZE_FACTS[0];
+  const expected = plain + (facts.biscuits * SCORING.biscuit + facts.bones * SCORING.bone);
+  ok("…and it lifts the bones as well as the biscuits", doubled === expected, `${doubled} vs ${expected}`);
+
+  const ghostDoubled = maxLevelScore(0, 3, { ghost: POWERUP_MULTIPLIER });
+  ok("an enemy doubler raises the ceiling by the ghost term", ghostDoubled > plain);
+  ok(
+    "the two doublers are independent",
+    maxLevelScore(0, 3, { biscuit: POWERUP_MULTIPLIER, ghost: POWERUP_MULTIPLIER }) >
+      Math.max(doubled, ghostDoubled),
+  );
+  // Defaults matter: every pre-IDEA-046 call site passes two arguments.
+  ok("no multipliers means the old ceiling exactly", maxLevelScore(0, 3) === plain);
+}
+
+// The pair that makes reporting worth anything. Both halves use a score AT the
+// doubled ceiling, not merely a doubled-looking score: MAX-1 is generous by
+// design (it allows four mangos and a full 1600 chain on every ghost whatever
+// actually happened), so a modest doubled run fits comfortably inside the
+// UNDOUBLED bounds and proves nothing either way. The declaration only buys
+// headroom at the edge, so the edge is where it has to be tested.
+{
+  const doubledCeiling = maxLevelScore(0, 3, { biscuit: POWERUP_MULTIPLIER });
+
+  const maxedOut = (): RunSubmission =>
+    makeRun({
+      mazeIdxSequence: [0],
+      score: doubledCeiling,
+      pelletsEaten: MAZE_FACTS[0].biscuits,
+      bonesEaten: MAZE_FACTS[0].bones,
+      fruitEaten: FRUIT_THRESHOLDS.length,
+      fruitPoints: FRUIT_THRESHOLDS.length * MAX_FRUIT_POINTS,
+      // 4 bones x 3 enemies — the most the item bound allows.
+      ghostsEaten: MAZE_FACTS[0].bones * 3,
+      coinsCollected: 0,
+      livesLost: 0,
+    });
+
+  const declared = maxedOut();
+  declared.powerupsCollected = 1;
+  declared.powerupIds = ["doubleBiscuit"];
+  const withDoubler = validateRun(declared, classicCtx({ elapsedServerSeconds: 600 }));
+  ok(
+    "a run at the DOUBLED ceiling is accepted when it reports its doubler",
+    withDoubler.accepted,
+    withDoubler.accepted ? "" : withDoubler.reasonCode,
+  );
+
+  const undeclared = maxedOut();
+  const withoutDoubler = validateRun(undeclared, classicCtx({ elapsedServerSeconds: 600 }));
+  ok(
+    "…and the very same score is REJECTED when it does not",
+    !withoutDoubler.accepted && withoutDoubler.reasonCode === "LEVEL_SCORE_CAP_EXCEEDED",
+    withoutDoubler.accepted ? "accepted" : withoutDoubler.reasonCode,
+  );
+}
+
+// The floor is deliberately NOT multiplied: a doubler can be collected halfway
+// through, so a player holding one may still have eaten most of their biscuits
+// at face value. Raising the floor would reject exactly that honest run.
+{
+  const run = makeRun({
+    mazeIdxSequence: [0],
+    powerupsCollected: 1,
+    powerupIds: ["doubleBiscuit"],
+    pelletsEaten: 175,
+    bonesEaten: 4,
+    fruitEaten: 2,
+    fruitPoints: 2 * MIN_FRUIT_POINTS,
+    ghostsEaten: 6,
+    livesLost: 0,
+  });
+  // Scored as though the doubler arrived on the very last pellet.
+  run.score =
+    175 * SCORING.biscuit +
+    4 * SCORING.bone +
+    2 * MIN_FRUIT_POINTS +
+    6 * SCORING.ghostBase;
+  const result = validateRun(run, classicCtx({ elapsedServerSeconds: 300 }));
+  ok(
+    "holding a doubler but scoring as if not is still accepted (collected late)",
+    result.accepted,
+    result.accepted ? "" : result.reasonCode,
+  );
+}
+
+expectReject(
+  "a power-up id that does not exist",
+  "ITEM_COUNT_IMPOSSIBLE",
+  makeRun({ mazeIdxSequence: [0], powerupsCollected: 1, powerupIds: ["invincibility"] }),
+  classicCtx(),
+);
+
+expectReject(
+  "more power-ups than the thresholds can spawn",
+  "ITEM_COUNT_IMPOSSIBLE",
+  makeRun({
+    mazeIdxSequence: [0],
+    powerupsCollected: POWERUP_THRESHOLDS.length + 1,
+    powerupIds: ["doubleBiscuit"],
+  }),
+  classicCtx(),
+);
+
+expectReject(
+  "more KINDS than pickups",
+  "ITEM_COUNT_IMPOSSIBLE",
+  makeRun({
+    mazeIdxSequence: [0],
+    powerupsCollected: 1,
+    powerupIds: ["doubleBiscuit", "doubleGhost"],
+  }),
+  classicCtx(),
+);
+
+// Challenge mode has none at all, so this needs no judgement call.
+expectReject(
+  "a power-up reported on a challenge run",
+  "ITEM_COUNT_IMPOSSIBLE",
+  makeRun({
+    mazeIdxSequence: [CHALLENGE_LEVELS[0].mazeIdx],
+    levelsCleared: 1,
+    powerupsCollected: 1,
+    powerupIds: ["shield"],
+  }),
+  { elapsedServerSeconds: 300, mode: "challenge", challengeIdx: 0, currentChallengeProgress: 0 },
+);
+
+// Backward compatibility, same shape as IDEA-045's: a run from before this
+// shipped reports neither field, and truthfully had no power-ups.
+{
+  const old = makeRun({ mazeIdxSequence: [0] });
+  delete (old as { powerupsCollected?: number }).powerupsCollected;
+  delete (old as { powerupIds?: string[] }).powerupIds;
+  const result = validateRun(old, classicCtx());
+  ok(
+    "a pre-IDEA-046 run with no power-up fields is accepted",
+    result.accepted,
+    result.accepted ? "" : result.reasonCode,
+  );
+}
+
+// The wire parser has to carry both, or the ceiling never rises and every
+// doubled run is rejected — the IDEA-040 v3 failure, repeated.
+{
+  const parsed = readSubmission({
+    score: 100,
+    mazeIdxSequence: [0],
+    powerupsCollected: 2,
+    powerupIds: ["doubleBiscuit", "shield"],
+  });
+  ok("readSubmission carries powerupsCollected", parsed.powerupsCollected === 2);
+  ok(
+    "…and powerupIds",
+    JSON.stringify(parsed.powerupIds) === JSON.stringify(["doubleBiscuit", "shield"]),
+    JSON.stringify(parsed.powerupIds),
+  );
+  const absent = readSubmission({ score: 0, mazeIdxSequence: [0] });
+  ok("…and leaves them undefined when absent", absent.powerupsCollected === undefined && absent.powerupIds === undefined);
 }
 
 console.log(`\n${"-".repeat(60)}`);
