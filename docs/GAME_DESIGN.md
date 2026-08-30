@@ -56,8 +56,14 @@ Clearing every pellet on a map shows "Map Cleared!", then advances to the
 next map. Maps cycle (index `% MAZE_COUNT`); once a run loops past the last
 map the Map HUD label gets a lap suffix (e.g. "1 ·2").
 
-Fruit appears once 70 and once 140 pellets have been eaten on the current
-map, placed on a random `F` tile; walking onto it scores `SCORE.fruit`.
+Fruit appears at each of `FRUIT_THRESHOLDS` (40/80/120/160) pellets eaten on
+the current map — four per map — placed on a random `F` tile; walking onto it
+scores whatever the fruit sitting there is worth (IDEA-045's ladder: 100 for an
+apple through 500 for a mango, rolled at spawn and remembered). Like the coin
+and the golden bone it is **time-limited**: it auto-despawns after
+`FRUIT_LIFESPAN_SECONDS` (20s) if not eaten, scoring nothing. An expired fruit
+does not burn its threshold — `maybeSpawnFruit`'s board-occupied guard sits
+before the threshold check, so the next spawn is simply the next threshold.
 
 ## Coins (IDEA-016 / IDEA-017)
 Coins are a **persistent wallet** (`localStorage`, separate from the per-run
@@ -84,7 +90,7 @@ score/lives), meant to fund a future shop. Two ways to earn them:
   nothing's been cleared yet (very early in a level) so a coin still always
   appears. Either pool avoids the beagle's current tile and the active fruit
   tile where another candidate exists. Walking onto it grants
-  `COINS.pickupValue` (1) coin directly with **no points**. Unlike the fruit,
+  `COINS.pickupValue` (1) coin directly with **no points**. Like the fruit,
   the coin is **time-limited**: it auto-despawns after `COINS.lifespanSeconds`
   (18s) if not grabbed, banking nothing — a distinct, urgent "grab it quick"
   bonus; 18s (rather than a shorter window) gives the player time to actually

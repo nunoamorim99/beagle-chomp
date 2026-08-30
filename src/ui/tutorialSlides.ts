@@ -94,8 +94,8 @@ export function buildSlides(input: DeviceInput): TutorialSlide[] {
       body:
         "Biscuits are 10 points each, and eating all of them finishes the map. " +
         "Fruit turns up now and then, worth anywhere from 100 for an apple to " +
-        "500 for a mango — and the best ones show up least, so take the chance " +
-        "when you see it.",
+        "500 for a mango — the best ones show up least, and none of them wait " +
+        "around, so go when you see one.",
       stage: "maze",
     },
     {

@@ -11,6 +11,8 @@
 import {
   FRUITS,
   FRUIT_THRESHOLDS,
+  FRUIT_LIFESPAN_SECONDS,
+  COINS,
   COIN_THRESHOLDS,
   LIFE_THRESHOLDS,
   SCORE,
@@ -183,6 +185,109 @@ section("Each threshold still fires exactly once (the v1.0 farming exploit)");
     fired === FRUIT_THRESHOLDS.length,
     fired,
   );
+}
+
+// ===========================================================================
+section("The fruit is time-limited (it no longer waits until eaten)");
+
+ok(
+  "FRUIT_LIFESPAN_SECONDS is a positive, finite number of seconds",
+  Number.isFinite(FRUIT_LIFESPAN_SECONDS) && FRUIT_LIFESPAN_SECONDS > 0,
+  FRUIT_LIFESPAN_SECONDS,
+);
+// The fruit lands on the maze's fixed `F` tiles rather than "wherever the
+// beagle isn't", so the player gets no say in how far away it appears — and it
+// is the pickup most worth a long detour. It must never be the tightest window
+// of the timed pickups.
+ok(
+  "the fruit gets at least as long as the coin does",
+  FRUIT_LIFESPAN_SECONDS >= COINS.lifespanSeconds,
+  `${FRUIT_LIFESPAN_SECONDS} vs coin ${COINS.lifespanSeconds}`,
+);
+
+// game.ts's fruit lifecycle, modelled: maybeSpawnFruit's board-occupied guard
+// sits BEFORE the threshold check, and tickFruitLifespan despawns at <= 0.
+// Modelled rather than driven through Game because Game needs three.js and a
+// DOM; the two functions below are a line-for-line mirror of those methods.
+type FruitSim = { onBoard: boolean; timer: number; idx: number; spawns: number; expired: number };
+
+function simSpawn(f: FruitSim, eaten: number): void {
+  if (f.onBoard) return; // the occupied guard, BEFORE the threshold check
+  if (!shouldFireThreshold(eaten, FRUIT_THRESHOLDS, f.idx)) return;
+  f.idx++;
+  f.onBoard = true;
+  f.timer = FRUIT_LIFESPAN_SECONDS;
+  f.spawns++;
+}
+
+function simTick(f: FruitSim, dt: number): void {
+  if (!f.onBoard) return;
+  f.timer -= dt;
+  if (f.timer <= 0) {
+    f.onBoard = false;
+    f.timer = 0;
+    f.expired++;
+  }
+}
+
+{
+  const f: FruitSim = { onBoard: false, timer: 0, idx: 0, spawns: 0, expired: 0 };
+  simSpawn(f, FRUIT_THRESHOLDS[0]);
+  ok("the first threshold puts a fruit on the board", f.onBoard && f.spawns === 1);
+
+  // One frame short of the window: still there. This is the boundary that
+  // matters — an off-by-one here is a fruit vanishing under the player's nose,
+  // which is indistinguishable from a bug in the pickup check.
+  simTick(f, FRUIT_LIFESPAN_SECONDS - 0.05);
+  ok("still on the board just before the window closes", f.onBoard && f.expired === 0, f.timer);
+
+  // 0.1 rather than the 0.05 left on the clock: floating-point subtraction
+  // leaves 7e-16 on the counter at exactly 0, and a test that asserts a frame
+  // lands on precisely zero is testing IEEE 754, not the fruit. The real loop
+  // is fed wall-clock dt, which never lines up either — expiry happens on the
+  // frame that CROSSES the window, which is what this asserts.
+  simTick(f, 0.1);
+  ok("gone once the window closes, awarding nothing", !f.onBoard && f.expired === 1);
+  ok("expiry leaves no stale countdown behind", f.timer === 0, f.timer);
+
+  // THE RULE WORTH PINNING: an expired fruit must not cost the level a spawn.
+  // The index advanced when it spawned, so the NEXT threshold is the next
+  // fruit — the map still gets four, the player just doesn't get to eat one
+  // they ignored.
+  simSpawn(f, FRUIT_THRESHOLDS[1]);
+  ok("the next threshold still spawns after one expired", f.onBoard && f.spawns === 2);
+}
+
+{
+  // A whole level in which the player eats none of them: four spawns, four
+  // expiries, and never two fruits on the board at once.
+  const f: FruitSim = { onBoard: false, timer: 0, idx: 0, spawns: 0, expired: 0 };
+  let doubled = false;
+  for (let eaten = 0; eaten <= 179; eaten++) {
+    simSpawn(f, eaten);
+    if (f.spawns - f.expired > 1) doubled = true;
+    // ~1s of play per pellet; the point is only that the window closes
+    // somewhere between two thresholds ~40 pellets apart.
+    simTick(f, 1);
+  }
+  ok(
+    "a level of ignored fruit spawns all four and expires all four",
+    f.spawns === FRUIT_THRESHOLDS.length && f.expired === FRUIT_THRESHOLDS.length,
+    `${f.spawns} spawned / ${f.expired} expired`,
+  );
+  ok("never two fruits on the board at once", !doubled);
+}
+
+// A fruit still lingering when the next threshold arrives DEFERS that spawn
+// rather than burning it — the same guard order, from the other side.
+{
+  const f: FruitSim = { onBoard: false, timer: 0, idx: 0, spawns: 0, expired: 0 };
+  simSpawn(f, FRUIT_THRESHOLDS[0]);
+  simSpawn(f, FRUIT_THRESHOLDS[1]); // still on the board, no clock has run
+  ok("a lingering fruit blocks the next spawn", f.spawns === 1 && f.idx === 1);
+  simTick(f, FRUIT_LIFESPAN_SECONDS);
+  simSpawn(f, FRUIT_THRESHOLDS[1] + 1);
+  ok("...and the deferred threshold fires as soon as the board is clear", f.spawns === 2, f.spawns);
 }
 
 console.log(`\n${"-".repeat(60)}`);

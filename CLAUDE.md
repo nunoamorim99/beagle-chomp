@@ -62,7 +62,12 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v7.
   reports `fruitPoints` (the exact total) alongside the count — **change a number
   in `FRUITS` and you must run `npm run sync` in `server/`** or honest runs start
   failing `SCORE_ITEM_MISMATCH`. `FRUIT_THRESHOLDS` moved from `game.ts` to
-  `config.ts` for the same reason.
+  `config.ts` for the same reason. **The fruit is TIMED** — it despawns after
+  `FRUIT_LIFESPAN_SECONDS` (20s, the most generous of the three timed pickups
+  because it lands on the maze's fixed `F` tiles rather than near the beagle),
+  so crossing the maze for a mango is a gamble instead of an errand you run on
+  the way past. An expired fruit does not burn its threshold: `maybeSpawnFruit`'s
+  board-occupied guard sits BEFORE the threshold check, so a map still gets four.
 - **POWER-UPS change the rules, not the score** (IDEA-046): five pickups —
   x2 biscuits, x2 enemies, an anchor that slows the pack, a star that
   frightens them and speeds the beagle, and a shield. The design is in
