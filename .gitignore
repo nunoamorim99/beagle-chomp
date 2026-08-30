@@ -21,3 +21,6 @@ server/.env
 server/.env.*
 !server/.env.example
 .tmp-screens/
+
+# img2threejs skill workspace (reference imagery + pipeline state) — never committed.
+.img2threejs/

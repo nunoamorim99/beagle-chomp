@@ -136,10 +136,13 @@ export const LIVES = {
   // meaningful headroom above START_LIVES (3) without being effectively
   // infinite.
   max: 5,
-  // Every 5000 points of cumulative run score grants 1 life (mirrors
-  // COINS.perPoints's shape exactly, just a coarser divisor — lives should be
-  // rarer than coins since they're a much stronger reward).
-  milestonePoints: 5000,
+  // Every 10000 points of cumulative run score grants 1 life. This is the ONE
+  // points-milestone left in the game (IDEA-016 v2 removed the coins one), and
+  // it is deliberately coarse: at 5000 a decent run banked the LIVES.max cap
+  // before the difficulty had a chance to bite, so the milestone stopped being
+  // a reward and became a floor. Doubling it keeps the extra life something a
+  // long run earns rather than something every run collects.
+  milestonePoints: 10000,
   // The golden-bone pickup auto-despawns if not grabbed in time, same
   // "grab it quick" urgency as the maze coin (COINS.lifespanSeconds).
   pickupLifespanSeconds: 18,

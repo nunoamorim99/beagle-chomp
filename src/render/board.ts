@@ -284,32 +284,109 @@ export function makeLifeBone(): THREE.Group {
  */
 
 /**
+ * The apple's lathe profile: [radius, height], bottom centre first.
+ *
+ * NOT monotonic in y, and that is the point. It starts on the axis at -0.150,
+ * drops OUTWARD and down to the lowest ring at -0.196, and finishes by turning
+ * back in and down to -0.158 below the shoulder. Those two reversals are the
+ * calyx dimple underneath and the stem well on top, which is most of what
+ * separates an apple from a ball. LatheGeometry is happy to revolve a polyline
+ * that doubles back; it only cares that the points run bottom to top overall,
+ * which is the direction that gets the winding right (see makeStrawberry).
+ *
+ * Wider than tall — 0.46 across against 0.39 of body — because a real one is.
+ */
+const APPLE_PROFILE: readonly [number, number][] = [
+  [0.0, -0.168],
+  [0.048, -0.186],
+  [0.1, -0.196],
+  [0.152, -0.186],
+  [0.196, -0.152],
+  [0.221, -0.1],
+  [0.23, -0.04],
+  [0.229, 0.028],
+  [0.213, 0.092],
+  [0.182, 0.146],
+  [0.138, 0.182],
+  [0.088, 0.196],
+  [0.052, 0.18],
+  [0.024, 0.164],
+  [0.0, 0.158],
+];
+
+/**
  * Apple — 100, the common case (weight 40).
  *
- * This IS the original `makeFruit()`, renamed and otherwise untouched, down to
- * the strengthened emissive. Deliberate: the cheapest fruit should look exactly
- * like the fruit players already know, so the feature reads as four additions
- * rather than a replacement of something familiar.
+ * Its comment used to say this was the original `makeFruit()`, untouched, so
+ * that the fruit ladder read as four ADDITIONS rather than a replacement of
+ * something familiar. That release has shipped; the ladder is the status quo
+ * now, so the apple was rebuilt from a reference like the rest of them.
+ *
+ * What it gains is a stem in a real WELL and a dimple underneath. The old build
+ * was a plain sphere with a green lozenge stuck on top and no stem at all — and
+ * a sphere is the one thing an apple is not, because both of its ends are
+ * pushed in.
+ *
+ * Worth knowing before retuning this: the apple is the shape the rest of the
+ * set is differentiated FROM. The mango carries no leaf and the carrot's tuft
+ * is six stalks rather than one mass, both to avoid reading as this fruit. A
+ * change here that made the apple rounder or its leaf bigger would quietly
+ * spend the margin those two are relying on.
  */
 export function makeApple(): THREE.Group {
   const g = new THREE.Group();
-  // Emissive strengthened (0x3a0d0a/0.4 -> 0x5c130f/0.5) so the fruit reads
-  // as a glowing bonus pickup, matching the biscuit/bone glow treatment.
   const apple = new THREE.Mesh(
-    new THREE.SphereGeometry(0.22, 16, 16),
+    new THREE.LatheGeometry(
+      APPLE_PROFILE.map(([r, y]) => new THREE.Vector2(r, y)),
+      // 16, not 14: this is the roundest thing on the board and at 14 the
+      // silhouette shows its facets.
+      16,
+    ),
     toon({
       color: 0xd8483f,
-
       emissive: 0x5c130f,
       emissiveIntensity: 0.5,
     }),
   );
   apple.name = "apple";
   g.add(apple);
-  // Leaf gets a faint green emissive too (was none) — subtle, just enough
-  // that it doesn't look like a flat unlit cutout next to the glowing apple.
+
+  // Rises out of the well floor at 0.158, not off the shoulder — that recess is
+  // the whole reason for the profile's second reversal, and a stem planted on
+  // top of the fruit instead of inside the dimple wastes it.
+  const stem = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.011, 0.016, 0.115, 6),
+    toon({
+      color: 0x7a5a34,
+      emissive: 0x241708,
+      emissiveIntensity: 0.3,
+    }),
+  );
+  stem.name = "stem";
+  stem.position.set(0.006, 0.213, 0);
+  stem.rotation.z = -0.16;
+  g.add(stem);
+
+  // A flat pointed BLADE, not a squashed sphere. The leaf is this fruit's tell —
+  // it is why the mango has none — so its outline has to be a leaf's, and a
+  // lozenge seen at 25px is just a green smudge either way.
+  const blade = new THREE.Shape();
+  // Big — 0.22 long against the fruit's 0.23 radius. The reference's leaf is
+  // nearly as long as the apple is wide, and a smaller one tilted up reads as a
+  // green sliver rather than as a blade.
+  blade.moveTo(0, 0);
+  blade.quadraticCurveTo(0.08, 0.092, 0.22, 0);
+  blade.quadraticCurveTo(0.08, -0.092, 0, 0);
+  const leafGeo = new THREE.ExtrudeGeometry(blade, {
+    depth: 0.008,
+    bevelEnabled: false,
+    curveSegments: 5,
+  });
+  // Laid flat in the GEOMETRY so the mesh's own rotation is just placement:
+  // tilt up on Z, then swing round the fruit on Y.
+  leafGeo.rotateX(-Math.PI / 2);
   const leaf = new THREE.Mesh(
-    new THREE.SphereGeometry(0.06, 8, 8),
+    leafGeo,
     toon({
       color: 0x5fae4d,
       emissive: 0x1c3a18,
@@ -317,9 +394,16 @@ export function makeApple(): THREE.Group {
     }),
   );
   leaf.name = "leaf";
-  leaf.position.set(0.06, 0.22, 0);
-  leaf.scale.set(1.4, 0.5, 0.8);
+  // On the shoulder RIM, not beside the stem. At the well the fruit is still
+  // 0.11 across and a root placed at 0.05 buries the first third of the blade
+  // inside the apple, which is why it read as a stub. 0.081 out is the rim.
+  leaf.position.set(0.06, 0.196, 0.055);
+  // Only a shallow tilt on Z: laid flatter, the blade turns its FACE to the
+  // game camera, which looks down. Steeply tilted it presents its edge and
+  // all that width is spent on nothing.
+  leaf.rotation.set(0, -0.7, 0.22);
   g.add(leaf);
+
   g.traverse((o) => {
     o.castShadow = true;
   });
@@ -327,57 +411,220 @@ export function makeApple(): THREE.Group {
 }
 
 /**
+ * A closed tube of VARYING radius swept along a curve.
+ *
+ * THREE.TubeGeometry cannot do this — its radius is a single number — and the
+ * taper is the whole point of a banana: fat through the middle, pinched only in
+ * the last tenth at each end. A partial torus, which is what the banana used to
+ * be, has uniform thickness by construction.
+ *
+ * Normals are written radially rather than left to computeVertexNormals(). The
+ * ring is closed by duplicating the seam column (j = 0 and j = radial share a
+ * position), and averaged normals would give those two copies different values
+ * and draw a bright seam down the length of the fruit.
+ */
+function taperedTube(
+  curve: THREE.Curve<THREE.Vector3>,
+  tubular: number,
+  radial: number,
+  radiusAt: (t: number) => number,
+): THREE.BufferGeometry {
+  const frames = curve.computeFrenetFrames(tubular, false);
+  const position: number[] = [];
+  const normal: number[] = [];
+  const uv: number[] = [];
+  const index: number[] = [];
+  const P = new THREE.Vector3();
+  const dir = new THREE.Vector3();
+
+  for (let i = 0; i <= tubular; i++) {
+    const t = i / tubular;
+    curve.getPointAt(t, P);
+    const N = frames.normals[i];
+    const B = frames.binormals[i];
+    const r = radiusAt(t);
+    for (let j = 0; j <= radial; j++) {
+      const a = (j / radial) * Math.PI * 2;
+      // NEGATIVE cosine, matching THREE.TubeGeometry exactly. The index winding
+      // below is lifted from that class, and the two only agree if the ring is
+      // walked in the same direction. With +cos the ring runs the other way,
+      // every triangle comes out wound backwards, FrontSide culls the near wall
+      // and you see straight through the fruit to its far side.
+      const c = -Math.cos(a);
+      const s = Math.sin(a);
+      dir.set(N.x * c + B.x * s, N.y * c + B.y * s, N.z * c + B.z * s).normalize();
+      normal.push(dir.x, dir.y, dir.z);
+      position.push(P.x + r * dir.x, P.y + r * dir.y, P.z + r * dir.z);
+      uv.push(t, j / radial);
+    }
+  }
+  for (let i = 1; i <= tubular; i++) {
+    for (let j = 1; j <= radial; j++) {
+      const a = (radial + 1) * (i - 1) + (j - 1);
+      const b = (radial + 1) * i + (j - 1);
+      const c = (radial + 1) * i + j;
+      const d = (radial + 1) * (i - 1) + j;
+      index.push(a, b, d, b, c, d);
+    }
+  }
+
+  // CLOSE BOTH ENDS. The swept ring is open by construction, and an open tube
+  // shows you its own inside surface through the hole — which does not read as
+  // a hole, it reads as the whole fruit being see-through. The cap fan carries
+  // the end's tangent as its normal rather than the ring's radial one, so it
+  // catches a different band of the toon ramp and the end reads as an end.
+  for (const end of [0, tubular]) {
+    const sign = end === 0 ? -1 : 1;
+    const t = end / tubular;
+    curve.getPointAt(t, P);
+    const T = frames.tangents[end];
+    const nx = T.x * sign;
+    const ny = T.y * sign;
+    const nz = T.z * sign;
+    const centre = position.length / 3;
+    position.push(P.x, P.y, P.z);
+    normal.push(nx, ny, nz);
+    uv.push(0.5, 0.5);
+    const base = position.length / 3;
+    const r = radiusAt(t);
+    const N = frames.normals[end];
+    const B = frames.binormals[end];
+    for (let j = 0; j <= radial; j++) {
+      const a = (j / radial) * Math.PI * 2;
+      const c = -Math.cos(a);
+      const s = Math.sin(a);
+      dir.set(N.x * c + B.x * s, N.y * c + B.y * s, N.z * c + B.z * s).normalize();
+      position.push(P.x + r * dir.x, P.y + r * dir.y, P.z + r * dir.z);
+      normal.push(nx, ny, nz);
+      uv.push(0.5 + 0.5 * c, 0.5 + 0.5 * s);
+    }
+    // Fan winding follows the ring's direction, so it flips with it.
+    for (let j = 0; j < radial; j++) {
+      if (sign > 0) index.push(centre, base + j + 1, base + j);
+      else index.push(centre, base + j, base + j + 1);
+    }
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setIndex(index);
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(position, 3));
+  geo.setAttribute("normal", new THREE.Float32BufferAttribute(normal, 3));
+  geo.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+  return geo;
+}
+
+/**
  * Banana — 200 (weight 25).
  *
- * A partial torus, which is the whole trick: an arc of just under half a turn
- * gives a crescent that is unmistakable at any size and shares its outline with
- * nothing else on the board. The default TorusGeometry arc runs anticlockwise
- * from +X, so an arc of ~0.95PI covers the UPPER half and the crescent opens
- * downward — a banana resting on its tips, which is how one is drawn.
+ * A crescent, which is the whole trick: it shares its outline with nothing else
+ * on the board, and that matters more here than on any other pickup. CLAUDE.md
+ * records why — the first mango was near-round and gold and read as an apple,
+ * so the 100 and the 500 looked alike. Five fruits, five silhouettes.
  *
- * Flattened on Y (0.82) because a perfectly circular tube reads as a ring; a
- * real banana is deeper than it is tall in cross-section.
+ * The reference is a whole HAND of five. It is not built as one: at ~21px five
+ * overlapping fingers are a yellow blob, and the blob is not a crescent. What
+ * the reference gave is the profile of a single finger, and that is the upgrade
+ * — this used to be a partial torus, so it was exactly as thick at the tips as
+ * in the middle. It is now a tube of varying radius swept along a
+ * CatmullRomCurve3: fat through the belly, pinched in the last tenth at each
+ * end, the way a real one is.
  *
- * Sized UP from the first pass (0.17/0.058 -> 0.2/0.078). A crescent is mostly
- * empty space inside its own bounding box, so matching the apple on paper left
- * it reading as a sliver next to one — a shape has to be judged against its
- * NEIGHBOURS at the size they are actually seen, not against a number.
+ * It stands UPRIGHT with a slight lean, rather than lying as a rainbow. The
+ * lean is baked into the spine's own coordinates rather than applied as a
+ * rotation on the group, because spinDecor owns rotation.y on that group and a
+ * second Euler component there would compose in an order this file should not
+ * have to reason about.
+ *
+ * The two ends are NOT the same and are not two brown balls. The reference is
+ * clear about it: the stalk end carries the green stub where the finger was cut
+ * from the crown, and the flower end is a small dark dot. They are still named
+ * tipStem and tipEnd, which the editor's pickup test pins.
+ *
+ * Two proportions are deliberate. The ARC is flattened (its points are built at
+ * 0.82 on Y before the lean is applied) because a circular arc reads as a ring,
+ * but the TUBE is left round — the old build flattened both, and the
+ * cross-section is the only thing this shape has to offer edge-on, where it was
+ * the thinnest pickup on the board. And the taper holds 55% of full radius at
+ * the very ends rather than running to a needle, so there is something for the
+ * stem and the dot to sit on.
  */
 export function makeBanana(): THREE.Group {
   const g = new THREE.Group();
+  g.rotation.set(0, 0, 1.005);
   const yellow = toon({
     color: 0xf2c832,
     emissive: 0x5c4408,
     emissiveIntensity: 0.45,
   });
-  const banana = new THREE.Mesh(
-    new THREE.TorusGeometry(0.2, 0.078, 8, 20, Math.PI * 0.95),
-    yellow,
-  );
+
+  // Authored lying down — a flattened arc, symmetric about x = 0 — then turned
+  // upright by LEAN. 90 degrees would stand it dead vertical; a little under
+  // leaves it hanging the way one does on the bunch.
+  const LEAN = Math.PI * 0.5 - 0.19;
+  const cos = Math.cos(LEAN);
+  const sin = Math.sin(LEAN);
+  // Scaled up from the version that lay flat. Standing the crescent upright
+  // turned a 0.52-wide, 0.29-tall pickup into a 0.34-wide, 0.51-tall one, and
+  // the game camera looks DOWN — so the long axis is now the foreshortened one
+  // and the worst frame fell to 16px, which the contact sheet flags in red.
+  // The spine grows more than the radius does, which buys the pixels back and
+  // slims the fruit toward the reference's proportions at the same time.
+  const L = 1.3;
+  const flat: readonly [number, number][] = [
+    [0.208 * L, 0.01 * L],
+    [0.166 * L, 0.108 * L],
+    [0.057 * L, 0.166 * L],
+    [-0.07 * L, 0.16 * L],
+    [-0.172 * L, 0.096 * L],
+    [-0.208 * L, 0.006 * L],
+  ];
+  const turned = flat.map(([x, y]) => new THREE.Vector3(x * cos - y * sin, x * sin + y * cos, 0));
+  // Re-centre on X so spinDecor's Y rotation turns it in place rather than
+  // swinging it round a point outside itself. The lean moves the mass off the
+  // axis; this puts it back.
+  const midX = (Math.min(...turned.map((p) => p.x)) + Math.max(...turned.map((p) => p.x))) / 2;
+  for (const p of turned) p.x -= midX;
+  const spine = new THREE.CatmullRomCurve3(turned);
+
+  const RMAX = 0.086;
+  const radiusAt = (t: number) => RMAX * (0.55 + 0.45 * Math.sin(Math.PI * t) ** 0.35);
+
+  const banana = new THREE.Mesh(taperedTube(spine, 24, 8, radiusAt), yellow);
   banana.name = "banana";
-  banana.scale.set(1, 0.82, 1);
   g.add(banana);
 
-  // The two dark tips (stalk end and flower end). Small, but they are what
-  // stops the crescent reading as a smooth ring, and they sit ON the ends
-  // rather than near them: both are placed by the same arc arithmetic the
-  // torus itself uses, so retuning the arc above cannot leave them floating.
+  // The stalk end: the green stub left where this finger was cut off the bunch.
+  // A short cylinder laid along the spine's own outgoing tangent, so it points
+  // the way the fruit does however the lean is retuned.
+  const stemMat = toon({
+    color: 0x9fb83a,
+    emissive: 0x2c3a08,
+    emissiveIntensity: 0.35,
+  });
+  const stemOut = spine.getTangentAt(0).negate();
+  const tipStem = new THREE.Mesh(
+    new THREE.CylinderGeometry(radiusAt(0) * 0.62, radiusAt(0) * 0.95, 0.06, 7),
+    stemMat,
+  );
+  tipStem.name = "tipStem";
+  tipStem.scale.set(1.189, 1.8, 1.25);
+  tipStem.position.set(0.163, 0.278, -0.002);
+  tipStem.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), stemOut);
+  g.add(tipStem);
+
+  // The flower end: a small dark dot, not a ball. Half the radius the tube has
+  // there, sat just proud of the cap so it reads as a mark on the end rather
+  // than as a second object stuck to it.
   const tipMat = toon({
     color: 0x6b4a2f,
     emissive: 0x241708,
     emissiveIntensity: 0.3,
   });
-  const arc = Math.PI * 0.95;
-  const tipStem = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 8), tipMat);
-  tipStem.name = "tipStem";
-  tipStem.position.set(0.2, 0, 0);
-  tipStem.scale.set(1, 0.82, 1);
-  g.add(tipStem);
-
-  const tipEnd = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 8), tipMat);
+  const tipEnd = new THREE.Mesh(new THREE.SphereGeometry(radiusAt(1) * 0.52, 8, 6), tipMat);
   tipEnd.name = "tipEnd";
-  tipEnd.position.set(0.2 * Math.cos(arc), 0.2 * Math.sin(arc) * 0.82, 0);
-  tipEnd.scale.set(1, 0.82, 1);
+  tipEnd.scale.set(1.8, 1.9, 2.007);
+  tipEnd.rotation.set(0, 0, -0.699);
+  tipEnd.position.copy(spine.getPointAt(1)).addScaledVector(spine.getTangentAt(1), 0.012);
   g.add(tipEnd);
 
   g.traverse((o) => {
@@ -387,21 +634,85 @@ export function makeBanana(): THREE.Group {
 }
 
 /**
+ * The carrot's lathe profile: a power-curve taper up the root, then a
+ * quarter-circle dome over the shoulder. Body and dome are stepped separately
+ * so the dome gets real resolution without spending points up the straight.
+ *
+ * NO RINGS. A real root is banded and a lathe can express that for the price of
+ * a ripple in the radius, so it was built — and it does not work here. The cel
+ * ramp has three steps, and a ripple deep enough to see tips the surface normal
+ * back and forth across a step boundary; the whole patch either side of a
+ * crossing flips band together, so what renders is two or three dark BLOBS
+ * rather than rings. Halving the amplitude did not fix it, and the amplitude
+ * that does is too small to see. Rings and a three-step ramp are the
+ * incompatible pair, not rings and this geometry.
+ *
+ * Ascending y, tip first — the direction LatheGeometry wants its points. Handed
+ * a descending profile it inverts every face and the root renders see-through;
+ * see makeStrawberry, where exactly that shipped.
+ */
+function carrotProfile(bodySteps: number, domeSteps: number): THREE.Vector2[] {
+  const TIP_Y = -0.27;
+  const TOP_Y = 0.225;
+  const R = 0.118;
+  /** Where the straight taper stops and the shoulder starts rounding over.
+   *  The gap to TOP_Y is the dome's HEIGHT, and it has to be comparable to R or
+   *  the quarter-circle comes out far wider than it is tall — at 0.045 against a
+   *  radius of 0.118 the top surface sits almost horizontal and the carrot
+   *  reads as having been sliced off flat. 0.10 against 0.118 is a dome. */
+  const SHOULDER_Y = 0.125;
+  const pts: THREE.Vector2[] = [];
+  for (let i = 0; i <= bodySteps; i++) {
+    const t = i / bodySteps;
+    // pow < 1 fattens the root quickly out of the tip and then eases off, which
+    // is why the reference's carrot is not a straight-sided cone.
+    pts.push(new THREE.Vector2(R * Math.pow(t, 0.62), TIP_Y + (SHOULDER_Y - TIP_Y) * t));
+  }
+  for (let i = 1; i <= domeSteps; i++) {
+    const k = i / domeSteps;
+    pts.push(new THREE.Vector2(R * Math.sqrt(Math.max(0, 1 - k * k)), SHOULDER_Y + (TOP_Y - SHOULDER_Y) * k));
+  }
+  return pts;
+}
+
+/** Where each frond leaves the crown: angle round the root, how far it leans
+ *  out of vertical, its length and its thickness. Deliberately uneven — six
+ *  identical stalks on a regular ring read as a fan, not a tuft. */
+const CARROT_FRONDS: readonly { a: number; lean: number; len: number; r: number }[] = [
+  { a: -0.5, lean: 0.55, len: 0.17, r: 0.03 },
+  { a: 0.35, lean: 0.4, len: 0.22, r: 0.026 },
+  { a: 1.4, lean: 0.62, len: 0.15, r: 0.028 },
+  { a: 2.5, lean: 0.45, len: 0.19, r: 0.024 },
+  { a: 3.6, lean: 0.58, len: 0.16, r: 0.027 },
+  { a: 4.8, lean: 0.38, len: 0.21, r: 0.025 },
+];
+
+/**
  * Carrot — 300 (weight 18).
  *
  * The one fruit here that is actually a vegetable, and the one whose outline is
- * carrying the most weight: a cone POINT-DOWN is the only downward-tapering
- * shape in the set, so it separates from the mango's warm oval at a glance even
- * though the two colours are neighbours on the wheel.
+ * carrying the most weight: a shape tapering POINT-DOWN is the only one in the
+ * set, so it separates from the mango's warm oval at a glance even though the
+ * two colours are neighbours on the wheel.
  *
- * The fronds are three flattened cones rather than one blob because a single
- * green lump on top would read as the apple's leaf. Splayed outward with a
- * shared tilt so they catch the light at three different angles.
+ * It was a plain cone. The reference is not one — its root fattens quickly out
+ * of the tip and then eases off, and its shoulder is DOMED rather than cut flat
+ * the way a cone's base is. Both of those are silhouette, so both are now in a
+ * lathe profile instead.
+ *
+ * SIX fronds rather than three, and thinner. The three-cone tuft existed to
+ * stop a single green lump reading as the apple's leaf, and that reasoning
+ * still holds — what changed is that six thin stalks do the same job while
+ * reading as foliage rather than as three spikes. Their angles and lengths are
+ * deliberately uneven: six identical stalks on a regular ring read as a fan.
+ *
+ * The root's RINGS were built and then removed — see carrotProfile for why a
+ * three-step cel ramp turns a rippled radius into blobs rather than bands.
  */
 export function makeCarrot(): THREE.Group {
   const g = new THREE.Group();
   const carrot = new THREE.Mesh(
-    new THREE.ConeGeometry(0.125, 0.4, 12),
+    new THREE.LatheGeometry(carrotProfile(12, 5), 10),
     toon({
       color: 0xe8721f,
       emissive: 0x5c2606,
@@ -409,8 +720,6 @@ export function makeCarrot(): THREE.Group {
     }),
   );
   carrot.name = "carrot";
-  carrot.rotation.z = Math.PI; // point DOWN — the whole silhouette argument
-  carrot.position.y = 0.02;
   g.add(carrot);
 
   const frondMat = toon({
@@ -418,19 +727,33 @@ export function makeCarrot(): THREE.Group {
     emissive: 0x1c3a18,
     emissiveIntensity: 0.35,
   });
-  // Splay angle and lean are shared so the three read as one tuft rather than
-  // three separate props that happen to be adjacent.
-  const lean = 0.42;
-  ([
-    ["frondL", -1, 0],
-    ["frondC", 0, 1],
-    ["frondR", 1, 0],
-  ] as const).forEach(([name, dx, dz]) => {
-    const frond = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.17, 6), frondMat);
-    frond.name = name;
-    frond.position.set(dx * 0.055, 0.28, dz * 0.055);
-    frond.rotation.z = -dx * lean;
-    frond.rotation.x = dz * lean;
+
+  // The green shoulder the fronds spring from. Without it they read as six
+  // stalks hovering over an orange cone rather than as growing out of one.
+  // Sized against the dome it sits on: the root is 0.071 across at this height,
+  // so 0.082 clears it and caps the apex rather than sinking into it.
+  const collar = new THREE.Mesh(new THREE.SphereGeometry(0.082, 8, 5), frondMat);
+  collar.name = "collar";
+  collar.position.y = 0.205;
+  collar.scale.set(1, 0.55, 1);
+  g.add(collar);
+
+  const UP = new THREE.Vector3(0, 1, 0);
+  CARROT_FRONDS.forEach((f, i) => {
+    const frond = new THREE.Mesh(new THREE.ConeGeometry(f.r, f.len, 5), frondMat);
+    frond.name = `frond${i + 1}`;
+    // Unit by construction: sin^2*(cos^2 a + sin^2 a) + cos^2 = 1.
+    const dir = new THREE.Vector3(
+      Math.cos(f.a) * Math.sin(f.lean),
+      Math.cos(f.lean),
+      Math.sin(f.a) * Math.sin(f.lean),
+    );
+    frond.quaternion.setFromUnitVectors(UP, dir);
+    // Base sits on the collar and the cone extends ALONG its own lean, so the
+    // stalks stay rooted however the angles above are retuned.
+    frond.position
+      .set(Math.cos(f.a) * 0.018, 0.216, Math.sin(f.a) * 0.018)
+      .addScaledVector(dir, f.len / 2);
     g.add(frond);
   });
 
@@ -440,18 +763,160 @@ export function makeCarrot(): THREE.Group {
   return g;
 }
 
+/** The berry's silhouette, as a lathe profile: [radius, height], crown to tip. */
+const BERRY_PROFILE: readonly [number, number][] = [
+  [0.0, 0.2],
+  [0.058, 0.195],
+  [0.11, 0.18],
+  [0.15, 0.15],
+  [0.17, 0.108],
+  [0.172, 0.062],
+  [0.16, 0.005],
+  [0.135, -0.058],
+  [0.104, -0.118],
+  [0.07, -0.172],
+  [0.035, -0.212],
+  [0.0, -0.232],
+];
+
+/** The berry's radius at a height, by walking BERRY_PROFILE. Used to sit the
+ *  seeds ON the surface rather than at a guessed radius, so retuning the
+ *  profile carries them with it. */
+function berryRadiusAt(y: number): number {
+  for (let i = 1; i < BERRY_PROFILE.length; i++) {
+    const [r0, y0] = BERRY_PROFILE[i - 1];
+    const [r1, y1] = BERRY_PROFILE[i];
+    if (y <= y0 && y >= y1) {
+      const k = (y0 - y) / (y0 - y1 || 1);
+      return r0 + (r1 - r0) * k;
+    }
+  }
+  return 0;
+}
+
+/**
+ * A solid star cap: a rim of `leaves` points, each raised and thrown outward,
+ * with notches pulled in between them. Built as one geometry rather than as N
+ * leaf meshes so the calyx stays a single named part in the editor outliner.
+ *
+ * It has real thickness. A zero-thickness fan would need DoubleSide to survive
+ * being seen from below and would still vanish entirely edge-on, which this
+ * cannot afford — spinDecor turns the fruit, and the calyx is the feature
+ * doing the identifying.
+ */
+function starCap(
+  leaves: number,
+  tipR: number,
+  tipY: number,
+  notchR: number,
+  notchY: number,
+  apexY: number,
+  thick: number,
+): THREE.BufferGeometry {
+  const pos: number[] = [];
+  const idx: number[] = [];
+  const push = (x: number, y: number, z: number) => (pos.push(x, y, z), pos.length / 3 - 1);
+
+  const apexTop = push(0, apexY, 0);
+  const apexBot = push(0, apexY - thick, 0);
+  const top: number[] = [];
+  const bot: number[] = [];
+  const n = leaves * 2;
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2;
+    const tip = i % 2 === 0;
+    const r = tip ? tipR : notchR;
+    const y = tip ? tipY : notchY;
+    top.push(push(Math.cos(a) * r, y, Math.sin(a) * r));
+    bot.push(push(Math.cos(a) * r, y - thick, Math.sin(a) * r));
+  }
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    idx.push(apexTop, top[j], top[i]); // upper fan
+    idx.push(apexBot, bot[i], bot[j]); // lower fan, opposite winding
+    idx.push(top[i], top[j], bot[j], top[i], bot[j], bot[i]); // rim
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setIndex(idx);
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  geo.computeVertexNormals();
+  return geo;
+}
+
+/**
+ * The seeds, as ONE geometry: a small four-sided pip per seed, sat on the
+ * berry's own surface and pushed a hair proud of it.
+ *
+ * The build this replaces refused seeds outright, and the reasoning still
+ * holds for the reference's roughly two hundred of them: at ~24px a scatter
+ * that dense aliases into noise and reads as dirt, which is the CARTOON rule
+ * in CLAUDE.md. Fourteen is a different proposition — each one lands at about
+ * two pixels, which is the floor that rule sets rather than something under
+ * it, so they read as deliberate texture. They are pips rather than pits
+ * because a recess of this size fills with its own shadow and disappears.
+ */
+function seedPips(count: number, size: number, proud: number): THREE.BufferGeometry {
+  const pos: number[] = [];
+  const idx: number[] = [];
+  const GOLDEN = Math.PI * (3 - Math.sqrt(5));
+  const yTop = 0.13;
+  const yBot = -0.15;
+  for (let i = 0; i < count; i++) {
+    const y = yTop + ((yBot - yTop) * (i + 0.5)) / count;
+    const a = i * GOLDEN;
+    const r = berryRadiusAt(y);
+    if (r <= 0.02) continue;
+    const ox = Math.cos(a);
+    const oz = Math.sin(a);
+    const base = pos.length / 3;
+    // Apex, pushed out along the surface normal's horizontal component.
+    pos.push((r + proud + size * 0.5) * ox, y, (r + proud + size * 0.5) * oz);
+    // Four base corners, on the surface, spread around the outward axis.
+    const up = [0, 1, 0];
+    const side = [-oz, 0, ox];
+    for (const [su, ss] of [
+      [1, 0],
+      [0, 1],
+      [-1, 0],
+      [0, -1],
+    ]) {
+      pos.push(
+        (r + proud) * ox + (up[0] * su + side[0] * ss) * size,
+        y + (up[1] * su + side[1] * ss) * size,
+        (r + proud) * oz + (up[2] * su + side[2] * ss) * size,
+      );
+    }
+    for (let k = 0; k < 4; k++) {
+      idx.push(base, base + 1 + k, base + 1 + ((k + 1) % 4));
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setIndex(idx);
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  geo.computeVertexNormals();
+  return geo;
+}
+
 /**
  * Strawberry — 400 (weight 12).
  *
- * Broad shoulders tapering to a point: a cone for the body and a squashed
- * sphere sitting on its base to round the top off, which is the difference
- * between a strawberry and a traffic cone.
+ * Broad rounded shoulders tapering to a BLUNT point. The body is a lathe now,
+ * not a cone capped with a squashed sphere: the reference's berry is a
+ * continuous curve from crown to tip, and two intersecting primitives can only
+ * approximate that at their seam. An earlier pass here had the sphere overhang
+ * the cone and it read as the brim of a spinning top — a lathe cannot make that
+ * mistake, because the silhouette IS the input.
  *
- * NO SEEDS. They are the first thing anyone reaches for and they are exactly
- * what the CARTOON rule in CLAUDE.md rules out — at the game camera a face of
- * this thing is a couple of dozen pixels, and a scatter of sub-pixel dots
- * aliases into noise that just makes the berry look dirty. The green calyx does
- * the identifying instead, at a size that survives.
+ * SEEDS, but fourteen of them. The previous build refused seeds altogether and
+ * was right about the reference's two hundred: at ~24px that scatter aliases
+ * into noise and reads as dirt. Fourteen pips at about two pixels each sit at
+ * the floor the CARTOON rule sets rather than beneath it. They are placed from
+ * berryRadiusAt(), so they sit on the profile rather than at a guessed radius.
+ *
+ * The CALYX carries the identification — it is the one part of this fruit that
+ * is not red — so it is now a real star of pointed leaves that throw outward
+ * and lift AWAY from the shoulder, rather than a squashed five-sided cone lying
+ * flat on top of it.
  */
 export function makeStrawberry(): THREE.Group {
   const g = new THREE.Group();
@@ -460,42 +925,49 @@ export function makeStrawberry(): THREE.Group {
     emissive: 0x5c0f22,
     emissiveIntensity: 0.5,
   });
-  const berry = new THREE.Mesh(new THREE.ConeGeometry(0.19, 0.34, 14), red);
+
+  const berry = new THREE.Mesh(
+    // REVERSED. BERRY_PROFILE reads crown-to-tip because that is the order
+    // berryRadiusAt() walks and the order the shape is easiest to author in,
+    // but LatheGeometry wants its points running the other way — its own
+    // default is (0,-0.5), (0.5,0), (0,0.5), i.e. ascending y. Handing it a
+    // descending profile inverts every face and its normals, FrontSide culls
+    // the near wall, and the berry renders see-through. map() has already
+    // copied, so reversing here does not touch the shared constant.
+    new THREE.LatheGeometry(
+      BERRY_PROFILE.map(([r, y]) => new THREE.Vector2(r, y)).reverse(),
+      14,
+    ),
+    red,
+  );
   berry.name = "berry";
-  berry.rotation.z = Math.PI; // point down
-  berry.position.y = 0.02;
   g.add(berry);
 
-  // Rounds the cone's flat top into a shoulder. Same material, so it reads as
-  // one solid rather than a hat.
-  const shoulder = new THREE.Mesh(new THREE.SphereGeometry(0.19, 14, 10), red);
-  shoulder.name = "shoulder";
-  shoulder.position.y = 0.125;
-  // Tall enough to be a shoulder, NOT wider than the cone it caps. The pass
-  // before this went the other way (1.12 wide, 0.62 tall) and the overhang read
-  // as the brim of a spinning top — a hard silhouette break where a berry wants
-  // a continuous curve. Sunk into the cone rather than perched on it.
-  shoulder.scale.set(1.0, 0.82, 1.0);
-  g.add(shoulder);
+  const seedMat = toon({
+    color: 0xf0dda6,
+    emissive: 0x4a3d18,
+    emissiveIntensity: 0.3,
+  });
+  const seeds = new THREE.Mesh(seedPips(14, 0.017, 0.004), seedMat);
+  seeds.name = "seeds";
+  g.add(seeds);
 
   const greenMat = toon({
     color: 0x5fae4d,
     emissive: 0x1c3a18,
     emissiveIntensity: 0.35,
   });
-  // A flat star-ish cap: one wide, very squashed cone with few radial segments,
-  // which gives real points around the rim for the price of one mesh.
-  // Sits just inside the shoulder's widest point, so it caps the berry instead
-  // of flanging out past it. Five radial segments keep real points on the rim
-  // at a size that survives the game camera.
-  const calyx = new THREE.Mesh(new THREE.ConeGeometry(0.155, 0.075, 5), greenMat);
+  // Tips at 0.150 sit well outboard of the shoulder the berry has at their
+  // height, and 0.205 is above it — so the leaves stand off the fruit the way
+  // a real calyx does instead of lying on it like a lid.
+  const calyx = new THREE.Mesh(starCap(6, 0.148, 0.222, 0.072, 0.192, 0.208, 0.015), greenMat);
   calyx.name = "calyx";
-  calyx.position.y = 0.235;
   g.add(calyx);
 
-  const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.024, 0.09, 6), greenMat);
+  const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.021, 0.028, 0.1, 6), greenMat);
   stem.name = "stem";
-  stem.position.y = 0.3;
+  stem.position.set(0.012, 0.262, 0);
+  stem.rotation.z = -0.16; // the reference's stem leans; a dead-vertical one reads as a nail
   g.add(stem);
 
   g.traverse((o) => {
@@ -503,6 +975,35 @@ export function makeStrawberry(): THREE.Group {
   });
   return g;
 }
+
+/**
+ * The mango's silhouette, as a lathe profile about its own LONG axis:
+ * [radius, distance along the axis], fat pole first. Ascending, because that is
+ * the direction LatheGeometry wants its points — see makeStrawberry.
+ *
+ * It is deliberately not symmetric end to end, and the two poles are not the
+ * same KIND of end either. The far pole is POINTED — the radius leaves it on a
+ * long shallow ramp, which is a cone, not a hemisphere — while the stem pole
+ * stays blunt, because that is the shoulder the reference puts the red cheek
+ * on and a point there would be swallowed by it. The widest point sits just
+ * past centre, biased toward the far pole. A stretched sphere, which is what
+ * this used to be, is the same at both ends by construction.
+ */
+const MANGO_PROFILE: readonly [number, number][] = [
+  [0.0, -0.29],
+  [0.04, -0.256],
+  [0.084, -0.218],
+  [0.126, -0.174],
+  [0.156, -0.122],
+  [0.174, -0.058],
+  [0.18, 0.008],
+  [0.174, 0.072],
+  [0.158, 0.132],
+  [0.134, 0.186],
+  [0.1, 0.228],
+  [0.058, 0.256],
+  [0.0, 0.272],
+];
 
 /**
  * Mango — 500 (weight 5), the one worth changing your route for.
@@ -514,8 +1015,27 @@ export function makeStrawberry(): THREE.Group {
  * The FIRST pass of this was a near-round gold ball with a green leaf, and it
  * rendered as an orange apple — the cheapest fruit and the dearest one sharing
  * a silhouette, which is the one thing this set cannot afford. Hence the hard
- * stretch, the dropped leaf (it was the apple's tell) and a blush big enough to
- * change the outline rather than decorate it.
+ * stretch and the dropped leaf (it was the apple's tell). The reference this
+ * was rebuilt from HAS a leaf, lying flat along the top; it is still not built,
+ * for the same reason. Green on warm fruit is the apple's cue, and the 100 and
+ * the 500 are the most expensive pair on the board to confuse.
+ *
+ * Two things the reference did correct.
+ *
+ * The body is a LATHE now rather than a stretched sphere, so it can be plump at
+ * the far end and taper toward the stem the way a real one does. A scaled
+ * sphere is identical at both ends however hard you stretch it.
+ *
+ * And the BLUSH is on the other end. It used to sit on the fat end with the
+ * stem at the thin end — opposite poles. On a mango the red is on the shoulder
+ * where the stalk comes out, so the two now share an end.
+ *
+ * The skin runs in three bands along the axis — GOLD, then GREEN, then RED at
+ * the tip. Both bands are spheres poking through the lathe, and which one shows
+ * at a given height is simply whichever has the larger cross-section there, so
+ * the boundary between them is set by their radii and centres rather than being
+ * drawn. They cross over at about 0.67 of the way along; below that the green
+ * sphere is wider, above it the red one is.
  *
  * The blush is a second sphere in a different colour poking through the first,
  * not a texture: the whole project builds surfaces in code, and one extra
@@ -524,13 +1044,21 @@ export function makeStrawberry(): THREE.Group {
 export function makeMango(): THREE.Group {
   const g = new THREE.Group();
   // The long axis, tilted. Everything else on this fruit is placed ALONG it by
-  // the same two numbers, so the mango can be re-proportioned by editing these
-  // and nothing ends up floating beside the body.
+  // the same helper, so the mango can be re-proportioned by editing these and
+  // nothing ends up floating beside the body. k = +1 is the STEM pole, k = -1
+  // the fat one.
   const tilt = 0.42;
-  const halfLong = 0.2 * 1.34;
+  const halfLong = 0.272;
+  const along = (k: number) =>
+    new THREE.Vector3(Math.cos(tilt) * halfLong * k, Math.sin(tilt) * halfLong * k, 0);
+  // Brings the lathe's own +Y axis onto that tilted line.
+  const axisSpin = tilt - Math.PI / 2;
 
   const mango = new THREE.Mesh(
-    new THREE.SphereGeometry(0.2, 16, 14),
+    new THREE.LatheGeometry(
+      MANGO_PROFILE.map(([r, y]) => new THREE.Vector2(r, y)),
+      16,
+    ),
     toon({
       color: 0xf0b429,
       emissive: 0x5c3d05,
@@ -538,20 +1066,21 @@ export function makeMango(): THREE.Group {
     }),
   );
   mango.name = "mango";
-  // Stretched hard (1.34 long against 0.86 short) rather than the near-round
-  // 1.16/0.94 of the first pass. That version rendered as an orange ball with a
-  // green leaf — which is the APPLE's silhouette, and having the 100 and the
-  // 500 look alike at a glance defeats the whole ladder.
-  mango.scale.set(1.34, 0.86, 0.86);
-  mango.rotation.z = tilt;
+  mango.rotation.z = axisSpin;
   g.add(mango);
 
-  // A red cheek over the fat end, not a dot on the side. Big enough (0.16
-  // against the body's 0.172 minor radius) that it breaks the outline instead
-  // of sitting inside it, and placed along the tilted long axis so it stays on
-  // the end as the fruit spins.
+  // A red cheek over the STEM shoulder, not a dot on the side. Big enough that
+  // it breaks the outline instead of sitting inside it, and placed along the
+  // tilted long axis so it stays on its end as the fruit spins.
+  // RED, and it owns the tip: 0.145 against the body's 0.130 where it sits, and
+  // centred far enough out (0.70) that it reaches past the stem pole at 0.272.
+  // A sphere smaller than the lathe's local radius stays buried and surfaces
+  // only as ragged patches where the body happens to be narrower, which reads
+  // as bruising rather than as a cheek — so both bands are sized against the
+  // profile rather than guessed. Plain spheres with no scale on purpose: the
+  // boundary where each breaks the surface is then a clean circle.
   const blush = new THREE.Mesh(
-    new THREE.SphereGeometry(0.16, 12, 10),
+    new THREE.SphereGeometry(0.145, 10, 8),
     toon({
       color: 0xd6455c,
       emissive: 0x4a0f1c,
@@ -559,24 +1088,43 @@ export function makeMango(): THREE.Group {
     }),
   );
   blush.name = "blush";
-  blush.position.set(Math.cos(tilt) * halfLong * 0.52, Math.sin(tilt) * halfLong * 0.52, 0);
-  blush.scale.set(1.02, 0.92, 0.92);
+  blush.position.copy(along(0.7));
   g.add(blush);
 
-  // Stem at the OTHER end of the long axis (the thin end), which is where a
-  // mango's stalk actually is — and, more usefully here, it keeps the two ends
-  // reading differently so the shape has a direction.
-  const stem = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.02, 0.026, 0.08, 6),
+  // Stem at the stem pole, pointing straight out along the long axis — short
+  // and thick, as the reference's is. It keeps the two ends reading differently
+  // so the shape has a direction even when the blush is facing away.
+  // GREEN, as a band across the body BELOW the red. Wide (0.180 against the
+  // body's 0.173 where it sits) and centred low, so it surfaces from about a
+  // fifth of the way along and stays the wider of the two spheres until the red
+  // overtakes it near the shoulder. It has to be this big: the green sits where
+  // the mango is at its fattest, and anything smaller never breaks the surface
+  // at all.
+  const greenBand = new THREE.Mesh(
+    new THREE.SphereGeometry(0.18, 12, 10),
     toon({
-      color: 0x6b4a2f,
+      color: 0x8faa38,
+      emissive: 0x2c3a08,
+      emissiveIntensity: 0.4,
+    }),
+  );
+  greenBand.name = "greenBand";
+  greenBand.position.copy(along(0.28));
+  g.add(greenBand);
+
+  const stem = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.02, 0.03, 0.075, 6),
+    toon({
+      color: 0x6b6a2f,
       emissive: 0x241708,
       emissiveIntensity: 0.3,
     }),
   );
   stem.name = "stem";
-  stem.position.set(-Math.cos(tilt) * halfLong * 0.86, -Math.sin(tilt) * halfLong * 0.86 + 0.11, 0);
-  stem.rotation.z = tilt;
+  // 1.32, not 1.18: the red sphere now reaches 0.335 along the axis, and at
+  // the closer setting it swallowed all but a sliver of the stalk.
+  stem.position.copy(along(1.32));
+  stem.rotation.z = axisSpin;
   g.add(stem);
 
   g.traverse((o) => {
@@ -624,82 +1172,256 @@ export const FRUIT_BUILDERS: Record<FruitId, () => THREE.Group> = {
  * maze theme — and the same toon() + soft-glow emissive language.
  */
 
-/** The shared plaque the two doublers sit on. Rounded by bevelling with a
- *  second, slightly larger box behind it rather than by a rounded-box helper
- *  three.js does not ship at r169. */
-function makeDoublerPlaque(color: number, emissive: number): THREE.Group {
+/** A rectilinear "2", traced clockwise as one closed outline in a 0.60 x 1.00
+ *  box: top bar, right upper stem, middle bar, left lower stem, bottom bar.
+ *  Rectilinear rather than typographic on purpose — this glyph is a few pixels
+ *  tall in play, and a curved 2 spends its detail where nothing can see it. */
+function glyph2Shape(): THREE.Shape {
+  const s = new THREE.Shape();
+  const pts: [number, number][] = [
+    [0.0, 1.0],
+    [0.6, 1.0],
+    [0.6, 0.39],
+    [0.22, 0.39],
+    [0.22, 0.22],
+    [0.6, 0.22],
+    [0.6, 0.0],
+    [0.0, 0.0],
+    [0.0, 0.61],
+    [0.38, 0.61],
+    [0.38, 0.78],
+    [0.0, 0.78],
+  ];
+  s.moveTo(pts[0][0], pts[0][1]);
+  for (const [x, y] of pts.slice(1)) s.lineTo(x, y);
+  s.closePath();
+  return s;
+}
+
+/** An "x": a plus sign turned 45 degrees. Twelve points, which is exactly what
+ *  a cross is — building it as two crossed rectangles instead would leave the
+ *  overlap coplanar with itself and z-fight across the middle. */
+function glyphXShape(cx: number, cy: number): THREE.Shape {
+  const w = 0.11;
+  const L = 0.34;
+  const k = Math.SQRT1_2; // cos 45 = sin 45
+  const cross: [number, number][] = [
+    [-w, -L],
+    [w, -L],
+    [w, -w],
+    [L, -w],
+    [L, w],
+    [w, w],
+    [w, L],
+    [-w, L],
+    [-w, w],
+    [-L, w],
+    [-L, -w],
+    [-w, -w],
+  ];
+  const s = new THREE.Shape();
+  cross.forEach(([x, y], i) => {
+    const rx = (x - y) * k + cx;
+    const ry = (x + y) * k + cy;
+    if (i === 0) s.moveTo(rx, ry);
+    else s.lineTo(rx, ry);
+  });
+  s.closePath();
+  return s;
+}
+
+/** "x2" as ONE geometry, scaled to `width` and centred on its own origin.
+ *  ExtrudeGeometry takes an array of shapes, so both glyphs come out of a
+ *  single mesh and a single draw call. */
+function x2Geometry(width: number, depth: number): THREE.BufferGeometry {
+  const geo = new THREE.ExtrudeGeometry([glyphXShape(-0.42, 0.42), glyph2Shape()], {
+    depth,
+    bevelEnabled: false,
+    curveSegments: 1,
+  });
+  geo.computeBoundingBox();
+  const bb = geo.boundingBox!;
+  const s = width / (bb.max.x - bb.min.x);
+  geo.scale(s, s, 1);
+  geo.translate((-(bb.min.x + bb.max.x) / 2) * s, (-(bb.min.y + bb.max.y) / 2) * s, 0);
+  return geo;
+}
+
+/**
+ * THE DOUBLERS' TOKEN.
+ *
+ * Both are struck on the same thing: a six-sided cylinder standing face-on,
+ * with "x2" raised on each face.
+ *
+ * Six sides, not round. There is already a gold disc on this board — makeCoin,
+ * the shop currency — and a round gold token with a device on it IS that coin.
+ * The facets are what keep them apart at a glance, so they are load-bearing
+ * rather than styling.
+ *
+ * The glyph is RAISED and sunk slightly into the face, not floated on it and
+ * not engraved: a recess this shallow fills with its own shadow and disappears,
+ * which is the same finding that made the strawberry's seeds pips rather than
+ * pits.
+ *
+ * Radius 0.29 because a hexagon of circumradius r is r*sqrt(3) across the
+ * flats — at 0.23 the token measured 0.40 wide, which against the board's
+ * 40.5 px per tile is exactly the 16px the contact sheet flagged red on both
+ * doublers for.
+ *
+ * And it is honest to say the x2 does NOT do the identifying in play. At a
+ * ~25px tile face the glyph is around six pixels tall and will not resolve;
+ * gold-against-teal is what tells the two apart on the board, and the x2 is
+ * there for the close-up and the editor. The build this replaced put two
+ * biscuits or two enemy domes on the face instead, because "two of the thing"
+ * survives being tiny — that reasoning was sound and is traded away
+ * deliberately, not overlooked.
+ *
+ * THE TWO BUILDERS BELOW ARE DELIBERATELY NOT SHARED. They were, briefly, and
+ * it broke the editor: src/editor/sourceRewrite.ts finds the builder named in
+ * the registry and then looks for top-level `const` mesh declarations INSIDE
+ * it, so a builder whose whole body is `return makeDoublerToken(...)` has
+ * nothing for save-in-place to rewrite and every part is blocked. Geometry
+ * helpers are fine to share — the editor never rewrites those — but the meshes
+ * and their transforms have to be declared where the editor can find them.
+ */
+
+/**
+ * Double biscuits — gold.
+ *
+ * Its glyph parts are named for the doubler rather than generically. The two
+ * tokens are the same SHAPE and differ only in colour, so the part names are
+ * the only thing separating them in the editor's outliner; a shared "x2Front"
+ * would make them indistinguishable there.
+ */
+export function makeDoubleBiscuit(): THREE.Group {
   const g = new THREE.Group();
-  const plate = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.23, 0.23, 0.07, 6),
-    toon({ color, emissive, emissiveIntensity: 0.5 }),
-  );
+  const gold = toon({ color: 0xf2c832, emissive: 0x5c4408, emissiveIntensity: 0.5 });
+  const engraved = toon({ color: 0x7a5408, emissive: 0x2a1c02, emissiveIntensity: 0.45 });
+
+  const plate = new THREE.Mesh(new THREE.CylinderGeometry(0.29, 0.29, 0.1, 6), gold);
   plate.name = "plate";
   // Face-on to the camera rather than lying flat: the board is viewed from
   // above and in front, and a flat disc would show as a thin line.
   plate.rotation.x = Math.PI / 2;
   g.add(plate);
-  return g;
-}
 
-/**
- * Double biscuits — gold, with two biscuits on it.
- */
-export function makeDoubleBiscuit(): THREE.Group {
-  const g = makeDoublerPlaque(0xf2c832, 0x5c4408);
-  const biscuitMat = toon({
-    color: 0xf0cf8e,
-    emissive: 0x4a3a18,
-    emissiveIntensity: 0.4,
-  });
-  // Two, offset diagonally so they read as a PAIR rather than as one blob with
-  // a bite out of it. Proud of the plate on Z so they catch their own light.
-  ([
-    ["biscuitA", -0.075, 0.055],
-    ["biscuitB", 0.075, -0.055],
-  ] as const).forEach(([name, x, y]) => {
-    const b = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.085, 0.05, 12), biscuitMat);
-    b.name = name;
-    b.rotation.x = Math.PI / 2;
-    b.position.set(x, y, 0.05);
-    g.add(b);
-  });
+  // Both faces. spinDecor turns this on Y, so a device on the front alone
+  // leaves a blank token facing the player for half of every revolution.
+  const biscuitX2Front = new THREE.Mesh(x2Geometry(0.37, 0.025), engraved);
+  biscuitX2Front.name = "biscuitX2Front";
+  biscuitX2Front.position.set(0, -0.08, 0.04);
+  g.add(biscuitX2Front);
+
+  const biscuitX2Back = new THREE.Mesh(x2Geometry(0.37, 0.025), engraved);
+  biscuitX2Back.name = "biscuitX2Back";
+  biscuitX2Back.position.set(0, -0.08, -0.04);
+  biscuitX2Back.rotation.y = Math.PI; // reads the right way round from behind
+  g.add(biscuitX2Back);
+
   g.traverse((o) => {
     o.castShadow = true;
   });
   return g;
 }
 
-/**
- * Double enemies — teal, with two enemy domes on it. Same plaque, so the two
- * doublers read as a matched pair of the same KIND of thing, which is what
- * tells the player they behave alike.
- */
+/** Double enemies — teal. Same token as makeDoubleBiscuit; see the note above
+ *  that block for why the two are written out rather than sharing a builder. */
 export function makeDoubleGhost(): THREE.Group {
-  const g = makeDoublerPlaque(0x53c7c0, 0x0d3a38);
-  const domeMat = toon({
-    color: 0xeaf6f5,
-    emissive: 0x2a4a48,
-    emissiveIntensity: 0.4,
-  });
-  ([
-    ["ghostA", -0.075, 0.055],
-    ["ghostB", 0.075, -0.055],
-  ] as const).forEach(([name, x, y]) => {
-    // A half-sphere: the enemy silhouette this game has used since v1.0.
-    const d = new THREE.Mesh(
-      new THREE.SphereGeometry(0.085, 10, 8, 0, Math.PI * 2, 0, Math.PI / 2),
-      domeMat,
-    );
-    d.name = name;
-    d.rotation.x = Math.PI / 2;
-    d.position.set(x, y, 0.05);
-    g.add(d);
-  });
+  const g = new THREE.Group();
+  const teal = toon({ color: 0x53c7c0, emissive: 0x0d3a38, emissiveIntensity: 0.5 });
+  const engraved = toon({ color: 0x11524e, emissive: 0x041a18, emissiveIntensity: 0.45 });
+
+  const plate = new THREE.Mesh(new THREE.CylinderGeometry(0.29, 0.29, 0.1, 6), teal);
+  plate.name = "plate";
+  plate.rotation.x = Math.PI / 2;
+  g.add(plate);
+
+  const enemyX2Front = new THREE.Mesh(x2Geometry(0.37, 0.025), engraved);
+  enemyX2Front.name = "enemyX2Front";
+  enemyX2Front.position.set(0, -0.08, 0.04);
+  g.add(enemyX2Front);
+
+  const enemyX2Back = new THREE.Mesh(x2Geometry(0.37, 0.025), engraved);
+  enemyX2Back.name = "enemyX2Back";
+  enemyX2Back.position.set(0, -0.08, -0.04);
+  enemyX2Back.rotation.y = Math.PI;
+  g.add(enemyX2Back);
+
   g.traverse((o) => {
     o.castShadow = true;
   });
   return g;
 }
+
+/**
+ * The right half of the anchor's outline, traced from a reference illustration
+ * and read clockwise from the top of the shoulder down to the keel tip. The
+ * left half is this list mirrored, so the two sides cannot drift apart.
+ *
+ * `ctrl` present means a quadratic curve to `to`; absent means a straight run.
+ * The curves are the point — the reference's arms are swept arcs, and the
+ * previous build drew them as straight diagonals.
+ */
+type AnchorSeg = {
+  to: [number, number];
+  /** quadratic control point */
+  ctrl?: [number, number];
+  /** cubic control points, for the two long arm sweeps */
+  c1?: [number, number];
+  c2?: [number, number];
+};
+
+const ANCHOR_HALF: readonly AnchorSeg[] = [
+  { to: [0.055, 0.22] }, // shoulder the ring sits on
+  { to: [0.055, 0.195] },
+  { to: [0.118, 0.195] }, // stock (crossbar), top edge
+  // The stock END, as the reference draws it: the bar steps out onto a raised
+  // COLLAR, and only then domes over into the cap. A single rounded end reads
+  // as a lozenge; the collar is what makes it read as a forged fitting. The
+  // step is 0.013 proud — under half a pixel on the board, so this is hero and
+  // editor detail. It survives where the fluke barb did not only because it
+  // sits on a straight run, where a step reads as a step; the barb sat inside a
+  // curve, where the same size of feature reads as a chip.
+  { to: [0.132, 0.208] }, // step up onto the collar
+  { to: [0.152, 0.208] }, // collar, top run
+  { to: [0.178, 0.15], ctrl: [0.18, 0.2] }, // cap, domed over
+  { to: [0.152, 0.092], ctrl: [0.18, 0.1] }, // …and back under
+  { to: [0.132, 0.092] }, // collar, bottom run
+  { to: [0.118, 0.105] }, // step back down onto the bar
+  { to: [0.052, 0.105] },
+  // The shank's run, and a SLIM one — 0.10 across against a 0.33 stock.
+  // Widening it was what turned the crown into a lump and swallowed the open V
+  // below; the arms have to spring from a narrow shank to read at all. They
+  // also spring HIGH, at -0.10: the V beneath them is the feature, and it needs
+  // vertical room to be cut without the arm band going thin.
+  //
+  // The control point sits BELOW the segment and barely outboard of its start,
+  // which holds the shank near-parallel for most of the run and puts the whole
+  // flare in the last third, just above the crown. A control point placed
+  // mid-run instead spreads the taper over the entire shank and the thing reads
+  // as a wedge rather than a bar.
+  { to: [0.078, -0.1], ctrl: [0.05, -0.04] },
+  // Arm, upper edge — ONE clean sweep from the shank out to the fluke tip. The
+  // open V it cuts between shank and blade is most of what says "anchor" rather
+  // than "plus sign". The reference carries a small barb partway along this
+  // edge; it was tried and dropped, because at a 26px glyph a spur inside the
+  // scoop reads as a chip in the curve rather than as a barb.
+  //
+  // It is written as TWO cubics that meet at the bottom of the scoop with
+  // matching horizontal tangents, so the join is invisible and the pair reads as
+  // a single curve. Splitting it is what makes the point possible: one cubic
+  // spanning the whole sweep arrives at the tip almost parallel to the outer
+  // edge, the 0.022 bevel cannot fit inside an angle that thin, and the tip
+  // renders chopped flat. The second cubic's trailing control sets a ~50 degree
+  // tangent into the point instead, leaving roughly 22 degrees to resolve.
+  { to: [0.17, -0.247], c1: [0.095, -0.185], c2: [0.13, -0.247] }, // the scoop
+  { to: [0.3, -0.098], c1: [0.215, -0.247], c2: [0.258, -0.152] }, // …up to the TIP
+  { to: [0.248, -0.285] }, // outer edge, one straight run back down the blade
+  // Arm, lower edge — a convex cubic bowing under the crown, roughly parallel
+  // to the scoop above it so the arm stays a band of even width.
+  { to: [0.05, -0.318], c1: [0.19, -0.365], c2: [0.115, -0.362] },
+  { to: [0.0, -0.39] }, // keel point — the lowest point, and a modest one
+];
 
 /**
  * Slow enemies — an anchor.
@@ -707,6 +1429,30 @@ export function makeDoubleGhost(): THREE.Group {
  * Chosen over a snail, a clock or an hourglass because an anchor is the only
  * one of those whose outline survives being 25 pixels tall: a vertical bar, one
  * crossbar, one hook. The other three are all detail.
+ *
+ * That reasoning held, but the four-primitive build that came out of it did
+ * not: an untapered cylinder, a second cylinder and a half-torus can express a
+ * bar, a crossbar and a hook and nothing else. The three features that actually
+ * say "anchor" rather than "plus sign" — the flukes, the barb notch inside each
+ * one, and the keel point hanging below the crown — have no representation in
+ * primitives that coarse, and the thin members alias into 2-3px sticks the toon
+ * ramp has nothing to band.
+ *
+ * So it is now ONE closed outline (shank, stock, both arms, both flukes, keel)
+ * extruded with a small bevel — the same construction as makeStar, in the same
+ * spinning pickup slot, for the same reason its comment gives: without the
+ * bevel a flat extrusion reads as a paper cut-out, because the side walls land
+ * in the same ramp band as the face.
+ *
+ * Two proportions come straight off the reference and are worth keeping. The
+ * FLUKE SPAN is the widest part of an anchor — the old build had the stock at
+ * 81% of the arm span where a real one is nearer 55% — and the shank TAPERS,
+ * widening as it drops into the crown. Both are silhouette facts, which is the
+ * only kind that survives at this size.
+ *
+ * The colour is deliberately unchanged: the reference is teal, and teal would
+ * sit next door to makeShield's 0x5ec8f0. Two power-ups in neighbouring hues on
+ * one board is a worse trade than losing the reference's palette.
  */
 export function makeAnchor(): THREE.Group {
   const g = new THREE.Group();
@@ -716,26 +1462,48 @@ export function makeAnchor(): THREE.Group {
     emissiveIntensity: 0.45,
   });
 
-  const shank = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.42, 8), iron);
-  shank.name = "shank";
-  g.add(shank);
+  const shape = new THREE.Shape();
+  traceMirrored(shape, ANCHOR_HALF, 0.22);
 
-  const stock = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.3, 8), iron);
-  stock.name = "stock";
-  stock.rotation.z = Math.PI / 2;
-  stock.position.y = 0.12;
-  g.add(stock);
+  // Depth 0.12 rather than makeStar's 0.08. spinDecor turns this on Y, so twice
+  // a revolution the glyph is edge-on and all the outline work above is worth
+  // nothing — at 0.08 that view measured 5px across. This does not cure it (no
+  // extrusion depth can), it just widens the worst frame by about a third
+  // without the thing reading as a slab from the front.
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth: 0.12,
+    bevelEnabled: true,
+    bevelThickness: 0.022,
+    bevelSize: 0.022,
+    bevelSegments: 2,
+    // 5, not the default 12 and not the 8 this started on. Every point the
+    // curves are subdivided into is paid for twice by the two faces and twice
+    // again by the two bevel segments, and at 8 this glyph cost 1724 triangles
+    // against 768 for the next heaviest pickup on the board. At 5 the outline
+    // is indistinguishable at both framings.
+    curveSegments: 5,
+  });
+  // ExtrudeGeometry builds from z=0 forward, so the glyph sits half a depth off
+  // the axis spinDecor turns it on. Centre Z only — NOT geo.center(). A
+  // rotation.y spin is unaffected by a Y offset, the profile is already
+  // symmetric in X, and centring Y would shift the body 0.05 up out of the
+  // coordinates this profile was traced in, leaving the ring below half buried.
+  geo.computeBoundingBox();
+  const bb = geo.boundingBox!;
+  geo.translate(0, 0, -(bb.min.z + bb.max.z) / 2);
 
-  // The hook: a half-torus, which gives the anchor's curved arms in one mesh.
-  const arms = new THREE.Mesh(new THREE.TorusGeometry(0.15, 0.035, 8, 16, Math.PI), iron);
-  arms.name = "arms";
-  arms.rotation.z = Math.PI; // opening upward, so the arms sweep out and up
-  arms.position.y = -0.19;
-  g.add(arms);
+  const body = new THREE.Mesh(geo, iron);
+  body.name = "glyph";
+  body.scale.set(1, 1, 0.7);
+  g.add(body);
 
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.07, 0.022, 8, 14), iron);
+  // The shackle stays a separate torus rather than a hole cut in the glyph: a
+  // ring has to read as a thin closed LOOP, and an aperture through a 0.08-deep
+  // extrusion is a dark socket at this size, not a hole. It overlaps the
+  // shoulder by 0.029 so the two never show a seam.
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.068, 0.026, 8, 18), iron);
   ring.name = "ring";
-  ring.position.y = 0.26;
+  ring.position.set(0, 0.315, 0);
   g.add(ring);
 
   g.traverse((o) => {
@@ -816,73 +1584,179 @@ export function makeStar(): THREE.Group {
   return g;
 }
 
+/** The shield plate's right half, traced from a reference heater shield and
+ *  read clockwise from the top of the arch down to the bottom point. Mirrored
+ *  for the left half, as ANCHOR_HALF is. */
+const SHIELD_HALF: readonly AnchorSeg[] = [
+  // The top is a SHALLOW arc, not a dome. Its job is to hand off to the side at
+  // a distinct shoulder corner — the reference's shoulders are the second thing
+  // that says "heater" after the point, and a rounder top blurs them away.
+  { to: [0.24, 0.205], ctrl: [0.15, 0.252] },
+  { to: [0.205, -0.11], c1: [0.248, 0.09], c2: [0.232, -0.03] }, // upper side, near-vertical
+  { to: [0.0, -0.36], c1: [0.195, -0.215], c2: [0.05, -0.29] }, // lower side, in to the point
+];
+
+/** The cross's right half, clockwise from the top of the vertical arm. Each arm
+ *  is wider at its end than at the junction — a cross pattée, which is what the
+ *  reference draws and what stops it reading as a plain plus sign. */
+const CROSS_HALF: readonly AnchorSeg[] = [
+  // Every arm runs PAST the rim's inner edge, so the cross merges into the
+  // border rather than floating inside it — the way the reference draws it.
+  { to: [0.045, 0.235] }, // vertical arm, flared top, into the rim
+  { to: [0.032, 0.062] }, // narrowing in to the junction
+  // The horizontal arm ends ROUNDED, and stops at 0.206 rather than 0.215. The
+  // plate's edge is a curve and a straight vertical cut across it is not: the
+  // middle of a square end sits inside the silhouette while its two corners
+  // push through, which is the clipped edge you get on both sides. A rounded
+  // cap has no corners to push, and the shortening keeps the whole end inboard
+  // of the plate's outer edge (~0.225 here) while still reaching past the rim's
+  // inner edge (~0.202), so it merges into the border rather than crossing it.
+  { to: [0.196, 0.072] }, // out along the arm's top edge
+  { to: [0.206, 0.03], ctrl: [0.207, 0.062] }, // round over the end
+  { to: [0.196, -0.012], ctrl: [0.207, -0.002] }, // …and back under
+  { to: [0.032, -0.002] }, // back in along its underside
+  // The foot comes to a V, not a flat cut. The plate is tapering to its point
+  // down here, so a flat bottom is wider than the plate it sits on and its two
+  // corners hang out below the silhouette as tabs. A V narrows to nothing
+  // exactly where the plate does, so there is no width left to protrude.
+  { to: [0.036, -0.255] }, // down the vertical arm, narrowing
+  { to: [0.0, -0.315] }, // to a point, nested inside the plate's own
+];
+
+/** Emit a half-profile and its mirror as one closed path. `scale` shrinks the
+ *  outline about `cy`, which is how the rim gets its hole: the same trace at
+ *  0.87 becomes the inner edge, and the gap between the two is the band. */
+function traceMirrored(
+  path: THREE.Path,
+  half: readonly AnchorSeg[],
+  startY: number,
+  scale = 1,
+  cy = 0,
+): void {
+  const sx = (x: number) => x * scale;
+  const sy = (y: number) => cy + (y - cy) * scale;
+  path.moveTo(0, sy(startY));
+  for (const seg of half) {
+    if (seg.c1 && seg.c2) {
+      path.bezierCurveTo(sx(seg.c1[0]), sy(seg.c1[1]), sx(seg.c2[0]), sy(seg.c2[1]), sx(seg.to[0]), sy(seg.to[1]));
+    } else if (seg.ctrl) {
+      path.quadraticCurveTo(sx(seg.ctrl[0]), sy(seg.ctrl[1]), sx(seg.to[0]), sy(seg.to[1]));
+    } else {
+      path.lineTo(sx(seg.to[0]), sy(seg.to[1]));
+    }
+  }
+  // Down to 0, NOT 1. Stopping at 1 leaves the first segment's mirror to
+  // closePath(), which can only draw a straight line — so a curved opening
+  // segment comes out as an arc on the right and a chord on the left. Harmless
+  // for ANCHOR_HALF, whose first segment is already a horizontal line; it made
+  // the shield's arched top visibly lopsided.
+  for (let i = half.length - 1; i >= 0; i--) {
+    const [tx, ty] = i === 0 ? [0, startY] : half[i - 1].to;
+    const { ctrl, c1, c2 } = half[i];
+    if (c1 && c2) {
+      path.bezierCurveTo(-sx(c2[0]), sy(c2[1]), -sx(c1[0]), sy(c1[1]), -sx(tx), sy(ty));
+    } else if (ctrl) {
+      path.quadraticCurveTo(-sx(ctrl[0]), sy(ctrl[1]), -sx(tx), sy(ty));
+    } else {
+      path.lineTo(-sx(tx), sy(ty));
+    }
+  }
+  path.closePath();
+}
+
+/** Centre a geometry on Z only — see makeAnchor for why not geo.center(). */
+function centreZ(geo: THREE.BufferGeometry): THREE.BufferGeometry {
+  geo.computeBoundingBox();
+  const bb = geo.boundingBox!;
+  geo.translate(0, 0, -(bb.min.z + bb.max.z) / 2);
+  return geo;
+}
+
 /**
- * Shield — a dome.
+ * Shield — a heater plate.
  *
  * Deliberately NOT transparent. A transparent shell is what a shield "should"
  * look like and it is the wrong call twice over here: alpha blending has to be
  * sorted against every other transparent thing in the scene, and a cel-shaded
  * ramp through a 40%-opacity surface loses the band edges that make the whole
- * scene read as one style. A solid dome with a bright rim says the same thing
+ * scene read as one style. A solid plate with a bright rim says the same thing
  * and costs nothing.
+ *
+ * It used to be a squashed sphere plus a cone, and the comment that build
+ * carried listed three reads it had already failed — a serving-dish cloche, a
+ * downward pennant, and a map pin. All three are the same problem: when the
+ * outline is a by-product of two intersecting primitives, you cannot tune the
+ * outline, only the primitives. So it is now a traced profile, the same
+ * construction as makeAnchor.
+ *
+ * Two things here are load-bearing:
+ *
+ *  - The RIM is a band, not a second plate: one profile carrying a HOLE, which
+ *    is the same trace inset to 0.87. A larger plate stacked behind would read
+ *    the same from the front and show a blank trim-coloured slab from the back.
+ *  - The CROSS is extruded DEEPER than the plate and centred on it, so it
+ *    stands proud on both faces. spinDecor turns this thing continuously; a
+ *    cross on the front alone leaves a plain plate facing the player for half
+ *    of every revolution.
+ *
+ * Colour is unchanged from the old build. The reference is white with a red
+ * cross on a steel rim, and both halves of that are wrong for this board: a
+ * mostly-white pickup sits in the same value band as the cream pellet bone,
+ * dozens of which are on screen at once, and the red lands between apple
+ * 0xd8483f and strawberry 0xe23a5e.
  */
 export function makeShield(): THREE.Group {
   const g = new THREE.Group();
   const face = toon({ color: 0x5ec8f0, emissive: 0x0d3a4a, emissiveIntensity: 0.55 });
   const trim = toon({ color: 0xd8f2ff, emissive: 0x2a5a6a, emissiveIntensity: 0.5 });
 
-  // A heater shield: broad at the top, tapering to a point at the bottom. That
-  // IS the shape — a cone pointing down, then flattened on Z into a plate that
-  // faces the player.
-  //
-  // The first attempt was a dome with a rim, which is what a "shield bubble"
-  // suggests, and it rendered as a serving-dish cloche: the rim read as a
-  // plate and the brace read as the handle. The lesson is the fruits' one
-  // again — an object is its OUTLINE first, and a dome's outline is a dome's.
-  // A heater shield: a nearly FLAT top with rounded shoulders, tapering to a
-  // point. Flattened on Z into a plate that faces the player.
-  //
-  // Three wrong turns got here, and they are all the same mistake — reaching
-  // for what a shield IS instead of what its outline is:
-  //   a dome with a rim  -> a serving-dish cloche (rim = plate, brace = handle)
-  //   a plain cone       -> a downward triangle, i.e. a pennant
-  //   a round top + dot  -> a MAP PIN, unmistakably
-  // The fix is the proportion, not the parts: the top is a SHALLOW dome (0.45
-  // on Y, not 0.85), so it reads as a flat edge with rounded corners, and the
-  // taper below it is longer than the dome is tall.
-  const top = new THREE.Mesh(
-    new THREE.SphereGeometry(0.24, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2),
+  // Bevel 0.012, not the anchor's 0.022: the cross bars are only 0.064 across
+  // at the junction, and a 0.022 bevel each side would eat almost all of that.
+  const bevel = { bevelEnabled: true, bevelThickness: 0.012, bevelSize: 0.012, bevelSegments: 1 };
+  // The outline is far simpler than the anchor's, so this stays low — the
+  // anchor at 1244 triangles is the board's outlier and this should not join it.
+  const curveSegments = 5;
+  // The centre the rim's hole is scaled about: midway up the plate, so the band
+  // comes out near enough even width all the way round.
+  const CY = -0.045;
+
+  // 0.985, not 1: at full size the plate's outer wall is exactly coplanar with
+  // the rim's, and the two z-fight into a stripe along the edge on every
+  // off-axis frame. Shrinking it a hair hands the outer silhouette to the rim
+  // and leaves nothing coincident.
+  const plate = new THREE.Shape();
+  traceMirrored(plate, SHIELD_HALF, 0.26, 0.985, CY);
+  const body = new THREE.Mesh(
+    centreZ(new THREE.ExtrudeGeometry(plate, { depth: 0.07, curveSegments, ...bevel })),
     face,
   );
-  top.name = "top";
-  top.scale.set(1, 0.45, 0.34);
-  top.position.y = 0.06;
-  g.add(top);
+  body.name = "field";
+  g.add(body);
 
-  // Base sits exactly on the dome's flat edge, derived from the cone's own
-  // half-height rather than typed in, so retuning either keeps them joined.
-  const coneHeight = 0.4;
-  const point = new THREE.Mesh(new THREE.ConeGeometry(0.24, coneHeight, 12), face);
-  point.name = "point";
-  point.rotation.z = Math.PI;
-  point.scale.z = 0.34;
-  point.position.y = 0.06 - coneHeight / 2;
-  g.add(point);
+  // The rim: the same outline again, with the trace inset as a hole.
+  const rimShape = new THREE.Shape();
+  traceMirrored(rimShape, SHIELD_HALF, 0.26);
+  const rimHole = new THREE.Path();
+  traceMirrored(rimHole, SHIELD_HALF, 0.26, 0.9, CY);
+  rimShape.holes.push(rimHole);
+  const rim = new THREE.Mesh(
+    centreZ(new THREE.ExtrudeGeometry(rimShape, { depth: 0.09, curveSegments, ...bevel })),
+    trim,
+  );
+  rim.name = "border";
+  g.add(rim);
 
-  // A heraldic cross rather than a central boss. The boss was a white dot in
-  // the middle of a rounded shape, which is precisely the map-pin read above; a
-  // cross is the one marking nothing else in this game wears, and it survives
-  // being 25 pixels tall because both bars are straight.
-  const crossV = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.34, 0.06), trim);
-  crossV.name = "crossV";
-  // -0.01, not 0: at 0 the bar poked a hair above the dome's crown.
-  crossV.position.set(0, -0.01, 0.055);
-  g.add(crossV);
-
-  const crossH = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.055, 0.06), trim);
-  crossH.name = "crossH";
-  crossH.position.set(0, 0.09, 0.055);
-  g.add(crossH);
+  // Deeper than the plate and centred on it, so it stands proud front AND back.
+  const crossShape = new THREE.Shape();
+  traceMirrored(crossShape, CROSS_HALF, 0.235);
+  const cross = new THREE.Mesh(
+    centreZ(new THREE.ExtrudeGeometry(crossShape, { depth: 0.11, curveSegments, ...bevel })),
+    trim,
+  );
+  cross.name = "cross";
+  cross.scale.set(1.08, 1.08, 0.75);
+  cross.position.set(-0.001, -0.013, 0);
+  g.add(cross);
 
   g.traverse((o) => {
     o.castShadow = true;

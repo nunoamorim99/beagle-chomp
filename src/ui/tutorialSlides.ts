@@ -130,7 +130,7 @@ export function buildSlides(input: DeviceInput): TutorialSlide[] {
       id: "lives",
       title: "Earning more lives",
       body:
-        "Three ways: every 5,000 points, eating every enemy within a single bone, " +
+        "Three ways: every 10,000 points, eating every enemy within a single bone, " +
         "and the golden bone that appears from time to time. You can hold five at once.",
       stage: "goldenBone",
     },

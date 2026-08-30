@@ -118,7 +118,7 @@ no-ops (no HUD change, no sound; a bonus life is simply wasted at the cap).
   `LIVES.pickupLifespanSeconds` (18s) if not grabbed, granting nothing. Even
   if the beagle is already at `LIVES.max` when it steps on the pickup, the
   golden bone is still consumed (despawns) — `grantLife()` just no-ops.
-- **Points milestone:** every `LIVES.milestonePoints` (5000) points of
+- **Points milestone:** every `LIVES.milestonePoints` (10000) points of
   cumulative run score grants 1 life — reuses `coinsDueFromScore` (the exact
   same pure helper IDEA-016's coin milestone uses, just a coarser divisor and
   its own in-memory counter, `livesAwardedFromScore`). A single scoring event

@@ -1144,7 +1144,7 @@ export class Game {
         }
         this.hud.setScore(this.score);
         this.maybeAwardLivesFromScore();
-        // Mentioning the 5,000-point life is meaningless at 30 points; wait
+        // Mentioning the 10,000-point life is meaningless at 30 points; wait
         // until the number on screen is big enough to feel within reach.
         if (this.level.pellets.size <= 0) this.levelClear();
       }
