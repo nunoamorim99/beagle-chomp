@@ -94,8 +94,8 @@ export function buildSlides(input: DeviceInput): TutorialSlide[] {
       body:
         "Biscuits are 10 points each, and eating all of them finishes the map. " +
         "Fruit turns up now and then, worth anywhere from 100 for an apple to " +
-        "500 for a mango — and the best ones show up least, so take the chance " +
-        "when you see it.",
+        "500 for a mango — the best ones show up least, and none of them wait " +
+        "around, so go when you see one.",
       stage: "maze",
     },
     {
@@ -130,7 +130,7 @@ export function buildSlides(input: DeviceInput): TutorialSlide[] {
       id: "lives",
       title: "Earning more lives",
       body:
-        "Three ways: every 5,000 points, eating every enemy within a single bone, " +
+        "Three ways: every 10,000 points, eating every enemy within a single bone, " +
         "and the golden bone that appears from time to time. You can hold five at once.",
       stage: "goldenBone",
     },

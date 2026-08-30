@@ -120,25 +120,58 @@ async function run(): Promise<void> {
       // what it IS — the part tree is how the editor tells them apart, so a
       // shared generic "body"/"leaf" set across all five would make four of
       // them indistinguishable in the outliner.
-      Apple: ["apple", "leaf"],
+      // Rebuilt from a reference: the body is a lathe with a stem WELL and a
+      // calyx dimple where it was a plain sphere, and it finally has the stem
+      // that well exists for. "leaf" is pinned because it is this fruit's tell —
+      // the mango carries none and the carrot's tuft is six stalks rather than
+      // one mass, both to stay clear of it.
+      Apple: ["apple", "stem", "leaf"],
       Banana: ["banana", "tipStem", "tipEnd"],
-      Carrot: ["carrot", "frondL", "frondC", "frondR"],
-      Strawberry: ["berry", "shoulder", "calyx", "stem"],
+      // Rebuilt from a reference. The root is a lathe now (domed shoulder, eased
+      // taper) and the three-cone tuft became six thinner stalks plus a green
+      // collar. Six still beats one: the reason for a tuft rather than a single
+      // green mass was that a lump on top reads as the APPLE's leaf, and that
+      // has not changed.
+      Carrot: ["carrot", "collar", "frond1", "frond6"],
+      // Rebuilt from a reference. The body is one LatheGeometry now, so the
+      // cone-plus-sphere pair is gone and with it "shoulder" — the silhouette
+      // is the lathe's input rather than the seam between two primitives. In
+      // its place "seeds": fourteen pips merged into ONE geometry, so the
+      // outliner gains a part rather than fourteen.
+      Strawberry: ["berry", "seeds", "calyx", "stem"],
       // No leaf: the mango dropped it deliberately (a gold ball with a green
       // leaf read as an orange APPLE at game size), so its absence is part of
-      // what keeps the 100 and the 500 apart and is worth pinning.
-      Mango: ["mango", "blush", "stem"],
-      // IDEA-046. The two doublers share a plaque and differ by what sits on
-      // it, so their part names are what tells them apart in the outliner.
-      "x2 Biscuits": ["plate", "biscuitA", "biscuitB"],
-      "x2 Enemies": ["plate", "ghostA", "ghostB"],
-      Anchor: ["shank", "stock", "arms", "ring"],
+      // what keeps the 100 and the 500 apart and is worth pinning. The
+      // reference it was later rebuilt from HAS one; it is still not built.
+      // "greenBand" is not that leaf and is pinned here so the two do not get
+      // confused later: it is a band of colour across the body, inside the
+      // fruit's own silhouette, where the apple's tell is a leaf sticking OUT
+      // of a round body.
+      Mango: ["mango", "blush", "greenBand", "stem"],
+      // IDEA-046. The two doublers share a token and now differ ONLY by colour —
+      // both are a hexagonal plate with "x2" struck on each face. That makes
+      // their part names the only thing separating them in the outliner, so the
+      // glyph meshes are named for their doubler rather than generically. A
+      // shared "x2Front" would make the two indistinguishable there, which is
+      // exactly what this block exists to catch.
+      "x2 Biscuits": ["plate", "biscuitX2Front", "biscuitX2Back"],
+      "x2 Enemies": ["plate", "enemyX2Front", "enemyX2Back"],
+      // Rebuilt from a reference as ONE traced outline — shank, stock, arms,
+      // flukes and keel are a single closed profile now, so there is no
+      // "shank"/"stock"/"arms" to name separately. "glyph", not "body": the
+      // coin already owns "body", and generic names are what this block exists
+      // to prevent.
+      Anchor: ["glyph", "ring"],
       // One mesh: a five-pointed star is a polygon, so it is a real
       // THREE.Shape rather than a pile of primitives to be named individually.
       Star: ["star"],
       // No "boss": a central dot on a rounded shape rendered as a MAP PIN, so
       // it was replaced by the heraldic cross. Its absence is load-bearing.
-      Shield: ["top", "point", "crossV", "crossH"],
+      // Rebuilt from a reference as traced profiles, so the dome-plus-cone
+      // "top"/"point" pair is gone and the cross is one mesh rather than two
+      // crossed bars. Heraldic names, deliberately: "field"/"border" rather
+      // than "body"/"rim", which the coin already owns.
+      Shield: ["field", "border", "cross"],
       Coin: ["body", "rim", "embossFront", "embossBack"],
     };
     for (const [label, parts] of Object.entries(expected)) {

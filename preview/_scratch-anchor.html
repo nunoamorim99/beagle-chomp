@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Anchor front ortho</title>
+    <style>
+      html, body { margin: 0; background: #e8e4de; }
+      #wrap { display: flex; gap: 8px; padding: 8px; }
+      canvas { background: #e8e4de; }
+    </style>
+  </head>
+  <body>
+    <div id="wrap"></div>
+    <script type="module">
+      // SCRATCH diagnostic (delete before commit). A dead-on ORTHOGRAPHIC front
+      // view of the real makeAnchor, so the traced profile can be compared with
+      // the flat reference art without a perspective camera in the way.
+      import * as THREE from "three";
+      import { makeAnchor, makeShield } from "/src/render/board.ts";
+      const WHICH = new URLSearchParams(location.search).get("mesh") ?? "anchor";
+      const makeIt = WHICH === "shield" ? makeShield : makeAnchor;
+
+      const S = 600;
+      const wrap = document.getElementById("wrap");
+
+      function shot(rotY, silhouette) {
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+        renderer.setPixelRatio(1);
+        renderer.setSize(S, S);
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
+        renderer.toneMapping = THREE.NoToneMapping;
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xe8e4de);
+
+        const g = makeIt();
+        g.rotation.y = rotY;
+        if (silhouette) {
+          g.traverse((o) => {
+            if (o.isMesh) o.material = new THREE.MeshBasicMaterial({ color: 0x1b3b52 });
+          });
+        }
+        scene.add(g);
+
+        scene.add(new THREE.AmbientLight(0xffffff, 0.75));
+        const key = new THREE.DirectionalLight(0xffffff, 1.4);
+        key.position.set(-0.6, 1.0, 1.2);
+        scene.add(key);
+
+        // Frame the object's real bounds, with a little margin.
+        const box = new THREE.Box3().setFromObject(g);
+        const size = box.getSize(new THREE.Vector3());
+        const mid = box.getCenter(new THREE.Vector3());
+        const half = Math.max(size.x, size.y) * 0.58;
+        const cam = new THREE.OrthographicCamera(-half, half, half, -half, 0.01, 100);
+        cam.position.set(mid.x, mid.y, 5);
+        cam.lookAt(mid.x, mid.y, 0);
+
+        renderer.render(scene, cam);
+        wrap.appendChild(renderer.domElement);
+      }
+
+      shot(0, false);        // lit front
+      shot(0, true);         // pure silhouette — what survives at 25px
+      shot(Math.PI / 5, false); // slight turn, to read the bevel
+
+      // ---- tilt demo -------------------------------------------------------
+      // A lean baked into the builder sits INSIDE spinDecor's Y rotation, so
+      // the lean axis turns with the object. These four frames are one full
+      // revolution of a tilted anchor: the lean should read as a wobble, not a
+      // stable incline.
+      const wrap2 = document.createElement("div");
+      wrap2.id = "wrap2";
+      wrap2.style.cssText = "display:flex;gap:8px;padding:8px";
+      document.body.appendChild(wrap2);
+
+      function tilted(rotY) {
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+        renderer.setPixelRatio(1);
+        renderer.setSize(360, 360);
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
+        renderer.toneMapping = THREE.NoToneMapping;
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xe8e4de);
+
+        // The root is what spinDecor turns; the tilt lives on it, as a builder
+        // could only ever place it.
+        const root = new THREE.Group();
+        const g = makeIt();
+        g.rotation.z = 0.26; // the "little incline"
+        root.add(g);
+        root.rotation.y = rotY; // what spinDecor does
+        scene.add(root);
+
+        scene.add(new THREE.AmbientLight(0xffffff, 0.75));
+        const key = new THREE.DirectionalLight(0xffffff, 1.4);
+        key.position.set(-0.6, 1.0, 1.2);
+        scene.add(key);
+
+        const cam = new THREE.OrthographicCamera(-0.5, 0.5, 0.5, -0.5, 0.01, 100);
+        cam.position.set(0, 0, 5);
+        cam.lookAt(0, 0, 0);
+        renderer.render(scene, cam);
+        wrap2.appendChild(renderer.domElement);
+      }
+      [0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2].forEach(tilted);
+
+      document.title = "Anchor front ortho — ready";
+    </script>
+  </body>
+</html>

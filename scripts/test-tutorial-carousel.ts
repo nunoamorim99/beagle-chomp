@@ -99,7 +99,7 @@ section("No slide ever names a ghost count");
 
   const lives = desktop.find((s) => s.id === "lives")!;
   ok("the lives slide says EVERY enemy", /every enemy/i.test(lives.body), lives.body);
-  ok("…and still mentions the 5,000-point milestone", /5,000/.test(lives.body), lives.body);
+  ok("…and still mentions the 10,000-point milestone", /10,000/.test(lives.body), lives.body);
   ok("…and the golden bone", /golden bone/i.test(lives.body), lives.body);
 }
 

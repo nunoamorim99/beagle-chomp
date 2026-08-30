@@ -59,7 +59,7 @@ export const SCORING = {
   deathSeconds: 1.3,
   startLives: 3,
   coinPickupValue: 1,
-  livesMilestonePoints: 5000,
+  livesMilestonePoints: 10000,
 } as const;
 
 /** Pellet-eaten counts at which a coin / bonus-life bone / fruit spawns. Each

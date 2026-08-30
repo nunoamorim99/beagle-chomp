@@ -510,8 +510,8 @@ console.log("\n=== coins.ts (IDEA-016 points->coins math) ===");
   // are now the only way to earn. The helper survives because bonus LIVES use
   // the same maths on LIVES.milestonePoints, so that is what it is pinned to.
   check(
-    "coinsDueFromScore matches LIVES.milestonePoints for a 12000 score -> 2 lives",
-    coinsDueFromScore(12000, LIVES.milestonePoints) === 2,
+    "coinsDueFromScore matches LIVES.milestonePoints for a 24000 score -> 2 lives",
+    coinsDueFromScore(24000, LIVES.milestonePoints) === 2,
   );
   check("COINS no longer carries a points-per-coin rate", !("perPoints" in COINS));
 }
@@ -574,19 +574,19 @@ console.log("\n=== config.ts (IDEA-018 bonus lives: coinsDueFromScore reused wit
 {
   // Same pure helper as coins (IDEA-016) reused verbatim with a different
   // divisor for the lives milestone (game.ts's maybeAwardLivesFromScore) —
-  // exercised here at LIVES.milestonePoints (5000) to guard against a future
+  // exercised here at LIVES.milestonePoints (10000) to guard against a future
   // config change silently breaking the milestone math, mirroring the
   // COINS.perPoints check just above.
   check("coinsDueFromScore(0, LIVES.milestonePoints) === 0", coinsDueFromScore(0, LIVES.milestonePoints) === 0);
-  check("coinsDueFromScore(4999, LIVES.milestonePoints) === 0", coinsDueFromScore(4999, LIVES.milestonePoints) === 0);
-  check("coinsDueFromScore(5000, LIVES.milestonePoints) === 1", coinsDueFromScore(5000, LIVES.milestonePoints) === 1);
+  check("coinsDueFromScore(9999, LIVES.milestonePoints) === 0", coinsDueFromScore(9999, LIVES.milestonePoints) === 0);
+  check("coinsDueFromScore(10000, LIVES.milestonePoints) === 1", coinsDueFromScore(10000, LIVES.milestonePoints) === 1);
   check(
-    "coinsDueFromScore(12000, LIVES.milestonePoints) === 2 (crossing multiple at once)",
-    coinsDueFromScore(12000, LIVES.milestonePoints) === 2,
+    "coinsDueFromScore(24000, LIVES.milestonePoints) === 2 (crossing multiple at once)",
+    coinsDueFromScore(24000, LIVES.milestonePoints) === 2,
   );
   check(
-    "coinsDueFromScore matches config.ts's LIVES.milestonePoints for a 17500 score -> 3 lives",
-    coinsDueFromScore(17500, LIVES.milestonePoints) === 3,
+    "coinsDueFromScore matches config.ts's LIVES.milestonePoints for a 35000 score -> 3 lives",
+    coinsDueFromScore(35000, LIVES.milestonePoints) === 3,
   );
 
   // LIVES.max sanity: a positive, finite cap greater than START_LIVES (3),

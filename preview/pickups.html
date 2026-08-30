@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pickup preview</title>
+    <style>
+      html, body { margin: 0; background: #23201c; color: #efe8dc;
+        font: 500 13px/1.4 ui-monospace, "SF Mono", Menlo, monospace; }
+      #sheet { display: block; margin: 0 auto; }
+      #hud { padding: 10px 14px; white-space: pre; color: #cbbfa9; }
+    </style>
+  </head>
+  <body>
+    <div id="hud">building…</div>
+    <canvas id="sheet"></canvas>
+    <script type="module">
+      // Dev-only contact sheet for the REAL pickup builders — it calls the
+      // shipped functions, so what you see here is what the game builds. Not a
+      // rollup input, so it never ships (same construction as /editor/ and
+      // /preview/).
+      //
+      // Two columns per pickup, and the RIGHT one is the one that matters:
+      //
+      //   close-up   a 3/4 hero view, for judging the modelling
+      //   in-game    the pickup at its TRUE on-screen pixel size, rendered
+      //              through the game's own camera (fov/height/lights from
+      //              scene.ts + the garden palette) and then magnified with
+      //              nearest-neighbour. If it is unreadable here it is
+      //              unreadable in the game, however good the close-up looks.
+      //
+      // ?only=apple,shield   limit the sheet   ?zoom=6   magnification
+      import * as THREE from "three";
+      import { FRUIT_BUILDERS, POWERUP_BUILDERS, makeBone, makeLifeBone } from "/src/render/board.ts";
+
+      const q = new URLSearchParams(location.search);
+      const ZOOM = Number(q.get("zoom") ?? 6);
+
+      // The game's camera and viewport (src/render/scene.ts). GAME_H is the
+      // viewport HEIGHT the projection is measured against — the pixel size of
+      // a pickup is meaningless without it.
+      const BASE_FOV = 46;
+      const BASE_POS = new THREE.Vector3(0, 27, 15.5);
+      const BASE_LOOK = new THREE.Vector3(0, 0, -0.5);
+      const GAME_W = 1920, GAME_H = 1080;
+
+      // Garden palette lights (src/game/themes.ts), the default theme.
+      const LIGHTS = {
+        hemiSky: 0xd8f0ff, hemiGround: 0x4a3a20, hemiIntensity: 0.65,
+        sunColor: 0xfff4e0, sunIntensity: 1.1,
+        rimColor: 0xaed4f0, rimIntensity: 0.35,
+        floor: 0x6f9b52,
+      };
+
+      const ALL = [
+        ["bone (reference)", makeBone, 0.35],
+        ["lifeBone (reference)", makeLifeBone, 0.35],
+        ["apple", FRUIT_BUILDERS.apple, 0.35],
+        ["banana", FRUIT_BUILDERS.banana, 0.35],
+        ["carrot", FRUIT_BUILDERS.carrot, 0.35],
+        ["strawberry", FRUIT_BUILDERS.strawberry, 0.35],
+        ["mango", FRUIT_BUILDERS.mango, 0.35],
+        ["doubleBiscuit", POWERUP_BUILDERS.doubleBiscuit, 0.4],
+        ["doubleGhost", POWERUP_BUILDERS.doubleGhost, 0.4],
+        ["slowGhosts (anchor)", POWERUP_BUILDERS.slowGhosts, 0.4],
+        ["shield", POWERUP_BUILDERS.shield, 0.4],
+      ];
+      const only = q.get("only");
+      const items = only
+        ? ALL.filter((r) => only.split(",").some((n) => r[0].startsWith(n.trim())))
+        : ALL;
+
+      // ---- one renderer, matched to the game (scene.ts) ----
+      const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+      renderer.setPixelRatio(1);
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      renderer.toneMapping = THREE.NoToneMapping; // deliberate — see scene.ts
+
+      function lit(scene) {
+        scene.add(new THREE.HemisphereLight(LIGHTS.hemiSky, LIGHTS.hemiGround, LIGHTS.hemiIntensity));
+        const key = new THREE.DirectionalLight(LIGHTS.sunColor, LIGHTS.sunIntensity);
+        key.position.set(6, 12, 6);
+        key.castShadow = true;
+        key.shadow.mapSize.set(1024, 1024);
+        key.shadow.camera.near = 0.5;
+        key.shadow.camera.far = 40;
+        const c = key.shadow.camera;
+        c.left = -3; c.right = 3; c.top = 3; c.bottom = -3;
+        c.updateProjectionMatrix();
+        scene.add(key);
+        const rim = new THREE.DirectionalLight(LIGHTS.rimColor, LIGHTS.rimIntensity);
+        rim.position.set(-5, 6, -6);
+        scene.add(rim);
+      }
+
+      /** The pickup as the PLAYER sees it: game camera, game viewport height,
+       *  sitting on the theme floor colour, cropped to `crop` px around it.
+       *
+       *  `yaw` matters more than it looks. `spinDecor` turns every pickup on Y
+       *  continuously (fruit 1.5 rad/s, power-ups 2.5), so the build pose is
+       *  only ONE frame of a cycle. An elongated shape loses projected LENGTH
+       *  as it swings side-on to the camera — a mesh that reads at yaw 0 and
+       *  collapses at yaw 90 is a mesh that is unreadable half the time. Judge
+       *  the worst column, not the first. */
+      function renderInGame(build, y, crop, yaw = 0) {
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(LIGHTS.floor);
+        lit(scene);
+        const floor = new THREE.Mesh(
+          new THREE.PlaneGeometry(6, 6),
+          new THREE.MeshToonMaterial({ color: LIGHTS.floor }),
+        );
+        floor.rotation.x = -Math.PI / 2;
+        floor.receiveShadow = true;
+        scene.add(floor);
+
+        const mesh = build();
+        mesh.position.set(0, y, 0);
+        mesh.rotation.y += yaw;
+        scene.add(mesh);
+
+        const camera = new THREE.PerspectiveCamera(BASE_FOV, GAME_W / GAME_H, 0.1, 200);
+        // Same offset and distance from its target as the game camera has from
+        // BASE_LOOK, so the projected size is the real one.
+        camera.position.copy(BASE_POS).sub(BASE_LOOK);
+        camera.lookAt(0, 0, 0);
+        camera.updateProjectionMatrix();
+
+        renderer.setSize(GAME_W, GAME_H, false);
+        renderer.render(scene, camera);
+
+        // Where the pickup landed, and how many px a tile is worth.
+        const p = new THREE.Vector3(0, y, 0).project(camera);
+        const px = ((p.x + 1) / 2) * GAME_W;
+        const py = ((1 - p.y) / 2) * GAME_H;
+        const a = new THREE.Vector3(0, 0, 0).project(camera);
+        const b = new THREE.Vector3(1, 0, 0).project(camera);
+        const pxPerTile = Math.abs(b.x - a.x) * GAME_W * 0.5;
+
+        // Projected width: the mesh's world bounding box pushed through the real
+        // camera, so foreshortening is included. A bbox X-extent measured in
+        // model space would report the carrot as long even when it is pointing
+        // straight at the viewer.
+        mesh.updateWorldMatrix(true, true);
+        const bb = new THREE.Box3().setFromObject(mesh);
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        for (let i = 0; i < 8; i++) {
+          const c = new THREE.Vector3(
+            i & 1 ? bb.max.x : bb.min.x,
+            i & 2 ? bb.max.y : bb.min.y,
+            i & 4 ? bb.max.z : bb.min.z,
+          ).project(camera);
+          const sx = ((c.x + 1) / 2) * GAME_W;
+          const sy = ((1 - c.y) / 2) * GAME_H;
+          minX = Math.min(minX, sx); maxX = Math.max(maxX, sx);
+          minY = Math.min(minY, sy); maxY = Math.max(maxY, sy);
+        }
+
+        const out = document.createElement("canvas");
+        out.width = crop; out.height = crop;
+        const ctx = out.getContext("2d");
+        ctx.drawImage(renderer.domElement, px - crop / 2, py - crop / 2, crop, crop, 0, 0, crop, crop);
+        disposeTree(mesh);
+        return { canvas: out, pxPerTile, widthPx: maxX - minX, heightPx: maxY - minY };
+      }
+
+      /** A hero 3/4 close-up, framed from the mesh's own bounds. */
+      function renderCloseUp(build, size) {
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x2b2722);
+        lit(scene);
+        const mesh = build();
+        scene.add(mesh);
+        const box = new THREE.Box3().setFromObject(mesh);
+        const extent = box.getSize(new THREE.Vector3());
+        const centre = box.getCenter(new THREE.Vector3());
+        const camera = new THREE.PerspectiveCamera(32, 1, 0.01, 100);
+        const dist = Math.max(extent.x, extent.y, extent.z) * 3.6;
+        camera.position.copy(centre).add(new THREE.Vector3(0.62, 0.5, 0.9).normalize().multiplyScalar(dist));
+        camera.lookAt(centre);
+        renderer.setSize(size, size, false);
+        renderer.render(scene, camera);
+        const out = document.createElement("canvas");
+        out.width = size; out.height = size;
+        out.getContext("2d").drawImage(renderer.domElement, 0, 0);
+        disposeTree(mesh);
+        return { canvas: out, extent, tris: countTris(mesh) };
+      }
+
+      function countTris(root) {
+        let t = 0;
+        root.traverse((o) => {
+          if (o.isMesh && o.geometry) {
+            const g = o.geometry;
+            t += g.index ? g.index.count / 3 : g.attributes.position.count / 3;
+          }
+        });
+        return Math.round(t);
+      }
+      function disposeTree(root) {
+        root.traverse((o) => { if (o.isMesh) o.geometry?.dispose(); });
+      }
+
+      // ---- compose the sheet ----
+      const CROP = 64;              // px of the real frame kept around a pickup
+      const ZCELL = CROP * ZOOM;    // magnified in-game cell
+      // Four yaw samples through the spin cycle. Anything elongated must survive
+      // ALL of them, because the player sees all of them.
+      const YAWS = [0, Math.PI / 4, Math.PI / 2, (3 * Math.PI) / 4];
+      const CELL = ZCELL;
+      const HERO = Math.round(ZCELL * 0.72);
+      const PAD = 14, LABEL = 26;
+      const rowH = CELL + LABEL + PAD;
+      const sheet = document.getElementById("sheet");
+      sheet.width = HERO + CELL * YAWS.length + PAD * 3 + 250;
+      sheet.height = rowH * items.length + PAD;
+      const s = sheet.getContext("2d");
+      s.imageSmoothingEnabled = false;
+      s.fillStyle = "#23201c";
+      s.fillRect(0, 0, sheet.width, sheet.height);
+
+      let pxPerTile = 0;
+      items.forEach(([name, build, y], i) => {
+        const top = PAD + i * rowH;
+        const hero = renderCloseUp(build, HERO);
+        s.drawImage(hero.canvas, PAD, top + LABEL);
+
+        // The measured on-screen width at EVERY yaw. The narrowest is the one
+        // that decides whether this pickup works.
+        const widths = [];
+        YAWS.forEach((yaw, k) => {
+          const game = renderInGame(build, y, CROP, yaw);
+          pxPerTile = game.pxPerTile;
+          // The LARGER projected dimension is what carries an elongated
+          // silhouette — a banana seen end-on is narrow but still tall, and a
+          // width-only metric would call that a collapse when it is not.
+          widths.push(Math.max(game.widthPx, game.heightPx));
+          const x = PAD * 2 + HERO + k * CELL;
+          s.imageSmoothingEnabled = false;
+          s.drawImage(game.canvas, x, top + LABEL, CELL, CELL);
+          s.strokeStyle = "#4a443c";
+          s.strokeRect(x + 0.5, top + LABEL + 0.5, CELL, CELL);
+          s.fillStyle = "#8d8577";
+          s.font = "11px ui-monospace, Menlo, monospace";
+          s.fillText(
+            `${((yaw * 180) / Math.PI).toFixed(0)}° · ${game.widthPx.toFixed(0)}×${game.heightPx.toFixed(0)}px`,
+            x + 6, top + LABEL + 15,
+          );
+        });
+
+        const worst = Math.min(...widths);
+        s.fillStyle = "#f0e7d8";
+        s.font = "600 15px ui-monospace, Menlo, monospace";
+        s.fillText(name, PAD, top + 17);
+        s.font = "12px ui-monospace, Menlo, monospace";
+        s.fillStyle = "#a89d8a";
+        const tx = PAD * 3 + HERO + CELL * YAWS.length;
+        s.fillText(`tris ${hero.tris}`, tx, top + LABEL + 18);
+        s.fillText(
+          `${hero.extent.x.toFixed(2)} × ${hero.extent.y.toFixed(2)} × ${hero.extent.z.toFixed(2)}`,
+          tx, top + LABEL + 38,
+        );
+        s.fillStyle = worst < 18 ? "#ff9c7a" : "#a89d8a";
+        s.fillText(`worst ${worst.toFixed(0)} px`, tx, top + LABEL + 58);
+        s.fillStyle = "#a89d8a";
+        s.fillText(`best  ${Math.max(...widths).toFixed(0)} px`, tx, top + LABEL + 78);
+      });
+
+      document.getElementById("hud").textContent =
+        `left: close-up (hero)   right: TRUE in-game size, ${ZOOM}× nearest-neighbour\n` +
+        `game camera fov ${BASE_FOV} at ${GAME_W}×${GAME_H} → ${pxPerTile.toFixed(1)} px per tile   ` +
+        `crop ${CROP}px of the real frame`;
+      document.title = "Pickup preview — ready";
+    </script>
+  </body>
+</html>

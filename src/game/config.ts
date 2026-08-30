@@ -71,6 +71,31 @@ export type Fruit = (typeof FRUITS)[number];
 // the same eaten-pellet tick. scripts/test-fruits.ts pins that.
 export const FRUIT_THRESHOLDS = [40, 80, 120, 160] as const;
 
+/**
+ * The fruit despawns if it isn't eaten in time — it is no longer a permanent
+ * fixture that sits there until the level ends.
+ *
+ * That permanence was the last thing on the board with no cost to ignoring it:
+ * the four spawns are staggered across the map (FRUIT_THRESHOLDS), but a fruit
+ * that waits forever means a player never has to decide anything — they can
+ * finish the corridor they are in, clear the pellets they were going to clear
+ * anyway, and collect it on the way past. With a countdown, crossing the maze
+ * for a 500-point Mango is a real gamble against the ghosts, which is the same
+ * reason the coin (COINS.lifespanSeconds) and the golden bone
+ * (LIVES.pickupLifespanSeconds) are timed.
+ *
+ * 20s, not the 18 those two use, and deliberately the most generous of the
+ * three: the fruit spawns on the maze's fixed "F" tiles rather than wherever
+ * the beagle isn't, so it can appear right across the map with no say in it,
+ * and it is the pickup most worth a long detour. Long enough to cross a maze
+ * under pressure, still well short of the ~40 pellets until the next threshold.
+ *
+ * NOTE: an expired fruit does NOT burn its threshold — maybeSpawnFruit's
+ * board-occupied guard sits before the threshold check, so the next spawn is
+ * the next threshold, exactly as it was before the timer existed.
+ */
+export const FRUIT_LIFESPAN_SECONDS = 20;
+
 // IDEA-016/IDEA-017: coin currency (v2.0 shop wallet).
 export const COINS = {
   // IDEA-016 v2: there is NO points-to-coins conversion any more.
@@ -92,7 +117,8 @@ export const COINS = {
   // level, THIS is the number to raise — not a reinstated milestone.
   pickupValue: 1,
   // IDEA-017 follow-up: the maze coin auto-despawns if not grabbed in time —
-  // a "grab it quick" bonus rather than a permanent fixture like the fruit.
+  // a "grab it quick" bonus. (The fruit was the permanent fixture this used to
+  // be contrasted against; it is timed too now — see FRUIT_LIFESPAN_SECONDS.)
   // Set to 18s: long enough that a coin appearing somewhere random on the map
   // is actually reachable before it vanishes (9s was too short — a coin could
   // spawn across the maze and expire before the player ever got near it), while
@@ -136,10 +162,13 @@ export const LIVES = {
   // meaningful headroom above START_LIVES (3) without being effectively
   // infinite.
   max: 5,
-  // Every 5000 points of cumulative run score grants 1 life (mirrors
-  // COINS.perPoints's shape exactly, just a coarser divisor — lives should be
-  // rarer than coins since they're a much stronger reward).
-  milestonePoints: 5000,
+  // Every 10000 points of cumulative run score grants 1 life. This is the ONE
+  // points-milestone left in the game (IDEA-016 v2 removed the coins one), and
+  // it is deliberately coarse: at 5000 a decent run banked the LIVES.max cap
+  // before the difficulty had a chance to bite, so the milestone stopped being
+  // a reward and became a floor. Doubling it keeps the extra life something a
+  // long run earns rather than something every run collects.
+  milestonePoints: 10000,
   // The golden-bone pickup auto-despawns if not grabbed in time, same
   // "grab it quick" urgency as the maze coin (COINS.lifespanSeconds).
   pickupLifespanSeconds: 18,

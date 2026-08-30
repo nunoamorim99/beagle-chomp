@@ -36,6 +36,7 @@ import {
   // value TABLE for it to sit next to, and because the server's sync step
   // now reads both out of that one file.
   FRUIT_THRESHOLDS,
+  FRUIT_LIFESPAN_SECONDS,
   FRUITS,
   POWERUPS,
   type Fruit,
@@ -359,6 +360,14 @@ export class Game {
   private fruitTile: Vec2 | null = null;
   private fruitKind: Fruit = FRUITS_DEFAULT;
 
+  // Countdown (seconds) until the current fruit despawns ungrabbed. The fruit
+  // used to sit on the board until eaten or until the level ended; it is now
+  // time-limited like the coin and the golden bone (see FRUIT_LIFESPAN_SECONDS
+  // for why). Only meaningful while fruitTile is non-null, and only ticks
+  // during actual "play" (see tickFruitLifespan) so a fruit can never expire
+  // while the player is watching the ready countdown or a death animation.
+  private fruitTimer = 0;
+
   // IDEA-046: what the player is currently holding.
   //
   // Lives on the GAME, not on LevelAssets, and that is the whole design: the
@@ -385,7 +394,7 @@ export class Game {
 
   // IDEA-017 follow-up: countdown (seconds) until the current coin
   // auto-despawns if not grabbed (COINS.lifespanSeconds) — a "grab it quick"
-  // bonus, unlike the fruit which lingers until eaten. Only meaningful while
+  // bonus, exactly like the fruit above. Only meaningful while
   // coinTile is non-null; only ticks during actual "play" (see updatePlay),
   // never during ready/dying/levelclear/start so a coin can't silently expire
   // while the player isn't even moving yet.
@@ -1030,8 +1039,7 @@ export class Game {
     this.scheduleIdx = 0;
     this.globalMode = "scatter";
 
-    if (this.level.board.fruit) clearFruit(this.level.board, this.rig.scene);
-    this.fruitTile = null;
+    this.despawnFruit();
     // IDEA-046: the board mesh goes with the level; the HELD power-ups do not
     // (that is the point of them). Only the pickup lying on the floor is
     // cleared here — this.powerups is run-scoped and reset in startClassicRun.
@@ -1039,6 +1047,25 @@ export class Game {
 
     this.despawnCoin();
     this.despawnLife();
+  }
+
+  // ---- fruit lifecycle helper (mirrors despawnCoin) ----
+
+  /**
+   * Clears the current fruit (mesh + tile + countdown), if any — the one place
+   * all three are reset together, so the pickup in eatAt, the teardown in
+   * resetActors and the lifespan expiry in tickFruitLifespan can never leave a
+   * stale countdown running against the fruit that spawns next.
+   *
+   * `fruitKind` is deliberately NOT reset: it is only ever read inside the
+   * `fruitTile`-guarded pickup branch, and clearing it would mean a defaulted
+   * kind is a reachable state (FRUITS_DEFAULT's own comment makes that point).
+   * Safe to call when there is no fruit on the board.
+   */
+  private despawnFruit(): void {
+    if (this.level.board.fruit) clearFruit(this.level.board, this.rig.scene);
+    this.fruitTile = null;
+    this.fruitTimer = 0;
   }
 
   // ---- maze coin lifecycle helper (IDEA-017 follow-up: time-limited coin) ----
@@ -1144,7 +1171,7 @@ export class Game {
         }
         this.hud.setScore(this.score);
         this.maybeAwardLivesFromScore();
-        // Mentioning the 5,000-point life is meaningless at 30 points; wait
+        // Mentioning the 10,000-point life is meaningless at 30 points; wait
         // until the number on screen is big enough to feel within reach.
         if (this.level.pellets.size <= 0) this.levelClear();
       }
@@ -1157,8 +1184,8 @@ export class Game {
     // make the whole feature invisible.
     if (this.fruitTile && this.fruitTile.x === tx && this.fruitTile.y === ty) {
       const points = this.fruitKind.points;
-      clearFruit(this.level.board, this.rig.scene);
-      this.fruitTile = null;
+      // Grabbed in time — i.e. before tickFruitLifespan's countdown reached 0.
+      this.despawnFruit();
       this.score += points;
       recordFruit(this.telemetry, points);
       this.effects.pelletEaten(worldX(tx), worldZ(ty), "biscuit");
@@ -1297,7 +1324,8 @@ export class Game {
    * i.e. only during actual "play" — never ready/dying/levelclear/start, so a
    * coin can't expire while the player isn't even moving yet). Auto-despawns
    * the coin with no award once the timer runs out — a distinct, urgent
-   * "grab it quick" bonus rather than a permanent fixture like the fruit.
+   * "grab it quick" bonus. (The fruit works the same way now; see
+   * tickFruitLifespan.)
    */
   private tickCoinLifespan(dt: number): void {
     if (!this.coinTile) return;
@@ -1463,8 +1491,23 @@ export class Game {
       // is asserted in Node rather than hoped for).
       this.fruitKind = rollFruit();
       this.fruitTile = tile;
+      this.fruitTimer = FRUIT_LIFESPAN_SECONDS;
       spawnFruit(this.level.board, this.rig.scene, tile.x, tile.y, this.fruitKind.id);
     }
+  }
+
+  // ---- fruit lifespan countdown (mirrors tickCoinLifespan) ----
+
+  /**
+   * Ticks the current fruit's despawn countdown. Only called from updatePlay,
+   * so the clock runs during actual play and nowhere else — a fruit cannot
+   * expire during ready/dying/levelclear or while the shop is open. Expiry
+   * awards nothing: that is the whole point of the timer.
+   */
+  private tickFruitLifespan(dt: number): void {
+    if (!this.fruitTile) return;
+    this.fruitTimer -= dt;
+    if (this.fruitTimer <= 0) this.despawnFruit();
   }
 
   // ---- power-ups (IDEA-046, mirrors maybeSpawnCoin) ----
@@ -2232,6 +2275,7 @@ export class Game {
     // the shop is open, so wall-clock time would count shop browsing as play.
     accumulatePlayTime(this.telemetry, dt);
     this.advanceSchedule(dt);
+    this.tickFruitLifespan(dt);
     this.tickCoinLifespan(dt);
     this.tickLifeLifespan(dt);
     this.tickPowerupLifespan(dt);
