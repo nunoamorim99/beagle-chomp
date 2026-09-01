@@ -711,6 +711,7 @@ const CARROT_FRONDS: readonly { a: number; lean: number; len: number; r: number 
  */
 export function makeCarrot(): THREE.Group {
   const g = new THREE.Group();
+  g.rotation.set(0, 0, 0.5);
   const carrot = new THREE.Mesh(
     new THREE.LatheGeometry(carrotProfile(12, 5), 10),
     toon({
@@ -920,6 +921,7 @@ function seedPips(count: number, size: number, proud: number): THREE.BufferGeome
  */
 export function makeStrawberry(): THREE.Group {
   const g = new THREE.Group();
+  g.rotation.set(0, 0, 0.5);
   const red = toon({
     color: 0xe23a5e,
     emissive: 0x5c0f22,
@@ -950,6 +952,7 @@ export function makeStrawberry(): THREE.Group {
   });
   const seeds = new THREE.Mesh(seedPips(14, 0.017, 0.004), seedMat);
   seeds.name = "seeds";
+  seeds.position.set(0, 0, -0.01);
   g.add(seeds);
 
   const greenMat = toon({
@@ -1295,6 +1298,7 @@ function x2Geometry(width: number, depth: number): THREE.BufferGeometry {
  */
 export function makeDoubleBiscuit(): THREE.Group {
   const g = new THREE.Group();
+  g.rotation.set(-0.3, 0, 0);
   const gold = toon({ color: 0xf2c832, emissive: 0x5c4408, emissiveIntensity: 0.5 });
   const engraved = toon({ color: 0x7a5408, emissive: 0x2a1c02, emissiveIntensity: 0.45 });
 
@@ -1328,6 +1332,7 @@ export function makeDoubleBiscuit(): THREE.Group {
  *  that block for why the two are written out rather than sharing a builder. */
 export function makeDoubleGhost(): THREE.Group {
   const g = new THREE.Group();
+  g.rotation.set(-0.3, 0, 0);
   const teal = toon({ color: 0x53c7c0, emissive: 0x0d3a38, emissiveIntensity: 0.5 });
   const engraved = toon({ color: 0x11524e, emissive: 0x041a18, emissiveIntensity: 0.45 });
 
@@ -1456,6 +1461,7 @@ const ANCHOR_HALF: readonly AnchorSeg[] = [
  */
 export function makeAnchor(): THREE.Group {
   const g = new THREE.Group();
+  g.rotation.set(-0.3, 0, 0);
   const iron = toon({
     color: 0x8fa6b8,
     emissive: 0x1e2c38,
@@ -1533,6 +1539,7 @@ export function makeAnchor(): THREE.Group {
  */
 export function makeStar(): THREE.Group {
   const g = new THREE.Group();
+  g.rotation.set(-0.3, 0, 0.628);
 
   const OUTER = 0.26;
   // 0.40 of the outer radius. Deeper notches (a smaller ratio) give a spikier,
@@ -1707,6 +1714,7 @@ function centreZ(geo: THREE.BufferGeometry): THREE.BufferGeometry {
  */
 export function makeShield(): THREE.Group {
   const g = new THREE.Group();
+  g.rotation.set(-0.3, 0, 0);
   const face = toon({ color: 0x5ec8f0, emissive: 0x0d3a4a, emissiveIntensity: 0.55 });
   const trim = toon({ color: 0xd8f2ff, emissive: 0x2a5a6a, emissiveIntensity: 0.5 });
 
