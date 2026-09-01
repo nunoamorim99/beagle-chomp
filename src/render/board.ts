@@ -780,6 +780,11 @@ const BERRY_PROFILE: readonly [number, number][] = [
   [0.0, -0.232],
 ];
 
+/** Radial segments of the berry lathe. seedPips needs the SAME number: the
+ *  lathe's surface is a ring of flat quads, not a cylinder, so a seed placed at
+ *  the analytic radius floats above every facet it does not land exactly on. */
+const BERRY_SEGMENTS = 14;
+
 /** The berry's radius at a height, by walking BERRY_PROFILE. Used to sit the
  *  seeds ON the surface rather than at a guessed radius, so retuning the
  *  profile carries them with it. */
@@ -793,6 +798,28 @@ function berryRadiusAt(y: number): number {
     }
   }
   return 0;
+}
+
+/**
+ * The berry's outward surface normal at a height, as [radial, vertical] in the
+ * profile's own 2D plane. BERRY_PROFILE is a polyline, so the normal is
+ * constant across each segment and IS the plane of the lathe quad there — which
+ * is what lets a seed's base lie flat on the surface instead of tangent to a
+ * curve it only touches at one point.
+ */
+function berryNormalAt(y: number): [number, number] {
+  for (let i = 1; i < BERRY_PROFILE.length; i++) {
+    const [r0, y0] = BERRY_PROFILE[i - 1];
+    const [r1, y1] = BERRY_PROFILE[i];
+    if (y <= y0 && y >= y1) {
+      // Profile runs crown-to-tip (dy <= 0), so (-dy, dr) points outward.
+      const nr = y0 - y1;
+      const ny = r1 - r0;
+      const len = Math.hypot(nr, ny) || 1;
+      return [nr / len, ny / len];
+    }
+  }
+  return [1, 0];
 }
 
 /**
@@ -845,8 +872,8 @@ function starCap(
 }
 
 /**
- * The seeds, as ONE geometry: a small four-sided pip per seed, sat on the
- * berry's own surface and pushed a hair proud of it.
+ * The seeds, as ONE geometry: a small four-sided pip per seed, sat FLUSH on the
+ * berry's own surface — base in the facet's plane, apex lifted off it.
  *
  * The build this replaces refused seeds outright, and the reasoning still
  * holds for the reference's roughly two hundred of them: at ~24px a scatter
@@ -860,32 +887,56 @@ function seedPips(count: number, size: number, proud: number): THREE.BufferGeome
   const pos: number[] = [];
   const idx: number[] = [];
   const GOLDEN = Math.PI * (3 - Math.sqrt(5));
+  const HALF_FACET = Math.PI / BERRY_SEGMENTS;
   const yTop = 0.13;
   const yBot = -0.15;
   for (let i = 0; i < count; i++) {
     const y = yTop + ((yBot - yTop) * (i + 0.5)) / count;
-    const a = i * GOLDEN;
-    const r = berryRadiusAt(y);
-    if (r <= 0.02) continue;
-    const ox = Math.cos(a);
-    const oz = Math.sin(a);
-    const base = pos.length / 3;
-    // Apex, pushed out along the surface normal's horizontal component.
-    pos.push((r + proud + size * 0.5) * ox, y, (r + proud + size * 0.5) * oz);
-    // Four base corners, on the surface, spread around the outward axis.
-    const up = [0, 1, 0];
+    if (berryRadiusAt(y) <= 0.02) continue;
+    // Snap the azimuth to the MIDDLE of a lathe facet and use that facet's own
+    // distance from the axis (r * cos(half facet)), not the analytic radius the
+    // lathe only reaches at its vertices. Off by that difference, a pip hangs
+    // in front of the berry with daylight under it.
+    const facet = Math.round((i * GOLDEN) / (HALF_FACET * 2));
+    const a = (facet + 0.5) * HALF_FACET * 2;
+    const r = berryRadiusAt(y) * Math.cos(HALF_FACET);
+    // LatheGeometry's own convention is x = radius * sin, z = radius * cos —
+    // the quarter turn matters here, because a facet MIDPOINT in one
+    // convention is a facet EDGE in the other, and the snapping above is only
+    // worth doing if it lands where the flat actually is.
+    const ox = Math.sin(a);
+    const oz = Math.cos(a);
+    // The surface is tilted wherever the profile slopes, so the pip gets the
+    // facet's own frame: out along its normal, up along its slope, side around.
+    const [nr, ny] = berryNormalAt(y);
+    const out = [nr * ox, ny, nr * oz];
+    const up = [-ny * ox, nr, -ny * oz];
+    // (-oz, 0, ox), not (oz, 0, -ox): both are horizontal and perpendicular to
+    // the outward axis, but only this one keeps the frame's handedness, and the
+    // fan below is wound for it. The other choice culls every pip.
     const side = [-oz, 0, ox];
+    const cx = r * ox + out[0] * proud;
+    const cy = y + out[1] * proud;
+    const cz = r * oz + out[2] * proud;
+    const base = pos.length / 3;
+    // Apex, lifted straight off the facet.
+    pos.push(cx + out[0] * size * 0.5, cy + out[1] * size * 0.5, cz + out[2] * size * 0.5);
+    // Four base corners, spread around the outward axis and then pulled back
+    // onto the berry AT THEIR OWN HEIGHT. The profile is a polyline, so a
+    // corner that spans one of its bends hangs off the kink if it is left in
+    // the flat tangent plane.
     for (const [su, ss] of [
       [1, 0],
       [0, 1],
       [-1, 0],
       [0, -1],
     ]) {
-      pos.push(
-        (r + proud) * ox + (up[0] * su + side[0] * ss) * size,
-        y + (up[1] * su + side[1] * ss) * size,
-        (r + proud) * oz + (up[2] * su + side[2] * ss) * size,
-      );
+      const px = cx + (up[0] * su + side[0] * ss) * size;
+      const py = cy + (up[1] * su + side[1] * ss) * size;
+      const pz = cz + (up[2] * su + side[2] * ss) * size;
+      const hyp = Math.hypot(px, pz) || 1;
+      const rr = berryRadiusAt(py) * Math.cos(HALF_FACET) + proud;
+      pos.push((px / hyp) * rr, py, (pz / hyp) * rr);
     }
     for (let k = 0; k < 4; k++) {
       idx.push(base, base + 1 + k, base + 1 + ((k + 1) % 4));
@@ -938,7 +989,7 @@ export function makeStrawberry(): THREE.Group {
     // copied, so reversing here does not touch the shared constant.
     new THREE.LatheGeometry(
       BERRY_PROFILE.map(([r, y]) => new THREE.Vector2(r, y)).reverse(),
-      14,
+      BERRY_SEGMENTS,
     ),
     red,
   );
@@ -950,9 +1001,12 @@ export function makeStrawberry(): THREE.Group {
     emissive: 0x4a3d18,
     emissiveIntensity: 0.3,
   });
-  const seeds = new THREE.Mesh(seedPips(14, 0.017, 0.004), seedMat);
+  // proud is a rim-shimmer guard, nothing more: the pip base is already on the
+  // facet, and any real offset here is the gap. The mesh sits at the ORIGIN —
+  // an offset would push the seeds through the berry on one side and off it on
+  // the other.
+  const seeds = new THREE.Mesh(seedPips(14, 0.017, 0.001), seedMat);
   seeds.name = "seeds";
-  seeds.position.set(0, 0, -0.01);
   g.add(seeds);
 
   const greenMat = toon({
