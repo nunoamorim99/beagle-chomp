@@ -41,8 +41,8 @@ export const ENEMY_BUILDERS = ["makeGhost", "makeBeetle", "makeBee", "makeLadybu
 export const BEAGLE_BUILDER = "makeBeagle";
 
 const BEAGLE_LEGS = ["legFL", "legFR", "legBL", "legBR"] as const;
-/** The four coat materials makeBeagle builds from the equipped skin. */
-export const BEAGLE_COAT_MATS = ["tan", "white", "black", "ear", "earMat"] as const;
+/** The coat materials makeBeagle builds from the equipped skin (paw/brow included). */
+export const BEAGLE_COAT_MATS = ["tan", "white", "black", "ear", "earMat", "pawMat", "browMat"] as const;
 
 const RULES: readonly Rule[] = [
   // --- the beagle's animated joints (animateBeagleParts, every frame) ---

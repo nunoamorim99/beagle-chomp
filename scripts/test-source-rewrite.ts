@@ -14,6 +14,7 @@ import {
   rewriteBlocker,
   setTransform,
   setMaterialColor,
+  materialDeclsByColor,
   deletePart,
   scanStatements,
   stripCommentsAndStrings,
@@ -115,7 +116,7 @@ console.log("\n--- setTransform: rewrites the REAL line ---");
   if (r.ok) {
     const after = builderCode(r.src);
     check("the new value is present", /neck\.position\.set\(0, 0\.5, -0\.3\)/.test(after));
-    check("the old value is gone", !/neck\.position\.set\(0, 0\.535, 0\.14\)/.test(after));
+    check("the old value is gone", !/neck\.position\.set\(0, 0\.485, 0\.14\)/.test(after));
     check(
       "still exactly ONE neck.position.set — no appended duplicate",
       occurrences(after, /neck\.position\.set/) === 1,
@@ -212,6 +213,30 @@ console.log("\n--- setMaterialColor ---");
     check("…and the reason names where it really lives", /config\.ts|cosmetics\.ts/.test(blocked.reason));
     console.log(`    skinned -> ${blocked.reason}`);
   }
+}
+
+console.log("\n--- setMaterialColor: toon() literals + name discovery ---");
+{
+  const fake = [
+    "export function makeThing(): THREE.Group {",
+    "  const g = new THREE.Group();",
+    "  const scleraMat = toon({ color: 0xfdf9f2 });",
+    "  const irisMat = toon({ color: 0x9a6534 });",
+    "  const twinA = toon({ color: 0x123456 });",
+    "  const twinB = toon({ color: 0x123456 });",
+    "  const glintM = new THREE.MeshBasicMaterial({ color: 0xffffff });",
+    "  return g;",
+    "}",
+    "",
+  ].join("\n");
+  const ok = setMaterialColor(fake, "makeThing", "scleraMat", 0x112233);
+  check("a toon() colour literal is rewritten", ok.ok);
+  if (ok.ok) check("…to the new hex", /const scleraMat = toon\(\{ color: 0x112233 \}\)/.test(ok.src));
+  const basic = setMaterialColor(fake, "makeThing", "glintM", 0x000000);
+  check("a MeshBasicMaterial literal is rewritten too", basic.ok);
+  const names = materialDeclsByColor(fake, "makeThing");
+  check("unique colours resolve to their declaration", names.get(0xfdf9f2) === "scleraMat" && names.get(0x9a6534) === "irisMat");
+  check("a colour shared by two declarations is NOT guessed", !names.has(0x123456));
 }
 
 console.log("\n--- setTransform: blocked parts are refused ---");

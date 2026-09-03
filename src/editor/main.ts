@@ -120,6 +120,8 @@ import { PROP_PART_GEOMETRY_DEFAULTS, buildPropPartPrimitiveGeometry } from "./p
 import { generateFullPropsFile } from "./propsFileExport";
 import { type PropPrimKind } from "../game/props";
 import { hasEmissive, isEditableMaterial, roughnessOf } from "../render/toon";
+import { materialDeclsByColor } from "./sourceRewrite";
+import { sourceTextFor } from "./sources";
 
 // --- DOM ---
 function byId<T extends HTMLElement>(id: string): T {
@@ -460,7 +462,7 @@ function refreshParts(): void {
   // In "normals" shading every mesh is temporarily wearing one shared
   // MeshNormalMaterial, so collect with the real ones put back — see
   // withRealMaterials' doc comment for what goes wrong otherwise.
-  materials = viewportExtras.withRealMaterials(group, () => collectMaterials(group!, nodes));
+  materials = viewportExtras.withRealMaterials(group, () => collectMaterials(group!, nodes, materialDeclsByColor(sourceTextFor(def.sourceFile), def.builderName)));
   materialByUuid = new Map(materials.map((m) => [m.material.uuid, m]));
   tree.render(nodes);
 }
@@ -556,7 +558,7 @@ function selectionContext() {
       // every affected mesh a NEW material with a new uuid, and the old map
       // would resolve none of them.
       if (!group) return;
-      materials = collectMaterials(group, nodes);
+      materials = collectMaterials(group, nodes, materialDeclsByColor(sourceTextFor(def.sourceFile), def.builderName));
       materialByUuid = new Map(materials.map((m) => [m.material.uuid, m]));
     },
     onGeometryRebuilt: (node: PartNode) => {

@@ -115,12 +115,12 @@ const COAT_WHITE = 2;
 const TORSO_STATIONS: SweepStation[] = [
   { pos: [0, 0.028, -0.025], rx: 0.04, rz: 0.045 },
   { pos: [0, 0.026, -0.005], rx: 0.082, rz: 0.088 },
-  { pos: [0, 0.025, 0.045], rx: 0.108, rz: 0.108 },
-  { pos: [0, 0.028, 0.15], rx: 0.12, rz: 0.12 },
-  { pos: [0, 0.029, 0.225], rx: 0.118, rz: 0.128 },
-  { pos: [0, 0.03, 0.3], rx: 0.12, rz: 0.135 },
-  { pos: [0, 0.03, 0.35], rx: 0.118, rz: 0.132 },
-  { pos: [0, 0.03, 0.395], rx: 0.112, rz: 0.128 },
+  { pos: [0, 0.025, 0.045], rx: 0.114, rz: 0.114 },
+  { pos: [0, 0.028, 0.15], rx: 0.128, rz: 0.128 },
+  { pos: [0, 0.029, 0.225], rx: 0.128, rz: 0.136 },
+  { pos: [0, 0.03, 0.3], rx: 0.13, rz: 0.142 },
+  { pos: [0, 0.03, 0.35], rx: 0.128, rz: 0.14 },
+  { pos: [0, 0.03, 0.395], rx: 0.12, rz: 0.134 },
   { pos: [0, 0.029, 0.425], rx: 0.088, rz: 0.105 },
   { pos: [0, 0.028, 0.44], rx: 0.045, rz: 0.055 },
 ];
@@ -155,23 +155,29 @@ function earStations(s: -1 | 1): SweepStation[] {
 
 /** Front leg: near-columnar taper; the wide top is buried in the chest. */
 const LEG_FRONT_STATIONS: SweepStation[] = [
-  { pos: [0, -0.01, 0], rx: 0.056, rz: 0.06 },
-  { pos: [0, -0.1, 0], rx: 0.048, rz: 0.05 },
-  { pos: [0, -0.25, 0], rx: 0.037, rz: 0.038 },
-  { pos: [0, -0.33, 0], rx: 0.035, rz: 0.037 },
+  { pos: [0, 0.03, 0], rx: 0.03, rz: 0.034 },
+  { pos: [0, -0.005, 0.004], rx: 0.06, rz: 0.066 },
+  { pos: [0, -0.05, 0.004], rx: 0.058, rz: 0.062 },
+  { pos: [0, -0.13, 0], rx: 0.044, rz: 0.046 },
+  { pos: [0, -0.21, 0], rx: 0.036, rz: 0.037 },
+  { pos: [0, -0.31, 0], rx: 0.033, rz: 0.035 },
 ];
 /** Hind leg: haunch mass tapering into a short lower leg. */
 const LEG_HIND_STATIONS: SweepStation[] = [
-  { pos: [0, -0.01, -0.01], rx: 0.054, rz: 0.076 },
-  { pos: [0, -0.11, 0.008], rx: 0.05, rz: 0.058 },
-  { pos: [0, -0.25, 0], rx: 0.038, rz: 0.04 },
-  { pos: [0, -0.33, 0], rx: 0.035, rz: 0.037 },
+  { pos: [0, 0.035, -0.015], rx: 0.03, rz: 0.04 },
+  { pos: [0, -0.01, -0.012], rx: 0.072, rz: 0.094 },
+  { pos: [0, -0.07, -0.004], rx: 0.066, rz: 0.084 },
+  { pos: [0, -0.14, 0.006], rx: 0.048, rz: 0.054 },
+  // a station exactly at the sock line, so the coat cut is a clean ring
+  { pos: [0, -0.17, 0.004], rx: 0.043, rz: 0.047 },
+  { pos: [0, -0.21, 0.002], rx: 0.037, rz: 0.039 },
+  { pos: [0, -0.325, 0], rx: 0.033, rz: 0.035 },
 ];
 const LEG_FRONT_COAT: CoatRegion[] = [
-  { kind: "band", axis: 1, min: 0.005, max: 0.06, mat: COAT_TAN },
+  { kind: "band", axis: 1, min: -0.05, max: 0.06, mat: COAT_TAN },
 ];
 const LEG_HIND_COAT: CoatRegion[] = [
-  { kind: "band", axis: 1, min: -0.36, max: -0.21, mat: COAT_WHITE },
+  { kind: "band", axis: 1, min: -0.31, max: -0.17, mat: COAT_WHITE },
 ];
 
 /** Flag tail: thick root, sabre curve, white tip on a black shaft. */
@@ -213,8 +219,30 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
   // deliberate MeshBasicMaterial in the character — a toon ramp quantises a
   // highlight into the surroundings and it stops reading as a catchlight).
   const noseMat = toon({ color: 0x4a3028 });
-  const eyeMat = toon({ color: 0x2a1a10 });
+  const scleraMat = toon({ color: 0xfdf9f2 });
+  const eyeRimMat = toon({ color: 0x1a120c });
+  const irisMat = toon({ color: 0x9a6534 });
+  const pupilMat = toon({ color: 0x120b07 });
   const glintM = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  // Named so the editor can find their declarations and save colour edits
+  // in place (a material's `.name` is the variable name that made it).
+  noseMat.name = "noseMat";
+  scleraMat.name = "scleraMat";
+  eyeRimMat.name = "eyeRimMat";
+  irisMat.name = "irisMat";
+  pupilMat.name = "pupilMat";
+  glintM.name = "glintM";
+
+  /** A flush cap of the eyeball: radius factor, angular radius (rad), then
+   *  aimed from the gaze (+Z) by `up` and `outward` tilts in radians. */
+  const EYE_R = 0.033;
+  const eyeCap = (factor: number, thetaLen: number, up: number, outward: number): THREE.SphereGeometry => {
+    const geo = new THREE.SphereGeometry(EYE_R * factor, 24, 16, 0, Math.PI * 2, 0, thetaLen);
+    geo.rotateX(Math.PI / 2); // pole from +Y to +Z (the gaze)
+    if (up !== 0) geo.rotateX(-up);
+    if (outward !== 0) geo.rotateY(outward);
+    return geo;
+  };
 
   /** Material slots the coat-region splitter indexes into: tan/black/white. */
   const coatSlots = [tan, black, white];
@@ -225,7 +253,7 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
     coatSlots,
   );
   body.name = "body";
-  body.position.set(0, 0.37, -0.22);
+  body.position.set(0, 0.32, -0.22);
   g.add(body);
 
   // --- neck: short white throat, chin nearly on the chest ---
@@ -238,13 +266,13 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
     coatSlots,
   );
   neck.name = "neck";
-  neck.position.set(0, 0.535, 0.14);
+  neck.position.set(-0.002, 0.481, 0.119);
   g.add(neck);
 
   // --- head group: skull + muzzle + nose + jaw + eyes + brows + ears ---
   const head = new THREE.Group();
   head.name = "head";
-  head.position.set(0, 0.7, 0.16);
+  head.position.set(0, 0.65, 0.16);
   g.add(head);
 
   const skull = new THREE.Mesh(
@@ -277,20 +305,35 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
   jaw.add(jawMesh);
   head.add(jaw);
 
-  const legMap: Record<string, THREE.Group> = {};
   /** Brow pivots, hidden unless the equipped coat carries a `brow` colour. */
   const brows: THREE.Object3D[] = [];
   ([-1, 1] as const).forEach((s) => {
-    // Eye: a glossy dark sphere proud of the socket line — reads as the
-    // reference's big brown puppy eye once the catchlight lands on it.
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.033, 18, 14), eyeMat);
+    // Eye: a painted-lens puppy eye. A WHITE sclera ball; the dark rim ring,
+    // the amber iris, the pupil and the two catchlights are flush caps of the
+    // same sphere at hair-larger radii (a cap rotated about the sphere's own
+    // centre stays on the sphere), aimed with eyeCap(): pole to +Z (the
+    // gaze), then tilted up/out. Iris and pupil sit a touch medial so the
+    // gaze converges gently forward — calm, never walleyed.
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(EYE_R, 24, 16), scleraMat);
     eye.name = s < 0 ? "eyeL" : "eyeR";
     eye.position.set(-0.078 * s, -0.005, 0.112);
     head.add(eye);
-    const glint = new THREE.Mesh(new THREE.SphereGeometry(0.0085, 8, 6), glintM);
+    const out = -s; // +x for the eye on +x
+    const rim = new THREE.Mesh(eyeCap(1.008, 0.98, 0.0, -0.08 * out), eyeRimMat);
+    rim.name = s < 0 ? "eyeRimL" : "eyeRimR";
+    eye.add(rim);
+    const iris = new THREE.Mesh(eyeCap(1.016, 0.86, 0.0, -0.08 * out), irisMat);
+    iris.name = s < 0 ? "irisL" : "irisR";
+    eye.add(iris);
+    const pupil = new THREE.Mesh(eyeCap(1.028, 0.6, 0.02, -0.1 * out), pupilMat);
+    pupil.name = s < 0 ? "pupilL" : "pupilR";
+    eye.add(pupil);
+    const glint = new THREE.Mesh(eyeCap(1.04, 0.24, 0.42, 0.36 * out), glintM);
     glint.name = s < 0 ? "glintL" : "glintR";
-    glint.position.set(-0.009 * s, 0.009, 0.028);
     eye.add(glint);
+    const glint2 = new THREE.Mesh(eyeCap(1.04, 0.11, -0.36, -0.26 * out), glintM);
+    glint2.name = s < 0 ? "glint2L" : "glint2R";
+    eye.add(glint2);
 
     // Fur brow swell above the socket — part of the coat, always on. Carries
     // the worried-puppy expression together with the heavy upper lid.
@@ -339,36 +382,64 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
     if (s < 0) g.userData.__earL = earPivot;
     else g.userData.__earR = earPivot;
 
-    // Legs: pivots at the shoulder/hip inside the body; paw bulb INSIDE the
-    // pivot so it trots with the leg. Paw bottoms land at y ~ 0 (ground).
-    ([
-      { tag: "F", stations: LEG_FRONT_STATIONS, coatRegions: LEG_FRONT_COAT, base: COAT_WHITE, x: 0.064, y: 0.385, z: 0.126, pawY: -0.35 },
-      { tag: "B", stations: LEG_HIND_STATIONS, coatRegions: LEG_HIND_COAT, base: COAT_TAN, x: 0.066, y: 0.405, z: -0.138, pawY: -0.37 },
-    ] as const).forEach(({ tag, stations, coatRegions, base, x, y, z, pawY }) => {
-      const legName = `leg${tag}${s < 0 ? "L" : "R"}`;
-      const legPivot = new THREE.Group();
-      legPivot.name = legName;
-      legPivot.position.set(-x * s, y, z);
-      const legMesh = new THREE.Mesh(
-        splitCoatGroups(taperedSweepGeometry(stations, 14), base, coatRegions),
-        coatSlots,
-      );
-      legMesh.name = `${legName}Mesh`;
-      legPivot.add(legMesh);
-      const paw = new THREE.Mesh(latheFromProfile(PAW_PROFILE, 16, 0.1, 0.075, 0.115), pawMat);
-      paw.name = `${legName}Paw`;
-      paw.position.set(0, pawY, 0.012);
-      legPivot.add(paw);
-      g.add(legPivot);
-      legMap[legName] = legPivot;
-    });
   });
+
+  // --- legs: one helper builds the sweep + paw INSIDE a pivot; each leg is
+  // its own top-level declaration below so the editor's Save can rewrite its
+  // position line (a loop-built part has no line of its own to rewrite).
+  // Pivot at the shoulder/hip inside the body; paw bottoms land at y ~ 0.
+  const legOf = (
+    name: string,
+    stations: SweepStation[],
+    coatRegions: CoatRegion[],
+    base: number,
+  ): THREE.Group => {
+    const pivot = new THREE.Group();
+    pivot.name = name;
+    const legMesh = new THREE.Mesh(
+      splitCoatGroups(taperedSweepGeometry(stations, 14), base, coatRegions),
+      coatSlots,
+    );
+    legMesh.name = `${name}Mesh`;
+    pivot.add(legMesh);
+    return pivot;
+  };
+  /** A paw bulb, positioned INSIDE its leg pivot so it trots with the leg. */
+  const pawOf = (name: string): THREE.Mesh => {
+    const paw = new THREE.Mesh(latheFromProfile(PAW_PROFILE, 16, 0.1, 0.075, 0.115), pawMat);
+    paw.name = name;
+    return paw;
+  };
+  const legFL = legOf("legFL", LEG_FRONT_STATIONS, LEG_FRONT_COAT, COAT_WHITE);
+  legFL.position.set(0.09, 0.335, 0.126);
+  g.add(legFL);
+  const pawFL = pawOf("pawFL");
+  pawFL.position.set(0, -0.3, 0.012);
+  legFL.add(pawFL);
+  const legFR = legOf("legFR", LEG_FRONT_STATIONS, LEG_FRONT_COAT, COAT_WHITE);
+  legFR.position.set(-0.09, 0.335, 0.126);
+  g.add(legFR);
+  const pawFR = pawOf("pawFR");
+  pawFR.position.set(0, -0.3, 0.012);
+  legFR.add(pawFR);
+  const legBL = legOf("legBL", LEG_HIND_STATIONS, LEG_HIND_COAT, COAT_TAN);
+  legBL.position.set(0.074, 0.355, -0.138);
+  g.add(legBL);
+  const pawBL = pawOf("pawBL");
+  pawBL.position.set(0, -0.32, 0.012);
+  legBL.add(pawBL);
+  const legBR = legOf("legBR", LEG_HIND_STATIONS, LEG_HIND_COAT, COAT_TAN);
+  legBR.position.set(-0.074, 0.355, -0.138);
+  g.add(legBR);
+  const pawBR = pawOf("pawBR");
+  pawBR.position.set(0, -0.32, 0.012);
+  legBR.add(pawBR);
 
   // --- tail: outer wag pivot + inner back-lean, so rotation.y sweeps the
   // leaned sabre side to side instead of spinning it about its own axis ---
   const tail = new THREE.Group();
   tail.name = "tail";
-  tail.position.set(0, 0.455, -0.215);
+  tail.position.set(0, 0.405, -0.215);
   const tailTilt = new THREE.Group();
   tailTilt.name = "tailTilt";
   tailTilt.rotation.x = -0.14;
@@ -392,7 +463,7 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
     earR: g.userData.__earR as THREE.Group,
     tail,
     jaw,
-    legs: [legMap.legFL, legMap.legFR, legMap.legBL, legMap.legBR],
+    legs: [legFL, legFR, legBL, legBR],
   };
   delete g.userData.__earL;
   delete g.userData.__earR;

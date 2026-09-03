@@ -99,6 +99,12 @@ _(empty — nothing to triage)_
   the constant inside the animation formula) or, where routing isn't sensible, disable the control
   and say WHY in the inspector — "driven by `syncToEntity` each frame" is itself a three.js lesson,
   which suits [[IDEA-025]]'s learning goal. Sibling of the v3 save work.
+  **2026-09-03 (with [[IDEA-047]]):** colour edits on a builder's FIXED materials now save in
+  place — `setMaterialColor` accepts `toon({ color })` and any `new THREE.Mesh…Material({ color })`
+  literal (it was MeshStandardMaterial-only, i.e. nothing on a cel-shaded character), and the
+  editor resolves a runtime material to its real variable name via `material.name` or a unique
+  colour literal in the builder (`materialDeclsByColor`). Coat + paw + brow stay skin-owned and
+  refuse with the reason; the beagle's nose/sclera/rim/iris/pupil/glint are editable.
 - **Dependencies:** —
 
 ## Delivered ✅

@@ -204,7 +204,7 @@ console.log("\n--- the registry agrees with the REAL animation code ---");
 
   // The leg pivots really are named legFL/legFR/legBL/legBR (the reworked
   // builder derives F/B from the per-leg config's `tag`).
-  check("leg pivots are still named leg<F|B><L|R>", /const legName = `leg\$\{tag\}\$\{s < 0 \? "L" : "R"\}`/.test(SRC));
+  check("leg pivots are still named leg<F|B><L|R>", ["legFL", "legFR", "legBL", "legBR"].every((n) => new RegExp(`const ${n} = legOf\\("${n}"`).test(SRC)));
   // The hem pieces really are named hem<N> in all four enemy builders.
   // NO character populates `hem` any more, and none has hem meshes at all. The
   // ghost's scallops became the undulating bottom EDGE of its own body — see

@@ -301,9 +301,14 @@ export class EditLog {
  * characters.ts. Anything else falls back to "<firstMeshName>Mat" and gets
  * flagged so codegen adds a locator comment.
  */
-export function collectMaterials(root: THREE.Object3D, nodes: PartNode[]): MaterialInfo[] {
+export function collectMaterials(
+  root: THREE.Object3D,
+  nodes: PartNode[],
+  /** colour-literal → declared variable name, from materialDeclsByColor(). */
+  declsByColor: Map<number, string> = new Map(),
+): MaterialInfo[] {
   const coatMats = root.userData.coatMats as
-    | { tan: THREE.Material; white: THREE.Material; black: THREE.Material; ear: THREE.Material }
+    | { tan: THREE.Material; white: THREE.Material; black: THREE.Material; ear: THREE.Material; paw?: THREE.Material; brow?: THREE.Material }
     | undefined;
   const bodyMat = root.userData.bodyMat as THREE.Material | undefined;
 
@@ -313,6 +318,8 @@ export function collectMaterials(root: THREE.Object3D, nodes: PartNode[]): Mater
     known.set(coatMats.white, "white");
     known.set(coatMats.black, "black");
     known.set(coatMats.ear, "earMat");
+    if (coatMats.paw) known.set(coatMats.paw, "pawMat");
+    if (coatMats.brow) known.set(coatMats.brow, "browMat");
   }
   if (bodyMat) known.set(bodyMat, "bodyMat");
 
@@ -335,7 +342,13 @@ export function collectMaterials(root: THREE.Object3D, nodes: PartNode[]): Mater
         existing.shareCount++;
         continue;
       }
-      const knownName = known.get(mat);
+      // Three ways a material earns its real variable name: the coat/body maps
+      // above, an explicit `material.name` set by the builder, or a unique
+      // colour literal in the builder's source. Anything else stays auto-named.
+      const knownName =
+        known.get(mat) ??
+        (/^[A-Za-z_$][\w$]*$/.test(mat.name) ? mat.name : undefined) ??
+        ("color" in mat && mat.color instanceof THREE.Color ? declsByColor.get(mat.color.getHex()) : undefined);
       infos.set(mat.uuid, {
         material: mat,
         varName: knownName ?? `${varNameByObject.get(node.object) ?? "part"}Mat`,
