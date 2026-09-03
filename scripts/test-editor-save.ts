@@ -95,6 +95,17 @@ async function selectPart(page: import("playwright").Page, name: string): Promis
   return true;
 }
 
+/**
+ * Waits for the part tree's first paint by INTERVAL polling. Playwright's
+ * default waitForSelector polls on requestAnimationFrame, and on a cold
+ * spawned server the editor's boot (module transform + building ~60 meshes +
+ * lil-gui) keeps the main thread busy enough that an immediate rAF-polled
+ * wait can stall for the full timeout while the rows are already on screen.
+ */
+async function waitForTree(page: import("playwright").Page): Promise<void> {
+  await page.waitForFunction(() => document.querySelectorAll(".tree-row").length > 0, null, { polling: 250, timeout: 60_000 });
+}
+
 async function run(): Promise<void> {
   let server: ViteDevServer | undefined;
   let browser: Browser | undefined;
@@ -116,7 +127,7 @@ async function run(): Promise<void> {
     });
 
     await page.goto(base);
-    await page.waitForSelector(".tree-row");
+    await waitForTree(page);
     await page.waitForTimeout(400);
 
     // -------------------------------------------------------------------
@@ -176,12 +187,14 @@ async function run(): Promise<void> {
     // -------------------------------------------------------------------
     console.log("\n=== a loop-built mirrored part is reported, not faked ===");
     await page.goto(base);
-    await page.waitForSelector(".tree-row");
+    await waitForTree(page);
     await page.waitForTimeout(400);
 
     const beforeEar = readFileSync(FILE, "utf-8");
-    const gotEar = await selectPart(page, "earL");
-    check("found 'earL' (a mirrored, loop-built part)", gotEar);
+    // earL became a real declaration (its position saves); the brow swells
+    // are still built in the per-side loop, so they stay the refusal fixture.
+    const gotEar = await selectPart(page, "browSwellL");
+    check("found 'browSwellL' (a mirrored, loop-built part)", gotEar);
     if (gotEar) {
       for (let i = 0; i < 3; i++) {
         await page.keyboard.press("ArrowUp");
@@ -204,7 +217,7 @@ async function run(): Promise<void> {
     // -------------------------------------------------------------------
     console.log("\n=== IDEA-041: a runtime-driven channel is locked and refused ===");
     await page.goto(base);
-    await page.waitForSelector(".tree-row");
+    await waitForTree(page);
     await page.waitForTimeout(400);
 
     const beforeTail = readFileSync(FILE, "utf-8");

@@ -93,6 +93,17 @@ async function hasDeleteButton(page: Page): Promise<boolean> {
   );
 }
 
+/**
+ * Waits for the part tree's first paint by INTERVAL polling. Playwright's
+ * default waitForSelector polls on requestAnimationFrame, and on a cold
+ * spawned server the editor's boot (module transform + building ~60 meshes +
+ * lil-gui) keeps the main thread busy enough that an immediate rAF-polled
+ * wait can stall for the full timeout while the rows are already on screen.
+ */
+async function waitForTree(page: Page): Promise<void> {
+  await page.waitForFunction(() => document.querySelectorAll(".tree-row").length > 0, null, { polling: 250, timeout: 60_000 });
+}
+
 async function run(): Promise<void> {
   let server: ViteDevServer | undefined;
   let browser: Browser | undefined;
@@ -119,7 +130,7 @@ async function run(): Promise<void> {
     // editor modules when the page first paints, and an immediate
     // waitForSelector can poll a half-built document until it times out.
     await page.goto(base, { waitUntil: "networkidle" });
-    await page.waitForSelector(".tree-row"); // first paint of the part tree
+    await waitForTree(page); // first paint of the part tree
     await page.waitForTimeout(300); // idle animation frame, lil-gui init
     check("no page errors on load", pageErrors.length === 0);
     const initialRows = await treeRows(page);
@@ -181,7 +192,7 @@ async function run(): Promise<void> {
     console.log("\n=== root is never deletable ===");
     {
       await page.goto(base, { waitUntil: "networkidle" });
-      await page.waitForSelector(".tree-row");
+      await waitForTree(page);
       await page.waitForTimeout(300);
       await clickRow(page, 0); // row 0 is always the root ("<Label> (g)")
       const rootText = (await treeRows(page))[0]?.text ?? "";
@@ -223,7 +234,7 @@ async function run(): Promise<void> {
     console.log("\n=== delete an ORIGINAL group removes its whole subtree ===");
     {
       await page.goto(base, { waitUntil: "networkidle" });
-      await page.waitForSelector(".tree-row");
+      await waitForTree(page);
       await page.waitForTimeout(300);
       const before = await treeRows(page);
       const jawIdx = await rowIndexByText(page, "jaw");
@@ -256,7 +267,7 @@ async function run(): Promise<void> {
     console.log("\n=== deleting an editor-ADDED part keeps its existing behavior (regression) ===");
     {
       await page.goto(base, { waitUntil: "networkidle" });
-      await page.waitForSelector(".tree-row");
+      await waitForTree(page);
       await page.waitForTimeout(300);
       const bodyIdx = await rowIndexByText(page, "body");
       await clickRow(page, bodyIdx);

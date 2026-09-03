@@ -192,6 +192,27 @@ const TAIL_COAT: CoatRegion[] = [
   { kind: "band", axis: 1, min: 0.195, max: 0.34, mat: COAT_WHITE },
 ];
 
+/**
+ * Bridge ("stop"): the ramp from the muzzle top up between the eyes into the
+ * forehead — wide and thin, sections lying flat, only its top surface
+ * cresting above muzzle and skull. Head-local; ends taper to blend.
+ */
+const BRIDGE_STATIONS: SweepStation[] = [
+  // Stations sampled from ONE quadratic curve (level along the muzzle top,
+  // then a smooth climb into the forehead) with near-constant thickness
+  // through the middle, so the top surface is a parallel of that arc and
+  // cannot kink where hand-placed stations meet.
+  { pos: [0, -0.0400, 0.2240], rx: 0.024, rz: 0.01 },
+  { pos: [0, -0.0382, 0.2010], rx: 0.04, rz: 0.022 },
+  { pos: [0, -0.0329, 0.1799], rx: 0.05, rz: 0.03 },
+  { pos: [0, -0.0240, 0.1607], rx: 0.052, rz: 0.032 },
+  { pos: [0, -0.0115, 0.1435], rx: 0.05, rz: 0.032 },
+  { pos: [0, 0.0045, 0.1282], rx: 0.046, rz: 0.03 },
+  { pos: [0, 0.0241, 0.1149], rx: 0.04, rz: 0.026 },
+  { pos: [0, 0.0473, 0.1035], rx: 0.03, rz: 0.018 },
+  { pos: [0, 0.0740, 0.0940], rx: 0.018, rz: 0.01 },
+];
+
 /** Muzzle profile: fuller at the flews/chin band, slightly squared front. */
 const MUZZLE_PROFILE = [
   [0.001, -0.5], [0.3, -0.46], [0.44, -0.34], [0.5, -0.12], [0.5, 0.1],
@@ -253,6 +274,7 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
     coatSlots,
   );
   body.name = "body";
+  body.scale.set(1.1, 1, 1);
   body.position.set(0, 0.32, -0.22);
   g.add(body);
 
@@ -266,13 +288,14 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
     coatSlots,
   );
   neck.name = "neck";
-  neck.position.set(-0.002, 0.481, 0.119);
+  neck.rotation.set(0.338, 0, 0);
+  neck.position.set(-0.002, 0.481, 0.152);
   g.add(neck);
 
   // --- head group: skull + muzzle + nose + jaw + eyes + brows + ears ---
   const head = new THREE.Group();
   head.name = "head";
-  head.position.set(0, 0.65, 0.16);
+  head.position.set(0, 0.65, 0.202);
   g.add(head);
 
   const skull = new THREE.Mesh(
@@ -284,13 +307,38 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
 
   const muzzle = new THREE.Mesh(latheFromProfile(MUZZLE_PROFILE, 20, 0.175, 0.135, 0.175), white);
   muzzle.name = "muzzle";
+  muzzle.scale.set(1.012, 0.774, 1.163);
   muzzle.position.set(0, -0.08, 0.14);
   head.add(muzzle);
+
+  // Bridge ("stop"): the ridge that runs from the muzzle top up between the
+  // eyes into the forehead — it is what joins muzzle and skull into one face
+  // and gives the eye sockets their depth on the inner side.
+  const bridge = new THREE.Mesh(taperedSweepGeometry(BRIDGE_STATIONS, 14), white);
+  bridge.name = "bridge";
+  bridge.scale.set(0.9, 1, 1);
+  bridge.position.set(0, 0, -0.014);
+  head.add(bridge);
+
+  // Muzzle roots: the corner where the muzzle's sides meet the skull, just
+  // under and inside each eye — filled so muzzle and head read as one face.
+  const muzzleRootL = new THREE.Mesh(latheFromProfile(SPHERE_PROFILE, 14, 0.078, 0.07, 0.09), white);
+  muzzleRootL.name = "muzzleRootL";
+  muzzleRootL.scale.set(0.88, 0.9, 1.66);
+  muzzleRootL.rotation.set(0.164, 0, 0);
+  muzzleRootL.position.set(0.015, -0.035, 0.145);
+  head.add(muzzleRootL);
+  const muzzleRootR = new THREE.Mesh(latheFromProfile(SPHERE_PROFILE, 14, 0.078, 0.07, 0.09), white);
+  muzzleRootR.name = "muzzleRootR";
+  muzzleRootR.scale.set(0.881, 0.901, 1.663);
+  muzzleRootR.rotation.set(0.164, 0, 0);
+  muzzleRootR.position.set(-0.017, -0.033, 0.145);
+  head.add(muzzleRootR);
 
   // the oversized rounded-triangle nose leather sitting on the muzzle front
   const nose = new THREE.Mesh(latheFromProfile(NOSE_PROFILE, 16, 0.075, 0.062, 0.052), noseMat);
   nose.name = "nose";
-  nose.position.set(0, -0.055, 0.225);
+  nose.position.set(0, -0.055, 0.23);
   head.add(nose);
 
   // Jaw: white lower-lip pivot hinged under the muzzle root so syncToEntity's
@@ -300,8 +348,8 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
   jaw.position.set(0, -0.115, 0.095);
   const jawMesh = new THREE.Mesh(new THREE.SphereGeometry(0.07, 14, 10), white);
   jawMesh.name = "jawMesh";
-  jawMesh.scale.set(0.82, 0.42, 1);
-  jawMesh.position.set(0, -0.008, 0.055);
+  jawMesh.scale.set(0.75, 0.443, 1.313);
+  jawMesh.position.set(0, -0.008, 0.026);
   jaw.add(jawMesh);
   head.add(jaw);
 
@@ -316,16 +364,17 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
     // gaze converges gently forward — calm, never walleyed.
     const eye = new THREE.Mesh(new THREE.SphereGeometry(EYE_R, 24, 16), scleraMat);
     eye.name = s < 0 ? "eyeL" : "eyeR";
-    eye.position.set(-0.078 * s, -0.005, 0.112);
-    head.add(eye);
+    eye.position.set(-0.076 * s, -0.008, 0.103);
     const out = -s; // +x for the eye on +x
-    const rim = new THREE.Mesh(eyeCap(1.008, 0.98, 0.0, -0.08 * out), eyeRimMat);
+    eye.rotation.y = 0.42 * out; // a dog's eyes look ~25 deg outward, not dead ahead
+    head.add(eye);
+    const rim = new THREE.Mesh(eyeCap(1.008, 1.2, 0.0, -0.08 * out), eyeRimMat);
     rim.name = s < 0 ? "eyeRimL" : "eyeRimR";
     eye.add(rim);
-    const iris = new THREE.Mesh(eyeCap(1.016, 0.86, 0.0, -0.08 * out), irisMat);
+    const iris = new THREE.Mesh(eyeCap(1.016, 1.04, 0.0, -0.08 * out), irisMat);
     iris.name = s < 0 ? "irisL" : "irisR";
     eye.add(iris);
-    const pupil = new THREE.Mesh(eyeCap(1.028, 0.6, 0.02, -0.1 * out), pupilMat);
+    const pupil = new THREE.Mesh(eyeCap(1.028, 0.68, 0.02, -0.1 * out), pupilMat);
     pupil.name = s < 0 ? "pupilL" : "pupilR";
     eye.add(pupil);
     const glint = new THREE.Mesh(eyeCap(1.04, 0.24, 0.42, 0.36 * out), glintM);
@@ -335,11 +384,34 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
     glint2.name = s < 0 ? "glint2L" : "glint2R";
     eye.add(glint2);
 
+    // SOCKET. What makes an eye part of a head rather than a ball dropped on
+    // it: an eyelid rim ringing the lens, a thicker hooded UPPER lid, a cheek
+    // swell below/outside, and the brow swell above — the eye then sits in a
+    // hollow between four forms. Rings lie in their local XY plane (axis +Z),
+    // so aiming +Z along the skull normal at the eye sets them flush.
+    const gazeN = new THREE.Vector3(-0.076 * s / 0.02, -0.008 / 0.018, 0.096 / 0.018).normalize();
+    const aim = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), gazeN);
+    const lidRim = new THREE.Mesh(new THREE.TorusGeometry(EYE_R * 1.1, 0.0075, 10, 28), tan);
+    lidRim.name = s < 0 ? "lidRimL" : "lidRimR";
+    lidRim.position.copy(eye.position).addScaledVector(gazeN, 0.004);
+    lidRim.quaternion.copy(aim);
+    head.add(lidRim);
+    const lidHood = new THREE.Mesh(new THREE.TorusGeometry(EYE_R * 1.12, 0.0105, 10, 18, Math.PI), tan);
+    lidHood.name = s < 0 ? "lidHoodL" : "lidHoodR";
+    lidHood.position.copy(eye.position).addScaledVector(gazeN, 0.009);
+    lidHood.quaternion.copy(aim);
+    lidHood.rotateZ(0.12 * out); // the hood's arc spans the top, tilted a touch outward
+    head.add(lidHood);
+    const cheek = new THREE.Mesh(latheFromProfile(SPHERE_PROFILE, 14, 0.1, 0.075, 0.085), tan);
+    cheek.name = s < 0 ? "cheekL" : "cheekR";
+    cheek.position.set(-0.088 * s, -0.072, 0.075);
+    head.add(cheek);
+
     // Fur brow swell above the socket — part of the coat, always on. Carries
     // the worried-puppy expression together with the heavy upper lid.
-    const browSwell = new THREE.Mesh(latheFromProfile(SPHERE_PROFILE, 12, 0.075, 0.032, 0.055), tan);
+    const browSwell = new THREE.Mesh(latheFromProfile(SPHERE_PROFILE, 12, 0.088, 0.036, 0.062), tan);
     browSwell.name = s < 0 ? "browSwellL" : "browSwellR";
-    browSwell.position.set(-0.078 * s, 0.062, 0.082);
+    browSwell.position.set(-0.08 * s, 0.05, 0.09);
     head.add(browSwell);
 
     // The Pac-Beagle brow ACCESSORY (cosmetic, per-coat): the hand-dialled
@@ -369,20 +441,31 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
     head.add(browPivot);
     brows.push(browPivot);
 
-    // Ear: teardrop sweep hanging from the temporal root; syncToEntity flops
-    // rotation.x and flares rotation.z, same joint semantics as ever.
-    const earPivot = new THREE.Group();
-    earPivot.name = s < 0 ? "earL" : "earR";
-    earPivot.position.set(-0.1 * s, 0.095, 0.04);
-    const earSide = (s < 0 ? 1 : -1) as -1 | 1; // same side as the pivot (-s)
-    const ear = new THREE.Mesh(taperedSweepGeometry(earStations(earSide), 12, [1, 0, 0]), earMat);
-    ear.name = s < 0 ? "earMeshL" : "earMeshR";
-    earPivot.add(ear);
-    head.add(earPivot);
-    if (s < 0) g.userData.__earL = earPivot;
-    else g.userData.__earR = earPivot;
-
   });
+
+  // --- ears: the pivot is the animated joint (syncToEntity flops rotation.x
+  // and flares rotation.z every frame, so its rotation is runtime-owned); the
+  // leather INSIDE it carries the rest pose — position/rotation edits on
+  // earMeshL/R save in place and survive the animation. Both are top-level
+  // declarations so the editor can rewrite them (a loop-built part cannot).
+  const earL = new THREE.Group();
+  earL.name = "earL";
+  earL.position.set(0.1, 0.095, 0.04);
+  head.add(earL);
+  const earMeshL = new THREE.Mesh(taperedSweepGeometry(earStations(1), 12, [1, 0, 0]), earMat);
+  earMeshL.name = "earMeshL";
+  earMeshL.position.set(0, 0, -0.04);
+  earMeshL.rotation.set(0.2, -0.33, 0.126);
+  earL.add(earMeshL);
+  const earR = new THREE.Group();
+  earR.name = "earR";
+  earR.position.set(-0.1, 0.095, 0.04);
+  head.add(earR);
+  const earMeshR = new THREE.Mesh(taperedSweepGeometry(earStations(-1), 12, [1, 0, 0]), earMat);
+  earMeshR.name = "earMeshR";
+  earMeshR.position.set(0, 0, -0.04);
+  earMeshR.rotation.set(0.2, 0.33, -0.126);
+  earR.add(earMeshR);
 
   // --- legs: one helper builds the sweep + paw INSIDE a pivot; each leg is
   // its own top-level declaration below so the editor's Save can rewrite its
@@ -396,12 +479,19 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
   ): THREE.Group => {
     const pivot = new THREE.Group();
     pivot.name = name;
+    // REST group: the pivot's rotation is the trot, written every frame and
+    // blended to 0 when standing, so a rest angle on it can never survive.
+    // The rest pose lives one level down — editable, and the trot swings on
+    // top of it. Paws go in here too so they follow the rest angle.
+    const rest = new THREE.Group();
+    rest.name = `${name}Rest`;
+    pivot.add(rest);
     const legMesh = new THREE.Mesh(
       splitCoatGroups(taperedSweepGeometry(stations, 14), base, coatRegions),
       coatSlots,
     );
     legMesh.name = `${name}Mesh`;
-    pivot.add(legMesh);
+    rest.add(legMesh);
     return pivot;
   };
   /** A paw bulb, positioned INSIDE its leg pivot so it trots with the leg. */
@@ -413,27 +503,35 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
   const legFL = legOf("legFL", LEG_FRONT_STATIONS, LEG_FRONT_COAT, COAT_WHITE);
   legFL.position.set(0.09, 0.335, 0.126);
   g.add(legFL);
+  const legFLRest = legFL.getObjectByName("legFLRest") as THREE.Group;
+  legFLRest.rotation.set(0, 0, 0);
   const pawFL = pawOf("pawFL");
   pawFL.position.set(0, -0.3, 0.012);
-  legFL.add(pawFL);
+  legFLRest.add(pawFL);
   const legFR = legOf("legFR", LEG_FRONT_STATIONS, LEG_FRONT_COAT, COAT_WHITE);
   legFR.position.set(-0.09, 0.335, 0.126);
   g.add(legFR);
+  const legFRRest = legFR.getObjectByName("legFRRest") as THREE.Group;
+  legFRRest.rotation.set(0, 0, 0);
   const pawFR = pawOf("pawFR");
   pawFR.position.set(0, -0.3, 0.012);
-  legFR.add(pawFR);
+  legFRRest.add(pawFR);
   const legBL = legOf("legBL", LEG_HIND_STATIONS, LEG_HIND_COAT, COAT_TAN);
-  legBL.position.set(0.074, 0.355, -0.138);
+  legBL.position.set(0.084, 0.35, -0.138);
   g.add(legBL);
+  const legBLRest = legBL.getObjectByName("legBLRest") as THREE.Group;
+  legBLRest.rotation.set(0.25, 0, 0);
   const pawBL = pawOf("pawBL");
-  pawBL.position.set(0, -0.32, 0.012);
-  legBL.add(pawBL);
+  pawBL.position.set(0, -0.308, 0.012);
+  legBLRest.add(pawBL);
   const legBR = legOf("legBR", LEG_HIND_STATIONS, LEG_HIND_COAT, COAT_TAN);
-  legBR.position.set(-0.074, 0.355, -0.138);
+  legBR.position.set(-0.084, 0.35, -0.138);
   g.add(legBR);
+  const legBRRest = legBR.getObjectByName("legBRRest") as THREE.Group;
+  legBRRest.rotation.set(0.25, 0, 0);
   const pawBR = pawOf("pawBR");
-  pawBR.position.set(0, -0.32, 0.012);
-  legBR.add(pawBR);
+  pawBR.position.set(0, -0.308, 0.012);
+  legBRRest.add(pawBR);
 
   // --- tail: outer wag pivot + inner back-lean, so rotation.y sweeps the
   // leaned sabre side to side instead of spinning it about its own axis ---
@@ -459,14 +557,12 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
   g.scale.setScalar(0.9);
 
   const parts: BeagleParts = {
-    earL: g.userData.__earL as THREE.Group,
-    earR: g.userData.__earR as THREE.Group,
+    earL,
+    earR,
     tail,
     jaw,
     legs: [legFL, legFR, legBL, legBR],
   };
-  delete g.userData.__earL;
-  delete g.userData.__earR;
   g.userData.parts = parts;
 
   const coatMats: BeagleCoatMats = { tan, white, black, ear: earMat, paw: pawMat, brow: browMat };
@@ -2208,7 +2304,7 @@ const TAIL_WAG_AMPLITUDE = 0.7; // radians of yaw at the pivot
 // How far the leather swings, and where it sits at each end of the crossfade.
 // Positive rotation.x sweeps the ear BACK (rotating the ear's -Y hang about X
 // tips the tip toward -Z); negative folds it FORWARD.
-const EAR_FLOP_AMPLITUDE = 0.38;
+const EAR_FLOP_AMPLITUDE = 0.18;
 /** Standing: the ear folds slightly FORWARD, the way it hangs on a still dog. */
 const EAR_IDLE_FOLD = -0.22;
 /** Running: the leather is swept BACK and flaps around that swept position —
@@ -2216,7 +2312,14 @@ const EAR_IDLE_FOLD = -0.22;
  *  what reads as speed on screen. Flapping around 0 instead (the old
  *  behaviour) just wagged the ears about the standing pose and read as
  *  nothing in particular. */
-const EAR_RUN_SWEEP = 0.88;
+// The reworked ears hang from the skull's top edge and curve OUTWARD, so
+// they must swing a long way back (~86 deg) to stream behind the head; the
+// old 0.88 rotated the leather straight through the skull. Flop stays small
+// around it (1.32..1.68) so no frame of the cycle dips back into the head.
+const EAR_RUN_SWEEP = 1.5;
+/** Outward yaw (mirrored) while running — the leathers angle away from the
+ *  skull instead of lying flat along it. Tuned on /preview/?earx=1.5&eary=0.35. */
+const EAR_RUN_YAW = 0.35;
 /**
  * ...and swung OUT as well as back, which is the half that makes it work.
  *
@@ -2226,7 +2329,7 @@ const EAR_RUN_SWEEP = 0.88;
  * — and it is also what "ears flying like wings" actually looks like from the
  * front, which is the angle the player sees most in the maze.
  */
-const EAR_RUN_FLARE = 0.62;
+const EAR_RUN_FLARE = 0.05; // near-zero: with the swept-back leather, roll only pushed the tips up like horns
 const EAR_FLOP_LAG = 0.35; // radians ear R lags ear L by (phase offset, not time) for a floppy asymmetry
 const LEG_TROT_AMPLITUDE = 0.6;
 const JAW_CHOMP_AMPLITUDE = 0.22;
@@ -2408,6 +2511,8 @@ function animateBeagleParts(parts: BeagleParts, state: WalkState): void {
   // Mirrored, so the ears fly away from each other rather than both one way.
   parts.earL.rotation.z = -EAR_RUN_FLARE * blend;
   parts.earR.rotation.z = EAR_RUN_FLARE * blend;
+  parts.earL.rotation.y = -EAR_RUN_YAW * blend;
+  parts.earR.rotation.y = EAR_RUN_YAW * blend;
 
   parts.legs[0].rotation.x = trot * blend;
   parts.legs[1].rotation.x = -trot * blend;
@@ -2562,7 +2667,7 @@ function smoothTo(from: number, to: number, rate: number, dt: number): number {
  * Recolours/re-visibilities a ghost mesh for its current gameplay state and
  * offsets its pupils to look toward `dir` (ported from prototype syncMeshes,
  * lines 591-608). Call once per frame per ghost, separate from syncToEntity
- * (which only moves/turns â€” the beagle has no state to recolour, so state
+ * (which only moves/turns â���” the beagle has no state to recolour, so state
  * handling stays out of the shared positional path).
  *
  * - frightened: body recolours to COLORS.frightened / a dark blue emissive,

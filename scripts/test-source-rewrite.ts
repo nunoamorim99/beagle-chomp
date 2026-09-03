@@ -90,13 +90,13 @@ console.log("\n--- rewriteBlocker (honest limits) ---");
   check("a top-level part is rewritable", rewriteBlocker(SRC, BUILDER, "neck") === null);
   check("the body is rewritable", rewriteBlocker(SRC, BUILDER, "body") === null);
 
-  const earBlock = rewriteBlocker(SRC, BUILDER, "earL");
+  const earBlock = rewriteBlocker(SRC, BUILDER, "browSwellL");
   check("a mirrored/loop-built part is BLOCKED, not faked", earBlock !== null);
   check(
     "…and the reason explains the loop",
     !!earBlock && /loop|callback/i.test(earBlock),
   );
-  console.log(`    earL → ${earBlock}`);
+  console.log(`    browSwellL → ${earBlock}`);
 
   const missing = rewriteBlocker(SRC, BUILDER, "notAThing");
   check("an unknown name is blocked", missing !== null);
@@ -241,7 +241,7 @@ console.log("\n--- setMaterialColor: toon() literals + name discovery ---");
 
 console.log("\n--- setTransform: blocked parts are refused ---");
 {
-  const r = setTransform(SRC, BUILDER, "earL", "rotation", [0, 0, 0.5]);
+  const r = setTransform(SRC, BUILDER, "browSwellL", "rotation", [0, 0, 0.5]);
   check("a loop-built part cannot be transformed in place", !r.ok);
   check("…and the source is untouched (no partial write)", !r.ok);
 }
@@ -280,7 +280,7 @@ console.log("\n--- deletePart: refuses what would not compile ---");
     console.log(`    tailTilt → ${r2.reason}`);
   }
 
-  const r3 = deletePart(SRC, BUILDER, "earL");
+  const r3 = deletePart(SRC, BUILDER, "browSwellL");
   check("deleting a loop-built part is REFUSED", !r3.ok);
 }
 

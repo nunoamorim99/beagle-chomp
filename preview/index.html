@@ -173,8 +173,12 @@
       if (earPin !== null && parts) {
         const a = Number(earPin);
         const z = Number(q.get("earz") ?? 0);
+        const y = Number(q.get("eary") ?? 0);
         parts.earL.rotation.x = a;
         parts.earR.rotation.x = a;
+        // Mirrored yaw, like the flare: the leathers angle away from each other.
+        parts.earL.rotation.y = -y;
+        parts.earR.rotation.y = y;
         // Mirrored: the ears flare AWAY from each other, so the sign flips.
         parts.earL.rotation.z = -z;
         parts.earR.rotation.z = z;

@@ -106,6 +106,17 @@ async function historyRows(page: Page): Promise<Array<{ label: string; current: 
   );
 }
 
+/**
+ * Waits for the part tree's first paint by INTERVAL polling. Playwright's
+ * default waitForSelector polls on requestAnimationFrame, and on a cold
+ * spawned server the editor's boot (module transform + building ~60 meshes +
+ * lil-gui) keeps the main thread busy enough that an immediate rAF-polled
+ * wait can stall for the full timeout while the rows are already on screen.
+ */
+async function waitForTree(page: Page): Promise<void> {
+  await page.waitForFunction(() => document.querySelectorAll(".tree-row").length > 0, null, { polling: 250, timeout: 60_000 });
+}
+
 async function run(): Promise<void> {
   let server: ViteDevServer | undefined;
   let browser: Browser | undefined;
@@ -136,7 +147,7 @@ async function run(): Promise<void> {
     });
 
     await page.goto(base);
-    await page.waitForSelector(".tree-row");
+    await waitForTree(page);
     await page.waitForTimeout(400);
 
     // ---------------------------------------------------------------------

@@ -13,7 +13,7 @@ p.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
 let hud = "";
 for (const view of (process.env.VIEWS ?? "34,front,side,back,face").split(",")) {
   for (let attempt = 0; attempt < 3; attempt++) {
-    await p.goto(`http://localhost:5173/preview/?view=${view}&grid=0&hud=0&anim=0`, { waitUntil: "networkidle" });
+    await p.goto(`http://localhost:5173/preview/?view=${view}&grid=0&hud=0&anim=0${process.env.EXTRA ?? ""}`, { waitUntil: "networkidle" });
     await p.waitForTimeout(700);
     const buf = await p.screenshot({ path: `${OUT}/${view}.png` });
     if (buf.length > 20_000) break;
@@ -22,6 +22,7 @@ for (const view of (process.env.VIEWS ?? "34,front,side,back,face").split(",")) 
 }
 console.log(hud);
 console.log(`→ ${OUT}`);
+await b.close();
 if (errors.length) {
   console.log("page errors:");
   for (const e of errors) console.log("  " + e);

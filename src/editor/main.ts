@@ -122,6 +122,7 @@ import { type PropPrimKind } from "../game/props";
 import { hasEmissive, isEditableMaterial, roughnessOf } from "../render/toon";
 import { materialDeclsByColor } from "./sourceRewrite";
 import { sourceTextFor } from "./sources";
+import { type SavableFile } from "./saveFile";
 
 // --- DOM ---
 function byId<T extends HTMLElement>(id: string): T {
@@ -454,6 +455,19 @@ function reparentAddedPart(node: PartNode, newParent: PartNode): void {
   });
 }
 
+/** materialDeclsByColor is a parse of the whole builder source; refreshParts
+ *  runs on every scene change, so the result is cached per builder. */
+const materialDeclsCache = new Map<string, Map<number, string>>();
+function materialDeclsFor(d: { sourceFile: SavableFile; builderName: string }): Map<number, string> {
+  const key = `${d.sourceFile}::${d.builderName}`;
+  let decls = materialDeclsCache.get(key);
+  if (!decls) {
+    decls = materialDeclsByColor(sourceTextFor(d.sourceFile), d.builderName);
+    materialDeclsCache.set(key, decls);
+  }
+  return decls;
+}
+
 function refreshParts(): void {
   if (!group) return;
   nodes = buildPartList(group, def.label);
@@ -462,7 +476,7 @@ function refreshParts(): void {
   // In "normals" shading every mesh is temporarily wearing one shared
   // MeshNormalMaterial, so collect with the real ones put back — see
   // withRealMaterials' doc comment for what goes wrong otherwise.
-  materials = viewportExtras.withRealMaterials(group, () => collectMaterials(group!, nodes, materialDeclsByColor(sourceTextFor(def.sourceFile), def.builderName)));
+  materials = viewportExtras.withRealMaterials(group, () => collectMaterials(group!, nodes, materialDeclsFor(def)));
   materialByUuid = new Map(materials.map((m) => [m.material.uuid, m]));
   tree.render(nodes);
 }
@@ -558,7 +572,7 @@ function selectionContext() {
       // every affected mesh a NEW material with a new uuid, and the old map
       // would resolve none of them.
       if (!group) return;
-      materials = collectMaterials(group, nodes, materialDeclsByColor(sourceTextFor(def.sourceFile), def.builderName));
+      materials = collectMaterials(group, nodes, materialDeclsFor(def));
       materialByUuid = new Map(materials.map((m) => [m.material.uuid, m]));
     },
     onGeometryRebuilt: (node: PartNode) => {
