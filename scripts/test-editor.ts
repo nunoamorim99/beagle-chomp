@@ -115,7 +115,10 @@ async function run(): Promise<void> {
 
     // ---------------------------------------------------------------------
     console.log("\n=== boots clean ===");
-    await page.goto(base);
+    // networkidle: on a COLD spawned server Vite is still transforming the
+    // editor modules when the page first paints, and an immediate
+    // waitForSelector can poll a half-built document until it times out.
+    await page.goto(base, { waitUntil: "networkidle" });
     await page.waitForSelector(".tree-row"); // first paint of the part tree
     await page.waitForTimeout(300); // idle animation frame, lil-gui init
     check("no page errors on load", pageErrors.length === 0);
@@ -127,8 +130,8 @@ async function run(): Promise<void> {
     console.log("\n=== delete an ORIGINAL mesh part (button) ===");
     {
       const before = await treeRows(page);
-      const idx = await rowIndexByText(page, "blaze");
-      check("found 'blaze' (an original mesh) in the tree", idx !== -1);
+      const idx = await rowIndexByText(page, "nose");
+      check("found 'nose' (an original mesh) in the tree", idx !== -1);
       await clickRow(page, idx);
       const label = await clickDeleteButton(page);
       check("delete button was present and clicked", label !== null && label.startsWith("delete part"));
@@ -137,11 +140,11 @@ async function run(): Promise<void> {
 
       const after = await treeRows(page);
       check("row count dropped by exactly 1", after.length === before.length - 1);
-      check("'blaze' is gone from the tree (== gone from the scene graph)", !after.some((r) => r.text === "blaze"));
+      check("'nose' is gone from the tree (== gone from the scene graph)", !after.some((r) => r.text === "nose"));
       check("nothing stayed selected after delete", !after.some((r) => r.selected));
 
       const gen = await generatedText(page);
-      check("generated code contains blaze.removeFromParent();", gen.includes("blaze.removeFromParent();"));
+      check("generated code contains nose.removeFromParent();", gen.includes("nose.removeFromParent();"));
     }
 
     // ---------------------------------------------------------------------
@@ -151,8 +154,8 @@ async function run(): Promise<void> {
       await page.waitForTimeout(150);
       const after = await treeRows(page);
       check("row count back to original", after.length === initialRows.length);
-      check("'blaze' is back in the tree", after.some((r) => r.text === "blaze"));
-      check("restored part is selected (lands back on it)", after.find((r) => r.text === "blaze")?.selected === true);
+      check("'nose' is back in the tree", after.some((r) => r.text === "nose"));
+      check("restored part is selected (lands back on it)", after.find((r) => r.text === "nose")?.selected === true);
       const gen = await generatedText(page);
       check("generated code has NO removeFromParent (undo cleared the mark)", !gen.includes("removeFromParent"));
       check("generated code is back to the empty placeholder", gen.includes("No edits yet"));
@@ -168,16 +171,16 @@ async function run(): Promise<void> {
       await page.keyboard.press("Control+y");
       await page.waitForTimeout(150);
       const after = await treeRows(page);
-      check("'blaze' is gone again after redo", !after.some((r) => r.text === "blaze"));
+      check("'nose' is gone again after redo", !after.some((r) => r.text === "nose"));
       const gen = await generatedText(page);
-      check("generated code shows removeFromParent again after redo", gen.includes("blaze.removeFromParent();"));
+      check("generated code shows removeFromParent again after redo", gen.includes("nose.removeFromParent();"));
     }
     // leave it undone for the next block, on a fresh page instead (isolate state)
 
     // ---------------------------------------------------------------------
     console.log("\n=== root is never deletable ===");
     {
-      await page.goto(base);
+      await page.goto(base, { waitUntil: "networkidle" });
       await page.waitForSelector(".tree-row");
       await page.waitForTimeout(300);
       await clickRow(page, 0); // row 0 is always the root ("<Label> (g)")
@@ -219,7 +222,7 @@ async function run(): Promise<void> {
     // ---------------------------------------------------------------------
     console.log("\n=== delete an ORIGINAL group removes its whole subtree ===");
     {
-      await page.goto(base);
+      await page.goto(base, { waitUntil: "networkidle" });
       await page.waitForSelector(".tree-row");
       await page.waitForTimeout(300);
       const before = await treeRows(page);
@@ -252,7 +255,7 @@ async function run(): Promise<void> {
     // ---------------------------------------------------------------------
     console.log("\n=== deleting an editor-ADDED part keeps its existing behavior (regression) ===");
     {
-      await page.goto(base);
+      await page.goto(base, { waitUntil: "networkidle" });
       await page.waitForSelector(".tree-row");
       await page.waitForTimeout(300);
       const bodyIdx = await rowIndexByText(page, "body");

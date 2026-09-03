@@ -1239,8 +1239,8 @@ async function run(): Promise<void> {
       await page.click("#modeCharacterBtn");
       await page.waitForTimeout(400);
       const before = await treeRows(page);
-      const idx = before.findIndex((r) => r.text === "blaze");
-      check("found 'blaze' (an original mesh) in the tree", idx !== -1);
+      const idx = before.findIndex((r) => r.text === "nose");
+      check("found 'nose' (an original mesh) in the tree", idx !== -1);
       await page.evaluate((i) => {
         (document.querySelectorAll(".tree-row")[i] as HTMLElement).click();
       }, idx);
@@ -1254,14 +1254,14 @@ async function run(): Promise<void> {
       check("delete button still works for an original part", deleted);
       await page.waitForTimeout(150);
       const after = await treeRows(page);
-      check("'blaze' is gone from the tree", !after.some((r) => r.text === "blaze"));
+      check("'nose' is gone from the tree", !after.some((r) => r.text === "nose"));
       const gen = await page.$eval("#generatedView code", (el) => el.textContent ?? "");
-      check("generated code contains blaze.removeFromParent();", gen.includes("blaze.removeFromParent();"));
+      check("generated code contains nose.removeFromParent();", gen.includes("nose.removeFromParent();"));
 
       await page.keyboard.press("Control+z");
       await page.waitForTimeout(150);
       const restored = await treeRows(page);
-      check("undo restores 'blaze' after a round trip through board mode", restored.some((r) => r.text === "blaze"));
+      check("undo restores 'nose' after a round trip through board mode", restored.some((r) => r.text === "nose"));
     }
 
     check("zero uncaught page errors across the whole run", pageErrors.length === 0);

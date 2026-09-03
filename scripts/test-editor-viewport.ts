@@ -296,17 +296,17 @@ async function run(): Promise<void> {
     check("…exactly one row is selected", (await selectedRows(page)).length === 1);
 
     // Ctrl-click adds; the newly clicked part becomes the PRIMARY.
-    await ctrlClickRowNamed(page, "blaze");
+    await ctrlClickRowNamed(page, "muzzle");
     const multi = await selectedRows(page);
     check("ctrl-click adds a second part", multi.length === 2);
     // selectedRows reads DOM (tree) order, which says nothing about WHICH is
     // primary — the `secondary` class is the only honest signal here.
-    check("the newly clicked part is primary", multi.some((r) => r.text === "blaze" && !r.secondary));
+    check("the newly clicked part is primary", multi.some((r) => r.text === "muzzle" && !r.secondary));
     check("the earlier one is demoted to secondary", multi.some((r) => r.text === "nose" && r.secondary));
-    check("the inspector follows the primary", (await inspectorTitle(page)).includes("blaze"));
+    check("the inspector follows the primary", (await inspectorTitle(page)).includes("muzzle"));
 
     // Ctrl-clicking it again takes it back out.
-    await ctrlClickRowNamed(page, "blaze");
+    await ctrlClickRowNamed(page, "muzzle");
     check("ctrl-click again removes it", (await selectedRows(page)).length === 1);
 
     // `a` is a TOGGLE, so with a part still selected the first press CLEARS.
@@ -326,13 +326,13 @@ async function run(): Promise<void> {
     // ---------------------------------------------------------------------
     console.log("\n=== multi-delete is ONE undo step ===");
     await clickRowNamed(page, "nose");
-    await ctrlClickRowNamed(page, "blaze");
+    await ctrlClickRowNamed(page, "muzzle");
     const rowsBeforeDelete = (await treeRows(page)).length;
     await page.evaluate(() => (document.body as HTMLElement).focus());
     await page.keyboard.press("Delete");
     await page.waitForTimeout(250);
     const afterDelete = await treeRows(page);
-    check("both selected parts are gone", !afterDelete.some((r) => r.text === "nose" || r.text === "blaze"));
+    check("both selected parts are gone", !afterDelete.some((r) => r.text === "nose" || r.text === "muzzle"));
     check("the tree lost exactly two rows", afterDelete.length === rowsBeforeDelete - 2);
 
     await page.click('.code-tab[data-tab="history"]');
@@ -346,7 +346,7 @@ async function run(): Promise<void> {
     const afterUndo = await treeRows(page);
     check(
       "a single undo brings BOTH parts back",
-      afterUndo.some((r) => r.text === "nose") && afterUndo.some((r) => r.text === "blaze"),
+      afterUndo.some((r) => r.text === "nose") && afterUndo.some((r) => r.text === "muzzle"),
     );
 
     // ---------------------------------------------------------------------

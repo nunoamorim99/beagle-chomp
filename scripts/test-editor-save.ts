@@ -137,9 +137,9 @@ async function run(): Promise<void> {
     check("characters.ts changed on disk", after !== ORIGINAL);
     check(
       "the body's own position.set carries the new Y",
-      /body\.position\.set\(0, 0\.37, -0\.02\)/.test(after),
+      /body\.position\.set\(0, 0\.40?, -0\.22\)/.test(after),
     );
-    check("the old value is gone", !/body\.position\.set\(0, 0\.34, -0\.02\)/.test(after));
+    check("the old value is gone", !/body\.position\.set\(0, 0\.37, -0\.22\)/.test(after));
     check(
       "still exactly ONE body.position.set in makeBeagle — nothing appended",
       count(builderSlice(after, "makeBeagle"), /body\.position\.set/) === 1,
@@ -166,7 +166,7 @@ async function run(): Promise<void> {
     );
     check(
       "the part's documenting comment survived",
-      /deliberately elongated so a clear body runs/.test(after),
+      /the one continuous body mass/.test(after),
     );
 
     const report = await page.$eval("#generatedView", (el) => el.textContent ?? "");

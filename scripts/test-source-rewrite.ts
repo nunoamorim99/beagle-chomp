@@ -73,20 +73,20 @@ console.log("\n--- stripCommentsAndStrings ---");
 console.log("\n--- findPart ---");
 {
   const body = readBuilder(SRC, BUILDER)!;
-  const haunch = findPart(body, "haunch");
-  check("finds the haunch's declaration", haunch !== null);
+  const neck = findPart(body, "neck");
+  check("finds the neck's declaration", neck !== null);
   check(
-    "collects the haunch's whole block (decl + name + scale + position + add)",
-    (haunch?.indices.length ?? 0) >= 4,
+    "collects the neck's whole block (decl + name + position + add)",
+    (neck?.indices.length ?? 0) >= 4,
   );
 
   const body2 = readBuilder(SRC, BUILDER)!;
-  check("a loop-built part has no top-level decl", findPart(body2, "sideCap") === null);
+  check("a loop-built part has no top-level decl", findPart(body2, "browSwell") === null);
 }
 
 console.log("\n--- rewriteBlocker (honest limits) ---");
 {
-  check("a top-level part is rewritable", rewriteBlocker(SRC, BUILDER, "haunch") === null);
+  check("a top-level part is rewritable", rewriteBlocker(SRC, BUILDER, "neck") === null);
   check("the body is rewritable", rewriteBlocker(SRC, BUILDER, "body") === null);
 
   const earBlock = rewriteBlocker(SRC, BUILDER, "earL");
@@ -106,24 +106,24 @@ console.log("\n--- setTransform: rewrites the REAL line ---");
 {
   const before = builderCode(SRC);
   check(
-    "precondition: haunch.position.set exists exactly once",
-    occurrences(before, /haunch\.position\.set/) === 1,
+    "precondition: neck.position.set exists exactly once",
+    occurrences(before, /neck\.position\.set/) === 1,
   );
 
-  const r = setTransform(SRC, BUILDER, "haunch", "position", [0, 0.5, -0.3]);
-  check("setTransform succeeds on the haunch", r.ok);
+  const r = setTransform(SRC, BUILDER, "neck", "position", [0, 0.5, -0.3]);
+  check("setTransform succeeds on the neck", r.ok);
   if (r.ok) {
     const after = builderCode(r.src);
-    check("the new value is present", /haunch\.position\.set\(0, 0\.5, -0\.3\)/.test(after));
-    check("the old value is gone", !/haunch\.position\.set\(0, 0\.3, -0\.28\)/.test(after));
+    check("the new value is present", /neck\.position\.set\(0, 0\.5, -0\.3\)/.test(after));
+    check("the old value is gone", !/neck\.position\.set\(0, 0\.535, 0\.14\)/.test(after));
     check(
-      "still exactly ONE haunch.position.set — no appended duplicate",
-      occurrences(after, /haunch\.position\.set/) === 1,
+      "still exactly ONE neck.position.set — no appended duplicate",
+      occurrences(after, /neck\.position\.set/) === 1,
     );
     check(
       "no generated edit block was appended",
-      !/Character Editor edits \(generated/.test(r.src.slice(r.src.indexOf("haunch"))) ||
-        occurrences(builderCode(r.src), /haunch\.position\.set/) === 1,
+      !/Character Editor edits \(generated/.test(r.src.slice(r.src.indexOf("neck"))) ||
+        occurrences(builderCode(r.src), /neck\.position\.set/) === 1,
     );
     check("the file still parses as a function", findFunctionRange(r.src, BUILDER) !== null);
     check(
@@ -132,41 +132,41 @@ console.log("\n--- setTransform: rewrites the REAL line ---");
     );
     check(
       "the part's documenting comment is preserved",
-      /soft hip bulge that never breaks the saddle seam/.test(r.src),
+      /short white throat, chin nearly on the chest/.test(r.src),
     );
   }
 }
 
 console.log("\n--- setTransform: collapses axis assignments ---");
 {
-  // tailShaft uses `tailShaft.position.y = 0.15;` — a single-axis assignment.
+  // tailTilt uses `tailTilt.rotation.x = -0.14;` — a single-axis assignment.
   const before = builderCode(SRC);
-  check("precondition: tailShaft.position.y exists", /tailShaft\.position\.y\s*=/.test(before));
+  check("precondition: tailTilt.rotation.x exists", /tailTilt\.rotation\.x\s*=/.test(before));
 
-  const r = setTransform(SRC, BUILDER, "tailShaft", "position", [0, 0.2, 0.05]);
-  check("setTransform succeeds on tailShaft", r.ok);
+  const r = setTransform(SRC, BUILDER, "tailTilt", "rotation", [0, 0.2, 0.05]);
+  check("setTransform succeeds on tailTilt", r.ok);
   if (r.ok) {
     const after = builderCode(r.src);
-    check("axis form was replaced by a canonical .set", /tailShaft\.position\.set\(0, 0\.2, 0\.05\)/.test(after));
-    check("the old axis assignment is gone", !/tailShaft\.position\.y\s*=/.test(after));
+    check("axis form was replaced by a canonical .set", /tailTilt\.rotation\.set\(0, 0\.2, 0\.05\)/.test(after));
+    check("the old axis assignment is gone", !/tailTilt\.rotation\.x\s*=/.test(after));
   }
 }
 
 console.log("\n--- setTransform: inserts when the property has no statement ---");
 {
-  // `chest` has scale + position but no rotation.
+  // `nose` has a position but no rotation.
   const before = builderCode(SRC);
-  check("precondition: chest has no rotation statement", !/chest\.rotation/.test(before));
+  check("precondition: nose has no rotation statement", !/\bnose\.rotation/.test(before));
 
-  const r = setTransform(SRC, BUILDER, "chest", "rotation", [0, 0.3, 0]);
+  const r = setTransform(SRC, BUILDER, "nose", "rotation", [0, 0.3, 0]);
   check("setTransform succeeds", r.ok);
   if (r.ok) {
     const after = builderCode(r.src);
-    check("a rotation statement was inserted", /chest\.rotation\.set\(0, 0\.3, 0\)/.test(after));
-    check("it sits inside the chest's own block, before g.add(chest)", (() => {
-      const rot = after.indexOf("chest.rotation.set");
-      const add = after.indexOf("g.add(chest)");
-      const decl = after.indexOf("const chest");
+    check("a rotation statement was inserted", /nose\.rotation\.set\(0, 0\.3, 0\)/.test(after));
+    check("it sits inside the nose's own block, before head.add(nose)", (() => {
+      const rot = after.indexOf("nose.rotation.set");
+      const add = after.indexOf("head.add(nose)");
+      const decl = after.indexOf("const nose");
       return decl < rot && rot < add;
     })());
     check("the file still parses", findFunctionRange(r.src, BUILDER) !== null);
@@ -175,12 +175,12 @@ console.log("\n--- setTransform: inserts when the property has no statement ---"
 
 console.log("\n--- setTransform: uniform scale uses setScalar ---");
 {
-  const r = setTransform(SRC, BUILDER, "chest", "scale", [1.2, 1.2, 1.2]);
+  const r = setTransform(SRC, BUILDER, "nose", "scale", [1.2, 1.2, 1.2]);
   check("setTransform succeeds", r.ok);
-  if (r.ok) check("uniform scale emits setScalar", /chest\.scale\.setScalar\(1\.2\)/.test(builderCode(r.src)));
+  if (r.ok) check("uniform scale emits setScalar", /nose\.scale\.setScalar\(1\.2\)/.test(builderCode(r.src)));
 
-  const r2 = setTransform(SRC, BUILDER, "chest", "scale", [1.2, 1, 0.8]);
-  check("non-uniform scale emits .set", r2.ok && /chest\.scale\.set\(1\.2, 1, 0\.8\)/.test(builderCode(r2.src)));
+  const r2 = setTransform(SRC, BUILDER, "nose", "scale", [1.2, 1, 0.8]);
+  check("non-uniform scale emits .set", r2.ok && /nose\.scale\.set\(1\.2, 1, 0\.8\)/.test(builderCode(r2.src)));
 }
 
 console.log("\n--- setMaterialColor ---");
@@ -223,19 +223,19 @@ console.log("\n--- setTransform: blocked parts are refused ---");
 
 console.log("\n--- deletePart ---");
 {
-  const r = deletePart(SRC, BUILDER, "chest");
-  check("deleting the chest succeeds", r.ok);
+  const r = deletePart(SRC, BUILDER, "nose");
+  check("deleting the nose succeeds", r.ok);
   if (r.ok) {
     const after = builderCode(r.src);
-    check("the const is gone", !/const chest\b/.test(after));
-    check("the .add is gone", !/g\.add\(chest\)/.test(after));
-    check("no reference to chest survives in code", !/\bchest\b/.test(after));
+    check("the const is gone", !/const nose\b/.test(after));
+    check("the .add is gone", !/head\.add\(nose\)/.test(after));
+    check("no reference to nose survives in code", !/\bnose\b/.test(after));
     check("the file still parses", findFunctionRange(r.src, BUILDER) !== null);
     check(
       "no removeFromParent residue is produced",
-      !/chest\.removeFromParent/.test(r.src),
+      !/nose\.removeFromParent/.test(r.src),
     );
-    check("the deleted part's comment went with it", !/A white form giving fullness under the chin/.test(r.src));
+    check("the deleted part's comment went with it", !/the oversized rounded-triangle nose leather/.test(r.src));
   }
 }
 
@@ -300,14 +300,14 @@ console.log("\n--- deletePart: the leftover-reference guard ---");
 
 console.log("\n--- idempotence / round-trip ---");
 {
-  const once = setTransform(SRC, BUILDER, "haunch", "position", [0, 0.5, -0.3]);
+  const once = setTransform(SRC, BUILDER, "neck", "position", [0, 0.5, -0.3]);
   check("first rewrite ok", once.ok);
   if (once.ok) {
-    const twice = setTransform(once.src, BUILDER, "haunch", "position", [0, 0.5, -0.3]);
+    const twice = setTransform(once.src, BUILDER, "neck", "position", [0, 0.5, -0.3]);
     check("re-saving the same value is a no-op", twice.ok && twice.src === once.src);
 
-    const third = setTransform(once.src, BUILDER, "haunch", "position", [1, 1, 1]);
-    check("a second edit replaces rather than stacks", third.ok && occurrences(builderCode(third.src), /haunch\.position\.set/) === 1);
+    const third = setTransform(once.src, BUILDER, "neck", "position", [1, 1, 1]);
+    check("a second edit replaces rather than stacks", third.ok && occurrences(builderCode(third.src), /neck\.position\.set/) === 1);
   }
 }
 

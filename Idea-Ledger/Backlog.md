@@ -19,7 +19,7 @@ Living backlog of ideas. Two purposes:
 _(empty — nothing to triage)_
 
 ## Backlog (open ideas)
-> New registered ideas go here. Next free ID: IDEA-047
+> New registered ideas go here. Next free ID: IDEA-048
 
 ### IDEA-028 — Challenge twist: moving walls / maze changes mid-level 💡
 - **Priority:** 🟢
@@ -35,6 +35,27 @@ _(empty — nothing to triage)_
 - **Dependencies:** —
 
 ## In progress 🔨
+
+### IDEA-047 — The beagle, rebuilt from a real reference 🔨
+- **Priority:** 🔴
+- **Area:** render
+- **Registered:** 2026-09-02
+- **Description:** (Nuno) the main character works but doesn't look like a beagle — "I want to
+  build a realistic beagle that persons look and see a dog of the breed beagle, keeping the toon
+  of the game." A reference image (cartoon-3D beagle puppy, tricolor) went into
+  `.img2threejs/reference/beagle/` and the img2threejs skill's full staged pipeline ran over it.
+- **Notes:** built on branch `rework-beagle-character`. The pipeline's whole evidence trail lives
+  in `.img2threejs/` — anatomy measured off the reference in head-units (chibi 2.8 HU, ears 0.88
+  HH hanging to chin, muzzle 0.40 HH, flag tail with white tip), a strict-validated sculpt spec,
+  8 locked build passes each gated by turntable/multi-angle/interior-difference reviews, and a
+  pose-articulation proof. Integration: `makeBeagle()` in characters.ts rebuilt over a new
+  `beagleSculpt.ts` geometry engine (station sweeps + lathe profiles + per-triangle coat-region
+  material groups) keeping the FULL contract — BeagleParts pivots for syncToEntity, coatMats for
+  the skin shop, the Pac-Beagle brow accessory, jaw chomp. Dev harnesses added:
+  `/preview-rework/` + `scripts/shoot-rework.ts`. Tier-1 IoU gate documented as reconstruction-
+  mode-miscalibrated (the skill's own caveat) — evidence in
+  `.img2threejs/evidence/tier1-reconstruction-caveat.md`.
+- **Dependencies:** —
 
 ### IDEA-025 v3 — The editor saves REAL source, not an override block 🔨
 - **Priority:** 🔴
