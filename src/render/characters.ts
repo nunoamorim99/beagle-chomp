@@ -127,7 +127,10 @@ const TORSO_STATIONS: SweepStation[] = [
 /** Saddle over the back, white bib at the chest, white belly underneath. */
 const TORSO_COAT: CoatRegion[] = [
   { kind: "capsule", start: [0, 0.125, 0.02], end: [0, 0.12, 0.22], r0: 0.105, r1: 0.088, mat: COAT_BLACK },
-  { kind: "capsule", start: [0, 0.0, 0.36], end: [0, -0.09, 0.49], r0: 0.105, r1: 0.125, mat: COAT_WHITE },
+  // The bib reaches up the torso's FRONT to where the neck lands, so the
+  // throat white and the chest white are one shape — no tan shoulder wedges
+  // spiking in at the junction. Narrow at the top so the shoulders stay tan.
+  { kind: "capsule", start: [0, 0.1, 0.36], end: [0, -0.09, 0.49], r0: 0.09, r1: 0.125, mat: COAT_WHITE },
   { kind: "blob", center: [0, -0.12, 0.2], radii: [0.09, 0.08, 0.19], mat: COAT_WHITE },
 ];
 
