@@ -134,7 +134,8 @@ import {
   applyBeagleSkin,
 } from "../render/characters";
 import { createHud, type Hud } from "../ui/hud";
-import { createSound, attachMuteButton, type Sound } from "../ui/sound";
+import { ICON, iconHtml, plateHtml, setGlyph } from "../ui/icons";
+import { createSound, attachMuteButton, attachUiSounds, type Sound } from "../ui/sound";
 import { attachShop, type ShopHandle } from "../ui/shop";
 import { attachLevelMap, type LevelMapHandle } from "../ui/levelMap";
 import {
@@ -155,6 +156,31 @@ import {
   getBeagleSkin,
 } from "./cosmetics";
 import { getEquippedMazeThemeId } from "./themes";
+
+/**
+ * Swap the HUD pause button between "pause" and "resume".
+ *
+ * Free function rather than a method because both callers (togglePause and
+ * clearPause) want exactly this and nothing else, and because it has one
+ * non-obvious rule worth stating once: the glyph lives in a
+ * `<i class="bc-i">` INSIDE the button (index.html), so this writes to that
+ * element, not to the button. Setting the button's own textContent would
+ * delete the icon element and leave the ligature name showing as plain text —
+ * the same trap the mute button and the menu coin line each have a note about.
+ */
+/** Group thousands with a thin space, matching the HUD readout. Deliberately
+ *  not toLocaleString(): pt-PT and several other locales leave 4-digit numbers
+ *  ungrouped, which would mix "9220" and "12 480" in the same board. */
+function formatFigure(n: number): string {
+  return String(n).replace(/B(?=(d{3})+(?!d))/g, " ");
+}
+
+function setPauseGlyph(paused: boolean): void {
+  const btn = document.getElementById("pauseBtn");
+  if (!btn) return;
+  setGlyph(btn, paused ? ICON.play : ICON.pause);
+  btn.setAttribute("aria-label", paused ? "Resume game" : "Pause game");
+}
 
 // Scatter-corner targets per ghost personality (prototype section 7,
 // GHOST_DEFS): rose/chaser -> top-right, teal/ambusher -> top-left,
@@ -276,6 +302,8 @@ export class Game {
   private readonly detachKeyboard: () => void;
   private readonly detachTouch: () => void;
   private readonly detachMuteButton: () => void;
+  /** Design system §10: the delegated press/select listener. */
+  private readonly detachUiSounds: () => void;
   private readonly detachAudioUnlock: () => void;
   private readonly shop: ShopHandle;
   // IDEA-014: the Challenge "garden path" level-select page — opened by
@@ -456,13 +484,20 @@ export class Game {
         scheme: getControlScheme(),
       }),
     });
-    this.hud = createHud(document.body);
+    // LIVES.max is handed over rather than imported by hud.ts: the HUD draws
+    // the full row of hearts and dims the ones not yet earned, so it needs the
+    // ceiling, and the DOM layer must not reach into src/game for it.
+    this.hud = createHud(document.body, LIVES.max);
     // Constructed eagerly (cheap — just an AudioContext + a gain node); it
     // starts (or can start) "suspended" per the browser autoplay policy until
     // a real user gesture calls resume() (Start click, first input, or the
     // mute button — wired below and via attachMuteButton).
     this.sound = createSound();
     this.detachMuteButton = attachMuteButton(document.body, this.sound);
+    // Design system §10: one delegated listener gives every control in the
+    // app the same press sound, rather than a call at each of the ~40 places
+    // a button gets created.
+    this.detachUiSounds = attachUiSounds(this.sound);
 
     // Unlock audio on the very first user gesture of any kind, in case the
     // player's first interaction isn't the Start button (e.g. taps the mute
@@ -512,9 +547,12 @@ export class Game {
         // recolor the dog the player can see right behind the shop panel,
         // not just the (currently hidden) in-game one.
         this.menuScene.setBeagleSkin(skin);
+        // §10: a single bark. The one place the dog itself answers you.
+        this.sound.ui.equip();
       },
       onEquipEnemy: () => {
         this.rebuildEnemySkins();
+        this.sound.ui.equip();
       },
       // The shop panel's own header balance already re-renders itself from
       // live state after every buy — but the HUD's coin stat lives outside
@@ -522,6 +560,10 @@ export class Game {
       // in-game coin event. Re-sync it here on every successful purchase.
       onCoinsChanged: () => {
         this.hud.setCoins(getCoins());
+        // §10: this fires only after a SUCCESSFUL buy, which is exactly when
+        // the coin-into-a-tin cue belongs. The HUD counter re-renders on the
+        // same call, so the number and the sound land together.
+        this.sound.ui.purchase();
       },
       // IDEA-021: the main menu renders its own "N coins" line underneath the
       // shop overlay (opened via #menuShopBtn -> this.shop.open()). The
@@ -539,6 +581,7 @@ export class Game {
       onClose: () => {
         this.shopOpen = false;
         document.body.classList.remove("shop-open");
+        this.sound.ui.screen();
         if (this.mode === "start") this.showMenu();
       },
       // IDEA-023: the shop page just opened — freeze gameplay (tick() reads
@@ -546,6 +589,8 @@ export class Game {
       onOpen: () => {
         this.shopOpen = true;
         document.body.classList.add("shop-open");
+        // §10: the leaf rustle rides the hedge wipe the CSS is running.
+        this.sound.ui.screen();
       },
       // IDEA-023: drives the shop page's own live 3D hero preview — fired on
       // open, on every tab switch, and on every card tap (never after
@@ -599,9 +644,11 @@ export class Game {
       },
       onOpen: () => {
         document.body.classList.add("map-open");
+        this.sound.ui.screen();
       },
       onClose: () => {
         document.body.classList.remove("map-open");
+        this.sound.ui.screen();
       },
     });
 
@@ -723,13 +770,20 @@ export class Game {
   private showMenu(): void {
     this.hud.hideCenter();
     document.body.classList.add("menu-open");
+    // §10: birds and distant traffic, under the menu ONLY. A run has its own
+    // layer, and the bed would sit under a chase where nothing should.
+    this.sound.ui.menuBed(true);
+    this.sound.ui.setRunActive(false);
 
     const mainMenu = document.getElementById("mainMenu");
     if (!mainMenu) throw new Error("showMenu: missing #mainMenu — check index.html");
     mainMenu.classList.remove("hidden");
 
-    const coinLine = document.getElementById("menuCoinLine");
-    if (coinLine) coinLine.textContent = `\u{1FA99} ${getCoins()} coins`;
+    // Only the COUNT is rewritten. The coin plate beside it is markup in
+    // index.html and must survive — writing textContent on the whole line (as
+    // this did when the icon was an emoji) would delete it.
+    const coinCount = document.getElementById("menuCoinCount");
+    if (coinCount) coinCount.textContent = `${getCoins()} coins`;
   }
 
   /** Leaves the full-screen menu (Play click / any other exit) — hides
@@ -740,6 +794,10 @@ export class Game {
     const mainMenu = document.getElementById("mainMenu");
     mainMenu?.classList.add("hidden");
     document.body.classList.remove("menu-open");
+    // Leaving the menu means a run is starting: silence the bed and duck the
+    // interface layer 6 dB so a tap can never mask a chomp or a death.
+    this.sound.ui.menuBed(false);
+    this.sound.ui.setRunActive(true);
     // Leaving the menu means a run is starting — show the pad if the player
     // asked for it. (The CSS hides it under every full-screen page anyway, so
     // this only has to answer "does this player want buttons at all".)
@@ -840,6 +898,9 @@ export class Game {
     this.detachKeyboard();
     this.detachTouch();
     this.detachMuteButton();
+    this.detachUiSounds();
+    // Stop the menu bed, or its looping noise source outlives the Game.
+    this.sound.ui.menuBed(false);
     this.detachAudioUnlock();
     this.detachPauseButton();
     this.detachHomeButton();
@@ -1749,7 +1810,7 @@ export class Game {
 
     const panel = this.hud.showPanel(
       '<div class="eyebrow">maximum difficulty</div>' +
-      "<h1>🏆 Top Dog</h1>" +
+      `<h1>${plateHtml("trophy", "inline")} Top Dog</h1>` +
       `<p>You cleared all ${MAPS_PER_LAP} maps with ${GHOSTS_STAGE_3} enemies on the pack. ` +
       "That's every map this game has, at its hardest — there's nothing left to " +
       "throw at you.</p>" +
@@ -1801,6 +1862,10 @@ export class Game {
     // Optimistic local advance; the server does the authoritative one only if
     // the run passes validation (submitRun below adopts whatever it says).
     advanceChallengeProgress(this.challengeIdx);
+    // §10: the three-note rising chime for a level unlocked. Fired on the
+    // optimistic advance rather than on the server’s confirmation, so it lands
+    // with the panel the player is already looking at.
+    this.sound.ui.unlocked();
     void this.submitRun();
 
     const isLast = this.challengeIdx >= CHALLENGE_LEVEL_COUNT - 1;
@@ -1809,7 +1874,7 @@ export class Game {
     if (isLast) {
       const panel = this.hud.showPanel(
         '<div class="eyebrow">challenge complete</div>' +
-        "<h1>All Clear! \u{1F3C6}</h1>" +
+        `<h1>${plateHtml("trophy", "inline")} All Clear!</h1>` +
         `<p>You beat every challenge level, finishing with <strong>${clearedLevel.name}</strong>. The whole pack bows to the top dog.</p>` +
         '<div class="menu-actions">' +
         '<button id="challengeMenuBtn" class="btn-secondary">Menu</button>' +
@@ -1954,12 +2019,44 @@ export class Game {
    * A no-op if the player already dismissed the panel — a late notice about a
    * run they've moved on from would be more confusing than none.
    */
+  /**
+   * Fill in the result board’s "best run" line once the server has answered.
+   *
+   * Three outcomes, three sentences: a new best is worth saying out loud, a
+   * gap is worth naming exactly (a player who knows they were 2 420 short has
+   * a reason to press Play again), and matching your best is neither.
+   *
+   * A no-op when the board is gone — the player may have pressed Play again
+   * or Menu while the request was in flight.
+   */
+  private showBestLine(isNewBest: boolean, best: number): void {
+    const line = document.getElementById("resultBest");
+    if (!line) return;
+
+    if (isNewBest) {
+      line.textContent = `New personal best — ${formatFigure(best)}.`;
+      line.classList.add("result-best-new");
+    } else if (best > this.score) {
+      line.textContent =
+        `${formatFigure(best - this.score)} short of your best run, ${formatFigure(best)}.`;
+    } else {
+      // Equal to the best, or the server has no better figure to offer.
+      return;
+    }
+    line.hidden = false;
+  }
+
   private showScoreNotice(message: string): void {
     const center = document.getElementById("center");
     if (!center || center.classList.contains("hidden")) return;
     // showPanel() nests a .panel inside #center; append into that, not #center.
     const panel = center.querySelector<HTMLElement>(".panel");
     if (!panel) return;
+
+    // §10: a rejected or dropped score is the "error / rejected" cue — a low
+    // double thud, never a buzzer. This notice exists precisely because a
+    // silently-dropped score used to look like a broken leaderboard.
+    this.sound.ui.error();
 
     const notice = document.createElement("p");
     notice.className = "score-notice";
@@ -2020,6 +2117,12 @@ export class Game {
       case "accepted":
         replaceProfileCache(fromServerProfile(outcome.result.profile));
         this.hud.setCoins(outcome.result.profile.coins);
+        // The personal best is the one figure on the result board the client
+        // cannot know on its own, and it arrives here — after the board is
+        // already on screen. So the board renders without it and this fills the
+        // line in, rather than making the player wait on a round trip to see
+        // their own score.
+        this.showBestLine(outcome.result.isNewHighScore, outcome.result.highScore);
         break;
 
       case "rejected":
@@ -2076,17 +2179,39 @@ export class Game {
     // run could never appear on.
     const showBoardBtn = !isChallenge && this.openLeaderboard !== undefined;
 
+    // The end of a run is the moment to show what it EARNED, not just what it
+    // scored. Both figures come from the telemetry the run already keeps for
+    // the server, so nothing new is tracked to display them.
+    const mapsCleared = this.telemetry.levelsCleared;
+    const coinsEarned = this.telemetry.coinsCollected;
+
     const panel = this.hud.showPanel(
-      '<div class="eyebrow">final score</div>' +
-      `<h1>${this.score}</h1>` +
-      "<p>The pack got the better of the beagle this time.</p>" +
-      '<div class="menu-actions">' +
-      '<button id="againBtn">Play again</button>' +
-      '<button id="gameOverMenuBtn" class="btn-secondary">Menu</button>' +
+      '<div class="result-score">' +
+      plateHtml("biscuit", "menu") +
+      '<div><div class="k">Score</div>' +
+      `<div class="result-score-value">${formatFigure(this.score)}</div></div>` +
+      "</div>" +
+      '<div class="result-stats">' +
+      `<div class="result-stat"><div class="k">Maps cleared</div><div class="v">${mapsCleared}</div></div>` +
+      '<div class="result-stat">' +
+      '<div class="k">Coins earned</div>' +
+      `<div class="v result-stat-coins">+${coinsEarned}</div></div>` +
+      "</div>" +
+      // Filled in by applySubmitOutcome when the server answers with the
+      // authoritative personal best — it is the one number here the client
+      // does not already know, and it must not hold up the panel.
+      '<p class="result-best" id="resultBest" hidden></p>' +
+      '<div class="result-actions">' +
+      `<button id="againBtn">${iconHtml(ICON.replay)}Play again</button>` +
+      `<button id="gameOverMenuBtn" class="btn-secondary">${iconHtml(ICON.menu)}Menu</button>` +
       (showBoardBtn
-        ? '<button id="gameOverBoardBtn" class="btn-secondary">🏆 Leaderboard</button>'
+        ? `<button id="gameOverBoardBtn" class="btn-secondary">${iconHtml(ICON.board)}Leaderboard</button>`
         : "") +
       "</div>",
+      // A stroked banner over the board rather than a headline inside it: the
+      // run just ended on the maze, and the first thing the player should read
+      // is a reaction, not a form.
+      "GOOD RUN!",
     );
 
     // The score is already banked by submitRun() above, so opening the board
@@ -2169,11 +2294,7 @@ export class Game {
     this.paused = !this.paused;
     document.body.classList.toggle("paused", this.paused);
 
-    const btn = document.getElementById("pauseBtn");
-    if (btn) {
-      btn.textContent = this.paused ? "▶" : "⏸";
-      btn.setAttribute("aria-label", this.paused ? "Resume game" : "Pause game");
-    }
+    setPauseGlyph(this.paused);
 
     if (this.paused) {
       this.hud.showBanner("Paused");
@@ -2188,11 +2309,7 @@ export class Game {
     if (!this.paused) return;
     this.paused = false;
     document.body.classList.remove("paused");
-    const btn = document.getElementById("pauseBtn");
-    if (btn) {
-      btn.textContent = "⏸";
-      btn.setAttribute("aria-label", "Pause game");
-    }
+    setPauseGlyph(false);
   }
 
   private attachHomeButton(): () => void {

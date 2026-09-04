@@ -61,10 +61,14 @@ function diagramHtml(kind: NonNullable<TutorialSlide["diagram"]>): string {
   if (kind === "dpad") {
     return (
       '<div class="tut-pad" aria-hidden="true">' +
-      '<span class="tut-pad-btn tut-pad-up">&#9650;</span>' +
-      '<span class="tut-pad-btn tut-pad-left">&#9664;</span>' +
-      '<span class="tut-pad-btn tut-pad-right">&#9654;</span>' +
-      '<span class="tut-pad-btn tut-pad-down">&#9660;</span>' +
+      // The same chevrons the real D-pad draws (src/input/dpad.ts) — a
+      // diagram of a control has to be a picture OF that control, and the
+      // geometric-shape characters this used were a different family from
+      // anything on screen.
+      '<span class="tut-pad-btn tut-pad-up"><i class="bc-i">keyboard_arrow_up</i></span>' +
+      '<span class="tut-pad-btn tut-pad-left"><i class="bc-i">keyboard_arrow_left</i></span>' +
+      '<span class="tut-pad-btn tut-pad-right"><i class="bc-i">keyboard_arrow_right</i></span>' +
+      '<span class="tut-pad-btn tut-pad-down"><i class="bc-i">keyboard_arrow_down</i></span>' +
       "</div>"
     );
   }

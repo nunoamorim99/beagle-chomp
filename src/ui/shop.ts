@@ -35,6 +35,7 @@ import {
   type EnemySkin,
 } from "../game/cosmetics";
 import { MAZE_THEMES, getEquippedMazeThemeId, type MazeTheme } from "../game/themes";
+import { ICON, iconHtml, plateHtml } from "./icons";
 import {
   getCoins,
   isBeagleSkinOwned,
@@ -117,19 +118,24 @@ export interface ShopHandle {
   isOpen: () => boolean;
 }
 
-/** A little emoji per enemy skin id — purely decorative labelling for the
- *  shop card (enemy skins have no color data to swatch; see cosmetics.ts's
- *  EnemySkin doc comment). Falls back to a neutral ghost icon for any future
- *  id that isn't listed here, so a new skin never renders with no icon at all. */
+/** One icon per enemy skin id — purely decorative labelling for the shop card
+ *  (enemy skins have no color data to swatch; see cosmetics.ts's EnemySkin doc
+ *  comment). Falls back to the generic enemy face for any future id that isn't
+ *  listed here, so a new skin never renders with no icon at all.
+ *
+ *  These were emoji (👻🪲🐝🐞). The bug and ladybug in particular rendered as
+ *  full-colour cartoons in a completely different drawing style from the toon
+ *  meshes they were labelling, and each platform drew its own. Material
+ *  Symbols gives four monochrome glyphs that take the card's own colour. */
 const ENEMY_ICONS: Record<string, string> = {
-  ghost: "\u{1F47B}", // 👻
-  beetle: "\u{1FAB2}", // 🪲
-  bee: "\u{1F41D}", // 🐝
-  ladybug: "\u{1F41E}", // 🐞
+  ghost: ICON.enemies,
+  beetle: "pest_control",
+  bee: "hive",
+  ladybug: "bug_report",
 };
 
 function enemyIcon(id: string): string {
-  return ENEMY_ICONS[id] ?? "\u{1F47B}";
+  return ENEMY_ICONS[id] ?? ICON.enemies;
 }
 
 /** Converts a cosmetics hex color number (e.g. 0xc98a3c) to a CSS color string. */
@@ -274,7 +280,7 @@ export function attachShop(root: ParentNode, callbacks: ShopCallbacks = {}): Sho
   }
 
   function enemySwatch(skin: EnemySkin): string {
-    return `<div class="skin-swatch skin-swatch-icon" aria-hidden="true">${enemyIcon(skin.id)}</div>`;
+    return `<div class="skin-swatch skin-swatch-icon" aria-hidden="true">${iconHtml(enemyIcon(skin.id))}</div>`;
   }
 
   /** IDEA-026: a 4-dot swatch for a maze theme, mirroring beagleSwatch's
@@ -308,10 +314,21 @@ export function attachShop(root: ParentNode, callbacks: ShopCallbacks = {}): Sho
    *  contextual button in the hero info block, for whichever card is
    *  currently selected (see renderHeroInfo). */
   function renderRailCard(item: ShopItem, owned: boolean, equipped: boolean): string {
-    const chip = equipped ? "Equipped" : owned ? "Owned" : `${item.price} \u{1FA99}`;
+    // §06 gives a card three signals and forbids mixing them: SELECTION is an
+    // amber outline, OWNERSHIP a green badge, LOCKED a dimmed card. Ownership
+    // used to be spelled with the word "Owned" in the same grey as a price,
+    // which put two different facts in one slot.
+    const chip = equipped
+      ? `${iconHtml(ICON.check)}ON`
+      : owned
+        ? `${iconHtml(ICON.check)}Owned`
+        : `${iconHtml(ICON.coin)}${item.price}`;
     const classes = ["shop-rail-card"];
     if (item.id === selectedId) classes.push("shop-rail-card-selected");
-    if (equipped) classes.push("shop-rail-card-equipped");
+    if (equipped || owned) classes.push("shop-rail-card-equipped");
+    // §06's third signal: an unowned card is dimmed, so "can't use this yet"
+    // is legible without reading the price.
+    if (!owned) classes.push("shop-rail-card-locked");
     return (
       `<button type="button" class="${classes.join(" ")}" data-card-id="${item.id}">` +
       swatchFor(item) +
@@ -346,27 +363,34 @@ export function attachShop(root: ParentNode, callbacks: ShopCallbacks = {}): Sho
     const equipped = item.id === currentEquippedId();
     const coins = getCoins();
 
-    let priceLine: string;
+    // THE PRICE LIVES IN THE BUTTON.
+    //
+    // It used to sit on its own line beside the name, so the info bar said the
+    // name, then the price, then a button that said the price again — and left
+    // no room for the one thing this shop had never told anyone: what the item
+    // actually looks like. Moving the figure onto the action frees that line
+    // for the blurb, and puts the cost on the control that spends it.
     let actionHtml: string;
     if (equipped) {
-      priceLine = "";
-      actionHtml = '<button type="button" class="shop-hero-action equipped" disabled>Equipped</button>';
+      actionHtml = `<button type="button" class="shop-hero-action equipped" disabled>${iconHtml(ICON.check)}Equipped</button>`;
     } else if (owned) {
-      priceLine = "Owned";
-      actionHtml = `<button type="button" class="shop-hero-action" data-action="equip" data-id="${item.id}">Equip</button>`;
+      actionHtml = `<button type="button" class="shop-hero-action btn-confirm" data-action="equip" data-id="${item.id}">${iconHtml(ICON.check)}Equip</button>`;
     } else if (coins >= item.price) {
-      priceLine = `${item.price} \u{1FA99}`;
-      actionHtml = `<button type="button" class="shop-hero-action shop-buy" data-action="buy" data-id="${item.id}">Buy &middot; ${item.price} \u{1FA99}</button>`;
+      actionHtml = `<button type="button" class="shop-hero-action" data-action="buy" data-id="${item.id}">${iconHtml(ICON.coin)}${item.price}</button>`;
     } else {
       const need = item.price - coins;
-      priceLine = `${item.price} \u{1FA99}`;
-      actionHtml = `<button type="button" class="shop-hero-action" disabled>Need ${need} more \u{1FA99}</button>`;
+      // §05's disabled button: it keeps its edge and says exactly what is
+      // missing ("Need 60 more"), because a flat greyed button reads as broken
+      // rather than as a goal.
+      actionHtml = `<button type="button" class="shop-hero-action" disabled>Need ${need} more</button>`;
     }
 
     return (
       '<div class="shop-hero-info">' +
+      '<div class="shop-hero-body">' +
       `<div class="shop-hero-name">${item.name}</div>` +
-      `<div class="shop-hero-price">${priceLine}</div>` +
+      `<div class="shop-hero-blurb">${item.blurb}</div>` +
+      "</div>" +
       actionHtml +
       "</div>"
     );
@@ -378,9 +402,12 @@ export function attachShop(root: ParentNode, callbacks: ShopCallbacks = {}): Sho
     const themeActive = tab === "theme" ? " shop-tab-active" : "";
     return (
       '<div class="shop-tabs" role="tablist">' +
-      `<button type="button" class="shop-tab${beagleActive}" data-tab="beagle" role="tab" aria-selected="${tab === "beagle"}">\u{1F436} Beagle Skins</button>` +
-      `<button type="button" class="shop-tab${enemyActive}" data-tab="enemy" role="tab" aria-selected="${tab === "enemy"}">\u{1F47E} Enemy Skins</button>` +
-      `<button type="button" class="shop-tab${themeActive}" data-tab="theme" role="tab" aria-selected="${tab === "theme"}">\u{1F333} Themes</button>` +
+      // Labels shortened along with the icons: three tabs share one row on a
+      // 390px phone, and "Beagle Skins / Enemy Skins / Themes" only fitted by
+      // shrinking the type below the display font's 14px floor (§02).
+      `<button type="button" class="shop-tab${beagleActive}" data-tab="beagle" role="tab" aria-selected="${tab === "beagle"}">${iconHtml(ICON.beagle)}Beagle</button>` +
+      `<button type="button" class="shop-tab${enemyActive}" data-tab="enemy" role="tab" aria-selected="${tab === "enemy"}">${iconHtml(ICON.enemies)}Enemies</button>` +
+      `<button type="button" class="shop-tab${themeActive}" data-tab="theme" role="tab" aria-selected="${tab === "theme"}">${iconHtml(ICON.themes)}Themes</button>` +
       "</div>"
     );
   }
@@ -402,9 +429,12 @@ export function attachShop(root: ParentNode, callbacks: ShopCallbacks = {}): Sho
     shopRoot.innerHTML =
       '<div class="shop-page">' +
       '<div class="shop-header">' +
-      '<button type="button" class="shop-back" id="shopBackBtn" aria-label="Back to menu">&larr; Menu</button>' +
+      // Icon-only, like the map's and the leaderboard's: the word cost a third
+      // of a 390px header to repeat what the arrow says, and the header needs
+      // that room for the balance chip.
+      `<button type="button" class="shop-back" id="shopBackBtn" aria-label="Back to menu">${iconHtml(ICON.back)}</button>` +
       '<div class="shop-title">Shop</div>' +
-      `<div class="shop-balance"><span aria-hidden="true">\u{1FA99}</span> ${getCoins()}</div>` +
+      `<div class="shop-balance">${plateHtml("coin", "inline")}${getCoins()}</div>` +
       "</div>" +
       '<div class="shop-stage">' +
       '<div class="shop-hero" aria-hidden="true"></div>' +

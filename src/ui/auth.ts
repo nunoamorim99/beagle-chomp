@@ -11,6 +11,7 @@
 // Follows the attachX(root, callbacks) => handle pattern; no `three` imports.
 
 import { escapeHtml } from "./escape";
+import { ICON, iconHtml } from "./icons";
 import { signup, login, recover, type AuthResponse } from "../net/endpoints";
 import { setToken, ApiError } from "../net/api";
 import { setProfileCache } from "../game/profileCache";
@@ -262,7 +263,9 @@ export function attachAuthGate(callbacks: AuthGateCallbacks): AuthGateHandle {
   }
 
   function errorHtml(): string {
-    return error ? `<p class="auth-error" role="alert">${escapeHtml(error)}</p>` : "";
+    return error
+      ? `<p class="auth-error" role="alert">${iconHtml(ICON.error)}${escapeHtml(error)}</p>`
+      : "";
   }
 
   // --- wiring ---------------------------------------------------------------

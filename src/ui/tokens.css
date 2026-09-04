@@ -1,0 +1,343 @@
+/* ======================================================================
+   BEAGLE CHOMP — DESIGN SYSTEM TOKENS
+   Source of truth: "Beagle Chomp Design System.dc.html" (Claude Design).
+
+   The one idea behind every value here: TOON BOARDS, NOT GLASS PANELS.
+   The game renders through a 3-step cel ramp (src/render/toon.ts) — flat
+   fills, banded light, dark contact edges. The 2D layer used to do the
+   opposite (translucent grey glass + hairline borders, the vocabulary of a
+   settings app), so chrome read as something laid ON the game rather than
+   part of it. Every token below is either lifted straight from the 3D world
+   (config.ts / themes.ts colours) or derived from it.
+
+   Three rules the tokens encode:
+     1. OUTLINE EVERYTHING. A 3px --bc-outline ties every 2D element to the
+        toon meshes behind it, and guarantees contrast on sky, hedge and soil
+        alike — no blur needed.
+     2. GIVE IT DEPTH. Raised things carry a thick BOTTOM border and press
+        into it. No drop shadows, no backdrop-filter: both cost a full-screen
+        composite over a live WebGL canvas, and neither reads as physical.
+     3. BORROW THE WORLD'S COLOURS, so the interface reads as part of the
+        garden rather than as OS chrome.
+
+   Nothing in this file selects a component. It is values plus the two
+   primitives (.bc-i, .bc-plate) that every screen shares.
+   ====================================================================== */
+
+/* ======================================================================
+   THE FACES — SELF-HOSTED, and that is not an optimisation.
+
+   These came from the Google Fonts CDN first, and the failure was reported
+   from a real screen: the type fell back to the system sans, the level-map
+   stones showed tofu boxes, and every icon rendered its own LIGATURE NAME —
+   buttons reading "arrow_back Menu" and "play_arrow Play". One blocked
+   request to a third party took the whole visual language with it.
+
+   Three reasons it has to be local, in order of weight:
+
+     1. THIS IS A PWA. It precaches its shell to run offline, and the rest of
+        the project already refuses external assets on exactly that ground —
+        wall and floor textures are drawn to a canvas at runtime, every sound
+        is synthesised, there are no glTF files. Type and icons were the only
+        thing left phoning out, and they were doing it on the boot path.
+     2. THE ICON FAILURE MODE IS UNIQUELY BAD. An icon element carries its
+        ligature name as its text, so a missing font does not degrade to a
+        blank box — it prints the word. No `font-display` value avoids this;
+        `block` only delays it.
+     3. IT IS A THIRD PARTY IN THE CRITICAL PATH. Ad blockers, privacy
+        settings, enterprise proxies and captive portals all break
+        fonts.googleapis.com, and none of them are misconfiguration.
+
+   The cost is 108 KiB, and only because everything is SUBSET:
+     - latin only (usernames are [A-Za-z0-9_-] and every string is English);
+     - Baloo 2 and Quicksand are variable, so ONE file covers each family's
+       whole weight range — the CDN served the same bytes for every weight;
+     - Material Symbols is cut to the 46 icons `src/ui/icons.ts` actually
+       names, which is 8.9 KiB against ~3 MB for the full family.
+
+   ADDING AN ICON MEANS RE-CUTTING THE SUBSET. A name that is not in the file
+   renders as that name in plain text, exactly as above. Refetch with:
+     https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded
+       :opsz,wght,FILL,GRAD@24,700,1,0&icon_names=<comma-separated>&display=block
+   using a desktop-Chrome User-Agent (or Google serves TTF, not woff2), and
+   take the one woff2 it points at. The name list is every value in ICON
+   (src/ui/icons.ts) — which is ALSO the complete list, because nothing
+   addresses this font any other way.
+
+   ALWAYS ADDRESS A GLYPH BY LIGATURE NAME, NEVER BY CODEPOINT. The subsetter
+   does not preserve Material Symbols' original private-use codepoints: cutting
+   to 46 icons kept U+E668 (check) working and broke U+E899 (lock), which came
+   out as a tofu box. Ligatures survive subsetting by construction, and they
+   resolve inside SVG <text> as well as in HTML — both measured, after
+   levelMap.ts had been written the other way round on a wrong assumption.
+
+   Paths are RELATIVE on purpose: Vite then hashes these files, emits them
+   into assets/, and rewrites the URLs for `base: "./"`. Dropping them in
+   public/ would need an absolute /fonts/ URL that a subpath deploy breaks,
+   and would skip the content hash. `woff2` is already in the PWA's
+   globPatterns (vite.config.ts), so they precache with everything else.
+   ====================================================================== */
+
+@font-face{
+  font-family:'Baloo 2';
+  font-style:normal;
+  /* A variable face: one file, the whole 400-800 range. The system only ever
+     asks for 700 and 800 (§02: "Weight 700-800 only"). */
+  font-weight:400 800;
+  font-display:swap;
+  src:url("./fonts/baloo2.woff2") format("woff2");
+}
+@font-face{
+  font-family:Quicksand;
+  font-style:normal;
+  font-weight:300 700;
+  font-display:swap;
+  src:url("./fonts/quicksand.woff2") format("woff2");
+}
+/* DM Mono is NOT variable — two real weights, two real files. */
+@font-face{
+  font-family:'DM Mono';
+  font-style:normal;
+  font-weight:400;
+  font-display:swap;
+  src:url("./fonts/dmmono-400.woff2") format("woff2");
+}
+@font-face{
+  font-family:'DM Mono';
+  font-style:normal;
+  font-weight:500;
+  font-display:swap;
+  src:url("./fonts/dmmono-500.woff2") format("woff2");
+}
+@font-face{
+  font-family:'Material Symbols Rounded';
+  font-style:normal;
+  font-weight:400 700;
+  /* `block`, not `swap`: there is no acceptable fallback rendering for an
+     element whose text is "play_arrow". Blocking shows nothing for a moment;
+     swapping shows the word. Now that the file is local and 8.9 KiB, the
+     block period is imperceptible. */
+  font-display:block;
+  src:url("./fonts/material-symbols-rounded-subset.woff2") format("woff2");
+}
+
+:root{
+  /* ---- World palette — already on screen in 3D -------------------- */
+  --bc-sky:#9ECBE8;
+  --bc-hedge:#3F8F3A;
+  --bc-soil:#6B4A2F;
+  --bc-biscuit:#F0CF8E;
+  --bc-tan:#D6934F;
+  --bc-frightened:#2537C8;
+
+  /* ---- Interface roles ------------------------------------------- */
+  /* Amber is THE accent and marks the single next action on a screen. If two
+     things on one screen are amber, one of them is wrong. */
+  --bc-amber:#E8A23D;
+  --bc-amber-edge:#B8761F;
+  --bc-amber-ink:#3A2205;      /* text/glyph ON amber */
+
+  --bc-go:#3F8F3A;             /* confirm · owned · equipped */
+  --bc-go-edge:#2A6427;
+
+  --bc-bark:#2F2318;           /* the board surface */
+  --bc-bark-edge:#1B120A;
+
+  --bc-outline:#1B1512;        /* the ink line around everything */
+  --bc-cream:#FFF7E8;          /* the ink we write WITH */
+
+  --bc-rose:#E0577A;           /* danger — account deletion only */
+  --bc-rose-edge:#A93A56;
+
+  /* Deep ink. The inset fill (fields, tab tracks, plate wells) and the base
+     of the scrim. Anything on this is recessed, never pressable. */
+  --bc-ink:#17130E;
+
+  /* Secondary raised surface — solid, never a hairline outline over the sky. */
+  --bc-wood:#4A3928;
+  --bc-wood-edge:#23180E;
+
+  /* An item card sits between bark and wood, so a rail of them reads as a row
+     of objects ON the board rather than holes in it. */
+  --bc-card:#3B2C1E;
+
+  /* Disabled keeps its edge — a flat button reads as missing, not as off. */
+  --bc-off:#3A3028;
+  --bc-off-edge:#221A14;
+
+  /* ---- Text ------------------------------------------------------- */
+  --bc-text:var(--bc-cream);
+  --bc-text-soft:rgba(255,247,232,.74);
+  --bc-text-mute:rgba(255,247,232,.6);
+  --bc-text-faint:rgba(255,247,232,.4);
+  --bc-hairline:rgba(255,247,232,.12);
+
+  /* ---- Enemy hues — reserved for STATE, never for chrome ---------- */
+  --bc-enemy-rose:#E0577A;
+  --bc-enemy-teal:#53C7C0;
+  --bc-enemy-amber:#E8A23D;
+  --bc-enemy-violet:#9B6BD6;
+  --bc-enemy-green:#6FB84A;
+  /* The last-3-seconds warning colour, shared by every timed readout. */
+  --bc-expiring:#E8724F;
+  --bc-expiring-ink:#FFD9CC;
+
+  /* ---- The scrim -------------------------------------------------- */
+  /* 86% ink over the live 3D, used only where the scene must stay visible:
+     HUD chips, the shop info bar, the tutorial card. The old 50%-dark chip on
+     a bright sky was the readability weak point this replaces (§08 of the
+     design system) — solid ink plus an outline holds at any scene brightness. */
+  --bc-scrim:rgba(23,19,14,.86);
+  /* The scrim, for things that are PRESSED rather than read.
+     A raised control needs its bottom edge to read as an edge, and the plain
+     scrim is so close to the outline colour that a 7px --bc-outline border on
+     it disappeared — the D-pad keys and the HUD chrome came out as flat dark
+     squares with no depth at all. Lifting the face a few steps is enough for
+     the ink edge to separate, and it stays dark enough to hold white text and
+     glyphs over both sky and hedge. */
+  --bc-scrim-raised:rgba(48,40,30,.93);
+
+  /* ---- Geometry --------------------------------------------------- */
+  --bc-line:3px;               /* the outline weight. Nothing thinner. */
+  --bc-r-pill:999px;
+  --bc-r-board:20px;
+  --bc-r-card:16px;
+  --bc-r-plate:14px;
+  --bc-r-chip:12px;
+
+  /* Bottom-edge depths (TOTAL border-bottom-width, the 3px outline included).
+     Pressing removes the extra and moves the face down by exactly the same
+     amount, so a pressed thing occupies an identical box — the layout never
+     shifts under a thumb. */
+  --bc-edge-btn:9px;    --bc-sink-btn:6px;
+  --bc-edge-board:8px;
+  --bc-edge-card:7px;   --bc-sink-card:4px;
+  --bc-edge-plate:6px;  --bc-sink-plate:3px;
+  --bc-edge-chip:4px;
+
+  /* 4-point spacing scale. */
+  --bc-s1:4px; --bc-s2:8px; --bc-s3:12px; --bc-s4:16px; --bc-s5:24px; --bc-s6:32px;
+  /* Screen gutter on a phone, before the safe-area inset is added. */
+  --bc-gutter:14px;
+
+  /* Touch targets: 44 minimum, 56 for anything pressed mid-run, 60 per D-pad
+     key. */
+  --bc-touch:44px;
+  --bc-touch-run:56px;
+  --bc-touch-dpad:60px;
+
+  /* ---- Type ------------------------------------------------------- */
+  /* Display: rounded terminals that match the toon geometry. Weight 700-800
+     only, and never below 14px. */
+  --bc-font-display:'Baloo 2',ui-rounded,'Segoe UI',system-ui,sans-serif;
+  /* Body: everything a player reads in sentences. */
+  --bc-font-body:Quicksand,ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif;
+  /* Numeric: anything that ticks or must line up in a column. */
+  --bc-font-mono:'DM Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+
+  --bc-t-hero:44px;     /* /800 */
+  --bc-t-screen:24px;   /* /700 */
+  --bc-t-card:17px;     /* /700 */
+  --bc-t-body:15px;     /* /500 */
+  --bc-t-label:11px;    /* /.2em caps, mono */
+  --bc-t-readout:30px;  /* /800, tabular */
+
+  /* ---- Motion ----------------------------------------------------- */
+  /* Short, springy, always reducible. */
+  --bc-d-press:90ms;
+  --bc-d-state:140ms;
+  --bc-d-entry:220ms;
+  --bc-d-screen:320ms;
+  --bc-d-count:600ms;
+  --bc-ease:cubic-bezier(.2,.7,.3,1);
+  /* The small overshoot on card/sheet entry. */
+  --bc-ease-back:cubic-bezier(.2,1.5,.4,1);
+
+  /* ---- Compatibility ---------------------------------------------- */
+  /* The pre-existing names, repointed at the new palette, so nothing that
+     still reads --accent/--ink/--danger had to change in the same pass as the
+     visual rebuild. */
+  --bg:var(--bc-ink);
+  --ink:var(--bc-cream);
+  --muted:var(--bc-text-mute);
+  --accent:var(--bc-amber);
+  --danger:var(--bc-rose);
+}
+
+/* ======================================================================
+   ICONS — Material Symbols Rounded, FILL 1, wght 700.
+
+   Emoji left the interface at the mercy of each platform's font: the coin and
+   the dog rendered differently on iOS, Android and Chrome, and none of them
+   matched a toon beagle. One filled, rounded, heavy family replaces every
+   chrome glyph.
+
+   `.bc-i` carries the ligature name as its text content, so
+   `<i class="bc-i">play_arrow</i>` is the whole API (see src/ui/icons.ts).
+   font-size is deliberately NOT set — an icon takes the size of whatever it
+   sits in, which is what keeps it optically matched to the text beside it.
+   ====================================================================== */
+.bc-i{
+  font-family:'Material Symbols Rounded';
+  font-weight:normal;
+  font-style:normal;
+  line-height:1;
+  letter-spacing:normal;
+  text-transform:none;
+  white-space:nowrap;
+  word-wrap:normal;
+  direction:ltr;
+  display:inline-block;
+  /* The ligature machinery. Without these the element shows the literal word
+     "play_arrow" until (and if) the font resolves it. */
+  font-feature-settings:'liga';
+  -webkit-font-feature-settings:'liga';
+  -webkit-font-smoothing:antialiased;
+  font-variation-settings:'FILL' 1,'wght' 700,'GRAD' 0,'opsz' 24;
+  /* An icon is never the accessible name — every call site pairs it with real
+     text or an aria-label, and marks the icon aria-hidden. */
+  user-select:none;
+}
+
+/* ICON PLATES — game objects, not bullet points.
+
+   A coin, a biscuit, a bone or a life is a THING YOU COLLECT in this game,
+   and it exists in 3D two inches away. Drawn as a lit coloured square with
+   the same ink outline and bottom edge as everything else raised, it reads as
+   that thing; drawn as a glyph in a text run, it reads as a list marker.
+   Fill is the object's own 3D colour and the glyph takes the darkest tone of
+   that same hue, so a plate never needs a second outline inside it. */
+.bc-plate{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  flex:0 0 auto;
+  border:var(--bc-line) solid var(--bc-outline);
+  border-bottom-width:var(--bc-edge-plate);
+  border-radius:var(--bc-r-plate);
+  /* 52px on menus, 34-38px in the HUD, 26px inline. This is the menu size;
+     the two modifiers below are the other framings. */
+  width:52px;height:52px;
+  font-size:28px;
+}
+.bc-plate--hud{width:38px;height:38px;border-radius:11px;
+  border-bottom-width:2px;font-size:22px}
+.bc-plate--inline{width:26px;height:26px;border-radius:9px;
+  border-bottom-width:2px;font-size:16px}
+
+/* One class per game object. The glyph colour is the darkest tone OF THAT
+   HUE, never a generic dark — a #4A2E08 glyph on amber is a struck coin,
+   black on amber is a sticker. */
+.bc-plate--coin{background:var(--bc-amber);color:#4A2E08}
+.bc-plate--biscuit{background:var(--bc-biscuit);color:var(--bc-soil)}
+.bc-plate--bone{background:#F0EFEC;color:var(--bc-soil)}
+.bc-plate--life{background:var(--bc-rose);color:var(--bc-cream)}
+.bc-plate--fruit{background:var(--bc-enemy-green);color:#17300C}
+.bc-plate--power{background:var(--bc-enemy-violet);color:var(--bc-cream)}
+.bc-plate--trophy{background:var(--bc-amber);color:#4A2E08}
+
+
+/* Visually hidden, still announced. Used where an icon plate IS the label on
+   screen (the HUD wallet) but a screen reader still needs the word. */
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;
+  overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}

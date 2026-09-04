@@ -142,15 +142,23 @@ async function main(): Promise<void> {
 
     ok("the leaderboard opens from the menu", await alice.page.isVisible("#leaderboard"));
 
-    const header = (await alice.page.textContent(".lb-header")) ?? "";
-    // Otherwise a player who just cleared C8 would wonder where their score went.
-    ok("it says CLASSIC mode explicitly", /classic/i.test(header), header.replace(/\s+/g, " ").trim());
+    // The screen, not the header: the redesigned header is a single centred
+    // row (back / title / spacer) and the caption moved to its own line under
+    // the tabs, beside the control it describes. What matters is unchanged —
+    // the screen must say CLASSIC out loud, or a player who just cleared C8
+    // would wonder where that score went.
+    const screenText = (await alice.page.textContent(".lb-sheet")) ?? "";
+    ok("it says CLASSIC mode explicitly", /classic/i.test(screenText), screenText.replace(/\s+/g, " ").trim().slice(0, 90));
 
     await alice.page.waitForTimeout(1200);
-    const emptyBody = (await alice.page.textContent(".lb-body")) ?? "";
-    ok("an unranked player is told how to get on the board", /play a classic run/i.test(emptyBody), emptyBody.trim().slice(0, 80));
+    // Read the player's OWN standing card, not the whole body. The body only
+    // shows the how-to-get-on-the-board line when the board is completely
+    // empty, which a SHARED board rarely is — any other account's score made
+    // this fail regardless of whether the unranked player was told anything.
+    const standing = (await alice.page.textContent(".lb-mine")) ?? "";
+    ok("an unranked player is told how to get on the board", /play a run|play a classic run/i.test(standing), standing.replace(/\s+/g, " ").trim().slice(0, 80));
 
-    await alice.page.click(".lb-header button");
+    await alice.page.click(".lb-back");
     await alice.page.waitForSelector("#leaderboard.hidden", { state: "attached" });
     ok("it closes back to the menu", await alice.page.isVisible("#mainMenu"));
 
@@ -165,8 +173,16 @@ async function main(): Promise<void> {
     const rows = await alice.page.locator(".lb-row").count();
     ok("the board has a row", rows >= 1, rows);
     ok("alice is listed", (await alice.page.textContent(".lb-list"))?.includes(alice.username) === true);
+    // Format the expectation the way the APP formats it. Plain
+    // toLocaleString() leaves 4-digit numbers ungrouped in several locales
+    // (pt-PT among them), while leaderboard.ts uses useGrouping:"always" for
+    // exactly that reason — so the two disagreed on "4150" vs "4 150" and
+    // this assertion failed on a correct board.
     const aliceFormatted = await alice.page.evaluate(
-      (n) => n.toLocaleString(),
+      (n) =>
+        new Intl.NumberFormat(undefined, {
+          useGrouping: "always",
+        } as unknown as Intl.NumberFormatOptions).format(n),
       aliceScore,
     );
     ok(
@@ -174,10 +190,23 @@ async function main(): Promise<void> {
       (await alice.page.textContent(".lb-list"))?.includes(aliceFormatted) === true,
       `${aliceScore} -> ${aliceFormatted}`,
     );
-    ok("rank 1 gets a medal", (await alice.page.textContent(".lb-rank")) === "🥇");
+    // The podium was three medal EMOJI, then one Material Symbols medal in
+    // three tints, and is now a numbered PLATE tinted gold/silver/bronze
+    // (.lb-rank-N in style.css). At row size three medals were three
+    // near-identical discs and the reader still had to count rows; a plate
+    // says the place outright. So the check is "first place is marked, and
+    // it shows its own number".
+    ok(
+      "rank 1 is marked as first",
+      (await alice.page.locator(".lb-rank.lb-rank-1").count()) === 1,
+    );
+    ok(
+      "...and the plate carries the number",
+      (await alice.page.textContent(".lb-rank"))?.trim() === "1",
+    );
     ok("her own row is highlighted", (await alice.page.locator(".lb-row-me").count()) === 1);
 
-    await alice.page.click(".lb-header button");
+    await alice.page.click(".lb-back");
     await alice.page.waitForSelector("#leaderboard.hidden", { state: "attached" });
 
     section("It is SHARED — a second player sees the first");
@@ -194,17 +223,39 @@ async function main(): Promise<void> {
     ok("bob sees ALICE's score too", boardText.includes(alice.username), boardText.replace(/\s+/g, " ").slice(0, 120));
     ok("bob sees his own", boardText.includes(bob.username));
 
-    // Ordering is the point of a leaderboard.
+    // Ordering is the point of a leaderboard — but this board is SHARED, which
+    // is the very thing this section exists to prove, so it can hold other
+    // players' scores too. Assert the RELATIVE order of the two accounts this
+    // run created; absolute positions only held on an empty database.
     const names = await bob.page.locator(".lb-name").allTextContents();
-    ok("the higher score ranks first", names[0] === bob.username, names.join(" | "));
-    ok("the lower score ranks second", names[1] === alice.username, names.join(" | "));
+    const bobAt = names.indexOf(bob.username);
+    const aliceAt = names.indexOf(alice.username);
+    ok(
+      "both players are on the board",
+      bobAt >= 0 && aliceAt >= 0,
+      names.join(" | "),
+    );
+    ok(
+      "the higher score ranks above the lower",
+      bobAt >= 0 && aliceAt >= 0 && bobAt < aliceAt,
+      `bob@${bobAt} alice@${aliceAt} — ${names.join(" | ")}`,
+    );
 
+    // Same two fixes as the ranking check above: format the expectation the way
+    // the app does (useGrouping:"always"), and look up BOB's row rather than
+    // assuming he is first on a shared board.
     const scores = await bob.page.locator(".lb-score").allTextContents();
-    const bobFormatted = await bob.page.evaluate((n) => n.toLocaleString(), bobScore);
+    const bobFormatted = await bob.page.evaluate(
+      (n) =>
+        new Intl.NumberFormat(undefined, {
+          useGrouping: "always",
+        } as unknown as Intl.NumberFormatOptions).format(n),
+      bobScore,
+    );
     ok(
       "scores are rendered with thousands separators",
-      scores[0] === bobFormatted,
-      `${scores.join(" | ")} (expected ${bobFormatted})`,
+      bobAt >= 0 && scores[bobAt] === bobFormatted,
+      `${scores.join(" | ")} (expected ${bobFormatted} at index ${bobAt})`,
     );
 
     section("Other players' names are TEXT, never markup");

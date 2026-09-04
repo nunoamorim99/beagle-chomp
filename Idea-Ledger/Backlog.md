@@ -19,7 +19,7 @@ Living backlog of ideas. Two purposes:
 _(empty — nothing to triage)_
 
 ## Backlog (open ideas)
-> New registered ideas go here. Next free ID: IDEA-048
+> New registered ideas go here. Next free ID: IDEA-049
 
 ### IDEA-028 — Challenge twist: moving walls / maze changes mid-level 💡
 - **Priority:** 🟢
@@ -32,9 +32,58 @@ _(empty — nothing to triage)_
   exit, and never crushing/trapping an entity mid-move; the render layer needs walls that animate
   in/out. Would slot into `challenges.ts` as a new modifier level (a C9, or replacing a mid-ladder
   level) and appear on the level map ([[IDEA-014]]).
+- **v2** (2026-09-04) — the SCREENS, from the companion design file "Redesigned
+  Screens.dc.html". v1 built the component system; this applies it to the six
+  screens and changes their structure where the design asks for it. The menu
+  carousel is deleted (Play becomes a full-width block, four destinations
+  become a fixed 4-up row that fits without scrolling, `menuCarousel.ts` gone);
+  `.hud` becomes two columns with the chrome row inside the right one instead
+  of fixed at a measured offset; game over becomes a result BOARD with maps
+  cleared, coins earned and the gap to the personal best; the challenge map
+  gains a progress bar, padlock-faced locked stones and a "Play stone N"
+  button; the leaderboard gets numbered gold/silver/bronze rank plates; and
+  shop items gain a required `blurb`, with the price moved onto the action
+  button to make room for it. Two findings worth keeping: a `<br>` contributes
+  no whitespace to `textContent`, so the two-line menu title was announced as
+  "BeagleChomp" until a real space went before the break; and the fonts had to
+  be SELF-HOSTED and subset (108 KiB) after a blocked Google Fonts request on
+  Nuno’s machine printed every icon’s ligature name on its own button
+  ("arrow_back Menu") — which also exposed that Google’s icon subsetter does
+  not preserve the private-use CODEPOINTS, so glyphs are addressed by ligature
+  everywhere, SVG included. `test-menu-ui.ts` rewritten for the tile row;
+  `test-leaderboard-ui.ts` for the rank plates.
 - **Dependencies:** —
 
 ## In progress 🔨
+
+### IDEA-048 — Toon boards, not glass panels: a real design system for the 2D layer 🔨
+- **Priority:** 🔴
+- **Area:** ui
+- **Registered:** 2026-09-04
+- **Description:** the game renders cel-shaded — flat fills, banded light, dark contact edges —
+  and the interface did the opposite: translucent grey glass with hairline borders, the
+  vocabulary of a settings app. Chrome read as something laid ON the game rather than part of
+  it. Designed in Claude Design (`Beagle Chomp Design System.dc.html`, 10 sections: colour,
+  type, icons, surfaces, buttons, controls, HUD, readability, motion, sound) and implemented
+  across the whole 2D layer.
+- **Notes:** built on branch `rework-interface`. New `src/ui/tokens.css` (palette lifted from
+  `config.ts`/`themes.ts`, geometry, type, motion) with every component in `style.css` rebuilt
+  on it; new `src/ui/icons.ts` retires every emoji in favour of Material Symbols Rounded plus
+  icon PLATES for game objects; new interface sound layer on the existing synth (`sound.ui` —
+  one wooden tap for every press via a single delegated listener, a fourth up for selections,
+  purchase/equip/unlocked/error/screen cues, a menu bed, and a 6 dB duck while a run is on).
+  Four findings are written into the code and CLAUDE.md because each was a real failure caught
+  in a render, not a preference: `backdrop-filter` is gone everywhere (a full-screen composite
+  per frame over a live WebGL canvas); dimming must be PAINT and never `opacity`, since a
+  translucent shop card over the 3D turntable picks up the sky and the whole rail turns
+  blue-grey; a full-bleed BROWN backdrop leaves a bark board’s ink outline sitting between two
+  browns and the line vanishes, so the identity screens ground on night-garden green-black; and
+  the §09 idle bob animates the Play card’s ICON rather than the card, because bobbing the card
+  made the most-pressed control a permanently moving target and hung every Playwright click on
+  `#playBtn`. Verified by screenshotting every screen against a live API — auth, recovery,
+  menu, shop, challenge map, leaderboard, account, tutorial and a real run with the HUD,
+  power-up tray and D-pad on screen.
+- **Dependencies:** —
 
 ### IDEA-047 — The beagle, rebuilt from a real reference 🔨
 - **Priority:** 🔴

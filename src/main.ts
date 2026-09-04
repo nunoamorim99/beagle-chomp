@@ -28,7 +28,6 @@ import { attachRecoveryCode } from "./ui/recoveryCode";
 import { attachPrivacy } from "./ui/privacy";
 import { attachProfile } from "./ui/profile";
 import { attachLeaderboard } from "./ui/leaderboard";
-import { attachMenuCarousel } from "./ui/menuCarousel";
 import { me } from "./net/endpoints";
 import {
   getToken,
@@ -169,10 +168,6 @@ async function startApp(): Promise<void> {
     { signal: sessionListeners.signal },
   );
 
-  // IDEA-036: arrow controls for the menu's destination rail. The rail itself
-  // is pure CSS scroll-snap, so this only adds mouse affordances on top.
-  const carousel = attachMenuCarousel();
-
   // IDEA-020: classic-mode scoreboard, opened from the menu.
   const leaderboard = attachLeaderboard();
   document.getElementById("menuLeaderboardBtn")?.addEventListener(
@@ -188,7 +183,6 @@ async function startApp(): Promise<void> {
     game.stop();
     profile.detach();
     leaderboard.detach();
-    carousel.detach();
     clearProfileCache();
     void startApp();
   });

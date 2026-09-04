@@ -3,7 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
-    <meta name="theme-color" content="#0b0b16" />
+    <!-- The design system's outline colour: the browser/OS chrome around an
+         installed PWA should be the same ink line that frames everything
+         inside it. -->
+    <meta name="theme-color" content="#1B1512" />
     <!-- The standard name first; Chrome deprecated the apple-prefixed one and
          warns about it in the console. The apple- version stays because older
          iOS Safari still only understands that spelling, and it is what makes
@@ -17,20 +20,80 @@
     <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png" />
     <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png" />
     <link rel="apple-touch-icon" href="./favicon-180.png" />
+
+    <!-- Design system §02 Typography + §03 Icons: Baloo 2 (display),
+         Quicksand (body), DM Mono (numeric) and Material Symbols Rounded.
+
+         THERE ARE DELIBERATELY NO FONT <link>s HERE. The faces are subset and
+         self-hosted, declared in src/ui/tokens.css and pulled in through the
+         stylesheet the app already loads — see that file's header for why
+         (short version: this is an offline-capable PWA, and a blocked CDN
+         request made every icon render its own ligature name, so buttons read
+         "arrow_back Menu"). Do not reintroduce a Google Fonts link. -->
+
     <title>Beagle Chomp</title>
   </head>
   <body>
     <canvas id="scene"></canvas>
 
+    <!-- Every HUD readout is a SCRIM CHIP (design system §07): 86% ink, 3px
+         outline, and an icon PLATE for the thing being counted. It replaces a
+         text-shadow halo, which was the previous answer to "this sits on a
+         bright sky half the time and on dark soil the other half" — a halo is
+         a compromise that is slightly wrong on both, while solid ink is simply
+         readable on either. §08 walks through that comparison.
+
+         The plates matter as much as the chips: a biscuit and a coin are
+         things you collect in the maze two inches away, so drawing them as
+         lit objects rather than as glyphs in a text run makes the score and
+         the wallet self-labelling. -->
     <div class="hud">
       <div class="hud-left">
-        <div class="stat"><div class="k">Score</div><div class="v" id="score">0</div></div>
-        <!-- IDEA-016/IDEA-017 coin wallet display: a compact pill under Score
-             so the Score/Map/Lives row keeps its original 3-way balance. -->
-        <div class="coin-stat"><span class="coin-icon" aria-hidden="true">🪙</span><span class="k">Coins</span><span class="v" id="coins">0</span></div>
+        <div class="hud-chip stat">
+          <span class="bc-plate bc-plate--biscuit bc-plate--hud" aria-hidden="true"><i class="bc-i">cookie</i></span>
+          <div><div class="k">Score</div><div class="v" id="score">0</div></div>
+        </div>
+        <!-- IDEA-016/IDEA-017 coin wallet. The plate IS the label now — a coin
+             is a thing the player picks up in the maze, so a word beside it was
+             saying the same thing twice in a corner with no room to spare. The
+             screen reader still gets one. -->
+        <div class="hud-chip stat coin-stat">
+          <span class="bc-plate bc-plate--coin bc-plate--hud" aria-hidden="true"><i class="bc-i">paid</i></span>
+          <span class="sr-only">Coins</span><span class="v" id="coins">0</span>
+        </div>
       </div>
-      <div class="stat" style="text-align:center"><div class="k">Map</div><div class="v" id="level">1</div></div>
-      <div class="stat" style="text-align:right"><div class="k">Lives</div><div class="lives v" id="lives">🐶🐶🐶</div></div>
+
+      <!-- The right COLUMN: map + lives on top, chrome underneath. The chrome
+           row used to be a separate fixed element parked at an absolute offset,
+           because .hud was a three-way space-between that a fourth child would
+           re-balance. The redesign makes .hud two columns instead, so the
+           buttons can simply live in the one they belong to and stay aligned
+           with the chips above them at any safe-area inset. -->
+      <div class="hud-right">
+        <div class="hud-row">
+          <!-- setLevel splits "Map 3" into the MAP eyebrow and the figure, and
+               shows "Bonus"/"C5" whole (see hud.ts) — so the chip never reads
+               "MAP Bonus". -->
+          <div class="hud-chip hud-chip--tight" id="levelChip">
+            <span class="k" id="levelLabel">Map</span><span class="v" id="level">1</span>
+          </div>
+          <!-- Hearts are written by hud.ts’s setLives (one per life, spent ones
+               dimmed rather than removed so the chip never resizes mid-run). -->
+          <div class="hud-chip hud-chip--tight lives" id="lives" role="img" aria-label="Lives"></div>
+        </div>
+        <div class="hud-buttons">
+          <!-- 44px squircles: big enough for a thumb mid-chase, small enough
+               that three of them sit under the map/lives row without widening
+               the column past it. -->
+          <button type="button" class="mute-btn" id="muteBtn" aria-label="Mute sound" aria-pressed="false"><i class="bc-i" aria-hidden="true">volume_up</i></button>
+          <!-- Pause. Replaced the old mid-run shop button: since IDEA-036 the
+               shop has its own place on the menu, so a shop shortcut here was
+               redundant — whereas the game had no way to pause at all. -->
+          <button type="button" class="pause-btn" id="pauseBtn" aria-label="Pause game"><i class="bc-i" aria-hidden="true">pause</i></button>
+          <!-- IDEA-021: abandons the run in progress and returns to the menu. -->
+          <button type="button" class="home-btn" id="homeBtn" aria-label="Back to menu"><i class="bc-i" aria-hidden="true">home</i></button>
+        </div>
+      </div>
     </div>
 
     <!-- IDEA-046: the active power-up tray. Nuno: "on the UI we should have a
@@ -43,21 +106,6 @@
          is held, so it costs no screen space in the common case. -->
     <div class="powerups" id="powerups" aria-live="polite" aria-label="Active power-ups"></div>
 
-    <!-- IDEA-036 v2: mute / shop / home, laid out as a HORIZONTAL row rather
-         than the old vertical stack down the right edge. The stack cost ~120px
-         of height and pushed the maze down — noticeable on a phone, and worse
-         with the D-pad (IDEA-038) taking the bottom of the screen.
-         Deliberately OUTSIDE .hud so its own flex layout can't disturb the
-         Score/Map/Lives space-between row. -->
-    <div class="hud-buttons">
-      <button type="button" class="mute-btn" id="muteBtn" aria-label="Mute sound" aria-pressed="false">🔊</button>
-      <!-- Pause. Replaced the old mid-run shop button: since IDEA-036 the shop
-           has its own place on the menu, so a shop shortcut here was redundant
-           — whereas the game had no way to pause at all. -->
-      <button type="button" class="pause-btn" id="pauseBtn" aria-label="Pause game">⏸</button>
-      <!-- IDEA-021: abandons the run in progress and returns to the main menu. -->
-      <button type="button" class="home-btn" id="homeBtn" aria-label="Back to menu">🏠</button>
-    </div>
 
     <div class="center hidden" id="center"></div>
 
@@ -66,55 +114,71 @@
          text/buttons — the menu screen IS the 3D scene, with this UI floating
          over it. Shown/hidden by src/game/game.ts's showMenu(). -->
     <div class="hidden" id="mainMenu">
-      <!-- IDEA-036: the "three.js · maze chase" eyebrow was removed — a v2.0
-           framing device that had outlived its purpose. -->
-      <div class="menu-top">
-        <h1>Beagle Chomp</h1>
-        <p class="coin-line" id="menuCoinLine">&#x1FA99; 0 coins</p>
+      <!-- A thin top bar: wallet on the left, sound on the right. The wallet
+           moved up here from under the title, so the title block is nothing
+           but the game's name, and the coin count sits where a player already
+           looks for a currency. -->
+      <div class="menu-bar">
+        <p class="coin-line" id="menuCoinLine" role="img" aria-label="Coins">
+          <span class="bc-plate bc-plate--coin" aria-hidden="true"><i class="bc-i">paid</i></span>
+          <span id="menuCoinCount">0</span>
+        </p>
+        <!-- The menu's own mute control. attachMuteButton wires EVERY
+             .mute-btn on the page and keeps them in sync, so this and the
+             in-run one are one switch with two placements. -->
+        <button type="button" class="mute-btn" id="menuMuteBtn" aria-label="Mute sound" aria-pressed="false"><i class="bc-i" aria-hidden="true">volume_up</i></button>
       </div>
+
+      <!-- IDEA-036: the "three.js · maze chase" eyebrow was removed — a v2.0
+           framing device that had outlived its purpose.
+           Two lines, so the name can be set big enough to carry a 6px ink
+           stroke and still leave the middle of the frame to the beagle. -->
+      <div class="menu-top">
+        <!-- The space before the <br> is load-bearing, not a typo: a <br>
+             contributes NO whitespace to textContent, so "Beagle<br>Chomp" has
+             the accessible name "BeagleChomp" and is announced as one word.
+             The space fixes the name and collapses to nothing visually, since
+             it falls at the end of a line. -->
+        <h1>Beagle <br />Chomp</h1>
+      </div>
+
+      <!-- The destination row REPLACES the swipe carousel (IDEA-036 v3).
+           Four tiles fit a 390px screen without scrolling, so the rail, its
+           arrows and its edge-fade mask are all gone — the rail only ever
+           existed because five items did not fit, and Play is no longer one
+           of them. Play is its own full-width block above them: it is the one
+           thing most players press, and it should not be a card among cards. -->
       <div class="menu-bottom">
-        <!-- IDEA-036 v3: Play is now the FIRST card of the carousel rather
-             than a separate button above it. One row of destinations reads
-             more cleanly than a button plus a rail, and Play keeps its
-             primacy by sitting first and carrying the accent colour. -->
-        <div class="menu-carousel">
-          <button type="button" class="carousel-arrow" id="carouselPrev"
-                  aria-label="Previous option">&#8249;</button>
-
-          <div class="carousel-viewport">
-            <div class="carousel-track" id="carouselTrack">
-              <button type="button" id="playBtn" class="carousel-item carousel-play">
-                <span class="carousel-icon" aria-hidden="true">&#9654;</span>
-                <span class="carousel-label">Play</span>
-              </button>
-              <!-- IDEA-013 Challenge Mode: 8 fixed levels with per-level
-                   speed/extra-ghost/short-fright twists. -->
-              <button type="button" id="challengeBtn" class="carousel-item">
-                <span class="carousel-icon" aria-hidden="true">&#127942;</span>
-                <span class="carousel-label">Challenge</span>
-              </button>
-              <button type="button" id="menuShopBtn" class="carousel-item">
-                <span class="carousel-icon" aria-hidden="true">&#128722;</span>
-                <span class="carousel-label">Shop</span>
-              </button>
-              <!-- IDEA-020: the shared scoreboard (classic mode only). -->
-              <button type="button" id="menuLeaderboardBtn" class="carousel-item">
-                <span class="carousel-icon" aria-hidden="true">&#128202;</span>
-                <span class="carousel-label">Leaderboard</span>
-              </button>
-              <!-- IDEA-019: account screen (stats, sign out, delete account).
-                   Both are wired in main.ts rather than game.ts — the game
-                   layer has no concept of accounts, and keeping it that way
-                   means the auth work never reaches into the game loop. -->
-              <button type="button" id="menuProfileBtn" class="carousel-item">
-                <span class="carousel-icon" aria-hidden="true">&#128100;</span>
-                <span class="carousel-label">Account</span>
-              </button>
-            </div>
-          </div>
-
-          <button type="button" class="carousel-arrow" id="carouselNext"
-                  aria-label="Next option">&#8250;</button>
+        <button type="button" id="playBtn" class="menu-play">
+          <span class="bc-i" aria-hidden="true">play_arrow</span>Play
+        </button>
+        <div class="menu-tiles">
+          <!-- IDEA-013 Challenge Mode: 8 fixed levels with per-level
+               speed/extra-ghost/short-fright twists. -->
+          <button type="button" id="challengeBtn" class="menu-tile menu-tile--challenge">
+            <span class="menu-tile-icon bc-i" aria-hidden="true">trophy</span>
+            <span class="menu-tile-label">Challenge</span>
+          </button>
+          <button type="button" id="menuShopBtn" class="menu-tile menu-tile--shop">
+            <span class="menu-tile-icon bc-i" aria-hidden="true">storefront</span>
+            <span class="menu-tile-label">Shop</span>
+          </button>
+          <!-- IDEA-020: the shared scoreboard (classic mode only). "Board"
+               rather than "Leaderboard": the word has to fit a quarter of a
+               390px screen without dropping below the display font's 12px
+               floor, and the icon already says which board it is. -->
+          <button type="button" id="menuLeaderboardBtn" class="menu-tile menu-tile--board">
+            <span class="menu-tile-icon bc-i" aria-hidden="true">leaderboard</span>
+            <span class="menu-tile-label">Board</span>
+          </button>
+          <!-- IDEA-019: account screen (stats, sign out, delete account).
+               Both are wired in main.ts rather than game.ts — the game
+               layer has no concept of accounts, and keeping it that way
+               means the auth work never reaches into the game loop. -->
+          <button type="button" id="menuProfileBtn" class="menu-tile menu-tile--account">
+            <span class="menu-tile-icon bc-i" aria-hidden="true">person</span>
+            <span class="menu-tile-label">Account</span>
+          </button>
         </div>
       </div>
     </div>

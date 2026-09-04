@@ -122,8 +122,11 @@ export default defineConfig({
         name: "Beagle Chomp",
         short_name: "BeagleChomp",
         description: "Guide the beagle, munch the biscuits, dodge the ghosts.",
-        theme_color: "#0b0b16",
-        background_color: "#0b0b16",
+        // The design system’s outline colour, matching index.html’s
+        // theme-color meta — the OS chrome around an installed Beagle Chomp
+        // should be the same ink line that frames everything inside it.
+        theme_color: "#1B1512",
+        background_color: "#151A16",
         display: "standalone",
         orientation: "any",
         start_url: "./",

@@ -23,6 +23,7 @@
 // ui/shop.ts and ui/levelMap.ts. Zero `three` imports; pure DOM.
 
 import { escapeHtml } from "./escape";
+import { ICON, iconHtml } from "./icons";
 
 export interface RecoveryCodeHandle {
   /** Show the screen. Resolves only when the player explicitly confirms. */
@@ -68,12 +69,12 @@ export function attachRecoveryCode(): RecoveryCodeHandle {
 
     root.innerHTML = `
       <div class="recovery-sheet" role="dialog" aria-modal="true" aria-labelledby="recoveryHeading">
-        <h1 id="recoveryHeading">🔑 ${heading}</h1>
+        <h1 id="recoveryHeading">${iconHtml(ICON.key)}${heading}</h1>
         <p class="recovery-intro">${intro}</p>
 
         <div class="recovery-code-box">
           <code id="recoveryCodeValue">${escapeHtml(code)}</code>
-          <button type="button" id="recoveryCopyBtn" class="recovery-copy">Copy</button>
+          <button type="button" id="recoveryCopyBtn" class="recovery-copy">${iconHtml(ICON.copy)}Copy</button>
         </div>
 
         <div class="recovery-warning">
@@ -113,15 +114,19 @@ export function attachRecoveryCode(): RecoveryCodeHandle {
       void navigator.clipboard
         ?.writeText(code)
         .then(() => {
-          copyBtn.textContent = "Copied ✓";
-          setTimeout(() => (copyBtn.textContent = "Copy"), 2000);
+          copyBtn.innerHTML = `${iconHtml(ICON.check)}Copied`;
+          setTimeout(() => {
+            copyBtn.innerHTML = `${iconHtml(ICON.copy)}Copy`;
+          }, 2000);
         })
         .catch(() => {
           // Clipboard can be blocked (permissions, insecure context). The code
           // is on screen and selectable, so this is a convenience, not a
           // dependency — say so rather than failing silently.
           copyBtn.textContent = "Select it manually";
-          setTimeout(() => (copyBtn.textContent = "Copy"), 2500);
+          setTimeout(() => {
+            copyBtn.innerHTML = `${iconHtml(ICON.copy)}Copy`;
+          }, 2500);
         });
     });
 
