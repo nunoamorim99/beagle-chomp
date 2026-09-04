@@ -191,10 +191,11 @@ async function run(): Promise<void> {
     await page.waitForTimeout(400);
 
     const beforeEar = readFileSync(FILE, "utf-8");
-    // earL became a real declaration (its position saves); the brow swells
-    // are still built in the per-side loop, so they stay the refusal fixture.
-    const gotEar = await selectPart(page, "browSwellL");
-    check("found 'browSwellL' (a mirrored, loop-built part)", gotEar);
+    // earL and the brow swells became real declarations (they save); the
+    // brow ACCESSORY pivots are still built in the per-side loop, so they
+    // are the refusal fixture now.
+    const gotEar = await selectPart(page, "browPivotL");
+    check("found 'browPivotL' (a mirrored, loop-built part)", gotEar);
     if (gotEar) {
       for (let i = 0; i < 3; i++) {
         await page.keyboard.press("ArrowUp");

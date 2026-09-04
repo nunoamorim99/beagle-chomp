@@ -241,22 +241,20 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
   // highlight into the surroundings and it stops reading as a catchlight).
   const noseMat = toon({ color: 0x4a3028 });
   const scleraMat = toon({ color: 0xfdf9f2 });
-  const eyeRimMat = toon({ color: 0x1a120c });
-  const irisMat = toon({ color: 0x9a6534 });
-  const pupilMat = toon({ color: 0x120b07 });
+  const irisMat = toon({ color: 0xa2672e });
+  const pupilMat = toon({ color: 0x1c110c });
   const glintM = new THREE.MeshBasicMaterial({ color: 0xffffff });
   // Named so the editor can find their declarations and save colour edits
   // in place (a material's `.name` is the variable name that made it).
   noseMat.name = "noseMat";
   scleraMat.name = "scleraMat";
-  eyeRimMat.name = "eyeRimMat";
   irisMat.name = "irisMat";
   pupilMat.name = "pupilMat";
   glintM.name = "glintM";
 
   /** A flush cap of the eyeball: radius factor, angular radius (rad), then
    *  aimed from the gaze (+Z) by `up` and `outward` tilts in radians. */
-  const EYE_R = 0.033;
+  const EYE_R = 0.054;
   const eyeCap = (factor: number, thetaLen: number, up: number, outward: number): THREE.SphereGeometry => {
     const geo = new THREE.SphereGeometry(EYE_R * factor, 24, 16, 0, Math.PI * 2, 0, thetaLen);
     geo.rotateX(Math.PI / 2); // pole from +Y to +Z (the gaze)
@@ -348,72 +346,88 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
   jaw.position.set(0, -0.115, 0.095);
   const jawMesh = new THREE.Mesh(new THREE.SphereGeometry(0.07, 14, 10), white);
   jawMesh.name = "jawMesh";
+  jawMesh.rotation.set(0.192, 0, 0);
   jawMesh.scale.set(0.75, 0.443, 1.313);
   jawMesh.position.set(0, -0.008, 0.026);
   jaw.add(jawMesh);
   head.add(jaw);
 
+  // Eyes: the GHOST's cartoon eye, ported (Nuno's call — the painted-lens
+  // puppy eye with its rim ring and lid tori never read as part of the head;
+  // the ghost's two big ovals do). One egg-shaped WHITE ball, flattened into
+  // a lens and sunk into the skull; the iris, pupil and two catchlights are
+  // flush caps of the same sphere (a cap rotated about the sphere's centre
+  // stays on it), aimed with eyeCap(): pole to +Z, then tilted up/out. The
+  // socket is the brow swell above only. CUTE, not startled: the iris fills
+  // most of the visible oval and leaves a thin white ring; the pupil is a
+  // smaller disc inside it; each catchlight is centred 0.55 rad from the
+  // pupil axis — exactly its radius — so it straddles the pupil/iris edge.
+  //
+  // EVERY eye part is a TOP-LEVEL declaration (not loop- or helper-built) so
+  // the editor can save its transform in place. A cap's own rotation is
+  // about the eye centre, so rotating one in the editor keeps it flush.
+  // The lens shape and aim are the ones Nuno dialled in the editor.
+  const eyeL = new THREE.Mesh(new THREE.SphereGeometry(EYE_R, 24, 20), scleraMat);
+  eyeL.name = "eyeL";
+  eyeL.position.set(0.075, 0.005, 0.1);
+  eyeL.rotation.set(0, 0.588, 0);
+  eyeL.scale.set(0.66, 0.78, 0.41);
+  head.add(eyeL);
+  const irisL = new THREE.Mesh(eyeCap(1.03, 0.98, 0.04, -0.1), irisMat);
+  irisL.name = "irisL";
+  irisL.rotation.set(0, -0.164, 0);
+  eyeL.add(irisL);
+  const pupilL = new THREE.Mesh(eyeCap(1.04, 0.55, 0.04, -0.1), pupilMat);
+  pupilL.name = "pupilL";
+  pupilL.rotation.set(0, -0.187, 0);
+  eyeL.add(pupilL);
+  const glintL = new THREE.Mesh(eyeCap(1.05, 0.2, 0.46, 0.26), glintM);
+  glintL.name = "glintL";
+  glintL.rotation.set(0.149, -0.389, 0.084);
+  eyeL.add(glintL);
+  const glint2L = new THREE.Mesh(eyeCap(1.05, 0.09, -0.36, -0.46), glintM);
+  glint2L.name = "glint2L";
+  eyeL.add(glint2L);
+
+  const eyeR = new THREE.Mesh(new THREE.SphereGeometry(EYE_R, 24, 20), scleraMat);
+  eyeR.name = "eyeR";
+  eyeR.position.set(-0.075, 0.005, 0.1);
+  eyeR.rotation.set(0, -0.588, 0);
+  eyeR.scale.set(0.66, 0.78, 0.41);
+  head.add(eyeR);
+  const irisR = new THREE.Mesh(eyeCap(1.03, 0.98, 0.04, 0.1), irisMat);
+  irisR.name = "irisR";
+  irisR.rotation.set(0, 0.164, 0);
+  eyeR.add(irisR);
+  const pupilR = new THREE.Mesh(eyeCap(1.04, 0.55, 0.04, 0.1), pupilMat);
+  pupilR.name = "pupilR";
+  pupilR.rotation.set(0, 0.187, 0);
+  eyeR.add(pupilR);
+  const glintR = new THREE.Mesh(eyeCap(1.05, 0.2, 0.46, -0.26), glintM);
+  glintR.name = "glintR";
+  glintR.rotation.set(0.149, 0.389, 0.084);
+  eyeR.add(glintR);
+  const glint2R = new THREE.Mesh(eyeCap(1.05, 0.09, -0.36, 0.46), glintM);
+  glint2R.name = "glint2R";
+  eyeR.add(glint2R);
+
+  // Fur brow swells above the sockets — part of the coat, always on. SOFT,
+  // rounded bumps sunk mostly into the skull: the earlier flat ridge hung
+  // over the eye and its shaded underside quantised into a dark band that
+  // read as a frowning eyebrow — the "scared beagle". Cute is no eyebrow.
+  // Top-level declarations so the editor can save them.
+  const browSwellL = new THREE.Mesh(latheFromProfile(SPHERE_PROFILE, 12, 0.07, 0.036, 0.04), tan);
+  browSwellL.name = "browSwellL";
+  browSwellL.position.set(0.08, 0.078, 0.09);
+  head.add(browSwellL);
+  const browSwellR = new THREE.Mesh(latheFromProfile(SPHERE_PROFILE, 12, 0.07, 0.036, 0.04), tan);
+  browSwellR.name = "browSwellR";
+  browSwellR.position.set(-0.08, 0.078, 0.09);
+  head.add(browSwellR);
+
   /** Brow pivots, hidden unless the equipped coat carries a `brow` colour. */
   const brows: THREE.Object3D[] = [];
   ([-1, 1] as const).forEach((s) => {
-    // Eye: a painted-lens puppy eye. A WHITE sclera ball; the dark rim ring,
-    // the amber iris, the pupil and the two catchlights are flush caps of the
-    // same sphere at hair-larger radii (a cap rotated about the sphere's own
-    // centre stays on the sphere), aimed with eyeCap(): pole to +Z (the
-    // gaze), then tilted up/out. Iris and pupil sit a touch medial so the
-    // gaze converges gently forward — calm, never walleyed.
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(EYE_R, 24, 16), scleraMat);
-    eye.name = s < 0 ? "eyeL" : "eyeR";
-    eye.position.set(-0.076 * s, -0.008, 0.103);
-    const out = -s; // +x for the eye on +x
-    eye.rotation.y = 0.42 * out; // a dog's eyes look ~25 deg outward, not dead ahead
-    head.add(eye);
-    const rim = new THREE.Mesh(eyeCap(1.008, 1.2, 0.0, -0.08 * out), eyeRimMat);
-    rim.name = s < 0 ? "eyeRimL" : "eyeRimR";
-    eye.add(rim);
-    const iris = new THREE.Mesh(eyeCap(1.016, 1.04, 0.0, -0.08 * out), irisMat);
-    iris.name = s < 0 ? "irisL" : "irisR";
-    eye.add(iris);
-    const pupil = new THREE.Mesh(eyeCap(1.028, 0.68, 0.02, -0.1 * out), pupilMat);
-    pupil.name = s < 0 ? "pupilL" : "pupilR";
-    eye.add(pupil);
-    const glint = new THREE.Mesh(eyeCap(1.04, 0.24, 0.42, 0.36 * out), glintM);
-    glint.name = s < 0 ? "glintL" : "glintR";
-    eye.add(glint);
-    const glint2 = new THREE.Mesh(eyeCap(1.04, 0.11, -0.36, -0.26 * out), glintM);
-    glint2.name = s < 0 ? "glint2L" : "glint2R";
-    eye.add(glint2);
-
-    // SOCKET. What makes an eye part of a head rather than a ball dropped on
-    // it: an eyelid rim ringing the lens, a thicker hooded UPPER lid, a cheek
-    // swell below/outside, and the brow swell above — the eye then sits in a
-    // hollow between four forms. Rings lie in their local XY plane (axis +Z),
-    // so aiming +Z along the skull normal at the eye sets them flush.
-    const gazeN = new THREE.Vector3(-0.076 * s / 0.02, -0.008 / 0.018, 0.096 / 0.018).normalize();
-    const aim = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), gazeN);
-    const lidRim = new THREE.Mesh(new THREE.TorusGeometry(EYE_R * 1.1, 0.0075, 10, 28), tan);
-    lidRim.name = s < 0 ? "lidRimL" : "lidRimR";
-    lidRim.position.copy(eye.position).addScaledVector(gazeN, 0.004);
-    lidRim.quaternion.copy(aim);
-    head.add(lidRim);
-    const lidHood = new THREE.Mesh(new THREE.TorusGeometry(EYE_R * 1.12, 0.0105, 10, 18, Math.PI), tan);
-    lidHood.name = s < 0 ? "lidHoodL" : "lidHoodR";
-    lidHood.position.copy(eye.position).addScaledVector(gazeN, 0.009);
-    lidHood.quaternion.copy(aim);
-    lidHood.rotateZ(0.12 * out); // the hood's arc spans the top, tilted a touch outward
-    head.add(lidHood);
-    const cheek = new THREE.Mesh(latheFromProfile(SPHERE_PROFILE, 14, 0.1, 0.075, 0.085), tan);
-    cheek.name = s < 0 ? "cheekL" : "cheekR";
-    cheek.position.set(-0.088 * s, -0.072, 0.075);
-    head.add(cheek);
-
-    // Fur brow swell above the socket — part of the coat, always on. Carries
-    // the worried-puppy expression together with the heavy upper lid.
-    const browSwell = new THREE.Mesh(latheFromProfile(SPHERE_PROFILE, 12, 0.088, 0.036, 0.062), tan);
-    browSwell.name = s < 0 ? "browSwellL" : "browSwellR";
-    browSwell.position.set(-0.08 * s, 0.05, 0.09);
-    head.add(browSwell);
-
     // The Pac-Beagle brow ACCESSORY (cosmetic, per-coat): the hand-dialled
     // chevron bars from BROW_BARS, mounted on a pivot aimed down the gaze —
     // same construction as before, scaled to the reworked skull.
@@ -440,7 +454,6 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
     browPivot.add(brow);
     head.add(browPivot);
     brows.push(browPivot);
-
   });
 
   // --- ears: the pivot is the animated joint (syncToEntity flops rotation.x
