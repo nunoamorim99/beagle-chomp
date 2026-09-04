@@ -24,10 +24,12 @@
       import * as THREE from "three";
       import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
       import { makeBeagle } from "/src/render/characters.ts";
+      import { getBeagleSkin } from "/src/game/cosmetics.ts";
 
       // ---- URL knobs, so the screenshot harness can drive this page ----
       //   ?view=side|front|back|34|top|face  ?anim=0|1  ?grid=0|1  ?hud=0|1
       //   ?solo=<partName>   isolates one sub-tree for close inspection
+      //   ?skin=<skinId>     renders that beagle skin
       const q = new URLSearchParams(location.search);
       const view = q.get("view") ?? "34";
       const animate = q.get("anim") !== "0";
@@ -72,7 +74,8 @@
       grid.visible = q.get("grid") !== "0";
       scene.add(grid);
 
-      const beagle = makeBeagle();
+      // ?skin=bagel|cookie|muffin|pacbeagle|pepper — renders that coat.
+      const beagle = makeBeagle(getBeagleSkin(q.get("skin") ?? "bagel"));
       scene.add(beagle);
 
       const soloName = q.get("solo");
@@ -173,8 +176,12 @@
       if (earPin !== null && parts) {
         const a = Number(earPin);
         const z = Number(q.get("earz") ?? 0);
+        const y = Number(q.get("eary") ?? 0);
         parts.earL.rotation.x = a;
         parts.earR.rotation.x = a;
+        // Mirrored yaw, like the flare: the leathers angle away from each other.
+        parts.earL.rotation.y = -y;
+        parts.earR.rotation.y = y;
         // Mirrored: the ears flare AWAY from each other, so the sign flips.
         parts.earL.rotation.z = -z;
         parts.earR.rotation.z = z;

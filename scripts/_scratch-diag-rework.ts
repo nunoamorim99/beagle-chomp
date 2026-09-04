@@ -1,0 +1,13 @@
+import { chromium } from "playwright";
+const b = await chromium.launch();
+const p = await b.newPage({ viewport: { width: 800, height: 800 } });
+p.on("pageerror", (e) => console.log("PAGEERROR:", (e as Error).stack ?? String(e)));
+p.on("console", (m) => console.log("CONSOLE", m.type() + ":", m.text().slice(0, 500)));
+p.on("requestfailed", (r) => console.log("REQFAIL:", r.url(), r.failure()?.errorText));
+const resp = await p.goto("http://localhost:5173/preview-rework/?view=34&grid=0", { waitUntil: "networkidle" });
+console.log("status:", resp?.status());
+await p.waitForTimeout(4000);
+console.log("title:", await p.title());
+await p.screenshot({ path: ".img2threejs/renders/diag.png" });
+await b.close();
+console.log("done");

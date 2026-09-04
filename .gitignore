@@ -24,3 +24,10 @@ server/.env.*
 
 # img2threejs skill workspace (reference imagery + pipeline state) — never committed.
 .img2threejs/
+
+# img2threejs pipeline: regenerable derivatives (the spec, evidence, state and
+# per-pass review renders are kept; camera sweeps, zone crops and the HUD
+# diagnostics are not)
+.img2threejs/renders/sweep/
+.img2threejs/renders/diag.png
+.img2threejs/detail-zones/

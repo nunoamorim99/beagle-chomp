@@ -40,6 +40,15 @@ export interface BeagleCoat {
    * anything a skin can turn on has to already be there to turn on.
    */
   brow?: number;
+  /**
+   * Nose leather. OPTIONAL: omitted means the fixed near-black every coat
+   * wore before the channel existed. Per-skin because it does NOT follow
+   * `black` — Cookie's saddle is liver-brown but Nuno wants its nose black,
+   * and the Pac-Beagle's nose is the tribute orange.
+   */
+  nose?: number;
+  /** Iris colour. OPTIONAL: omitted means the default amber. */
+  iris?: number;
 }
 
 export interface BeagleSkin {
@@ -64,7 +73,7 @@ export const BEAGLE_SKINS: readonly BeagleSkin[] = [
     // the near-black it used to be. It has to work as the step between
     // `tan` and `black`, not just as an ear colour — and it carries more of
     // that job now that `black` is a real black rather than a dark brown.
-    coat: { tan: 0xd6934f, white: 0xf0efec, black: 0x1b1815, ear: 0xb87438 },
+    coat: { tan: 0xd6934f, white: 0xf0efec, black: 0x1b1815, ear: 0xb87438, nose: 0x141210 },
     // Default skin: free and always owned (see profileStore.ts's
     // defaultProfile()).
     price: 0,
@@ -77,7 +86,7 @@ export const BEAGLE_SKINS: readonly BeagleSkin[] = [
     // "black" saddle/nose/eyes (kept a touch lighter than true black so
     // it doesn't flatten into a silhouette), and an ear a shade darker
     // than the body for a tonal, all-brown liver look.
-    coat: { tan: 0x8a5a2b, white: 0xe8dcc8, black: 0x3a2416, ear: 0x5c3a1e },
+    coat: { tan: 0x8a5a2b, white: 0xe8dcc8, black: 0x3a2416, ear: 0x5c3a1e, nose: 0x141210, iris: 0x4f3215 },
     price: 25,
   },
   {
@@ -87,7 +96,7 @@ export const BEAGLE_SKINS: readonly BeagleSkin[] = [
     // belly/snout, and a soft warm brown (not near-black) for the
     // saddle/markings so it reads as a lemon beagle rather than a
     // tricolor; ear a gentle tan-brown that stays close to the body tone.
-    coat: { tan: 0xe4c58a, white: 0xfaf6ee, black: 0x9c7248, ear: 0xb6864f },
+    coat: { tan: 0xe4c58a, white: 0xfaf6ee, black: 0x9c7248, ear: 0xb6864f, nose: 0x141210, iris: 0x6f522e },
     price: 25,
   },
   {
@@ -117,6 +126,8 @@ export const BEAGLE_SKINS: readonly BeagleSkin[] = [
       ear: 0xf28f1c,
       paw: 0xe01f26,
       brow: 0x141210,
+      nose: 0xed8207,
+      iris: 0xed8207,
     },
     // Dearer than the plain coats: it is the only skin that unlocks another
     // one, and the only one that changes the model's silhouette (brows).
@@ -129,7 +140,7 @@ export const BEAGLE_SKINS: readonly BeagleSkin[] = [
     // belly/snout, near-black saddle/nose/eyes for strong markings, and a
     // dark cool grey ear — deliberately cool-toned to contrast the three
     // warm coats above.
-    coat: { tan: 0x7d8794, white: 0xf2f3f5, black: 0x1c1f24, ear: 0x4a4f57 },
+    coat: { tan: 0x7d8794, white: 0xf2f3f5, black: 0x1c1f24, ear: 0x4a4f57, nose: 0x141210, iris: 0x5c6266 },
     price: 25,
   },
 ] as const;

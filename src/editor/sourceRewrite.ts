@@ -474,7 +474,14 @@ export function deletePart(src: string, builderName: string, varName: string): R
   // form, which is fine and often still true of the silhouette).
   const after = readBuilder(out, builderName);
   if (!after) return { ok: false, reason: "The delete left the builder unparseable — aborted." };
-  const leftover = stripCommentsAndStrings(out.slice(after.bodyStart, after.bodyEnd));
+  // PROPERTY names are not references to the variable: `{ nose: noseMat }`
+  // and `coat.nose` both contain the word `nose` without using the part, and
+  // a conservative match there refuses a delete that would compile fine.
+  // (Shorthand `{ nose }` IS a reference and still matches — only `name:`
+  // keys and `.name` accesses are dropped.)
+  const leftover = stripCommentsAndStrings(out.slice(after.bodyStart, after.bodyEnd))
+    .replace(new RegExp(String.raw`\b${escapeRe(varName)}\s*:`, "g"), " ")
+    .replace(new RegExp(String.raw`\.\s*${escapeRe(varName)}\b`, "g"), " ");
   const stillUsed = new RegExp(`\\b${escapeRe(varName)}\\b`).test(leftover);
   if (stillUsed) {
     return {
@@ -573,6 +580,37 @@ export function setMaterialRoughness(
  * it) — but flatly wrong for the many fixed materials a builder declares
  * outright, like an eye's sclera. Those are as rewritable as roughness is.
  */
+/** A material construction a builder can own the colour of. */
+const MATERIAL_DECL_RE = /\btoon\(|new THREE\.Mesh[A-Za-z]*Material\(/;
+
+/**
+ * Colour-literal → variable name for every material a builder declares
+ * (`const x = toon({ color: 0x… })` / `new THREE.Mesh…Material({ color: 0x… })`).
+ * The editor only sees runtime materials, not the lines that made them, so
+ * this is how a fixed material like an eye's sclera gets its REAL name back:
+ * match by colour, but only where the colour is unique within the builder —
+ * two declarations sharing a hex are left unnamed rather than guessed.
+ */
+export function materialDeclsByColor(src: string, builderName: string): Map<number, string> {
+  const body = readBuilder(src, builderName);
+  const byColor = new Map<number, string>();
+  const ambiguous = new Set<number>();
+  if (!body) return byColor;
+  for (const stmt of body.statements) {
+    const code = stripCommentsAndStrings(stmt.text).trim();
+    const m = /^const\s+([A-Za-z_$][\w$]*)\s*=\s*(?:toon\(|new THREE\.Mesh[A-Za-z]*Material\()\s*\{[^}]*?color:\s*0x([0-9a-fA-F]+)/.exec(code);
+    if (!m) continue;
+    const hex = parseInt(m[2], 16);
+    if (byColor.has(hex) || ambiguous.has(hex)) {
+      byColor.delete(hex);
+      ambiguous.add(hex);
+      continue;
+    }
+    byColor.set(hex, m[1]);
+  }
+  return byColor;
+}
+
 export function setMaterialColor(
   src: string,
   builderName: string,
@@ -588,8 +626,12 @@ export function setMaterialColor(
   if (!part) return { ok: false, reason: `Could not locate "${varName}".` };
 
   const decl = body.statements[part.declIndex];
-  if (!/MeshStandardMaterial/.test(decl.text)) {
-    return { ok: false, reason: `"${varName}" is not a MeshStandardMaterial declaration.` };
+  // Any material construction the builders use: the project's toon() factory
+  // (every lit surface) or a raw THREE.Mesh*Material (the unlit glints). The
+  // old MeshStandardMaterial-only gate refused every colour on a cel-shaded
+  // character, which is exactly the surface the editor exists to tune.
+  if (!MATERIAL_DECL_RE.test(decl.text)) {
+    return { ok: false, reason: `"${varName}" is not a material declaration (toon({…}) or new THREE.Mesh…Material({…})).` };
   }
 
   const literal = /color:\s*0x[0-9a-fA-F]+/;

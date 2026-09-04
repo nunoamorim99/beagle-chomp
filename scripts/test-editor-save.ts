@@ -95,6 +95,17 @@ async function selectPart(page: import("playwright").Page, name: string): Promis
   return true;
 }
 
+/**
+ * Waits for the part tree's first paint by INTERVAL polling. Playwright's
+ * default waitForSelector polls on requestAnimationFrame, and on a cold
+ * spawned server the editor's boot (module transform + building ~60 meshes +
+ * lil-gui) keeps the main thread busy enough that an immediate rAF-polled
+ * wait can stall for the full timeout while the rows are already on screen.
+ */
+async function waitForTree(page: import("playwright").Page): Promise<void> {
+  await page.waitForFunction(() => document.querySelectorAll(".tree-row").length > 0, null, { polling: 250, timeout: 60_000 });
+}
+
 async function run(): Promise<void> {
   let server: ViteDevServer | undefined;
   let browser: Browser | undefined;
@@ -116,7 +127,7 @@ async function run(): Promise<void> {
     });
 
     await page.goto(base);
-    await page.waitForSelector(".tree-row");
+    await waitForTree(page);
     await page.waitForTimeout(400);
 
     // -------------------------------------------------------------------
@@ -137,9 +148,9 @@ async function run(): Promise<void> {
     check("characters.ts changed on disk", after !== ORIGINAL);
     check(
       "the body's own position.set carries the new Y",
-      /body\.position\.set\(0, 0\.37, -0\.02\)/.test(after),
+      /body\.position\.set\(0, 0\.35, -0\.22\)/.test(after),
     );
-    check("the old value is gone", !/body\.position\.set\(0, 0\.34, -0\.02\)/.test(after));
+    check("the old value is gone", !/body\.position\.set\(0, 0\.32, -0\.22\)/.test(after));
     check(
       "still exactly ONE body.position.set in makeBeagle — nothing appended",
       count(builderSlice(after, "makeBeagle"), /body\.position\.set/) === 1,
@@ -166,7 +177,7 @@ async function run(): Promise<void> {
     );
     check(
       "the part's documenting comment survived",
-      /deliberately elongated so a clear body runs/.test(after),
+      /the one continuous body mass/.test(after),
     );
 
     const report = await page.$eval("#generatedView", (el) => el.textContent ?? "");
@@ -176,12 +187,15 @@ async function run(): Promise<void> {
     // -------------------------------------------------------------------
     console.log("\n=== a loop-built mirrored part is reported, not faked ===");
     await page.goto(base);
-    await page.waitForSelector(".tree-row");
+    await waitForTree(page);
     await page.waitForTimeout(400);
 
     const beforeEar = readFileSync(FILE, "utf-8");
-    const gotEar = await selectPart(page, "earL");
-    check("found 'earL' (a mirrored, loop-built part)", gotEar);
+    // The eyes, brow swells and brow PIVOTS all became real declarations (they
+    // save). The chevron BARS inside a pivot are still built in a per-bar
+    // loop over BROW_BARS, so they are the refusal fixture now.
+    const gotEar = await selectPart(page, "browLInner");
+    check("found 'browLInner' (a loop-built bar)", gotEar);
     if (gotEar) {
       for (let i = 0; i < 3; i++) {
         await page.keyboard.press("ArrowUp");
@@ -204,7 +218,7 @@ async function run(): Promise<void> {
     // -------------------------------------------------------------------
     console.log("\n=== IDEA-041: a runtime-driven channel is locked and refused ===");
     await page.goto(base);
-    await page.waitForSelector(".tree-row");
+    await waitForTree(page);
     await page.waitForTimeout(400);
 
     const beforeTail = readFileSync(FILE, "utf-8");

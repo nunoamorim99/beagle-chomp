@@ -114,6 +114,24 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v7.
   model its new `shading` dropdown can produce (toon/standard/phong/lambert/
   basic), and controls for channels a given model lacks — `roughness`,
   `emissive` — are omitted rather than shown wired to nothing (IDEA-041's rule).
+- **THE BEAGLE IS A REFERENCE REBUILD** (IDEA-047, branch `rework-beagle-character`):
+  `makeBeagle()` is built over `src/render/beagleSculpt.ts` — station-swept solids
+  (`taperedSweepGeometry`), revolved profiles (`latheFromProfile`) and
+  `splitCoatGroups`, which cuts the tricolor coat into PER-TRIANGLE MATERIAL GROUPS
+  on the shared tan/black/white toon materials, so `applyBeagleSkin` keeps
+  recolouring the whole dog in place. A triangle that straddles a region edge
+  is SPLIT along the region's true curve (band planes exact, blob/capsule
+  fields bisected), so the seams are clean lines, not zigzags along whatever
+  triangle edges the sweep had — the first pass's "spiky" markings. The numbers in the data tables above
+  `makeBeagle` were measured off the reference image in head-units by the
+  img2threejs pipeline and locked by its proportion gates — the whole evidence
+  trail (reference, spec, per-pass renders, review history, `state.json`) lives in
+  `.img2threejs/`; re-run that pipeline rather than eyeballing the tables. The
+  pipeline's generated factory stays in `src/render/rework/` (never imported by
+  production) with `/preview-rework/` + `scripts/shoot-rework.ts` as its harness;
+  `/preview/` still renders the real `makeBeagle`. The editor/rewriter tests use
+  `makeBeagle`'s source as their corpus — they now reference neck/tailTilt/nose/
+  muzzle/browLInner (the loop-built refusal fixture); change the builder and re-check them.
 - **`preview/index.html`** — a dev-only page at `/preview/` (`npm run dev`) that
   renders the real `makeBeagle()` with orbit controls, six preset camera angles
   (`?view=`) and part isolation (`?solo=`). Not a rollup input, so it never
