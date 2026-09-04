@@ -36,8 +36,16 @@ export function attachBootScreen(): BootScreenHandle {
 
   return {
     showLoading(message = "Loading…"): void {
+      // Design system §09: a BONE fills left to right while the API is
+      // reached — "no spinner, and nothing borrowed from the arcade
+      // original". The shape is composed from CSS masks in style.css
+      // (.bone-loader); this only supplies the two layers it needs, the dark
+      // socket and the cream fill whose width animates.
       show(`
-        <div class="boot-spinner" aria-hidden="true">🐶</div>
+        <div class="bone-loader" role="progressbar" aria-label="${message}">
+          <div class="bone-loader__well"></div>
+          <div class="bone-loader__fill"><i></i></div>
+        </div>
         <p class="boot-message">${message}</p>
       `);
     },

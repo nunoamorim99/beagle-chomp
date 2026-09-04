@@ -94,6 +94,11 @@ export interface WorkingWallDecorPlacement {
 export interface WorkingTheme {
   id: string;
   name: string;
+  /** The shop one-liner (MazeTheme.blurb). Carried through the editor and
+   *  written back out below — the theme writer emits every MazeTheme field by
+   *  hand, so a field missing here is a field silently dropped from every
+   *  theme saved in the editor. test-board-surfaces guards exactly that. */
+  blurb: string;
   price: number;
   palette: WorkingPalette;
   /** Mutable working copy of MazeTheme.placements (IDEA-030, apron props) —
@@ -130,6 +135,7 @@ export function cloneWorkingTheme(theme: MazeTheme): WorkingTheme {
   return {
     id: theme.id,
     name: theme.name,
+    blurb: theme.blurb,
     price: theme.price,
     palette: { ...theme.palette, bloomColors: [...theme.palette.bloomColors] },
     placements: theme.placements.map((p) => ({
@@ -273,6 +279,7 @@ export function formatThemeEntry(theme: WorkingTheme, indent = 2): string {
     `${i0}{`,
     `${i1}id: ${str(theme.id)},`,
     `${i1}name: ${str(theme.name)},`,
+    `${i1}blurb: ${str(theme.blurb)},`,
     `${i1}price: ${theme.price},`,
     `${i1}palette: {`,
     paletteLines,

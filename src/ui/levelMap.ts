@@ -32,6 +32,7 @@ import {
   type ChallengeLevel,
 } from "../game/challenges";
 import { getChallengeProgress } from "../game/profileStore";
+import { ICON, iconHtml } from "./icons";
 
 export type LevelNodeState = "cleared" | "current" | "locked";
 
@@ -92,14 +93,19 @@ export function levelNodeState(idx: number, progress: number): LevelNodeState {
 }
 
 /** IDEA-014 (desktop side panel): a short player-facing label for a node
- *  state — "Cleared 🐾" / "Up next" / "Locked 🔒" — shown on the panel above
- *  the Play button, alongside the richer name/blurb/twist-list/maze-name
- *  info. Deliberately its own small helper (not reused for the mobile
- *  footer, which has no room/need for this extra line) rather than baked
- *  into renderPanelInfo directly, so the three-state copy lives in one place. */
+ *  state — "Cleared" / "Up next" / "Locked" — shown on the panel above the
+ *  Play button, alongside the richer name/blurb/twist-list/maze-name info.
+ *  Deliberately its own small helper (not reused for the mobile footer, which
+ *  has no room/need for this extra line) rather than baked into
+ *  renderPanelInfo directly, so the three-state copy lives in one place.
+ *
+ *  The paw/padlock emoji that used to trail these two labels are gone: the
+ *  same information is already carried by the stone's own glyph a few pixels
+ *  away, and a second copy in a different icon vocabulary was the kind of
+ *  thing the design system exists to stop. */
 function stateLabel(state: LevelNodeState): string {
-  if (state === "cleared") return "Cleared \u{1F43E}";
-  if (state === "locked") return "Locked \u{1F512}";
+  if (state === "cleared") return "Cleared";
+  if (state === "locked") return "Locked";
   return "Up next";
 }
 
@@ -439,15 +445,35 @@ function renderNode(level: ChallengeLevel, idx: number, state: LevelNodeState, s
   const classes = ["map-node", `map-node-${state}`];
   if (selected) classes.push("map-node-selected");
   const locked = state === "locked";
-  const glyph = state === "cleared" ? "\u{1F43E}" : state === "locked" ? "\u{1F512}" : "";
+  // Material Symbols by LIGATURE NAME, exactly as everywhere else.
+  //
+  // This deliberately used raw codepoints for a while, on the theory that
+  // ligature substitution is unreliable inside an SVG <text> node. Measured,
+  // that is backwards on both counts: ligatures resolve fine in SVG in
+  // Chromium and Firefox, and it is the CODEPOINTS that break — the icon font
+  // is subset to the ~46 glyphs this game uses (src/ui/tokens.css explains
+  // why), and Google's subsetter does not preserve the original private-use
+  // codepoints. U+E668 happened to survive; U+E899 did not, so a locked stone
+  // rendered a tofu box.
+  //
+  // Keeping the ligature name also means these two glyphs are covered by the
+  // same "every name in ICON must be in the subset" rule as the rest of the
+  // interface, instead of being a second, invisible way to depend on the font.
+  // A LOCKED stone shows a padlock INSTEAD of its number; a reachable one
+  // shows the number. The redesign drops the little corner badge the cleared
+  // stones used to carry: colour already says cleared (green) versus next
+  // (amber), so the badge was a third signal for a fact two were already
+  // carrying, and it hung half off the stone's edge to do it.
   const label = `Level ${idx + 1}: ${level.name} — ${state}`;
+  const face = locked
+    ? `<text class="map-node-glyph" x="0" y="1" text-anchor="middle" dominant-baseline="middle">${ICON.lock}</text>`
+    : `<text class="map-node-num" x="0" y="1" text-anchor="middle" dominant-baseline="middle">${idx + 1}</text>`;
   return (
     `<g class="${classes.join(" ")}" transform="translate(${x},${y})" data-node-idx="${idx}" ` +
     `role="button" tabindex="${locked ? "-1" : "0"}" aria-disabled="${locked}" aria-label="${label}">` +
     (state === "current" ? '<circle class="map-node-glow" r="26"></circle>' : "") +
     '<circle class="map-node-stone" r="20"></circle>' +
-    `<text class="map-node-num" x="0" y="1" text-anchor="middle" dominant-baseline="middle">${idx + 1}</text>` +
-    (glyph ? `<text class="map-node-glyph" x="15" y="-13" text-anchor="middle">${glyph}</text>` : "") +
+    face +
     "</g>"
   );
 }
@@ -523,12 +549,25 @@ export function attachLevelMap(root: ParentNode, callbacks: LevelMapCallbacks = 
     const cleared = Math.min(progress, CHALLENGE_LEVEL_COUNT);
     return (
       '<div class="map-header">' +
-      '<button type="button" class="map-back" id="mapBackBtn" aria-label="Back to menu">&larr; Menu</button>' +
+      // Back is an icon-only square now: the word "Menu" beside the arrow was
+      // paying for a third of the header bar to repeat what the arrow says,
+      // and the header needs that room for the progress bar.
+      `<button type="button" class="map-back" id="mapBackBtn" aria-label="Back to menu">${iconHtml(ICON.back)}</button>` +
       '<div class="map-title-block">' +
-      '<div class="map-title">Challenge</div>' +
-      `<div class="map-progress">${cleared} / ${CHALLENGE_LEVEL_COUNT} cleared</div>` +
+      '<div class="map-title">Challenge garden</div>' +
+      // Progress as a BAR, not a count. "3 / 8 cleared" is a fact you read;
+      // a filled bar is a distance you see, which is what a trail of eight
+      // stones is actually about. The exact figure stays beside it, and the
+      // track carries the accessible name.
+      '<div class="map-progress">' +
+      `<div class="map-progress-track" role="progressbar" aria-valuemin="0" ` +
+      `aria-valuemax="${CHALLENGE_LEVEL_COUNT}" aria-valuenow="${cleared}" ` +
+      `aria-label="${cleared} of ${CHALLENGE_LEVEL_COUNT} levels cleared">` +
+      `<div class="map-progress-fill" style="width:${(cleared / CHALLENGE_LEVEL_COUNT) * 100}%"></div>` +
       "</div>" +
-      '<div class="map-header-spacer" aria-hidden="true"></div>' +
+      `<div class="map-progress-count">${cleared}/${CHALLENGE_LEVEL_COUNT}</div>` +
+      "</div>" +
+      "</div>" +
       "</div>"
     );
   }
@@ -583,16 +622,36 @@ export function attachLevelMap(root: ParentNode, callbacks: LevelMapCallbacks = 
       ? parts.map((p) => `<div class="map-panel-twist-line">${p}</div>`).join("")
       : '<div class="map-panel-twist-line">Classic pace — no twists</div>';
     const disabled = state === "locked" ? "disabled" : "";
-    const playLabel = state === "cleared" ? "▶ Replay" : "▶ Play";
+    // §05: the primary action always carries an icon. Replay reads as a
+    // different act from Play, so it takes a different one.
+    // The button names the stone it opens. "Play" alone left the player to
+    // remember which of eight they had selected — a real question on a trail
+    // where tapping a stone only moves a highlight.
+    const stone = selectedIdx + 1;
+    const playLabel =
+      state === "cleared"
+        ? `${iconHtml(ICON.replay)}Replay stone ${stone}`
+        : `${iconHtml(ICON.play)}Play stone ${stone}`;
     const mazeName = MAZE_NAMES[level.mazeIdx] ?? MAZE_NAMES[0];
     return (
       '<div class="map-panel-info">' +
       '<div class="map-panel-info-body">' +
-      `<div class="map-footer-title">C${selectedIdx + 1} · ${level.name}</div>` +
+      // The stone's own number as a plate, then the name — so the panel and
+      // the trail identify the level the same way.
+      '<div class="map-panel-head">' +
+      `<span class="map-panel-num">${stone}</span>` +
+      `<span class="map-footer-title">${level.name}</span>` +
+      "</div>" +
       `<div class="map-footer-blurb">${level.blurb}</div>` +
       // Mobile-only compact line (hidden on desktop via CSS, where the full
       // twistListHtml below is shown instead).
-      `<div class="map-footer-twist">${compactTwistLine}</div>` +
+      // A TAG rather than a line of text: a twist is a warning about how this
+      // level differs, and it should read as a label on the level, not as more
+      // prose. Warning-orange, the same colour a power-up uses for its last
+      // three seconds — both mean "this changes what you expect".
+      (parts.length
+        ? `<div class="map-twist-tag">${iconHtml(ICON.error)}${compactTwistLine}</div>`
+        : '<div class="map-twist-tag map-twist-tag--none">Classic pace</div>') +
       // Desktop-only richer block (hidden on mobile via CSS): full twist
       // list, maze name, explicit state label — see the function doc comment.
       '<div class="map-panel-extra">' +

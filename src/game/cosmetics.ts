@@ -54,6 +54,17 @@ export interface BeagleCoat {
 export interface BeagleSkin {
   id: string;
   name: string;
+  /**
+   * One line for the shop, in the player's language rather than the
+   * renderer's.
+   *
+   * The info bar used to show the name and the price and nothing else, so a
+   * player choosing between five coats had only four dots of colour to go
+   * on. Moving the price into the action button freed the line, and this is
+   * what goes in it. Required, not optional: a card with no description is a
+   * card with a hole in it.
+   */
+  blurb: string;
   coat: BeagleCoat;
   /** Shop price in coins (IDEA-012). 0 means "owned from the start, never
    *  purchasable" — currently true only for the default skin. */
@@ -64,6 +75,8 @@ export const BEAGLE_SKINS: readonly BeagleSkin[] = [
   {
     id: "bagel",
     name: "Bagel",
+
+    blurb: "The classic tricolor · tan, white and black",
     // The classic tricolor beagle. tan/white/black MUST stay identical to
     // config.ts's COLORS.beagleTan/White/Black (test-cosmetics asserts it),
     // so equipping the default skin is a visual no-op.
@@ -81,6 +94,8 @@ export const BEAGLE_SKINS: readonly BeagleSkin[] = [
   {
     id: "cookie",
     name: "Cookie",
+
+    blurb: "Warm chocolate liver coat · cream belly",
     // Warm chocolate/liver coat: a rich chocolate-brown body in place of
     // tan, a soft cream (not stark white) belly, a deep dark-brown
     // "black" saddle/nose/eyes (kept a touch lighter than true black so
@@ -92,6 +107,8 @@ export const BEAGLE_SKINS: readonly BeagleSkin[] = [
   {
     id: "muffin",
     name: "Muffin",
+
+    blurb: "Pale lemon and white · soft brown markings",
     // Pale lemon & white coat: a light lemon-tan body, bright white
     // belly/snout, and a soft warm brown (not near-black) for the
     // saddle/markings so it reads as a lemon beagle rather than a
@@ -102,6 +119,8 @@ export const BEAGLE_SKINS: readonly BeagleSkin[] = [
   {
     id: "pacbeagle",
     name: "Pac-Beagle",
+
+    blurb: "Yellow coat, red boots · unlocks the Ghost",
     // A tip of the collar to the game this one is descended from. The mapping
     // of the reference onto the beagle's own material groups is deliberate
     // rather than a flat repaint:
@@ -136,6 +155,8 @@ export const BEAGLE_SKINS: readonly BeagleSkin[] = [
   {
     id: "pepper",
     name: "Pepper",
+
+    blurb: "Cool blue-tick grey · near-black saddle",
     // Cool blue-tick grey-black coat: a slate/blue-grey body, white
     // belly/snout, near-black saddle/nose/eyes for strong markings, and a
     // dark cool grey ear — deliberately cool-toned to contrast the three
@@ -228,6 +249,8 @@ export function cycleBeagleSkinId(currentId: string): string {
 export interface EnemySkin {
   id: string;
   name: string;
+  /** See BeagleSkin.blurb. */
+  blurb: string;
   /**
    * Hidden from the shop until the player has earned the right to see it.
    *
@@ -245,16 +268,16 @@ export const ENEMY_SKINS: readonly EnemySkin[] = [
   // Default skin: free and always owned (see profileStore.ts's
   // defaultProfile()). The beetle took this over from the ghost — the game is
   // a garden, and a beetle belongs in it in a way a ghost never did.
-  { id: "beetle", name: "Beetle", price: 0 },
-  { id: "bee", name: "Bee", price: 25 },
-  { id: "ladybug", name: "Ladybug", price: 25 },
+  { id: "beetle", name: "Beetle", blurb: "The garden's own · shell and six legs", price: 0 },
+  { id: "bee", name: "Bee", blurb: "Striped and buzzing · wings that blur", price: 25 },
+  { id: "ladybug", name: "Ladybug", blurb: "Red shell, black spots · small and quick", price: 25 },
   // THE EASTER EGG. Free, but not listed until it is revealed, and revealed by
   // owning the Pac-Beagle coat: the two tributes to the arcade game this one
   // descends from unlock each other, which needs no UI copy to explain. Price 0
   // is what makes the grant work without a special path — profileStore's buy
   // check is `coins < price`, so a 0-coin purchase always succeeds and the
   // server's own catalog check agrees.
-  { id: "ghost", name: "Ghost", price: 0, secret: true },
+  { id: "ghost", name: "Ghost", blurb: "The arcade original · unlocked by Pac-Beagle", price: 0, secret: true },
 ] as const;
 
 export const DEFAULT_ENEMY_SKIN_ID = "beetle";

@@ -122,6 +122,8 @@ export interface WallDecorPlacement {
 export interface MazeTheme {
   id: string;
   name: string;
+  /** One line for the shop — see cosmetics.ts's BeagleSkin.blurb. */
+  blurb: string;
   /** Shop price in coins (IDEA-026). 0 means "owned from the start, never
    *  purchasable" — true only for the default garden theme. */
   price: number;
@@ -142,6 +144,7 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
   {
     id: "garden",
     name: "The Garden",
+    blurb: "Hedges and lawn · a bright afternoon",
     // Default theme: free and always owned (see profileStore.ts's
     // defaultProfile()).
     price: 0,
@@ -216,6 +219,7 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
   {
     id: "classic",
     name: "Arcade Night",
+    blurb: "Neon walls on black · the classic look",
     // The v1.0 throwback (Nuno: "the classic one black and blue") — the
     // exact pre-garden palette recovered from git history (bg/wall/
     // wallEmissive/floor from the original config.ts), with the neon-night
@@ -258,6 +262,7 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
   {
     id: "forest",
     name: "Deep Forest",
+    blurb: "Deep pines and leaf litter · low light",
     // Moodier and denser than the garden: misty sage sky, deep pine walls,
     // dark loam floor, dappled softer sun. Blooms read as forest-floor
     // flora — wood anemone white, bluebell, a red toadstool — with mossy
@@ -338,6 +343,7 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
   {
     id: "beach",
     name: "Sunny Beach",
+    blurb: "Wind-rippled sand · sea air",
     // Bright seaside noon: warm sky, sandy dune walls, darker wet-sand floor
     // (kept well below the biscuit tone so the trail stays readable), the
     // brightest sun of any theme. Blooms are shoreline finds — shell white,
@@ -401,6 +407,7 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
   {
     id: "park",
     name: "City Park",
+    blurb: "A gravel walk through mown grass",
     // The garden's manicured cousin: same daytime sky family, lighter
     // trimmed-hedge green, gravel-path floor, and noticeably LUSHER
     // flowerbeds (highest bloom density of any theme, plus a purple joining
@@ -481,6 +488,7 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
   {
     id: "city",
     name: "Night City",
+    blurb: "Wet asphalt and lit windows · after dark",
     // Twilight downtown: dusk sky, concrete-block walls with a cool window
     // glow, asphalt floor, biscuits as warm streetlight dots. The "blooms"
     // are rooftop LIGHTS — warm windows, cyan and pink neon — glowing far

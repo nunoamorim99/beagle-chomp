@@ -53,8 +53,6 @@ async function signUpTo(page: Page): Promise<string> {
 }
 
 async function deleteAccount(page: Page, username: string): Promise<void> {
-  // The Account button lives in the carousel now; scroll it into view first.
-  await page.locator("#menuProfileBtn").scrollIntoViewIfNeeded();
   await page.click("#menuProfileBtn");
   await page.waitForSelector("#profile:not(.hidden)");
   await page.click("#deleteRevealBtn");
@@ -108,13 +106,20 @@ async function checkMenu(page: Page, label: string): Promise<void> {
   section(`${label} — menu layout`);
 
   ok("the eyebrow is gone", (await page.locator("#mainMenu .eyebrow").count()) === 0);
-  ok("the title stays", (await page.textContent(".menu-top h1")) === "Beagle Chomp");
+  // Two lines now, so compare the TEXT rather than the raw markup.
+  ok(
+    "the title stays",
+    ((await page.textContent(".menu-top h1")) ?? "").replace(/\s+/g, " ").trim() === "Beagle Chomp",
+    await page.textContent(".menu-top h1"),
+  );
 
-  ok("the carousel is present", await page.isVisible(".menu-carousel"));
-  // IDEA-036 v3: Play joined the rail, so five cards not four.
-  ok("all five destinations are in the rail", (await page.locator(".carousel-item").count()) === 5);
-  ok("Play is the FIRST card", await page.locator(".carousel-item").first().evaluate((el) => el.id === "playBtn"));
-  ok("Play keeps its accent styling", await page.locator("#playBtn").evaluate((el) => el.classList.contains("carousel-play")));
+  // IDEA-036 v4: the swipe carousel is GONE. Play is its own block and the
+  // four destinations are a fixed 4-up row, so nothing on this screen is
+  // hidden behind a gesture. The checks below are the ones that fail if that
+  // row ever stops fitting — which is the whole reason the rail existed.
+  ok("the carousel is gone", (await page.locator(".menu-carousel, .carousel-viewport").count()) === 0);
+  ok("Play is its own block", await page.isVisible(".menu-play"));
+  ok("four destination tiles", (await page.locator(".menu-tile").count()) === 4);
 
   // The point of the rework: the beagle should be visible ABOVE the controls.
   const menuBottom = await page.locator(".menu-bottom").boundingBox();
@@ -127,40 +132,25 @@ async function checkMenu(page: Page, label: string): Promise<void> {
     );
   }
 
-  // The rail must OPEN at its first option — an earlier centring rule left it
-  // part-scrolled, cropping "Challenge" to "nge".
-  const railStart = await page.locator(".carousel-viewport").evaluate((el) => el.scrollLeft);
-  // Allow up to the track's own edge padding (10px): scroll-snap treats that
-  // as the first snap position, which still shows the first card in full. The
-  // bug this guards against was a 66px offset that cropped "Challenge".
-  ok("the carousel opens at the first option", railStart <= 12, `scrollLeft=${railStart}`);
-
-  // Capture BEFORE the scroll-each-card loop below, so the screenshot shows
-  // the menu as a player first sees it rather than mid-scroll.
   await page.screenshot({ path: `${SHOTS}/menu-${label.toLowerCase()}-atload.png` });
 
-  const firstCard = await page.locator("#challengeBtn").boundingBox();
-  const railBox = await page.locator(".carousel-viewport").boundingBox();
-  if (firstCard && railBox) {
+  // Every destination must be visible and pressable WITHOUT scrolling. That is
+  // the property the tile row buys, and the one a future fifth item would
+  // silently break.
+  for (const id of ["#playBtn", "#challengeBtn", "#menuShopBtn", "#menuLeaderboardBtn", "#menuProfileBtn"]) {
+    const box = await page.locator(id).boundingBox();
+    const onScreen =
+      box !== null && viewport !== null && box.x >= -1 && box.x + box.width <= viewport.width + 1;
     ok(
-      "the first card isn't clipped by the rail edge",
-      firstCard.x >= railBox.x - 1,
-      `card x=${Math.round(firstCard.x)}, rail x=${Math.round(railBox.x)}`,
+      `${id} is on screen and a real touch target`,
+      box !== null && box.height >= 44 && onScreen,
+      box ? `${Math.round(box.width)}x${Math.round(box.height)} at x=${Math.round(box.x)}` : "no box",
     );
   }
 
-  // Every card must be reachable — this is what a wrapped/clipped row breaks.
-  // NOTE: this loop SCROLLS the rail, so the "opens at first option" check
-  // above must stay before it.
-  for (const id of ["#playBtn", "#challengeBtn", "#menuShopBtn", "#menuLeaderboardBtn", "#menuProfileBtn"]) {
-    await page.locator(id).scrollIntoViewIfNeeded();
-    const box = await page.locator(id).boundingBox();
-    ok(
-      `${id} is reachable and a real touch target`,
-      box !== null && box.height >= 44 && box.width >= 60,
-      box ? `${Math.round(box.width)}x${Math.round(box.height)}` : "no box",
-    );
-  }
+  // The wallet and the sound control moved into the menu's own top bar.
+  ok("the wallet is in the top bar", await page.isVisible(".menu-bar .coin-line"));
+  ok("the menu has its own mute button", await page.isVisible("#menuMuteBtn"));
 
   // Nothing may overflow the viewport horizontally.
   const overflows = await page.evaluate(
@@ -254,34 +244,9 @@ async function main(): Promise<void> {
     const desktopUser = await signUpTo(desktop);
     await checkMenu(desktop, "Desktop");
     await checkInstallBanner(desktop, "Desktop");
-
-    section("Desktop — carousel arrows");
-    // checkMenu above scrolls every card into view, which leaves the rail at
-    // its END. Reset to the start so these assertions describe the rail as a
-    // player first meets it.
-    await desktop.locator(".carousel-viewport").evaluate((el) => { el.scrollLeft = 0; });
-    await desktop.waitForTimeout(400);
-    // With Play in the rail (IDEA-036 v3) there are five cards, which may or
-    // may not fit depending on width — so assert the arrows are CONSISTENT
-    // with whether the rail actually scrolls, rather than assuming either.
-    const scrollableDesktop = await desktop
-      .locator(".carousel-viewport")
-      .evaluate((el) => el.scrollWidth > el.clientWidth + 1);
-    const prevHidden = await desktop.locator("#carouselPrev").evaluate((el) =>
-      el.classList.contains("hidden-arrow"),
-    );
-    const nextHidden = await desktop.locator("#carouselNext").evaluate((el) =>
-      el.classList.contains("hidden-arrow"),
-    );
-    // At the START of the rail the back arrow is always useless; the forward
-    // arrow is useful exactly when there's more to scroll to.
-    ok("the back arrow hides at the start of the rail", prevHidden);
-    ok(
-      "the forward arrow matches whether the rail can scroll",
-      nextHidden === !scrollableDesktop,
-      `scrollable=${scrollableDesktop}, nextHidden=${nextHidden}`,
-    );
-
+    // The desktop account used to be cleaned up at the end of the carousel-arrow
+    // section, which went away with the carousel. Deleting it here keeps the run
+    // from leaving an account behind on every pass.
     await deleteAccount(desktop, desktopUser);
 
     // --- phone --------------------------------------------------------------
@@ -300,41 +265,6 @@ async function main(): Promise<void> {
     const phoneUser = await signUpTo(phone);
     await checkMenu(phone, "Phone");
     await checkInstallBanner(phone, "Phone");
-
-    section("Phone — the edge fade cues that the rail scrolls");
-    // The arrows are hidden on phones, so this fade is the ONLY hint that
-    // there's more past the edge. Assert it tracks the scroll position rather
-    // than just existing.
-    const fadeAt = async () =>
-      phone.locator(".carousel-viewport").evaluate((el) => {
-        const cs = getComputedStyle(el);
-        return {
-          left: cs.getPropertyValue("--fade-left").trim(),
-          right: cs.getPropertyValue("--fade-right").trim(),
-        };
-      });
-
-    await phone.locator(".carousel-viewport").evaluate((el) => { el.scrollLeft = 0; });
-    await phone.waitForTimeout(500);
-    const atStartFade = await fadeAt();
-    ok("at the start: no left fade", atStartFade.left === "0px", JSON.stringify(atStartFade));
-    ok("at the start: right edge fades", atStartFade.right !== "0px", JSON.stringify(atStartFade));
-
-    await phone.locator(".carousel-viewport").evaluate((el) => { el.scrollLeft = el.scrollWidth; });
-    await phone.waitForTimeout(500);
-    const atEndFade = await fadeAt();
-    ok("at the end: left edge fades", atEndFade.left !== "0px", JSON.stringify(atEndFade));
-    ok("at the end: no right fade", atEndFade.right === "0px", JSON.stringify(atEndFade));
-
-    // Reset so later steps see the rail as a player first meets it.
-    await phone.locator(".carousel-viewport").evaluate((el) => { el.scrollLeft = 0; });
-    await phone.waitForTimeout(400);
-
-    section("Phone — the rail actually scrolls");
-    const scrollable = await phone
-      .locator(".carousel-viewport")
-      .evaluate((el) => el.scrollWidth > el.clientWidth + 1);
-    ok("the carousel is swipeable on a narrow screen", scrollable);
 
     await deleteAccount(phone, phoneUser);
 

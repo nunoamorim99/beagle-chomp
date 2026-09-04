@@ -11,6 +11,7 @@
 // Follows the attachX(root, callbacks) => handle pattern; no `three` imports.
 
 import { escapeHtml } from "./escape";
+import { ICON, iconHtml, plateHtml } from "./icons";
 import { getProfileCache } from "../game/profileCache";
 import { getControlScheme, type ControlScheme } from "../game/profileStore";
 import { logout as logoutRemote, deleteAccount } from "../net/endpoints";
@@ -70,12 +71,12 @@ export function attachProfile(callbacks: ProfileCallbacks): ProfileHandle {
         </header>
 
         <dl class="profile-stats">
-          <div><dt>Coins</dt><dd>🪙 ${profile.coins}</dd></div>
+          <div><dt>Coins</dt><dd>${plateHtml("coin", "inline")}${profile.coins}</dd></div>
           <div><dt>Unlocked</dt><dd>${owned} items</dd></div>
           <div><dt>Challenge</dt><dd>${profile.challengeProgress} / 8 unlocked</dd></div>
         </dl>
 
-        ${error ? `<p class="auth-error" role="alert">${escapeHtml(error)}</p>` : ""}
+        ${error ? `<p class="auth-error" role="alert">${iconHtml(ICON.error)}${escapeHtml(error)}</p>` : ""}
 
         <section class="profile-setting">
           <h2>Controls</h2>
@@ -84,13 +85,13 @@ export function attachProfile(callbacks: ProfileCallbacks): ProfileHandle {
             <button type="button" id="controlSwipe"
                     class="control-option${scheme === "swipe" ? " is-active" : ""}"
                     aria-pressed="${scheme === "swipe"}">
-              <span class="control-icon" aria-hidden="true">&#128070;</span>
+              <span class="control-icon bc-i" aria-hidden="true">swipe</span>
               <span>Swipe</span>
             </button>
             <button type="button" id="controlDpad"
                     class="control-option${scheme === "dpad" ? " is-active" : ""}"
                     aria-pressed="${scheme === "dpad"}">
-              <span class="control-icon" aria-hidden="true">&#127918;</span>
+              <span class="control-icon bc-i" aria-hidden="true">stadia_controller</span>
               <span>Buttons</span>
             </button>
           </div>
@@ -106,7 +107,7 @@ export function attachProfile(callbacks: ProfileCallbacks): ProfileHandle {
 
         <div class="profile-actions">
           <button type="button" id="profilePrivacyBtn" class="btn-secondary">Privacy notice</button>
-          <button type="button" id="profileSignOutBtn" class="btn-secondary">Sign out</button>
+          <button type="button" id="profileSignOutBtn" class="btn-secondary">${iconHtml(ICON.logout)}Sign out</button>
         </div>
 
         <section class="profile-danger">
@@ -125,7 +126,7 @@ export function attachProfile(callbacks: ProfileCallbacks): ProfileHandle {
             <div class="profile-danger-actions">
               <button type="button" id="deleteCancelBtn" class="btn-secondary">Cancel</button>
               <button type="button" id="deleteConfirmBtn" class="btn-danger">
-                Delete my account permanently
+                ${iconHtml(ICON.delete)}Delete my account permanently
               </button>
             </div>
           `

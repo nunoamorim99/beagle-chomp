@@ -26,6 +26,7 @@ import {
   type RunBoardEntry,
   type RunBoardResponse,
 } from "../net/endpoints";
+import { ICON, icon } from "./icons";
 
 export interface LeaderboardHandle {
   open: () => void;
@@ -99,14 +100,25 @@ export function attachLeaderboard(callbacks: LeaderboardCallbacks = {}): Leaderb
     sub?: string,
   ): HTMLElement {
     const row = document.createElement("li");
-    row.className = isMe ? "lb-row lb-row-me" : "lb-row";
+    // The podium sits on the lighter bark, the rest on the darker fill: the
+    // top of a board should look different from the middle of it even before
+    // the numbers are read.
+    const podium = entry.rank <= 3 ? " lb-row-podium" : "";
+    row.className = isMe ? "lb-row lb-row-me" : `lb-row${podium}`;
 
     const rank = document.createElement("span");
     rank.className = "lb-rank";
-    // Medals for the podium; plain numbers below. On the all-runs board the
-    // same player can legitimately take more than one medal.
-    rank.textContent =
-      entry.rank === 1 ? "🥇" : entry.rank === 2 ? "🥈" : entry.rank === 3 ? "🥉" : `${entry.rank}`;
+    // The rank is a PLATE carrying its own number — gold, silver and bronze
+    // for the podium, ink for everyone else.
+    //
+    // It replaced three medal emoji, and then a single Material Symbols medal
+    // in three tints. Both had the same problem: at the size a row allows,
+    // three medals are three near-identical discs, and the reader still has
+    // to count rows to know which place they are looking at. A numbered plate
+    // says the place outright and still ranks by colour at a glance, and it
+    // is the same object the rest of the interface uses for a game item.
+    rank.textContent = `${entry.rank}`;
+    if (entry.rank <= 3) rank.classList.add(`lb-rank-${entry.rank}`);
 
     const name = document.createElement("span");
     name.className = "lb-name";
@@ -172,28 +184,45 @@ export function attachLeaderboard(callbacks: LeaderboardCallbacks = {}): Leaderb
     const header = document.createElement("header");
     header.className = "lb-header";
 
-    const titles = document.createElement("div");
+    // An icon square, like the shop's and the map's — three full-screen pages
+    // that all leave the same way should leave it the same way.
+    const closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.className = "lb-back";
+    closeBtn.setAttribute("aria-label", "Close leaderboard");
+    closeBtn.append(icon(ICON.back));
+    closeBtn.addEventListener("click", () => close());
+
     const h1 = document.createElement("h1");
-    h1.textContent = "🏆 Leaderboard";
+    h1.textContent = "Leaderboard";
+
+    // Balances the back button so the title is optically centred in the row —
+    // the same trick the challenge map's header used before it grew a progress
+    // bar to fill that side.
+    const spacer = document.createElement("div");
+    spacer.className = "lb-header-spacer";
+    spacer.setAttribute("aria-hidden", "true");
+
+    header.append(closeBtn, h1, spacer);
+    sheet.append(header);
+    sheet.append(buildTabs());
+
+    // WHICH board this is, under the tabs rather than under the title.
+    //
+    // The design's header is a single centred row and has no room for it, but
+    // the line itself is load-bearing: it is the only place the screen says
+    // CLASSIC ONLY, and without it a player who just cleared C8 is left
+    // wondering where that score went (the reason this module's header comment
+    // gives for the line existing at all). Under the tabs it also sits beside
+    // the control it describes, which is where it belonged anyway.
     const sub = document.createElement("p");
     sub.className = "lb-sub";
-    // Spell out which board this is — the difference between "one row per
-    // player" and "one row per run" is exactly what confused people.
     sub.textContent =
       tab === "players"
         ? "Classic mode — each player's personal best"
         : "Classic mode — every run, best first";
-    titles.append(h1, sub);
+    sheet.append(sub);
 
-    const closeBtn = document.createElement("button");
-    closeBtn.type = "button";
-    closeBtn.className = "btn-link";
-    closeBtn.textContent = "Close";
-    closeBtn.addEventListener("click", () => close());
-
-    header.append(titles, closeBtn);
-    sheet.append(header);
-    sheet.append(buildTabs());
     if (pinned) sheet.append(pinned);
 
     const body = document.createElement("div");
@@ -288,7 +317,7 @@ export function attachLeaderboard(callbacks: LeaderboardCallbacks = {}): Leaderb
     } else if (me.rank === 1) {
       const gap = document.createElement("p");
       gap.className = "lb-mine-gap lb-mine-leader";
-      gap.textContent = "🏆 You're top of the board.";
+      gap.append(icon(ICON.trophy), document.createTextNode("You're top of the board."));
       card.append(gap);
     }
 
@@ -487,7 +516,7 @@ export function attachLeaderboard(callbacks: LeaderboardCallbacks = {}): Leaderb
     } else if (myBest.rank === 1) {
       const gap = document.createElement("p");
       gap.className = "lb-mine-gap lb-mine-leader";
-      gap.textContent = "🏆 Best run on the board.";
+      gap.append(icon(ICON.trophy), document.createTextNode("Best run on the board."));
       card.append(gap);
     }
 

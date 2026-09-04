@@ -15,6 +15,7 @@
 // Deliberately three-free and DOM-only: this is input, not render.
 
 import type { Vec2 } from "../game/grid";
+import { ICON, icon } from "../ui/icons";
 
 export interface DpadHandle {
   /** Show/hide without tearing down — the pad is hidden on the menu and while
@@ -23,11 +24,16 @@ export interface DpadHandle {
   detach: () => void;
 }
 
-const DIRECTIONS: Array<{ id: string; label: string; dir: Vec2; aria: string }> = [
-  { id: "dpadUp", label: "▲", dir: { x: 0, y: -1 }, aria: "Move up" },
-  { id: "dpadLeft", label: "◀", dir: { x: -1, y: 0 }, aria: "Move left" },
-  { id: "dpadRight", label: "▶", dir: { x: 1, y: 0 }, aria: "Move right" },
-  { id: "dpadDown", label: "▼", dir: { x: 0, y: 1 }, aria: "Move down" },
+// The glyphs are Material Symbols chevrons rather than the geometric-shape
+// characters (▲◀▶▼) this used to carry. Those are text, so they picked up
+// whatever the platform's fallback font decided — three different weights on
+// three different phones — and at 60px they rendered as flat wedges, which is
+// the one thing a key on a toon board must not look like.
+const DIRECTIONS: Array<{ id: string; glyph: string; dir: Vec2; aria: string }> = [
+  { id: "dpadUp", glyph: ICON.up, dir: { x: 0, y: -1 }, aria: "Move up" },
+  { id: "dpadLeft", glyph: ICON.left, dir: { x: -1, y: 0 }, aria: "Move left" },
+  { id: "dpadRight", glyph: ICON.right, dir: { x: 1, y: 0 }, aria: "Move right" },
+  { id: "dpadDown", glyph: ICON.down, dir: { x: 0, y: 1 }, aria: "Move down" },
 ];
 
 /**
@@ -43,12 +49,12 @@ export function attachDpad(root: HTMLElement, onDir: (d: Vec2) => void): DpadHan
   pad.setAttribute("role", "group");
   pad.setAttribute("aria-label", "Direction pad");
 
-  for (const { id, label, dir, aria } of DIRECTIONS) {
+  for (const { id, glyph, dir, aria } of DIRECTIONS) {
     const button = document.createElement("button");
     button.type = "button";
     button.id = id;
     button.className = `dpad-btn dpad-${id.replace("dpad", "").toLowerCase()}`;
-    button.textContent = label;
+    button.appendChild(icon(glyph));
     button.setAttribute("aria-label", aria);
 
     // pointerdown, not click: a direction should register the instant the
@@ -81,9 +87,16 @@ export function attachDpad(root: HTMLElement, onDir: (d: Vec2) => void): DpadHan
   return {
     setVisible(visible: boolean): void {
       pad.classList.toggle("hidden", !visible);
+      // `body.dpad-on` lets anything else anchored to the bottom of the screen
+      // get out of the pad's way — currently the power-up tray, which sits
+      // just above it (see .powerups in style.css). Toggled HERE rather than
+      // in game.ts because this module already owns "is the pad on screen",
+      // and two places deciding that is how they drift apart.
+      document.body.classList.toggle("dpad-on", visible);
     },
     detach(): void {
       pad.remove();
+      document.body.classList.remove("dpad-on");
     },
   };
 }

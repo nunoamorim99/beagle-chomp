@@ -136,6 +136,136 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v7.
   renders the real `makeBeagle()` with orbit controls, six preset camera angles
   (`?view=`) and part isolation (`?solo=`). Not a rollup input, so it never
   ships (same construction as `/editor/`).
+- **THE 2D LAYER HAS A DESIGN SYSTEM** (IDEA-048, "Toon boards, not glass panels"):
+  the tokens live in **`src/ui/tokens.css`** and every component in
+  `src/style.css` is built from them. Read tokens.css before touching any
+  interface CSS — it carries the palette, the geometry and the reasoning.
+  Five rules are load-bearing:
+  1. **Outline everything.** A 3px `--bc-outline` (`#1B1512`) around every 2D
+     element. It ties the chrome to the toon meshes behind it AND guarantees
+     contrast on sky, hedge and soil alike — a hairline white border is
+     invisible on mid-green, which is what the HUD sits on half the time.
+  2. **Depth is a thick BOTTOM BORDER, and pressing sinks into it.** No drop
+     shadows and **no `backdrop-filter`** — a blur is a full-screen composite
+     every frame on top of a live WebGL canvas, and it makes chrome read as OS
+     furniture. Press removes the extra border and moves the face down by the
+     same amount, so the box never changes size under a thumb.
+  3. **Dim by PAINT, never by `opacity`.** Anything over the live 3D that goes
+     translucent picks up the sky and turns blue-grey — the exact glass look
+     this replaced. A locked shop card gets a darker fill, not 65% alpha.
+  4. **Colour comes from the world.** Hedge, soil, biscuit, sky, beagle tan and
+     the five enemy hues are already on screen in 3D; the UI uses those values.
+     The five enemy hues are reserved for STATE (power-up chips), never chrome,
+     and **amber marks the single next action on a screen** — two amber things
+     means one is wrong.
+  5. **Three fonts, one icon family — all SELF-HOSTED AND SUBSET.** Baloo 2
+     (display) · Quicksand (body) · DM Mono (anything that ticks or lines up),
+     plus Material Symbols Rounded, as five woff2 files in `src/ui/fonts/`
+     (108 KiB total) declared in `tokens.css`. **Never add a Google Fonts
+     `<link>`.** They shipped that way once and a blocked CDN request took the
+     entire visual language down — system-fallback type, tofu on the level map,
+     and every icon printing its own ligature name ("arrow_back Menu"). This is
+     an offline-capable PWA whose textures and sounds are already generated
+     rather than fetched; type was the last thing phoning out, on the boot path.
+     **There are no emoji in the interface** — they were at the mercy of each
+     platform's font and carried their own colour, so they could never join the
+     ink-outline language. Go through **`src/ui/icons.ts`**: `ICON` names a
+     ROLE, `icon()`/`iconHtml()` draw a chrome glyph, and `plate()`/`plateHtml()`
+     draw a GAME OBJECT (coin/biscuit/bone/life/fruit/power-up) as a lit
+     outlined square, because those are things you collect in the maze rather
+     than bullet points. Three traps:
+     - **Adding an icon means re-cutting the subset** (recipe in `tokens.css`).
+       The font holds only the 46 names `ICON` lists; anything else renders as
+       that word in plain text.
+     - **Address glyphs by LIGATURE NAME, never by codepoint** — including
+       inside SVG `<text>`, where ligatures do resolve. Subsetting does not
+       preserve Material Symbols' private-use codepoints (`U+E668` survived the
+       cut, `U+E899` did not), which is the opposite of what `levelMap.ts`
+       originally assumed.
+     - An icon element holds its ligature name as its TEXT, so writing
+       `textContent` on a button containing one deletes the icon — pause, mute
+       and the menu coin line each rewrite the inner `<i>` instead.
+  **THE SIX SCREENS WERE REDESIGNED TOO** ("Redesigned Screens.dc.html", the
+  companion file to the component system). What changed structurally, beyond
+  paint:
+  - **The menu carousel is GONE.** It existed because five buttons did not fit
+    a 390px row; Play was promoted to its own full-width block and the four
+    destinations became a fixed 4-up grid, which does fit. The rail, its
+    arrows, its `@property` edge-fade mask and `src/ui/menuCarousel.ts` all
+    went with it. Adding a FIFTH destination would bring the problem back —
+    `test-menu-ui.ts` asserts every tile is on screen without scrolling.
+  - **`.hud` is TWO COLUMNS**, not a three-way space-between. The chrome row
+    lives inside the right column instead of being `position:fixed` at a
+    measured offset that had to be re-tuned whenever anything above it changed
+    height.
+  - **`hud.setLevel` splits its label.** It is handed "Map 3" / "Bonus" / "C5",
+    and the chip is an eyebrow plus a figure, so a leading "Map " becomes the
+    eyebrow and anything else is shown whole. Prefixing blindly produced
+    "MAP Bonus".
+  - **Game over is a RESULT BOARD**: a stroked banner over a board carrying the
+    score, maps cleared, coins earned and the gap to the personal best. The
+    first three come from the telemetry the run already keeps for the server;
+    the best arrives with the submit response and is filled in by
+    `showBestLine` AFTER the board is up, so the panel never waits on a round
+    trip. `showPanel(html, banner?)` grew the optional banner for it, and adds
+    `center--dim` — a panel covers the run, so the scene behind it dims; a
+    banner alone does not.
+  - **Shop items have a `blurb`**, required on `BeagleSkin`, `EnemySkin` and
+    `MazeTheme`. The price moved onto the action button to make room for it —
+    the info bar used to say the name, the price, and then a button saying the
+    price again. A new theme needs a blurb in `themes.ts` AND in
+    `boardCodegen.ts`’s writer (the same hand-written-field trap the palette
+    has; `test-board-surfaces` guards it).
+  - **Rank is a numbered PLATE** on the leaderboard (gold/silver/bronze), not a
+    medal glyph: at row size three medals are three near-identical discs and
+    the reader still has to count rows.
+  - **`<br>` contributes no whitespace to `textContent`.** The two-line menu
+    title needs a real space before the break or its accessible name is
+    "BeagleChomp".
+  **The lives chip always draws `LIVES.max` hearts** and dims the ones not yet
+  earned, so the ceiling is visible from a player’s first run rather than only
+  after they earn a fourth. `createHud(root, maxLives)` takes the cap as an
+  ARGUMENT — hud.ts is the DOM layer and must not import from `src/game` — and
+  game.ts passes `LIVES.max`. A fixed-length row also removes the reason the
+  old code tracked a high-water mark: it cannot shift when a life changes.
+  The row is on a 4px budget: at 390px there are 362px, the score column takes
+  157 and the gap 8, so map (75) + lives must fit 197. Five hearts at 16px with
+  a 2px gap and 8px padding measure 110, which fits by four pixels — change any
+  of those and re-measure, or lives drops to a line of its own.
+  **THE POWER-UP TRAY SITS UNDER THE MAZE, AND THE SPACE THERE IS TINY.**
+  `src/render/scene.ts` publishes **`--bc-board-bottom`** (the board AABB's
+  lowest projected corner, recomputed in `resize()`) because the maze is 3D and
+  its camera dollies with the aspect ratio — CSS cannot know where it ends, and
+  a guess is wrong on the next phone and wrong again on rotation. The tray is a
+  single horizontal row anchored to that value.
+  **Measure before changing it.** On a 390×844 phone the board ends at y=620
+  and the D-pad starts at y=636: sixteen pixels. So the tray CANNOT stay under
+  the board once the pad is on, and how far it has to move is not knowable in
+  CSS — the row wraps to more lines as more power-ups are held. Hence the rule:
+  **swipe anchors the tray's TOP to the board; the D-pad anchors its BOTTOM to
+  the pad.** The second is exact at any number of lines (it can never reach the
+  pad) and grows upward over the board's lower edge instead, which is fine —
+  this tray has always been a scrim readout ON the play area. A guessed row
+  height was the version that failed, and it failed by exactly one line.
+  `body.dpad-on` is the switch, toggled by `src/input/dpad.ts`'s `setVisible`,
+  which owns "is the pad on screen" so nothing else decides it. Under 480px
+  tall the board fills the whole height, so the tray sits bottom-left and is
+  narrowed to stop short of the centred pad rather than lifted over the maze.
+  **Both control schemes must stay playable**, at 390, 360 AND landscape. Every
+  failure found here was geometry, and every one was found by measuring rather
+  than by looking — a container that spans the full width will also report a
+  false overlap, so measure the CHIPS.
+  **`src/ui/sound.ts` gained an interface layer** (`sound.ui`): one wooden tap
+  for every press, the same tap a fourth up for a selection, plus purchase /
+  equip / unlocked / error / screen cues and a menu bed. `attachUiSounds()`
+  wires the tap with ONE delegated listener rather than a call per button, and
+  the whole layer ducks 6 dB while a run is on (`setRunActive`), so a menu tap
+  can never mask a chomp.
+  **The idle bob animates the Play card's ICON, not the card.** Bobbing the
+  card made the game's most-pressed control a permanently moving target and
+  hung every Playwright click on `#playBtn` — an element whose bounding box
+  never settles never becomes actionable. Any new decoration on a control has
+  to leave the hit target still.
 - **Input / UI / PWA**: `src/input/{touch,keyboard}.ts`, `src/ui/{hud,sound,install}.ts`,
   `public/icons/*` (192, 512, 512-maskable).
 - **Wall surfaces are PROCEDURAL** (`src/render/wallTexture.ts`): each theme's

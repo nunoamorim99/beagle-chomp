@@ -457,6 +457,35 @@ export function createScene(canvas: HTMLCanvasElement): SceneRig {
     // same FOG_COLOR/near/far as the constructor so the two never drift.
     const fogScale = dist / baseDist;
     scene.fog = new THREE.Fog(FOG_COLOR, FOG_NEAR_BASE * fogScale, FOG_FAR_BASE * fogScale);
+
+    publishBoardBottom(h);
+  }
+
+  /**
+   * Publish where the board ENDS on screen, as the CSS variable
+   * `--bc-board-bottom` on the document element.
+   *
+   * The 2D layer wants to sit things directly under the maze (the power-up
+   * tray does), and only this module can answer where that is: the board is 3D,
+   * the camera dollies with the aspect ratio, and the portrait ramp above moves
+   * it again. Anything CSS-side would be a guess that is wrong on the next
+   * phone, and wrong the moment the device is rotated.
+   *
+   * Projecting the board AABB and taking the LOWEST corner (minimum NDC y, since
+   * NDC +1 is the top of the frame) gives the on-screen bottom of everything the
+   * board occupies, walls included. Recomputed only in resize(): the camera is
+   * fixed during play, so this is not per-frame work.
+   */
+  function publishBoardBottom(viewportH: number): void {
+    let minNdcY = Infinity;
+    for (const corner of BOARD_CORNERS) {
+      minNdcY = Math.min(minNdcY, corner.clone().project(camera).y);
+    }
+    const bottomPx = ((1 - minNdcY) / 2) * viewportH;
+    // Clamped: on an extreme aspect the near corner can project past the frame,
+    // and a value outside the viewport would push the tray off screen entirely.
+    const clamped = Math.round(Math.max(0, Math.min(viewportH, bottomPx)));
+    document.documentElement.style.setProperty("--bc-board-bottom", `${clamped}px`);
   }
 
   window.addEventListener("resize", resize);

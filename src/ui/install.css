@@ -12,7 +12,13 @@
 
    Now: a full-width banner pinned to the TOP, with a modest radius that can't
    deform, and a layout that stacks deliberately on narrow screens instead of
-   wrapping by accident. */
+   wrapping by accident.
+
+   Design system pass: it is a BOARD (solid bark, ink outline, bottom edge) —
+   see src/ui/tokens.css. It used to be translucent + backdrop-blurred, which
+   put a blur pass over the live WebGL canvas for a banner that is only on
+   screen for a few seconds, and left it looking like OS chrome rather than
+   part of the game. */
 
 .install-hint{
   position:fixed;
@@ -25,33 +31,34 @@
   z-index:30;
   display:flex;
   align-items:center;
-  gap:12px;
+  gap:var(--bc-s3);
   max-width:min(520px,100%);
   box-sizing:border-box;
-  background:rgba(16,16,30,.94);
-  border:1px solid rgba(255,255,255,.16);
+  background:var(--bc-bark);
+  border:var(--bc-line) solid var(--bc-outline);
+  border-bottom-width:var(--bc-edge-board);
   /* A fixed, modest radius: cannot deform into a lozenge whatever the height. */
-  border-radius:14px;
-  padding:12px 14px;
-  box-shadow:0 8px 30px rgba(0,0,0,.45);
-  backdrop-filter:blur(6px);
+  border-radius:var(--bc-r-card);
+  padding:var(--bc-s3) var(--bc-gutter);
   pointer-events:auto;
 }
 
 /* The app icon. Decorative — alt="" keeps a screen reader on the message,
-   which already names the app. */
+   which already names the app. Outlined like every other object in the
+   system, so it reads as a thing on the board rather than a pasted-on png. */
 .install-hint__icon{
   flex:0 0 auto;
-  width:40px;
-  height:40px;
-  border-radius:9px;
+  width:42px;
+  height:42px;
+  border-radius:12px;
+  border:var(--bc-line) solid var(--bc-outline);
   display:block;
 }
 
 .install-hint__text{
   font-size:14px;
   line-height:1.45;
-  color:var(--ink);
+  color:var(--bc-text-soft);
   flex:1 1 auto;
   /* The whole point: let it wrap onto as many lines as it needs. */
   min-width:0;
@@ -60,66 +67,60 @@
 .install-hint__action{
   flex:0 0 auto;
   padding:10px 18px;
-  font-size:14px;
+  font-size:15px;
   white-space:nowrap;
   /* >=44px tall for a comfortable touch target. */
-  min-height:44px;
+  min-height:var(--bc-touch);
 }
 
+/* The dismiss is a quiet icon button, not a board: giving it an edge would
+   make it a peer of Install, and it is the opposite of the action we want. */
 .install-hint__dismiss{
   flex:0 0 auto;
   background:transparent;
-  color:var(--muted);
+  color:var(--bc-text-mute);
   border:none;
-  font-size:20px;
+  font-size:24px;
   line-height:1;
   /* >=44px square: the v1 version was ~26px, which is a miss on a phone. */
-  min-width:44px;
-  min-height:44px;
+  min-width:var(--bc-touch);
+  min-height:var(--bc-touch);
   display:flex;
   align-items:center;
   justify-content:center;
   cursor:pointer;
-  border-radius:10px;
+  border-radius:var(--bc-r-chip);
 }
-.install-hint__dismiss:hover{color:var(--ink)}
-.install-hint__dismiss:focus-visible{outline:2px solid #fff;outline-offset:2px}
+.install-hint__dismiss:hover{color:var(--bc-cream);transform:none}
+.install-hint__dismiss:active{transform:none}
+.install-hint__dismiss:focus-visible{outline:var(--bc-line) solid var(--bc-cream);outline-offset:2px}
 
 /* Narrow phones: stack instead of wrapping mid-row.
  *
- * A CSS grid rather than flex-wrap, because wrapping put the dismiss ✕ on its
- * own line with a dead gap above it (caught in a screenshot — the measurements
- * all passed). Grid pins ✕ to the top-right corner beside the text, and gives
- * the action its own full-width row underneath:
+ * A CSS grid rather than flex-wrap, because wrapping put the dismiss glyph on
+ * its own line with a dead gap above it (caught in a screenshot — the
+ * measurements all passed). Grid pins it to the top-right corner beside the
+ * text, and gives the action its own full-width row underneath:
  *
- *     ┌──────────────────────┬───┐
- *     │ message text…        │ ✕ │
- *     ├──────────────────────┴───┤
+ *     ┌────┬──────────────────┬───┐
+ *     │ 🐶 │ message text…    │ ✕ │
+ *     ├────┴──────────────────┴───┤
  *     │        [ Install ]        │
- *     └──────────────────────────┘
+ *     └───────────────────────────┘
  */
 @media (max-width:460px){
   .install-hint{
     display:grid;
-    /* Three columns now: icon, message, dismiss. The action still gets its own
-       full-width row underneath.
-
-           ┌────┬──────────────────┬───┐
-           │ 🐶 │ message text…    │ ✕ │
-           ├────┴──────────────────┴───┤
-           │        [ Install ]        │
-           └───────────────────────────┘
-    */
     grid-template-columns:auto 1fr auto;
-    gap:10px 10px;
-    padding:12px;
+    gap:10px;
+    padding:var(--bc-s3);
     align-items:start;
   }
   .install-hint__icon{
     grid-column:1;
     grid-row:1;
-    width:36px;
-    height:36px;
+    width:38px;
+    height:38px;
     /* Optically aligned with the first line of text rather than the box top. */
     margin-top:6px;
   }

@@ -15,6 +15,7 @@
 // does not touch src/ui/hud.ts's existing Hud interface/contract — this is
 // an independent small overlay element the caller (main.ts) mounts once.
 import "./install.css";
+import { ICON, iconHtml } from "./icons";
 
 // `beforeinstallprompt` is a non-standard Chromium event with no lib.dom.d.ts
 // typings; declare only the surface we use.
@@ -53,8 +54,10 @@ function buildBanner(message: string, buttonLabel: string | null): {
     '<img class="install-hint__icon" src="./icons/icon-192.png" alt="" ' +
     'width="40" height="40" decoding="async" />' +
     `<span class="install-hint__text">${message}</span>` +
-    (buttonLabel ? `<button type="button" class="install-hint__action">${buttonLabel}</button>` : "") +
-    '<button type="button" class="install-hint__dismiss" aria-label="Dismiss">&times;</button>';
+    (buttonLabel
+      ? `<button type="button" class="install-hint__action">${iconHtml(ICON.install)}${buttonLabel}</button>`
+      : "") +
+    `<button type="button" class="install-hint__dismiss" aria-label="Dismiss">${iconHtml(ICON.close)}</button>`;
   document.body.appendChild(el);
   // IDEA-006 v3: the banner is pinned to the TOP now, so the menu's title block
   // must move down out from under it. A body class keeps that entirely in CSS,

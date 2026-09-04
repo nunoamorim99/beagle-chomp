@@ -17,6 +17,8 @@
 // game.ts's wiring. Nothing here throws if resume() is called before/after
 // the context is already running, or many times over.
 
+import { ICON, setGlyph } from "./icons";
+
 const MUTE_STORAGE_KEY = "bc_muted";
 
 // ---------------------------------------------------------------------------
@@ -92,6 +94,51 @@ export interface Sound {
   setMuted(muted: boolean): void;
   isMuted(): boolean;
   resume(): void;
+  /** Design system §10: the INTERFACE sound layer, under the game layer. */
+  ui: UiSound;
+}
+
+/**
+ * §10 Sound cues — the interface layer.
+ *
+ * Separate from the cues above because it answers to a different question.
+ * The game cues describe what happened in the MAZE; these describe what
+ * happened in the INTERFACE, and the design system asks for two things that
+ * only make sense once they are grouped:
+ *
+ *   1. ONE VOICE. "Short wooden tap … same sample everywhere, so the
+ *      interface has one voice." Every pressable thing in the game makes the
+ *      same noise, and selecting something makes that same noise a fourth
+ *      higher — because selection is a lighter act than committing. That is
+ *      why press/select are one cue with a pitch argument rather than two
+ *      independently-tuned sounds that would drift apart.
+ *
+ *   2. THEY DUCK. Interface cues drop 6 dB while a run is in progress, so a
+ *      menu tap can never mask a chomp or a death. `setRunActive` is the one
+ *      switch, and it moves a single gain node the whole layer routes
+ *      through — no per-cue bookkeeping.
+ *
+ * Levels are the design's own, in dB, converted once in DB below.
+ */
+export interface UiSound {
+  /** Any button. The interface's single voice. */
+  press(): void;
+  /** A tab or a card — the same tap, pitched up a fourth. */
+  select(): void;
+  /** Coins left the wallet. */
+  purchase(): void;
+  /** A skin or theme went on. The one place the dog itself answers you. */
+  equip(): void;
+  /** A challenge level flipped from grey to green. */
+  unlocked(): void;
+  /** Rejected — a low double thud, never a buzzer. */
+  error(): void;
+  /** A full-screen page opened or closed, under the hedge wipe. */
+  screen(): void;
+  /** Birds and distant traffic under the menu. Silent during a run. */
+  menuBed(on: boolean): void;
+  /** Duck the whole interface layer while a run is in progress. */
+  setRunActive(active: boolean): void;
 }
 
 export function createSound(): Sound {
@@ -343,6 +390,302 @@ export function createSound(): Sound {
     });
   }
 
+  // ---- §10: the interface sound layer --------------------------------------
+  //
+  // Everything below routes through `uiBus` rather than straight to `master`,
+  // which is what makes the 6 dB duck one assignment instead of a peak
+  // adjustment on every cue. uiBus -> master means mute still wins over all of
+  // it, unchanged.
+  const uiBus = ctx.createGain();
+  uiBus.gain.value = 1;
+  uiBus.connect(master);
+
+  /** The design's levels, as linear gains. 10^(dB/20). */
+  const DB = {
+    press: 0.251, // -12
+    select: 0.158, // -16
+    purchase: 0.398, // -8
+    equip: 0.398, // -8
+    unlocked: 0.501, // -6
+    error: 0.316, // -10
+    screen: 0.126, // -18
+    bed: 0.063, // -24
+  } as const;
+
+  /** How far the interface layer drops while a run is on. -6 dB. */
+  const DUCK = 0.501;
+
+  /**
+   * One shot of filtered white noise — the ingredient every non-musical cue
+   * here is made of (the wooden tap's body, the leaf rustle, the tin, the
+   * traffic bed).
+   *
+   * The buffer is built once and reused: a fresh Float32Array per tap would
+   * allocate on the most frequent event in the interface.
+   */
+  let noiseBuffer: AudioBuffer | null = null;
+  function getNoise(): AudioBuffer {
+    if (noiseBuffer) return noiseBuffer;
+    const frames = Math.floor(ctx.sampleRate * 1.5);
+    const buf = ctx.createBuffer(1, frames, ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < frames; i++) data[i] = Math.random() * 2 - 1;
+    noiseBuffer = buf;
+    return buf;
+  }
+
+  interface NoiseOpts {
+    duration: number;
+    peak: number;
+    /** Bandpass centre (Hz). */
+    freq: number;
+    /** Sweep the centre to here over the duration; omit to hold. */
+    endFreq?: number;
+    q?: number;
+    delay?: number;
+    type?: BiquadFilterType;
+    destination?: AudioNode;
+  }
+
+  function playNoise(opts: NoiseOpts): void {
+    const {
+      duration,
+      peak,
+      freq,
+      endFreq,
+      q = 1,
+      delay = 0,
+      type = "bandpass",
+      destination = uiBus,
+    } = opts;
+    const t0 = ctx.currentTime + Math.max(delay, 0);
+
+    const src = ctx.createBufferSource();
+    src.buffer = getNoise();
+    // A random start offset stops repeated taps sounding like the same
+    // waveform replayed, which is audible on a cue fired several times a
+    // second.
+    src.loop = true;
+    const filter = ctx.createBiquadFilter();
+    filter.type = type;
+    filter.frequency.setValueAtTime(Math.max(freq, 20), t0);
+    if (endFreq !== undefined) {
+      filter.frequency.exponentialRampToValueAtTime(Math.max(endFreq, 20), t0 + duration);
+    }
+    filter.Q.value = q;
+
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(0, t0);
+    env.gain.linearRampToValueAtTime(peak, t0 + Math.min(0.006, duration * 0.4));
+    env.gain.exponentialRampToValueAtTime(Math.max(peak * 0.001, 0.0001), t0 + duration);
+
+    src.connect(filter);
+    filter.connect(env);
+    env.connect(destination);
+    src.start(t0, Math.random() * 1.0);
+    src.stop(t0 + duration + 0.02);
+  }
+
+  /**
+   * THE tap. A short wooden knock: a low body tone plus a noise transient,
+   * both gone in 60ms.
+   *
+   * `ratio` is the only thing that varies between press and select — 1 for a
+   * press, 4/3 for a select (a fourth up). Two cues, one sound.
+   */
+  function tap(level: number, ratio: number): void {
+    playTone({
+      type: "triangle",
+      freq: 190 * ratio,
+      endFreq: 120 * ratio,
+      duration: 0.06,
+      peak: level,
+      attack: 0.002,
+    });
+    // The knock itself. Without it the tone alone reads as a musical note
+    // rather than as wood being struck.
+    playNoise({ duration: 0.035, peak: level * 0.55, freq: 1500 * ratio, q: 0.7 });
+  }
+
+  // The menu bed's nodes, held so it can be stopped. Built lazily — a player
+  // who never reaches the menu never allocates them.
+  let bedTraffic: AudioBufferSourceNode | null = null;
+  let bedGain: GainNode | null = null;
+  let bedBirdTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function stopBed(): void {
+    if (bedBirdTimer !== null) {
+      clearTimeout(bedBirdTimer);
+      bedBirdTimer = null;
+    }
+    if (bedGain) {
+      // Fade rather than cut: a noise bed stopped hard is a click.
+      const t = ctx.currentTime;
+      bedGain.gain.cancelScheduledValues(t);
+      bedGain.gain.setValueAtTime(bedGain.gain.value, t);
+      bedGain.gain.linearRampToValueAtTime(0.0001, t + 0.35);
+    }
+    if (bedTraffic) {
+      bedTraffic.stop(ctx.currentTime + 0.4);
+      bedTraffic = null;
+    }
+    bedGain = null;
+  }
+
+  /** One bird: two or three short whistles a semitone or two apart. */
+  function chirp(): void {
+    if (!bedGain) return;
+    const base = 2200 + Math.random() * 900;
+    const notes = 2 + Math.floor(Math.random() * 2);
+    for (let i = 0; i < notes; i++) {
+      playTone({
+        type: "sine",
+        freq: base * (1 + i * 0.06),
+        endFreq: base * (1 + i * 0.06) * 1.25,
+        duration: 0.05,
+        peak: DB.bed * 1.6,
+        attack: 0.006,
+        delay: i * 0.075,
+      });
+    }
+  }
+
+  function scheduleBird(): void {
+    // Irregular on purpose — birds on a timer read as a machine.
+    bedBirdTimer = setTimeout(
+      () => {
+        if (!bedGain) return;
+        chirp();
+        scheduleBird();
+      },
+      1800 + Math.random() * 4200,
+    );
+  }
+
+  function startBed(): void {
+    if (bedGain) return;
+    bedGain = ctx.createGain();
+    bedGain.gain.value = 0.0001;
+    bedGain.connect(uiBus);
+    // Distant traffic: heavily low-passed noise, well under everything else.
+    // It is not meant to be identifiable, only to stop the menu sounding like
+    // a muted television.
+    bedTraffic = ctx.createBufferSource();
+    bedTraffic.buffer = getNoise();
+    bedTraffic.loop = true;
+    const lp = ctx.createBiquadFilter();
+    lp.type = "lowpass";
+    lp.frequency.value = 320;
+    lp.Q.value = 0.5;
+    bedTraffic.connect(lp);
+    lp.connect(bedGain);
+    bedTraffic.start();
+    bedGain.gain.linearRampToValueAtTime(DB.bed, ctx.currentTime + 1.2);
+    scheduleBird();
+  }
+
+  const ui: UiSound = {
+    press(): void {
+      tap(DB.press, 1);
+    },
+
+    select(): void {
+      tap(DB.select, 4 / 3);
+    },
+
+    purchase(): void {
+      // A coin dropped into a tin: the bright ching the maze already uses for
+      // a coin, then the dull ring of the container it lands in. Two halves,
+      // because "money left the wallet" should not sound the same as "money
+      // arrived".
+      playSequence([
+        { type: "sine", freq: 1380, duration: 0.06, peak: DB.purchase * 0.5, attack: 0.002 },
+        {
+          type: "sine",
+          freq: 980,
+          duration: 0.09,
+          peak: DB.purchase * 0.45,
+          attack: 0.002,
+          delay: 0.04,
+        },
+      ]);
+      playNoise({
+        duration: 0.22,
+        peak: DB.purchase * 0.35,
+        freq: 700,
+        endFreq: 260,
+        q: 4,
+        delay: 0.06,
+      });
+    },
+
+    equip(): void {
+      // A single bark. Two descending bursts through a formant-ish bandpass:
+      // the fast pitch drop is what makes a short noise read as a voice rather
+      // than as a thud.
+      playTone({
+        type: "sawtooth",
+        freq: 420,
+        endFreq: 190,
+        duration: 0.09,
+        peak: DB.equip * 0.55,
+        attack: 0.004,
+      });
+      playNoise({ duration: 0.11, peak: DB.equip * 0.4, freq: 1100, endFreq: 520, q: 2.2 });
+    },
+
+    unlocked(): void {
+      // Three notes rising, timed to land with the stone flipping grey to
+      // green.
+      playSequence([
+        { type: "triangle", freq: 587, duration: 0.1, peak: DB.unlocked * 0.5, attack: 0.004 },
+        {
+          type: "triangle",
+          freq: 740,
+          duration: 0.1,
+          peak: DB.unlocked * 0.52,
+          attack: 0.004,
+          delay: 0.1,
+        },
+        {
+          type: "triangle",
+          freq: 880,
+          duration: 0.3,
+          peak: DB.unlocked * 0.55,
+          attack: 0.004,
+          delay: 0.2,
+        },
+      ]);
+    },
+
+    error(): void {
+      // A low double thud with NO musical pitch — the design is explicit that
+      // this is never a harsh buzzer. Noise, not a tone, so there is nothing
+      // to hear as a wrong note.
+      playNoise({ duration: 0.09, peak: DB.error * 0.6, freq: 150, q: 1.4 });
+      playNoise({ duration: 0.11, peak: DB.error * 0.5, freq: 120, q: 1.4, delay: 0.11 });
+    },
+
+    screen(): void {
+      // Leaf rustle, under the hedge wipe. A high band sweeping down as the
+      // band crosses the frame; quiet enough (-18 dB) to be felt rather than
+      // heard.
+      playNoise({ duration: 0.3, peak: DB.screen, freq: 4200, endFreq: 1400, q: 0.8 });
+    },
+
+    menuBed(on: boolean): void {
+      if (on) startBed();
+      else stopBed();
+    },
+
+    setRunActive(active: boolean): void {
+      const t = ctx.currentTime;
+      uiBus.gain.cancelScheduledValues(t);
+      uiBus.gain.setValueAtTime(uiBus.gain.value, t);
+      uiBus.gain.linearRampToValueAtTime(active ? DUCK : 1, t + 0.12);
+    },
+  };
+
   // ---- mute / resume --------------------------------------------------------
 
   function setMuted(next: boolean): void {
@@ -383,6 +726,7 @@ export function createSound(): Sound {
     setMuted,
     isMuted,
     resume,
+    ui,
   };
 }
 
@@ -398,8 +742,12 @@ export function createSound(): Sound {
 // no-op" stance src/ui/hud.ts takes for its own required elements) since a
 // missing/renamed button id is a markup bug worth surfacing immediately
 // rather than shipping silent audio controls.
-const MUTED_ICON = "\u{1F507}"; // 🔇
-const UNMUTED_ICON = "\u{1F50A}"; // 🔊
+// Material Symbols ligatures, not emoji: the speaker emoji rendered in three
+// different styles across iOS/Android/Chrome and carried its own colour, so it
+// could never take part in the ink-outline language the rest of the chrome
+// uses. See src/ui/icons.ts.
+const MUTED_ICON = ICON.soundOff;
+const UNMUTED_ICON = ICON.soundOn;
 
 /**
  * Wires the HUD's mute button (`#muteBtn` in index.html) to `sound`: reflects
@@ -410,16 +758,33 @@ const UNMUTED_ICON = "\u{1F50A}"; // 🔊
  * matches the whole app (no teardown call site needed yet).
  */
 export function attachMuteButton(root: ParentNode, sound: Sound): () => void {
-  const btn = (root.querySelector("#muteBtn") ?? document.getElementById("muteBtn")) as HTMLButtonElement | null;
-  if (!btn) {
-    throw new Error("attachMuteButton: missing #muteBtn — check index.html");
+  // EVERY .mute-btn on the page, not just #muteBtn.
+  //
+  // The screen redesign gave the main menu its own sound control (the in-run
+  // one lives in the HUD chrome, which the menu hides), and there is exactly
+  // one mute STATE — so the honest wiring is one handler over both buttons
+  // with a shared render, not two attachments that could disagree about
+  // whether sound is off.
+  const scope: ParentNode = root ?? document;
+  const found = [
+    ...scope.querySelectorAll<HTMLButtonElement>(".mute-btn"),
+    ...(scope === document ? [] : document.querySelectorAll<HTMLButtonElement>(".mute-btn")),
+  ];
+  const buttons = [...new Set(found)];
+  if (buttons.length === 0) {
+    throw new Error("attachMuteButton: no .mute-btn found — check index.html");
   }
 
   function render(): void {
     const muted = sound.isMuted();
-    btn!.textContent = muted ? MUTED_ICON : UNMUTED_ICON;
-    btn!.setAttribute("aria-pressed", String(muted));
-    btn!.setAttribute("aria-label", muted ? "Unmute sound" : "Mute sound");
+    for (const btn of buttons) {
+      // Writes into the inner <i>, creating it if the markup lacks one — see
+      // setGlyph. Setting textContent on the BUTTON would delete the icon
+      // element and print the ligature name.
+      setGlyph(btn, muted ? MUTED_ICON : UNMUTED_ICON);
+      btn.setAttribute("aria-pressed", String(muted));
+      btn.setAttribute("aria-label", muted ? "Unmute sound" : "Mute sound");
+    }
   }
 
   function onClick(): void {
@@ -432,7 +797,77 @@ export function attachMuteButton(root: ParentNode, sound: Sound): () => void {
   }
 
   render(); // reflect the persisted state immediately on load
-  btn.addEventListener("click", onClick);
+  for (const btn of buttons) btn.addEventListener("click", onClick);
 
-  return () => btn.removeEventListener("click", onClick);
+  return () => {
+    for (const btn of buttons) btn.removeEventListener("click", onClick);
+  };
+}
+
+// ---------------------------------------------------------------------------
+// §10: the interface's one voice, wired once.
+//
+// The design system asks for "the same tap everywhere, so the interface has
+// one voice". The way to actually get that is a single delegated listener,
+// not a call at each of the ~40 places a button is created — one of those
+// would inevitably be missed, and a silent button in an otherwise-clicky
+// interface reads as a broken button.
+//
+// `pointerdown`, not `click`: the sound has to land when the finger lands,
+// which is also the frame the button's own press animation starts. Waiting
+// for a full press-and-release puts the sound after the picture.
+
+/** Things that SELECT rather than commit — they take the tap a fourth up.
+ *  A tab, a card, a dot and a trail stone are all "show me that one", which
+ *  the design calls "a lighter act than committing". */
+const SELECT_SELECTOR = [
+  ".shop-tab",
+  ".lb-tab",
+  ".auth-tab",
+  ".shop-rail-card",
+  ".carousel-item",
+  ".tut-dot",
+  ".map-node",
+  ".control-option",
+  ".dpad-btn",
+].join(",");
+
+/** Anything that makes the interface's noise at all. Buttons plus the SVG
+ *  trail stones, which are <g role="button"> rather than real elements. */
+const PRESSABLE_SELECTOR = `button,${SELECT_SELECTOR}`;
+
+/**
+ * Give every control in the app its press sound.
+ *
+ * Call once from Game's constructor, alongside attachMuteButton. Returns a
+ * detach function for symmetry with the other attach* helpers.
+ */
+export function attachUiSounds(sound: Sound): () => void {
+  function onPointerDown(event: Event): void {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+
+    const hit = target.closest(PRESSABLE_SELECTOR);
+    if (!hit) return;
+
+    // A disabled control gives no feedback — a sound would say "that worked".
+    // The D-pad is exempt from the aria check below only because it has none;
+    // `closest` on a disabled <button> is enough for everything else.
+    if (hit instanceof HTMLButtonElement && hit.disabled) return;
+    if (hit.getAttribute("aria-disabled") === "true") return;
+
+    // A press is a user gesture, so it is also a valid place to unlock audio —
+    // and on the very first tap of a session it is usually the FIRST one.
+    sound.resume();
+
+    if (hit.matches(SELECT_SELECTOR)) sound.ui.select();
+    else sound.ui.press();
+  }
+
+  // Capture phase: a handler that stops propagation (the D-pad calls
+  // preventDefault and the shop cards re-render themselves out of the DOM on
+  // click) must not be able to swallow the interface's own feedback.
+  document.addEventListener("pointerdown", onPointerDown, { capture: true });
+  return () =>
+    document.removeEventListener("pointerdown", onPointerDown, { capture: true });
 }
