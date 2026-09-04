@@ -141,6 +141,27 @@ BEAGLE_SKINS.forEach((s) => {
   check(`${id} has no brows`, c.brow === undefined);
 });
 
+// Per-skin nose and iris (Nuno's pass over the five coats). Every skin names a
+// nose; only Bagel keeps the default amber iris. Both channels are deliberately
+// INDEPENDENT of `black` — Cookie's saddle is liver-brown and its nose is black.
+{
+  const nose = (id: string): number | undefined => getBeagleSkin(id).coat.nose;
+  const iris = (id: string): number | undefined => getBeagleSkin(id).coat.iris;
+  ["bagel", "cookie", "muffin", "pepper"].forEach((id) => {
+    check(`${id} has a black nose`, nose(id) === 0x141210);
+  });
+  check("pacbeagle's nose is the tribute orange", nose("pacbeagle") === 0xed8207);
+  check("bagel keeps the default iris (no override)", iris("bagel") === undefined);
+  check("cookie's iris is dark brown", iris("cookie") === 0x4f3215);
+  check("muffin's iris is mid brown", iris("muffin") === 0x6f522e);
+  check("pacbeagle's iris is the tribute orange, same as its nose", iris("pacbeagle") === 0xed8207);
+  check("pepper's iris is cool slate grey", iris("pepper") === 0x5c6266);
+  BEAGLE_SKINS.forEach((s) => {
+    if (s.coat.nose === undefined) return;
+    check(`${s.id}'s nose does not just follow black`, s.id === "bagel" || s.coat.nose !== s.coat.black);
+  });
+}
+
 // The tribute coat, and the two channels it exists to exercise.
 {
   const pac = getBeagleSkin("pacbeagle");

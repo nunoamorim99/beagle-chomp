@@ -44,6 +44,11 @@ export interface BeagleParts {
  * recolour the existing mesh in place â€” no geometry rebuild, no remove/re-add,
  * the model keeps animating uninterrupted.
  */
+/** Nose leather and iris when a skin names neither — what every coat wore
+ *  before the two channels existed. */
+const DEFAULT_NOSE = 0x4a3028;
+const DEFAULT_IRIS = 0xa2672e;
+
 export interface BeagleCoatMats {
   tan: THREE.MeshToonMaterial;
   white: THREE.MeshToonMaterial;
@@ -53,6 +58,10 @@ export interface BeagleCoatMats {
   paw: THREE.MeshToonMaterial;
   /** Brows only. Meaningless while the brows are hidden, which is the default. */
   brow: THREE.MeshToonMaterial;
+  /** Nose leather. Per-skin: it does NOT follow `black`. */
+  nose: THREE.MeshToonMaterial;
+  /** Iris. Per-skin, like the nose. */
+  iris: THREE.MeshToonMaterial;
 }
 
 /**
@@ -242,9 +251,9 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
   // Fixed, never skinned: nose leather, eye and its unlit catchlight (the one
   // deliberate MeshBasicMaterial in the character — a toon ramp quantises a
   // highlight into the surroundings and it stops reading as a catchlight).
-  const noseMat = toon({ color: 0x4a3028 });
+  const noseMat = toon({ color: coat.nose ?? DEFAULT_NOSE });
   const scleraMat = toon({ color: 0xfdf9f2 });
-  const irisMat = toon({ color: 0xa2672e });
+  const irisMat = toon({ color: coat.iris ?? DEFAULT_IRIS });
   const pupilMat = toon({ color: 0x1c110c });
   const glintM = new THREE.MeshBasicMaterial({ color: 0xffffff });
   // Named so the editor can find their declarations and save colour edits
@@ -290,7 +299,7 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
   );
   neck.name = "neck";
   neck.rotation.set(0.338, 0, 0);
-  neck.position.set(-0.002, 0.481, 0.152);
+  neck.position.set(-0.002, 0.461, 0.152);
   g.add(neck);
 
   // --- head group: skull + muzzle + nose + jaw + eyes + brows + ears ---
@@ -429,35 +438,46 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
   head.add(browSwellR);
 
   /** Brow pivots, hidden unless the equipped coat carries a `brow` colour. */
-  const brows: THREE.Object3D[] = [];
-  ([-1, 1] as const).forEach((s) => {
-    // The Pac-Beagle brow ACCESSORY (cosmetic, per-coat): the hand-dialled
-    // chevron bars from BROW_BARS, mounted on a pivot aimed down the gaze —
-    // same construction as before, scaled to the reworked skull.
-    const gaze = new THREE.Vector3(-0.078 * s, 0.03, 0.112).normalize();
-    const browPivot = new THREE.Group();
-    browPivot.name = s < 0 ? "browPivotL" : "browPivotR";
-    browPivot.position.set(-0.078 * s, 0.075, 0.1);
-    const browRight = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), gaze).normalize();
-    const browUp = new THREE.Vector3().crossVectors(gaze, browRight).normalize();
-    browPivot.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(browRight, browUp, gaze));
+  /**
+   * The Pac-Beagle brow ACCESSORY (cosmetic, per-coat): the hand-dialled
+   * chevron bars from BROW_BARS on a pivot. TOP-LEVEL declarations, one per
+   * side, so the editor can save the pivot's position and rotation — Nuno
+   * places these by eye and a loop-built pivot could never be written back.
+   *
+   * The aim used to be computed from a gaze basis into `quaternion`; it is
+   * BAKED into rotation here (the same angles, ±0.592 yaw / -0.262 pitch /
+   * ±0.148 roll) because a quaternion written after a rotation would silently
+   * discard whatever the editor saved.
+   */
+  const browBarsOf = (side: "L" | "R"): THREE.Group => {
     const brow = new THREE.Group();
-    brow.name = s < 0 ? "browL" : "browR";
+    brow.name = "brow" + side;
     const BROW_LEN = 0.066;
     const BROW_THICK = 0.0145;
-    const m = s < 0 ? 1 : -1;
+    const m = side === "L" ? 1 : -1;
     BROW_BARS.forEach(({ tag, pos, rot }) => {
       const bar = new THREE.Mesh(new THREE.BoxGeometry(BROW_THICK, BROW_LEN, BROW_THICK * 0.55), browMat);
-      bar.name = (s < 0 ? "browL" : "browR") + tag;
+      bar.name = "brow" + side + tag;
       bar.position.set(pos[0] * m * 0.62, pos[1] * 0.62, pos[2] * 0.62);
       bar.rotation.set(rot[0], rot[1] * m, rot[2] * m);
       brow.add(bar);
     });
-    brow.rotation.z = 0.13 * s;
-    browPivot.add(brow);
-    head.add(browPivot);
-    brows.push(browPivot);
-  });
+    brow.rotation.z = side === "L" ? -0.13 : 0.13;
+    return brow;
+  };
+  const browPivotL = new THREE.Group();
+  browPivotL.name = "browPivotL";
+  browPivotL.position.set(0.08, 0.018, 0.09);
+  browPivotL.rotation.set(-0.261714, 0.592177, 0.14841);
+  browPivotL.add(browBarsOf("L"));
+  head.add(browPivotL);
+  const browPivotR = new THREE.Group();
+  browPivotR.name = "browPivotR";
+  browPivotR.position.set(-0.08, 0.018, 0.09);
+  browPivotR.rotation.set(-0.261714, -0.592177, -0.14841);
+  browPivotR.add(browBarsOf("R"));
+  head.add(browPivotR);
+  const brows: THREE.Object3D[] = [browPivotL, browPivotR];
 
   // --- ears: the pivot is the animated joint (syncToEntity flops rotation.x
   // and flares rotation.z every frame, so its rotation is runtime-owned); the
@@ -581,12 +601,16 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
   };
   g.userData.parts = parts;
 
-  const coatMats: BeagleCoatMats = { tan, white, black, ear: earMat, paw: pawMat, brow: browMat };
+  const coatMats: BeagleCoatMats = { tan, white, black, ear: earMat, paw: pawMat, brow: browMat, nose: noseMat, iris: irisMat };
   g.userData.coatMats = coatMats;
   g.userData.brows = brows;
-  // A coat with no `brow` hides them — applied here as well as in
-  // applyBeagleSkin so a freshly built model and a live switch agree.
-  for (const b of brows) b.visible = coat.brow !== undefined;
+  // The brow SWELLS: a browed coat (the Pac-Beagle) hides them and shows its
+  // chevron bars instead, so the tribute wears bars rather than both.
+  g.userData.browSwells = [browSwellL, browSwellR];
+  // A coat with no `brow` hides them and keeps the fur swells; a browed coat
+  // swaps swells for bars. Run through applyBeagleSkin so a freshly built
+  // model and a live skin switch can never disagree.
+  applyBeagleSkin(g, skin);
 
   return g;
 }
@@ -612,8 +636,19 @@ export function applyBeagleSkin(group: THREE.Group, skin: BeagleSkin): void {
   // switching away from a browed coat takes the brows off again.
   mats.paw.color.setHex(coat.paw ?? coat.white);
   if (coat.brow !== undefined) mats.brow.color.setHex(coat.brow);
+  // Nose and iris are per-skin and do NOT follow `black`: Cookie's saddle is
+  // liver-brown but its nose is black, and the tribute's nose is orange.
+  mats.nose.color.setHex(coat.nose ?? DEFAULT_NOSE);
+  mats.iris.color.setHex(coat.iris ?? DEFAULT_IRIS);
+  // A browed coat wears its chevron BARS INSTEAD of the fur swells — bars on
+  // top of swells read as two brows stacked. Visibility only: where the bars
+  // sit is authored in makeBeagle (and editable/savable there), never moved
+  // from here, or a saved position would be overwritten on every skin apply.
+  const browed = coat.brow !== undefined;
   const brows = group.userData.brows as THREE.Object3D[] | undefined;
-  if (brows) for (const b of brows) b.visible = coat.brow !== undefined;
+  const swells = group.userData.browSwells as THREE.Object3D[] | undefined;
+  if (swells) for (const b of swells) b.visible = !browed;
+  if (brows) for (const b of brows) b.visible = browed;
 }
 
 export interface InsectLimbs {

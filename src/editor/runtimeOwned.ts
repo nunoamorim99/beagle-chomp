@@ -42,7 +42,7 @@ export const BEAGLE_BUILDER = "makeBeagle";
 
 const BEAGLE_LEGS = ["legFL", "legFR", "legBL", "legBR"] as const;
 /** The coat materials makeBeagle builds from the equipped skin (paw/brow included). */
-export const BEAGLE_COAT_MATS = ["tan", "white", "black", "ear", "earMat", "pawMat", "browMat"] as const;
+export const BEAGLE_COAT_MATS = ["tan", "white", "black", "ear", "earMat", "pawMat", "browMat", "noseMat", "irisMat"] as const;
 
 const RULES: readonly Rule[] = [
   // --- the beagle's animated joints (animateBeagleParts, every frame) ---

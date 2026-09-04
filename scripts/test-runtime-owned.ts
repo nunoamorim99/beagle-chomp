@@ -145,7 +145,7 @@ console.log("\n--- the registry agrees with the REAL animation code ---");
   // on that part, which is invisible until someone notices the wrong paws after
   // a re-equip. `paw` is the newest — it was split out of `white` so a coat can
   // give the dog coloured boots.
-  for (const channel of ["tan", "white", "black", "ear", "paw", "brow"]) {
+  for (const channel of ["tan", "white", "black", "ear", "paw", "brow", "nose", "iris"]) {
     check(
       `applyBeagleSkin writes the ${channel} coat colour`,
       new RegExp("mats\." + channel + "\.color\.setHex").test(SRC),
@@ -153,7 +153,10 @@ console.log("\n--- the registry agrees with the REAL animation code ---");
   }
   // `brow` is the one written CONDITIONALLY, because its absence is meaningful:
   // no brow colour means no brows, so it is a visibility toggle as well.
-  check("…and toggles the brows a coat may not want", /b\.visible = coat\.brow !== undefined/.test(SRC));
+  check("…and toggles the brows a coat may not want", /const browed = coat\.brow !== undefined/.test(SRC));
+  // A browed coat also takes the fur swells OFF and moves the bars onto their
+  // spot, so the tribute wears bars INSTEAD of swells, not stacked over them.
+  check("…and hides the fur brow swells for a browed coat", /for \(const b of swells\) b\.visible = !browed/.test(SRC));
   check("applyGhostState still recolours bodyMat", /ud\.bodyMat\.color\.setHex/.test(SRC));
   check(
     "…and ROTATES every enemy's pupil pivots",

@@ -131,7 +131,7 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v7.
   production) with `/preview-rework/` + `scripts/shoot-rework.ts` as its harness;
   `/preview/` still renders the real `makeBeagle`. The editor/rewriter tests use
   `makeBeagle`'s source as their corpus — they now reference neck/tailTilt/nose/
-  muzzle/browPivot (the loop-built refusal fixture); change the builder and re-check them.
+  muzzle/browLInner (the loop-built refusal fixture); change the builder and re-check them.
 - **`preview/index.html`** — a dev-only page at `/preview/` (`npm run dev`) that
   renders the real `makeBeagle()` with orbit controls, six preset camera angles
   (`?view=`) and part isolation (`?solo=`). Not a rollup input, so it never

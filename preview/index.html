@@ -24,10 +24,12 @@
       import * as THREE from "three";
       import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
       import { makeBeagle } from "/src/render/characters.ts";
+      import { getBeagleSkin } from "/src/game/cosmetics.ts";
 
       // ---- URL knobs, so the screenshot harness can drive this page ----
       //   ?view=side|front|back|34|top|face  ?anim=0|1  ?grid=0|1  ?hud=0|1
       //   ?solo=<partName>   isolates one sub-tree for close inspection
+      //   ?skin=<skinId>     renders that beagle skin
       const q = new URLSearchParams(location.search);
       const view = q.get("view") ?? "34";
       const animate = q.get("anim") !== "0";
@@ -72,7 +74,8 @@
       grid.visible = q.get("grid") !== "0";
       scene.add(grid);
 
-      const beagle = makeBeagle();
+      // ?skin=bagel|cookie|muffin|pacbeagle|pepper — renders that coat.
+      const beagle = makeBeagle(getBeagleSkin(q.get("skin") ?? "bagel"));
       scene.add(beagle);
 
       const soloName = q.get("solo");

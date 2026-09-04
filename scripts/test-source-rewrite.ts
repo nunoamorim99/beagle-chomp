@@ -82,7 +82,7 @@ console.log("\n--- findPart ---");
   );
 
   const body2 = readBuilder(SRC, BUILDER)!;
-  check("a loop-built part has no top-level decl", findPart(body2, "browPivot") === null);
+  check("a loop-built part has no top-level decl", findPart(body2, "browLInner") === null);
 }
 
 console.log("\n--- rewriteBlocker (honest limits) ---");
@@ -90,13 +90,13 @@ console.log("\n--- rewriteBlocker (honest limits) ---");
   check("a top-level part is rewritable", rewriteBlocker(SRC, BUILDER, "neck") === null);
   check("the body is rewritable", rewriteBlocker(SRC, BUILDER, "body") === null);
 
-  const earBlock = rewriteBlocker(SRC, BUILDER, "browPivotL");
+  const earBlock = rewriteBlocker(SRC, BUILDER, "browLInner");
   check("a mirrored/loop-built part is BLOCKED, not faked", earBlock !== null);
   check(
     "…and the reason explains the loop",
     !!earBlock && /loop|callback/i.test(earBlock),
   );
-  console.log(`    browPivotL → ${earBlock}`);
+  console.log(`    browLInner → ${earBlock}`);
 
   const missing = rewriteBlocker(SRC, BUILDER, "notAThing");
   check("an unknown name is blocked", missing !== null);
@@ -241,7 +241,7 @@ console.log("\n--- setMaterialColor: toon() literals + name discovery ---");
 
 console.log("\n--- setTransform: blocked parts are refused ---");
 {
-  const r = setTransform(SRC, BUILDER, "browPivotL", "rotation", [0, 0, 0.5]);
+  const r = setTransform(SRC, BUILDER, "browLInner", "rotation", [0, 0, 0.5]);
   check("a loop-built part cannot be transformed in place", !r.ok);
   check("…and the source is untouched (no partial write)", !r.ok);
 }
@@ -254,7 +254,11 @@ console.log("\n--- deletePart ---");
     const after = builderCode(r.src);
     check("the const is gone", !/const nose\b/.test(after));
     check("the .add is gone", !/head\.add\(nose\)/.test(after));
-    check("no reference to nose survives in code", !/\bnose\b/.test(after));
+    // Property NAMES are not references: `nose: noseMat` in the coat-material
+    // record and `coat.nose` both survive a delete and both compile. Strip
+    // them the same way deletePart's own guard does before asserting.
+    const afterRefs = after.replace(/\bnose\s*:/g, " ").replace(/\.\s*nose\b/g, " ");
+    check("no reference to nose survives in code", !/\bnose\b/.test(afterRefs));
     check("the file still parses", findFunctionRange(r.src, BUILDER) !== null);
     check(
       "no removeFromParent residue is produced",
@@ -280,7 +284,7 @@ console.log("\n--- deletePart: refuses what would not compile ---");
     console.log(`    tailTilt → ${r2.reason}`);
   }
 
-  const r3 = deletePart(SRC, BUILDER, "browPivotL");
+  const r3 = deletePart(SRC, BUILDER, "browLInner");
   check("deleting a loop-built part is REFUSED", !r3.ok);
 }
 

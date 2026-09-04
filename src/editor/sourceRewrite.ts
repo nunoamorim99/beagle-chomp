@@ -474,7 +474,14 @@ export function deletePart(src: string, builderName: string, varName: string): R
   // form, which is fine and often still true of the silhouette).
   const after = readBuilder(out, builderName);
   if (!after) return { ok: false, reason: "The delete left the builder unparseable — aborted." };
-  const leftover = stripCommentsAndStrings(out.slice(after.bodyStart, after.bodyEnd));
+  // PROPERTY names are not references to the variable: `{ nose: noseMat }`
+  // and `coat.nose` both contain the word `nose` without using the part, and
+  // a conservative match there refuses a delete that would compile fine.
+  // (Shorthand `{ nose }` IS a reference and still matches — only `name:`
+  // keys and `.name` accesses are dropped.)
+  const leftover = stripCommentsAndStrings(out.slice(after.bodyStart, after.bodyEnd))
+    .replace(new RegExp(String.raw`\b${escapeRe(varName)}\s*:`, "g"), " ")
+    .replace(new RegExp(String.raw`\.\s*${escapeRe(varName)}\b`, "g"), " ");
   const stillUsed = new RegExp(`\\b${escapeRe(varName)}\\b`).test(leftover);
   if (stillUsed) {
     return {
