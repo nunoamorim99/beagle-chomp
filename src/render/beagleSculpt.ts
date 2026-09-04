@@ -146,31 +146,105 @@ export type CoatRegion =
       mat: number;
     };
 
-function regionClaims(r: CoatRegion, x: number, y: number, z: number): boolean {
+type Vtx = { p: [number, number, number]; n: [number, number, number] };
+type Tri = { v: [Vtx, Vtx, Vtx]; mat: number };
+/** A signed field: negative/zero INSIDE the region, positive outside. */
+type Field = (x: number, y: number, z: number) => number;
+
+/**
+ * A region as a list of fields that must ALL be <= 0. A band is its two
+ * planes (exact, so a cut across a band edge is dead straight); a blob is a
+ * distance-like ellipsoid field; a capsule is distance-to-segment minus the
+ * tapered radius.
+ */
+function regionFields(r: CoatRegion): Field[] {
   if (r.kind === "band") {
-    const v = r.axis === 0 ? x : r.axis === 1 ? y : z;
-    return v >= r.min && v <= r.max;
+    const pick = (x: number, y: number, z: number): number => (r.axis === 0 ? x : r.axis === 1 ? y : z);
+    return [(x, y, z) => r.min - pick(x, y, z), (x, y, z) => pick(x, y, z) - r.max];
   }
   if (r.kind === "blob") {
     const [cx, cy, cz] = r.center;
     const [rx, ry, rz] = r.radii;
-    return ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2 + ((z - cz) / rz) ** 2 <= 1;
+    return [(x, y, z) => Math.sqrt(((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2 + ((z - cz) / rz) ** 2) - 1];
   }
   const [ax, ay, az] = r.start;
   const [bx, by, bz] = r.end;
   const abx = bx - ax, aby = by - ay, abz = bz - az;
   const denom = abx * abx + aby * aby + abz * abz;
-  let t = denom > 0 ? ((x - ax) * abx + (y - ay) * aby + (z - az) * abz) / denom : 0;
-  t = t < 0 ? 0 : t > 1 ? 1 : t;
-  const dx = x - (ax + abx * t), dy = y - (ay + aby * t), dz = z - (az + abz * t);
-  const radius = r.r0 + (r.r1 - r.r0) * t;
-  return dx * dx + dy * dy + dz * dz <= radius * radius;
+  return [
+    (x, y, z) => {
+      let t = denom > 0 ? ((x - ax) * abx + (y - ay) * aby + (z - az) * abz) / denom : 0;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const dx = x - (ax + abx * t), dy = y - (ay + aby * t), dz = z - (az + abz * t);
+      return Math.sqrt(dx * dx + dy * dy + dz * dz) - (r.r0 + (r.r1 - r.r0) * t);
+    },
+  ];
+}
+
+function lerpVtx(a: Vtx, b: Vtx, t: number): Vtx {
+  const p: [number, number, number] = [
+    a.p[0] + (b.p[0] - a.p[0]) * t,
+    a.p[1] + (b.p[1] - a.p[1]) * t,
+    a.p[2] + (b.p[2] - a.p[2]) * t,
+  ];
+  const nx = a.n[0] + (b.n[0] - a.n[0]) * t;
+  const ny = a.n[1] + (b.n[1] - a.n[1]) * t;
+  const nz = a.n[2] + (b.n[2] - a.n[2]) * t;
+  const len = Math.hypot(nx, ny, nz) || 1;
+  return { p, n: [nx / len, ny / len, nz / len] };
+}
+
+/** The point on a→b where `f` crosses zero, refined by bisection (the blob and
+ *  capsule fields are not linear along an edge, so a lerp of the end values
+ *  would put the seam a little off the true curve). */
+function crossing(a: Vtx, b: Vtx, f: Field, fa: number): Vtx {
+  let lo = 0, hi = 1;
+  const aIn = fa <= 0;
+  for (let i = 0; i < 14; i++) {
+    const mid = (lo + hi) / 2;
+    const m = lerpVtx(a, b, mid);
+    if ((f(m.p[0], m.p[1], m.p[2]) <= 0) === aIn) lo = mid;
+    else hi = mid;
+  }
+  return lerpVtx(a, b, (lo + hi) / 2);
 }
 
 /**
- * Cut a geometry into material groups: every triangle goes to the LAST region
- * whose shape claims its centroid (declaration order wins, like the pipeline's
- * paint order), or to `baseMat`. Returns a non-indexed geometry with its
+ * Split one triangle by a field's zero level. Pushes the pieces inside
+ * (f <= 0) to `inside` and the rest to `outside`. Sub-triangles keep the
+ * parent's cyclic vertex order, so winding (front faces CCW) is preserved.
+ */
+function clipTri(tri: Tri, f: Field, inside: Tri[], outside: Tri[]): void {
+  const v = tri.v;
+  const fv = v.map((q) => f(q.p[0], q.p[1], q.p[2])) as [number, number, number];
+  const inMask = fv.map((x) => x <= 0) as [boolean, boolean, boolean];
+  const nIn = inMask.filter(Boolean).length;
+  if (nIn === 3) { inside.push(tri); return; }
+  if (nIn === 0) { outside.push(tri); return; }
+  // Rotate so the LONE vertex (the odd one out) is first — cyclic, so winding holds.
+  const loneIn = nIn === 1;
+  const k = inMask.findIndex((x) => x === loneIn);
+  const a = v[k], b = v[(k + 1) % 3], c = v[(k + 2) % 3];
+  const fa = fv[k];
+  const pab = crossing(a, b, f, fa);
+  const pca = crossing(a, c, f, fa);
+  const lone: Tri[] = [{ v: [a, pab, pca], mat: tri.mat }];
+  const pair: Tri[] = [
+    { v: [pab, b, c], mat: tri.mat },
+    { v: [pab, c, pca], mat: tri.mat },
+  ];
+  if (loneIn) { inside.push(...lone); outside.push(...pair); }
+  else { inside.push(...pair); outside.push(...lone); }
+}
+
+/**
+ * Cut a geometry into material groups with CLEAN region edges: every
+ * triangle goes to the LAST region whose shape claims it (declaration order
+ * wins, like the pipeline's paint order), or to `baseMat` — and a triangle
+ * that straddles a region's boundary is SPLIT along it, so the seam between
+ * two coat colours follows the region's true curve instead of zigzagging
+ * along whatever triangle edges the sweep happened to have (the "spiky"
+ * markings of the first pass). Returns a non-indexed geometry with its
  * triangles bucketed into one group per material index, ready for a material
  * array of shared skinnable toon materials.
  */
@@ -182,43 +256,44 @@ export function splitCoatGroups(
   const src = geometry.index ? geometry.toNonIndexed() : geometry;
   const pos = src.getAttribute("position");
   const nrm = src.getAttribute("normal");
-  const triCount = pos.count / 3;
-  const triMat = new Array<number>(triCount);
-  let maxMat = baseMat;
-  for (let t = 0; t < triCount; t++) {
-    const i = t * 3;
-    const cx = (pos.getX(i) + pos.getX(i + 1) + pos.getX(i + 2)) / 3;
-    const cy = (pos.getY(i) + pos.getY(i + 1) + pos.getY(i + 2)) / 3;
-    const cz = (pos.getZ(i) + pos.getZ(i + 1) + pos.getZ(i + 2)) / 3;
-    let mat = baseMat;
-    for (const r of regions) if (regionClaims(r, cx, cy, cz)) mat = r.mat;
-    triMat[t] = mat;
-    if (mat > maxMat) maxMat = mat;
+  let tris: Tri[] = [];
+  for (let i = 0; i < pos.count; i += 3) {
+    const vs = [0, 1, 2].map((k): Vtx => ({
+      p: [pos.getX(i + k), pos.getY(i + k), pos.getZ(i + k)],
+      n: [nrm.getX(i + k), nrm.getY(i + k), nrm.getZ(i + k)],
+    })) as [Vtx, Vtx, Vtx];
+    tris.push({ v: vs, mat: baseMat });
   }
-  const order: number[] = [];
+  let maxMat = baseMat;
+  for (const r of regions) {
+    if (r.mat > maxMat) maxMat = r.mat;
+    // Pieces must be inside EVERY field of the region to be claimed; anything
+    // that falls outside any one of them keeps whatever it had.
+    let candidates = tris;
+    const rejected: Tri[] = [];
+    for (const f of regionFields(r)) {
+      const next: Tri[] = [];
+      for (const t of candidates) clipTri(t, f, next, rejected);
+      candidates = next;
+    }
+    for (const t of candidates) t.mat = r.mat;
+    tris = rejected.concat(candidates);
+  }
   const out = new THREE.BufferGeometry();
-  const p = new Float32Array(pos.count * 3);
-  const nn = new Float32Array(pos.count * 3);
+  const p = new Float32Array(tris.length * 9);
+  const nn = new Float32Array(tris.length * 9);
   let write = 0;
   for (let m = 0; m <= maxMat; m++) {
     const start = write;
-    for (let t = 0; t < triCount; t++) {
-      if (triMat[t] !== m) continue;
-      for (let k = 0; k < 3; k++) {
-        const i = t * 3 + k;
-        p[write * 3] = pos.getX(i);
-        p[write * 3 + 1] = pos.getY(i);
-        p[write * 3 + 2] = pos.getZ(i);
-        nn[write * 3] = nrm.getX(i);
-        nn[write * 3 + 1] = nrm.getY(i);
-        nn[write * 3 + 2] = nrm.getZ(i);
+    for (const t of tris) {
+      if (t.mat !== m) continue;
+      for (const q of t.v) {
+        p[write * 3] = q.p[0]; p[write * 3 + 1] = q.p[1]; p[write * 3 + 2] = q.p[2];
+        nn[write * 3] = q.n[0]; nn[write * 3 + 1] = q.n[1]; nn[write * 3 + 2] = q.n[2];
         write++;
       }
     }
-    if (write > start) {
-      out.addGroup(start, write - start, m);
-      order.push(m);
-    }
+    if (write > start) out.addGroup(start, write - start, m);
   }
   out.setAttribute("position", new THREE.BufferAttribute(p, 3));
   out.setAttribute("normal", new THREE.BufferAttribute(nn, 3));

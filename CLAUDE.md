@@ -119,7 +119,10 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v7.
   (`taperedSweepGeometry`), revolved profiles (`latheFromProfile`) and
   `splitCoatGroups`, which cuts the tricolor coat into PER-TRIANGLE MATERIAL GROUPS
   on the shared tan/black/white toon materials, so `applyBeagleSkin` keeps
-  recolouring the whole dog in place. The numbers in the data tables above
+  recolouring the whole dog in place. A triangle that straddles a region edge
+  is SPLIT along the region's true curve (band planes exact, blob/capsule
+  fields bisected), so the seams are clean lines, not zigzags along whatever
+  triangle edges the sweep had — the first pass's "spiky" markings. The numbers in the data tables above
   `makeBeagle` were measured off the reference image in head-units by the
   img2threejs pipeline and locked by its proportion gates — the whole evidence
   trail (reference, spec, per-pass renders, review history, `state.json`) lives in
