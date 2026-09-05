@@ -40,6 +40,17 @@ import { initRunSubmitQueue } from "./net/runSubmit";
 import { setProfileCache, clearProfileCache } from "./game/profileCache";
 import { fromServerProfile } from "./game/profileMapping";
 
+// The app's JavaScript is running, so whatever shell served it was intact.
+// Clear index.html's stale-shell guard, or its one-shot recovery reload would
+// be spent for good and the next deploy would strand the player on the bare
+// static markup again. See the comment on that script — it is the only other
+// place this key is touched.
+try {
+  window.sessionStorage.removeItem("bc:shell-recovery");
+} catch {
+  /* storage unavailable — the guard was never set either */
+}
+
 registerSW({ immediate: true });
 initInstallPrompt();
 
@@ -145,7 +156,7 @@ async function startApp(): Promise<void> {
     onSignedOut: () => {
       game.stop();
       clearProfileCache();
-      void startApp();
+      bootApp();
     },
     onShowPrivacy: () => privacy.open(() => profile.open(currentUsername)),
     // IDEA-038: routed through Game so the pad appears/disappears immediately;
@@ -184,11 +195,32 @@ async function startApp(): Promise<void> {
     profile.detach();
     leaderboard.detach();
     clearProfileCache();
-    void startApp();
+    bootApp();
   });
 }
 
-void startApp();
+/**
+ * The one way into startApp().
+ *
+ * startApp() takes the boot screen and the auth gate DOWN before it builds the
+ * game, so anything that threw after that point left a bare canvas and nothing
+ * else — no menu, no message, no clue, and a manual page reload as the only way
+ * out. That is not a state the player can be left in: a boot that fails is
+ * exactly what the boot screen exists to say, so say it.
+ *
+ * The error also goes to the console, because catching a rejection stops the
+ * browser from reporting it and this is the one place where losing the stack
+ * would cost us the diagnosis.
+ */
+function bootApp(): void {
+  void startApp().catch((err: unknown) => {
+    console.error("Beagle Chomp failed to start", err);
+    const detail = err instanceof Error ? err.message : String(err);
+    boot.showFatal(`${detail} Reloading the page usually clears this.`);
+  });
+}
+
+bootApp();
 
 // Mobile URL-bar show/hide (and, on some browsers, pinch/orientation) change
 // window.innerHeight without firing a plain 'resize' — visualViewport is the

@@ -2209,6 +2209,63 @@ body.stick-on.paused .powerups{
   .powerup .time{font-size:11px}
 }
 
+/* LANDSCAPE WINDOWS (desktop, and any window at least as wide as it is tall):
+   THE TRAY MOVES TO THE SIDE.
+
+   THE ROOM UNDER THE BOARD ONLY EXISTS IN PORTRAIT. Measured on the real
+   build, in play (viewport height minus --bc-board-bottom): 65px at 821x900,
+   40px at 900x900, 17px at 1000x900, 19px at 1280x1024, 10px at 960x540,
+   17px at 1440x900, 20px at 1920x1080. A chip is 42px tall, so from about
+   square onwards there is NO under-board lane at all and the tray was simply
+   off the bottom of the screen — Nuno's report. No amount of clamping invents
+   space that isn't there.
+
+   The dead space in a landscape window is at the SIDES instead, and it grows
+   as the under-board lane vanishes: 94px each side at 1100x900, 121px at
+   1280x1024, 206px at 960x540, 264px at 1440x900, 413px at 1920x1080.
+   --bc-board-right publishes where it starts, for exactly the reason
+   --bc-board-bottom always did — the board is 3D and its camera dollies with
+   the aspect ratio, so CSS cannot know, and a guess is wrong on the next
+   window size and wrong again on the next resize.
+
+   The switch is therefore ASPECT, not width: at aspect >= 1 the board is
+   height-constrained (its width settles at ~1.013 x the viewport height) and
+   the lane moves from under it to beside it. The min-width floor keeps the
+   smallest landscape screens — where a 138px rail would be a fifth of the
+   width — on the tuned bottom-left fallback in the max-height block above.
+
+   A COLUMN, not a row: the lane is narrow and tall, the opposite of the space
+   under a phone's board, and one chip per line puts every countdown on the
+   same reading axis. Centred vertically, which clears BOTH the HUD chrome
+   (top-right) and the D-pad (bottom-centre) at once — so this one rule
+   replaces the base anchor and both dpad-on anchors, whichever control scheme
+   the player is on.
+
+   Last of the tray's media blocks deliberately: a landscape-AND-short window
+   (the max-height:480px case above) has the widest side lane of all, so this
+   is the right answer there too and must win. */
+@media (min-width:600px) and (min-aspect-ratio:1/1){
+  /* Every on-screen control scheme is listed, including ones whose own
+     anchoring rules live above: in the side lane the tray clears all of them,
+     so which control is on screen stops mattering here. */
+  .powerups,
+  body.dpad-on .powerups,
+  body.dpad-on.paused .powerups,
+  body.stick-on .powerups,
+  body.stick-on.paused .powerups{
+    top:50%;bottom:auto;transform:translateY(-50%);
+    left:auto;
+    right:calc(var(--bc-gutter) + env(safe-area-inset-right));
+    /* Capped so the rail keeps its proportions in the widest lane, floored so
+       the chips stay legible in the narrowest one (95px at 900x700). When the
+       floor wins, the rail reaches a little over the board's outer wall margin
+       rather than any corridor — and this tray has always been a scrim readout
+       ON the play area. */
+    width:min(150px,calc(100vw - var(--bc-board-right,70%) - 2 * var(--bc-gutter)));
+    min-width:138px;
+    flex-direction:column;align-items:stretch;gap:var(--bc-s2)}
+}
+
 body.menu-open .powerups,
 body.shop-open .powerups,
 body.map-open .powerups{display:none}

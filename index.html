@@ -2,6 +2,67 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!-- STALE-SHELL RECOVERY. Must stay the FIRST script in the document: it
+         has to be listening before the bundle Vite injects below it starts
+         loading.
+
+         The failure it catches: on the first visit after a deploy the browser
+         can be handed a shell from BEFORE that deploy — the service worker's
+         precached index.html, or an edge/browser-cached copy — while the app's
+         hashed bundles have been replaced and the old filenames are gone from
+         the origin. The `<script type="module">` in that stale shell then 404s,
+         no application JavaScript runs at all, and the page renders as the bare
+         static markup below: the score, coin and map chips and the three chrome
+         buttons, with no menu, no sign-in gate and no boot screen. Nuno hit
+         exactly this on the web, once per deploy, and cleared it by reloading.
+
+         So do the reload for him — but unregister the worker first, or the
+         reload is served the same stale shell by the same worker and nothing
+         changes. main.ts re-registers it the moment the app boots, so this
+         costs one page load, not the PWA.
+
+         Guarded by a session flag, cleared by main.ts once the app actually
+         starts: if the bundle is genuinely missing rather than merely stale,
+         this must fail visibly instead of reloading forever. -->
+    <script>
+      (function () {
+        var KEY = "bc:shell-recovery";
+        addEventListener(
+          "error",
+          function (e) {
+            var el = e.target;
+            if (!el || !el.tagName) return;
+            var isScript = el.tagName === "SCRIPT";
+            var isSheet = el.tagName === "LINK" && el.rel === "stylesheet";
+            if (!isScript && !isSheet) return;
+            try {
+              if (sessionStorage.getItem(KEY)) return;
+              sessionStorage.setItem(KEY, "1");
+            } catch (err) {
+              return; // no storage means no loop guard, so don't start one
+            }
+            var reload = function () {
+              location.reload();
+            };
+            if (navigator.serviceWorker) {
+              navigator.serviceWorker
+                .getRegistrations()
+                .then(function (rs) {
+                  return Promise.all(
+                    rs.map(function (r) {
+                      return r.unregister();
+                    })
+                  );
+                })
+                .then(reload, reload);
+            } else {
+              reload();
+            }
+          },
+          true
+        );
+      })();
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
     <!-- The design system's outline colour: the browser/OS chrome around an
          installed PWA should be the same ink line that frames everything

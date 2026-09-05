@@ -458,34 +458,44 @@ export function createScene(canvas: HTMLCanvasElement): SceneRig {
     const fogScale = dist / baseDist;
     scene.fog = new THREE.Fog(FOG_COLOR, FOG_NEAR_BASE * fogScale, FOG_FAR_BASE * fogScale);
 
-    publishBoardBottom(h);
+    publishBoardBox(w, h);
   }
 
   /**
-   * Publish where the board ENDS on screen, as the CSS variable
-   * `--bc-board-bottom` on the document element.
+   * Publish where the board SITS on screen, as CSS variables on the document
+   * element: `--bc-board-bottom` (its lowest edge) plus `--bc-board-left` and
+   * `--bc-board-right` (its side edges).
    *
-   * The 2D layer wants to sit things directly under the maze (the power-up
-   * tray does), and only this module can answer where that is: the board is 3D,
-   * the camera dollies with the aspect ratio, and the portrait ramp above moves
-   * it again. Anything CSS-side would be a guess that is wrong on the next
-   * phone, and wrong the moment the device is rotated.
+   * The 2D layer wants to place things against the maze — the power-up tray
+   * sits directly under it on a phone, and beside it on a desktop window — and
+   * only this module can answer where that is: the board is 3D, the camera
+   * dollies with the aspect ratio, and the portrait ramp above moves it again.
+   * Anything CSS-side would be a guess that is wrong on the next window size,
+   * and wrong the moment the window is resized.
    *
-   * Projecting the board AABB and taking the LOWEST corner (minimum NDC y, since
-   * NDC +1 is the top of the frame) gives the on-screen bottom of everything the
-   * board occupies, walls included. Recomputed only in resize(): the camera is
-   * fixed during play, so this is not per-frame work.
+   * Projecting the board AABB and taking the extreme corners gives the
+   * on-screen box everything the board occupies, walls included (minimum NDC y
+   * is the BOTTOM, since NDC +1 is the top of the frame). Recomputed only in
+   * resize(): the camera is fixed during play, so this is not per-frame work.
    */
-  function publishBoardBottom(viewportH: number): void {
+  function publishBoardBox(viewportW: number, viewportH: number): void {
     let minNdcY = Infinity;
+    let minNdcX = Infinity;
+    let maxNdcX = -Infinity;
     for (const corner of BOARD_CORNERS) {
-      minNdcY = Math.min(minNdcY, corner.clone().project(camera).y);
+      const ndc = corner.clone().project(camera);
+      minNdcY = Math.min(minNdcY, ndc.y);
+      minNdcX = Math.min(minNdcX, ndc.x);
+      maxNdcX = Math.max(maxNdcX, ndc.x);
     }
-    const bottomPx = ((1 - minNdcY) / 2) * viewportH;
-    // Clamped: on an extreme aspect the near corner can project past the frame,
+    // Clamped: on an extreme aspect a near corner can project past the frame,
     // and a value outside the viewport would push the tray off screen entirely.
-    const clamped = Math.round(Math.max(0, Math.min(viewportH, bottomPx)));
-    document.documentElement.style.setProperty("--bc-board-bottom", `${clamped}px`);
+    const px = (v: number, extent: number): number =>
+      Math.round(Math.max(0, Math.min(extent, v)));
+    const style = document.documentElement.style;
+    style.setProperty("--bc-board-bottom", `${px(((1 - minNdcY) / 2) * viewportH, viewportH)}px`);
+    style.setProperty("--bc-board-left", `${px(((minNdcX + 1) / 2) * viewportW, viewportW)}px`);
+    style.setProperty("--bc-board-right", `${px(((maxNdcX + 1) / 2) * viewportW, viewportW)}px`);
   }
 
   window.addEventListener("resize", resize);
