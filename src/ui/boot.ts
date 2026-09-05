@@ -16,7 +16,10 @@ export interface BootScreenHandle {
   showOffline: (detail: string) => Promise<void>;
   /** Unrecoverable (e.g. VITE_API_URL missing) — no retry offered. */
   showFatal: (detail: string) => void;
-  hide: () => void;
+  /** Resolves once the screen is actually gone. It holds out the rest of one
+   *  bone-fill cycle when the load finished faster than the animation, so the
+   *  loader is seen rather than flickered. */
+  hide: () => Promise<void>;
 }
 
 function require<T extends HTMLElement>(id: string): T {
@@ -25,8 +28,21 @@ function require<T extends HTMLElement>(id: string): T {
   return el;
 }
 
+/**
+ * How long the loading screen stays up at minimum.
+ *
+ * Against a local API `restoreSession()` answers in well under 200ms, so the
+ * bone loader appeared, started filling, and vanished part-way through — which
+ * reads as a flicker rather than as loading. Holding for one full fill makes
+ * the screen say what it is there to say. Matched to the `bc-fill` cycle in
+ * style.css: change one and change the other.
+ */
+const MIN_LOADING_MS = 900;
+
 export function attachBootScreen(): BootScreenHandle {
   const root = require<HTMLDivElement>("boot");
+  /** When the current loading screen went up; null when it is not showing. */
+  let loadingSince: number | null = null;
 
   function show(html: string): void {
     root.innerHTML = `<div class="boot-sheet">${html}</div>`;
@@ -36,6 +52,7 @@ export function attachBootScreen(): BootScreenHandle {
 
   return {
     showLoading(message = "Loading…"): void {
+      loadingSince = Date.now();
       // Design system §09: a BONE fills left to right while the API is
       // reached — "no spinner, and nothing borrowed from the arcade
       // original". The shape is composed from CSS masks in style.css
@@ -74,7 +91,17 @@ export function attachBootScreen(): BootScreenHandle {
       `);
     },
 
-    hide(): void {
+    async hide(): Promise<void> {
+      // Hold out the rest of one fill cycle if the load beat the animation to
+      // it. Only ever waits after showLoading — hide() is also called once the
+      // auth gate closes, when this screen was never up.
+      if (loadingSince !== null) {
+        const shownFor = Date.now() - loadingSince;
+        if (shownFor < MIN_LOADING_MS) {
+          await new Promise((r) => setTimeout(r, MIN_LOADING_MS - shownFor));
+        }
+        loadingSince = null;
+      }
       root.classList.add("hidden");
       document.body.classList.remove("boot-open");
       root.innerHTML = "";

@@ -10,6 +10,15 @@
 // the finish call lands with numbers the validator accepts. The bounds
 // themselves are covered exhaustively in server/scripts/test-plausibility.ts.
 
+// reducedMotion: "reduce" on every context.
+//
+// The menu’s Play button carries an idle bob (design system §09). An element
+// whose bounding box never settles never becomes actionable in Playwright, so
+// a looping animation on a control hangs every click on it. Asking for reduced
+// motion is the honest fix: it is a real user preference the stylesheet already
+// honours, it stills the button, and it means the product keeps the motion
+// instead of dropping it to suit a test runner.
+
 import { chromium, type Page } from "playwright";
 
 const BASE_URL = process.argv[2] ?? "http://localhost:5175";
@@ -49,7 +58,9 @@ async function playFor(page: Page, seconds: number): Promise<void> {
 
 async function main(): Promise<void> {
   const browser = await chromium.launch();
-  const page = await browser.newContext().then((c) => c.newPage());
+  const page = await browser
+    .newContext({ reducedMotion: "reduce" })
+    .then((c) => c.newPage());
 
   const apiCalls: Array<{ url: string; status: number }> = [];
   page.on("response", (res) => {

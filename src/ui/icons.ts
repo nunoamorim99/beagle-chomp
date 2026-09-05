@@ -55,6 +55,10 @@ export const ICON = {
   offline: "wifi_off",
   copy: "content_copy",
   key: "key",
+  /** The auth screens: a name badge, a recovery key, a reveal toggle. */
+  username: "badge",
+  recoveryKey: "vpn_key",
+  reveal: "visibility",
   check: "check",
   lock: "lock",
   logout: "logout",

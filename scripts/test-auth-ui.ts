@@ -14,6 +14,15 @@
 // a player and a permanently lost account, so "you can't dismiss it by accident"
 // is a functional requirement, not a UI nicety.
 
+// reducedMotion: "reduce" on every context.
+//
+// The menu’s Play button carries an idle bob (design system §09). An element
+// whose bounding box never settles never becomes actionable in Playwright, so
+// a looping animation on a control hangs every click on it. Asking for reduced
+// motion is the honest fix: it is a real user preference the stylesheet already
+// honours, it stills the button, and it means the product keeps the motion
+// instead of dropping it to suit a test runner.
+
 import { chromium } from "playwright";
 
 const BASE_URL = process.argv[2] ?? "http://localhost:5175";
@@ -40,7 +49,7 @@ const uniqueName = (): string =>
 
 async function main(): Promise<void> {
   const browser = await chromium.launch();
-  const context = await browser.newContext();
+  const context = await browser.newContext({ reducedMotion: "reduce" });
   const page = await context.newPage();
 
   const consoleErrors: string[] = [];

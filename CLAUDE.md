@@ -232,6 +232,48 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v7.
   157 and the gap 8, so map (75) + lives must fit 197. Five hearts at 16px with
   a 2px gap and 8px padding measure 110, which fits by four pixels — change any
   of those and re-measure, or lives drops to a line of its own.
+  **THE AUTH GATE OPENS IN THE GARDEN** (the design file’s two newest screens).
+  Sky above, a hedge horizon below, and only the FORM is a board — brand, tabs,
+  the recovery row and the legal line sit on the sky, which is why those two
+  text blocks are DARK ink (cream on pale blue is the one pairing §08 rules
+  out). Three things to know before editing it:
+  - **`.auth-card--gate` vs `.auth-card`.** The same class renders the RECOVERY
+    view, which is still a real board — so the transparent treatment is scoped
+    to the modifier, and it must sit AFTER the shared sheet rule. Same
+    specificity, so order decides: putting it before is exactly how the gate
+    first rendered as a full-screen slab of bark with dark text on it.
+  - **The card is `min-height:100%`** so `.auth-panel`’s `flex:1` has something
+    to grow into — that is what pins Create account / Log in to the bottom of
+    the form board. Spacing is on a measured budget: at `--bc-s3` gaps the
+    privacy line fell 15px below the fold on a 390×844 screen.
+  - **The login screen remembers who last played** (`bc_last_player` in
+    localStorage — username and high score, both already public, never a
+    token). Written in `completeAuth` from the response the server just sent,
+    so the card shows real data; absent on a device that has never signed in,
+    which is exactly when it would be a lie.
+  Adding those screens grew ICON by three roles (`badge`, `vpn_key`,
+  `visibility`), which meant **re-cutting the font subset** — the rule in
+  `tokens.css` is not theoretical, and a name that is not in the file renders as
+  that word on the button.
+  **A looping animation on a CONTROL needs `reducedMotion: "reduce"` in the
+  browser tests.** Playwright will not click an element whose bounding box
+  never settles, so the menu’s bobbing Play button hangs every click on
+  `#playBtn` forever. The stylesheet already cancels every animation under
+  `prefers-reduced-motion`, so the Playwright contexts ask for it — the product
+  keeps the motion and the suites get a still button. Add the option to any new
+  context that drives the real UI.
+  **Two rendering traps this project has now hit twice each:**
+  - **Never put `max-height:100%` on a sheet inside a scrolling page.** It caps
+    the board at the viewport while the page keeps scrolling, so the surface
+    stops mid-content and the last controls sit on the bare background. The
+    sheets size to their content and centre with `margin:auto` — an auto margin
+    collapses to zero when there is no room, whereas `align-items:center`
+    pushes an over-tall item’s top out of the scrollable area entirely.
+  - **Chrome here uses OVERLAY scrollbars** (measured: `offsetHeight ===
+    clientHeight` on a scroller, desktop and touch alike), so `::-webkit-
+    scrollbar` styling is invisible at rest however loud it is. A scroll cue
+    that has to be seen before you scroll must be drawn by the app — see the
+    shop rail’s `.shop-rail-bar` and `syncRailBar()`.
   **THE POWER-UP TRAY SITS UNDER THE MAZE, AND THE SPACE THERE IS TINY.**
   `src/render/scene.ts` publishes **`--bc-board-bottom`** (the board AABB's
   lowest projected corner, recomputed in `resize()`) because the maze is 3D and
