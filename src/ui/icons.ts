@@ -77,6 +77,11 @@ export const ICON = {
   // ---- input ----
   swipe: "swipe",
   dpad: "stadia_controller",
+  /** IDEA-049. A real Material Symbols name, verified the only way that
+   *  actually proves it: the 47-name subset came back 272 bytes heavier than
+   *  the 46-name one, where a name the family does not have adds 24 bytes of
+   *  ligature string and no outline at all. */
+  stick: "joystick",
   up: "keyboard_arrow_up",
   down: "keyboard_arrow_down",
   left: "keyboard_arrow_left",

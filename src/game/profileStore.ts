@@ -82,14 +82,22 @@ export interface StoredProfile {
   challengeProgress: number;
   equippedMazeThemeId: string;
   ownedMazeThemeIds: string[];
-  /** IDEA-038: "swipe" (default) or "dpad". Per-account, so a player who
-   *  prefers buttons gets them on every device they sign in from. */
+  /** IDEA-038/049: "swipe" (default), "dpad" or "stick". Per-account, so a
+   *  player who prefers buttons — or the thumbstick — gets them on every
+   *  device they sign in from. */
   controlScheme: ControlScheme;
   /** IDEA-040: false until the first-run tutorial is finished or skipped. */
   tutorialDone: boolean;
 }
 
-export type ControlScheme = "swipe" | "dpad";
+export type ControlScheme = "swipe" | "dpad" | "stick";
+
+/** The same list at runtime, for the one place that has to VALIDATE a scheme
+ *  arriving off the wire (profileMapping). Kept beside the type so adding a
+ *  scheme is one edit rather than a type plus a forgotten if-chain — which is
+ *  exactly how "stick" would have silently degraded to "swipe" for every
+ *  player who chose it. */
+export const CONTROL_SCHEMES: readonly ControlScheme[] = ["swipe", "dpad", "stick"];
 
 // ---------------------------------------------------------------------------
 // Validation helpers. Still exported-in-spirit (used by the tests) and still

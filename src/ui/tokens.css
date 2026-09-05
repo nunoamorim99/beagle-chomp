@@ -52,8 +52,8 @@
      - latin only (usernames are [A-Za-z0-9_-] and every string is English);
      - Baloo 2 and Quicksand are variable, so ONE file covers each family's
        whole weight range — the CDN served the same bytes for every weight;
-     - Material Symbols is cut to the 46 icons `src/ui/icons.ts` actually
-       names, which is 8.9 KiB against ~3 MB for the full family.
+     - Material Symbols is cut to the 47 icons `src/ui/icons.ts` actually
+       names, which is 8.8 KiB against ~3 MB for the full family.
 
    ADDING AN ICON MEANS RE-CUTTING THE SUBSET. A name that is not in the file
    renders as that name in plain text, exactly as above. Refetch with:
@@ -64,9 +64,17 @@
    (src/ui/icons.ts) — which is ALSO the complete list, because nothing
    addresses this font any other way.
 
+   AND CHECK THE GLYPH ACTUALLY ARRIVED. An icon_name the family does not have
+   is not rejected — the CSS endpoint answers 200 either way — so the only
+   honest check is the file SIZE against the same request without the new name:
+   a real glyph adds a couple of hundred bytes, a name that does not exist adds
+   about two dozen (its ligature string, pointing at nothing). Re-fetching the
+   current 46 reproduced the shipped file byte for byte, which is what makes
+   that comparison meaningful.
+
    ALWAYS ADDRESS A GLYPH BY LIGATURE NAME, NEVER BY CODEPOINT. The subsetter
    does not preserve Material Symbols' original private-use codepoints: cutting
-   to 46 icons kept U+E668 (check) working and broke U+E899 (lock), which came
+   to a few dozen icons kept U+E668 (check) working and broke U+E899 (lock), which came
    out as a tofu box. Ligatures survive subsetting by construction, and they
    resolve inside SVG <text> as well as in HTML — both measured, after
    levelMap.ts had been written the other way round on a wrong assumption.

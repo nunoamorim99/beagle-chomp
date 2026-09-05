@@ -20,7 +20,7 @@ import {
 } from "./cosmetics";
 import { MAZE_THEMES, DEFAULT_MAZE_THEME_ID } from "./themes";
 import { CHALLENGE_LEVEL_COUNT } from "./challenges";
-import type { StoredProfile } from "./profileStore";
+import { CONTROL_SCHEMES, type ControlScheme, type StoredProfile } from "./profileStore";
 import type { ServerProfile } from "../net/endpoints";
 
 function knownBeagle(id: unknown): id is string {
@@ -33,6 +33,15 @@ function knownEnemy(id: unknown): id is string {
 
 function knownTheme(id: unknown): id is string {
   return typeof id === "string" && MAZE_THEMES.some((t) => t.id === id);
+}
+
+/** IDEA-049: the control scheme is checked against the list rather than a
+ *  chain of equality tests. The chain this replaces (`=== "dpad" ? "dpad" :
+ *  "swipe"`) had to be edited to add a scheme, and forgetting would have
+ *  degraded every "stick" player to swipe on the next sign-in — silently, and
+ *  only on a device other than the one they set it on. */
+function knownScheme(value: unknown): ControlScheme {
+  return CONTROL_SCHEMES.find((s) => s === value) ?? "swipe";
 }
 
 function sanitizeCount(value: unknown, max?: number): number {
@@ -97,7 +106,7 @@ export function fromServerProfile(profile: ServerProfile): StoredProfile {
     challengeProgress: sanitizeCount(profile.challengeProgress, CHALLENGE_LEVEL_COUNT),
     // Anything unrecognised degrades to the default rather than reaching the
     // input layer, same defensive posture as the cosmetic ids above.
-    controlScheme: profile.controlScheme === "dpad" ? "dpad" : "swipe",
+    controlScheme: knownScheme(profile.controlScheme),
     tutorialDone: profile.tutorialDone === true,
   };
 }

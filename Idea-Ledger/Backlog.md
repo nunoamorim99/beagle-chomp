@@ -19,7 +19,7 @@ Living backlog of ideas. Two purposes:
 _(empty — nothing to triage)_
 
 ## Backlog (open ideas)
-> New registered ideas go here. Next free ID: IDEA-049
+> New registered ideas go here. Next free ID: IDEA-050
 
 ### IDEA-028 — Challenge twist: moving walls / maze changes mid-level 💡
 - **Priority:** 🟢
@@ -158,6 +158,47 @@ _(empty — nothing to triage)_
 
 ## Delivered ✅
 > Already in production. Do NOT delete. Each keeps its version history.
+
+### IDEA-049 — Thumbstick: a third touch control, and the retro one ✅
+- **Priority:** 🟡
+- **Area:** ux
+- **Registered:** 2026-09-05
+- **Description:** Nuno, from playing it: swipe costs you the LIFT. Every turn is
+  press → drag → release → press again, and the beagle is already past the junction by
+  the time the thumb is back down. A thumbstick keeps the thumb ON the control, so a
+  turn is a roll of the thumb rather than a whole new gesture — and it brings the
+  arcade cabinet's own control back to a game that already looks like one.
+- **Notes:** a THIRD scheme, not a replacement — swipe stays the default and the D-pad
+  ([[IDEA-038]]) stays for players who want discrete keys. `control_scheme` is a per-account
+  column with a CHECK constraint, so this is full-stack: a migration, server validation, the
+  client types, and a third option in the account screen. The feel lives in one pure function
+  (`resolveStickDir`) so it is testable headlessly like the rest of the game logic.
+- **Dependencies:** [[IDEA-038]], [[IDEA-048]]
+- **History:**
+  - **v1** (2026-09-05) — the thumbstick, front to back. A fixed 4-way stick at the
+    bottom of the screen you keep the thumb ON, drawn as an arcade ball top in a
+    wooden gate plate. `src/input/stick.ts` (DOM) over one pure `resolveStickDir`
+    (feel), `scripts/test-thumbstick.ts` (30 checks) and `scripts/test-stick-ui.ts`
+    (27 measured in the real app, both orientations). Full-stack: migration 005
+    widens the `control_scheme` CHECK, `profileService` validates against a list,
+    and the account screen's control row became a three-option table with a note
+    for the chosen scheme. `ICON.stick` meant re-cutting the Material Symbols
+    subset to 47 names.
+
+    Four findings are written into the code because each was a real failure, not a
+    preference. **The anti-chatter gate sits at atan(ratio) = 50.2°, PAST the
+    diagonal, not atan(1/ratio) short of it** — written the other way round first
+    and the headless test caught it, because at 40.8° off "up" the horizontal axis
+    is not even the larger one yet. **A non-finite pointer reading fell through
+    every comparison and steered the beagle up**, since each of them is false
+    against NaN. **Three tones or it is a black disc**: the first pass built the
+    control out of `--bc-scrim-raised` on `--bc-ink` and panel, well, gates and
+    outline merged into one hole with a pale dot in it; and the ball's ink bottom
+    edge is invisible on a near-black well, so it is a warm shade instead. **The
+    stick moves to the bottom-left in landscape**, unlike the D-pad, which stays
+    centred — the board fills the height there and a filled circle in the middle
+    sits on the part of the maze you are reading. Both were found by LOOKING at a
+    render, not by an assertion, all of which passed.
 
 
 

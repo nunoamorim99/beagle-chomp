@@ -1430,9 +1430,14 @@ button.recovery-copy{padding:9px var(--bc-s3);font-size:14px;flex:0 0 auto}
 .profile-setting h2{font-family:var(--bc-font-display);font-weight:700;
   font-size:var(--bc-t-card);margin:0 0 var(--bc-s1)}
 .profile-setting p{font-size:13.5px;color:var(--bc-text-mute);margin:0 0 var(--bc-s3);line-height:1.45}
-.control-choice{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+/* THREE schemes since IDEA-049, so three columns. They fit: at 390px the sheet
+   leaves 334px, which is 104px a tile once the two gaps are out — wider than
+   the 80px minimum a tile of this shape needs, and the labels are one short
+   word each. A FOURTH would not fit and would want the same treatment the menu
+   destinations got: a row that wraps, not a rail that scrolls. */
+.control-choice{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
 .control-option{display:flex;flex-direction:column;align-items:center;gap:6px;
-  padding:var(--bc-s4) 10px;min-height:80px;
+  padding:var(--bc-s4) 6px;min-height:80px;
   font-family:var(--bc-font-display);font-weight:800;font-size:15px;
   color:rgba(255,247,232,.62);background:var(--bc-ink);
   border:var(--bc-line) solid var(--bc-outline);border-radius:var(--bc-r-card);
@@ -1444,6 +1449,11 @@ button.recovery-copy{padding:9px var(--bc-s3);font-size:14px;flex:0 0 auto}
 .control-option.is-active{color:var(--bc-cream);background:var(--bc-go);
   border-bottom-width:var(--bc-edge-card)}
 .control-icon{font-size:28px;line-height:1}
+/* One line under the row, for the CHOSEN scheme only. The difference between
+   "Buttons" and "Stick" is a feeling rather than a name, and three notes at
+   once is a paragraph nobody reads on a settings screen. */
+.control-note{margin:10px 0 0;font-size:13.5px;line-height:1.45;
+  color:var(--bc-text-soft);min-height:2.9em}
 
 .profile-danger{margin-top:26px;padding-top:18px;border-top:2px solid var(--bc-hairline)}
 .profile-danger h2{font-family:var(--bc-font-display);font-weight:700;
@@ -1715,6 +1725,222 @@ body.paused .dpad{display:none}
   .dpad{grid-template-columns:repeat(3,46px);grid-template-rows:repeat(3,46px);gap:6px}
   .dpad-btn{font-size:24px;border-radius:13px}
 }
+/* ---------------------------------------------------------------------- */
+/* IDEA-049: THE THUMBSTICK — the third touch scheme.
+
+   Nuno, after playing: swipe costs you the LIFT. Press, drag, release, press
+   again, and the beagle is past the junction before the thumb is back down.
+   The stick is the control you never let go of, so a turn is a roll of the
+   thumb and the direction fires the instant the ball crosses a gate.
+
+   IT IS DRAWN AS AN ARCADE STICK SEEN FROM ABOVE, deliberately: an ivory ball
+   top standing on a wooden cabinet panel, in a dark gate plate with four
+   notches that light as you push into them. The whole game is a cabinet game —
+   the maze, the biscuit trail, the pack — and this is the one piece of chrome
+   that gets to say so out loud.
+
+   THREE TONES, AND THEY HAVE TO SEPARATE. The first pass built the panel out
+   of --bc-scrim-raised on a --bc-ink well, and at arm's length the panel, the
+   well, the gates and the outline were one black disc with a small pale dot in
+   it — a coin in a bucket, not a stick. Panel is --bc-wood now (a cabinet
+   panel, and a colour the ink outline actually reads against), the well stays
+   --bc-ink, and the ball is --bc-biscuit. Light rim, dark hole, bright ball:
+   three steps, legible over sky, hedge and soil alike.
+
+   THE BALL IS BIG AND THE THROW IS SHORT, which is also how the real thing
+   looks from above — the ball fills the gate and moves a few millimetres. It
+   is not a trade: the direction is read from the ANGLE of the push, so throw
+   length costs nothing but the dead zone, and a big ball is a big target.
+
+   ONE DEVIATION from the design system, and it is a deviation in spelling
+   only: the bottom edge here is a 0-blur box-shadow, not a thicker
+   border-bottom. On a circle a fatter bottom border does not read as an edge,
+   it deforms the circle into an egg — border-radius:50% resolves against each
+   side's own width. A hard offset copy in --bc-outline draws exactly the edge
+   the rest of the system draws, on a shape that cannot carry it as a border.
+   It is not a drop shadow: no blur, no alpha, no spread. */
+
+:root{
+  --bc-stick-size:150px;   /* the cabinet panel */
+  /* Bezel width, measured from the panel's PADDING box (the 3px outline sits
+     outside it), so the well is 150 - 6 - 48 = 96 and the throw is 17.
+     The bezel has to be wide enough to hold a gate the BALL CANNOT COVER: at
+     18px the lit notch was mostly under the ball at full throw, which is
+     exactly when you need to see it. */
+  --bc-stick-well:24px;
+  --bc-stick-ball:62px;    /* the ball top. Its own touch target, twice over */
+  /* An invisible grab margin around the panel. A thumb that lands wide of a
+     control it is about to HOLD should still catch it; after that, pointer
+     capture keeps the gesture wherever it travels. */
+  --bc-stick-reach:16px;
+  /* What the power-up tray has to clear. Derived, so the landscape sizes below
+     need no second copy of this sum. */
+  --bc-stick-block:calc(var(--bc-stick-size) + 2 * var(--bc-stick-reach));
+}
+
+.stick{
+  position:fixed;
+  /* Centred, like the D-pad and for the same reason: the maze is centred above
+     it and either thumb can reach it. */
+  left:50%;
+  transform:translateX(-50%);
+  bottom:calc(var(--bc-s3) + env(safe-area-inset-bottom));
+  z-index:12;
+  padding:var(--bc-stick-reach);
+  line-height:0;
+  touch-action:none;
+  cursor:pointer;
+  /* A thumb rests here for a whole run — every one of these is a real thing
+     the browser would otherwise do to it. */
+  -webkit-touch-callout:none;
+  -webkit-user-select:none;
+  user-select:none;
+}
+
+/* The panel. Solid, never translucent: this sits over the live 3D and anything
+   that goes see-through here picks up the sky. */
+.stick-plate{
+  position:relative;display:block;box-sizing:border-box;
+  width:var(--bc-stick-size);height:var(--bc-stick-size);
+  border-radius:50%;
+  background:var(--bc-wood);
+  border:var(--bc-line) solid var(--bc-outline);
+  box-shadow:0 var(--bc-edge-btn) 0 var(--bc-outline);
+}
+
+/* The well: the gate plate the ball stands in, and the whole of the throw.
+   stick.ts measures THIS element, not the panel, so the ball can never ride
+   out over the rim — change --bc-stick-well and the feel follows with no JS
+   edit at all. */
+.stick-well{
+  position:absolute;inset:var(--bc-stick-well);border-radius:50%;
+  background:var(--bc-ink);
+  border:var(--bc-line) solid var(--bc-outline);
+}
+
+/* The four gates, sitting in the bezel just outside the well's rim — where the
+   ball arrives, but not where it covers them. Dark slots cut in the panel at
+   rest; the engaged one lights amber, the D-pad's held-key colour and the only
+   amber on screen during a run. */
+.stick-gate{
+  position:absolute;box-sizing:border-box;
+  background:var(--bc-ink);
+  border:var(--bc-line) solid var(--bc-outline);
+  border-radius:5px;
+  transition:background var(--bc-d-press) var(--bc-ease);
+}
+.stick-gate.on{background:var(--bc-amber)}
+/* Straddling means the slot's centre sits ON the well's edge, which is
+   --bc-stick-well in from the panel. Half the slot's length back from there
+   puts it half in the rim and half over the well's outline. */
+.stick-gate-up,.stick-gate-down{
+  width:32px;height:20px;left:50%;margin-left:-16px;
+}
+.stick-gate-left,.stick-gate-right{
+  width:20px;height:32px;top:50%;margin-top:-16px;
+}
+.stick-gate-up{top:calc(var(--bc-stick-well) - 17px)}
+.stick-gate-down{bottom:calc(var(--bc-stick-well) - 17px)}
+.stick-gate-left{left:calc(var(--bc-stick-well) - 17px)}
+.stick-gate-right{right:calc(var(--bc-stick-well) - 17px)}
+
+.stick-ball{
+  position:absolute;left:50%;top:50%;box-sizing:border-box;
+  width:var(--bc-stick-ball);height:var(--bc-stick-ball);
+  margin:calc(var(--bc-stick-ball) / -2) 0 0 calc(var(--bc-stick-ball) / -2);
+  border-radius:50%;
+  /* Biscuit, not white: the ivory of an arcade ball top, and a colour already
+     on screen in 3D — colour comes from the world. */
+  background:var(--bc-biscuit);
+  border:var(--bc-line) solid var(--bc-outline);
+  /* A WARM edge, not the ink one. Every other control in the app sits on a
+     lighter ground, so an ink bottom edge reads as depth; this one sits in a
+     near-black well, where ink on ink is invisible and the ball flattens into
+     a hole with cream in it. A darker biscuit is the ball's own shaded
+     underside, and it is the shape that separates it from the well. */
+  box-shadow:0 6px 0 #9C6B32;
+  /* --sx/--sy are written by stick.ts on .stick-plate and inherit down. The
+     stylesheet keeps ownership of how the ball is DRAWN; the module only says
+     where the thumb is. */
+  transform:translate(var(--sx,0px),var(--sy,0px));
+  /* The spring back to centre on release. While a thumb is down the ball has
+     to track it 1:1 — a transition there is latency you can feel, on the one
+     control that exists to remove latency. */
+  transition:transform 130ms var(--bc-ease),background var(--bc-d-press) var(--bc-ease);
+  z-index:1;
+}
+.stick-plate.grabbed .stick-ball{transition:background var(--bc-d-press) var(--bc-ease)}
+.stick-plate.engaged .stick-ball{background:var(--bc-amber);box-shadow:0 6px 0 var(--bc-amber-edge)}
+
+/* The cel highlight. One flat, hard-edged lit shape — the same call the eye
+   glint on the beagle makes, and for the same reason: a gradient here would be
+   the only soft thing in a scene of banded light. */
+.stick-ball::after{
+  content:"";position:absolute;left:17%;top:13%;width:34%;height:26%;
+  border-radius:50%;
+  background:var(--bc-cream);
+}
+.stick-plate.engaged .stick-ball::after{background:#FFE9C4}
+
+/* Hidden with everything else whenever a full-screen page is open, and while
+   paused — steering a stick that does nothing reads as a broken stick. */
+body.menu-open .stick,
+body.shop-open .stick,
+body.map-open .stick,
+body.auth-open .stick,
+body.recovery-open .stick,
+body.profile-open .stick,
+body.privacy-open .stick,
+body.leaderboard-open .stick,
+body.boot-open .stick,
+body.paused .stick{display:none}
+
+/* LANDSCAPE. Two changes, and the second is the one that matters.
+
+   It shrinks, as the D-pad does — the board fills essentially the whole height
+   here, so there is no "under the board" to sit in and any control is ON the
+   maze.
+
+   AND IT MOVES TO THE BOTTOM-LEFT. Centred is right in portrait (one thumb,
+   reaching in, either hand) and wrong here: in landscape the phone is held at
+   both ends, so a centred stick asks a thumb to leave its grip and cross the
+   screen — and it parks an opaque disc over the middle of the maze, which is
+   the part you are reading. The D-pad stays centred because its cross is
+   mostly holes and it is the same shape from either side; a filled circle is
+   not. Bottom-left is where a stick lives on every handheld ever made. */
+@media (max-height:480px){
+  :root{
+    --bc-stick-size:114px;--bc-stick-well:18px;
+    --bc-stick-ball:48px;--bc-stick-reach:11px;
+  }
+  .stick{
+    left:calc(var(--bc-gutter) + env(safe-area-inset-left));
+    transform:none;
+    bottom:calc(var(--bc-s2) + env(safe-area-inset-bottom));
+  }
+  .stick-gate-up,.stick-gate-down{width:24px;height:15px;margin-left:-12px}
+  .stick-gate-left,.stick-gate-right{width:15px;height:24px;margin-top:-12px}
+  .stick-gate-up{top:calc(var(--bc-stick-well) - 13px)}
+  .stick-gate-down{bottom:calc(var(--bc-stick-well) - 13px)}
+  .stick-gate-left{left:calc(var(--bc-stick-well) - 13px)}
+  .stick-gate-right{right:calc(var(--bc-stick-well) - 13px)}
+}
+
+/* The tutorial's flat diagram reuses the real control's own classes at a
+   smaller size, so the picture cannot drift from the thing it is a picture of.
+   Shown mid-push — a stick drawn at rest says nothing about what it does. */
+.tut-stick{display:flex;justify-content:center;margin-bottom:var(--bc-s4)}
+.tut-stick .stick-plate{
+  --bc-stick-size:114px;--bc-stick-well:18px;--bc-stick-ball:48px;
+  --sx:-12px;--sy:0px;
+}
+.tut-stick .stick-gate-up,.tut-stick .stick-gate-down{width:24px;height:15px;margin-left:-12px}
+.tut-stick .stick-gate-left,.tut-stick .stick-gate-right{width:15px;height:24px;margin-top:-12px}
+.tut-stick .stick-gate-up{top:calc(var(--bc-stick-well) - 13px)}
+.tut-stick .stick-gate-down{bottom:calc(var(--bc-stick-well) - 13px)}
+.tut-stick .stick-gate-left{left:calc(var(--bc-stick-well) - 13px)}
+.tut-stick .stick-gate-right{right:calc(var(--bc-stick-well) - 13px)}
+
 
 /* ---------------------------------------------------------------------- */
 /* IDEA-040 v2: the how-to-play carousel.
@@ -1829,6 +2055,7 @@ body.paused .dpad{display:none}
 body.tutorial-open .hud,
 body.tutorial-open .hud-buttons,
 body.tutorial-open .dpad,
+body.tutorial-open .stick,
 body.tutorial-open #mainMenu{display:none}
 
 /* ---------------------------------------------------------------------- */
@@ -1880,6 +2107,12 @@ body.tutorial-open #mainMenu{display:none}
    metrics rather than a magic number — change --bc-touch-dpad and this
    follows. */
 :root{--bc-dpad-block:calc(3 * var(--bc-touch-dpad) + 2 * var(--bc-s2))}
+/* --bc-pad-block is "how tall is the on-screen control, whichever one is up".
+   Each scheme sets it from its OWN metrics on its own body class, and nothing
+   has to ask which control is showing — the two classes are mutually exclusive
+   because game.ts calls setVisible on both (IDEA-049). */
+body.dpad-on{--bc-pad-block:var(--bc-dpad-block)}
+body.stick-on{--bc-pad-block:var(--bc-stick-block)}
 /* With the pad on, the tray anchors to the PAD instead of to the board, and
    grows upward.
 
@@ -1891,12 +2124,14 @@ body.tutorial-open #mainMenu{display:none}
    can never reach the pad, and it grows up over the board’s lower edge instead
    — which is fine, because this tray has always been a scrim readout ON the
    play area. */
-body.dpad-on .powerups{
+body.dpad-on .powerups,
+body.stick-on .powerups{
   top:auto;
-  bottom:calc(env(safe-area-inset-bottom) + var(--bc-s3) + var(--bc-dpad-block) + var(--bc-s2))}
-/* Paused hides the pad (steering while paused would read as a broken pad), so
-   the tray goes back under the board with it. */
-body.dpad-on.paused .powerups{
+  bottom:calc(env(safe-area-inset-bottom) + var(--bc-s3) + var(--bc-pad-block) + var(--bc-s2))}
+/* Paused hides the control (steering while paused would read as a broken pad),
+   so the tray goes back under the board with it. */
+body.dpad-on.paused .powerups,
+body.stick-on.paused .powerups{
   top:calc(var(--bc-board-bottom, 66%) + var(--bc-s2));bottom:auto}
 
 
@@ -1949,7 +2184,9 @@ body.dpad-on.paused .powerups{
 @media (max-height:480px){
   .powerups,
   body.dpad-on .powerups,
-  body.dpad-on.paused .powerups{
+  body.stick-on .powerups,
+  body.dpad-on.paused .powerups,
+  body.stick-on.paused .powerups{
     top:auto;bottom:calc(var(--bc-s2) + env(safe-area-inset-bottom));
     justify-content:flex-start;gap:4px}
   /* The pad is CENTRED and the row is left-aligned, so here the tray keeps the
@@ -1958,7 +2195,13 @@ body.dpad-on.paused .powerups{
      (Lifting the whole row above the pad, as portrait does, would push it into
      the middle of the maze on a screen this short.) */
   body.dpad-on:not(.paused) .powerups{
-    right:calc(50% + var(--bc-dpad-block) / 2 + var(--bc-s2))}
+    right:calc(50% + var(--bc-pad-block) / 2 + var(--bc-s2))}
+  /* The STICK is in that same bottom-left corner in landscape, so the tray
+     cannot keep it — it starts to the right of the stick instead and runs to
+     the far gutter, which is the widest run of free space on this layout. */
+  body.stick-on:not(.paused) .powerups{
+    left:calc(var(--bc-gutter) + env(safe-area-inset-left)
+             + var(--bc-pad-block) + var(--bc-s2))}
   /* The compact chips again: at full-size the five of them reached x=370 and
      the centred pad starts at x=347, so a left-aligned row still ran into it. */
   .powerup{gap:4px;padding:4px 7px 6px 4px}

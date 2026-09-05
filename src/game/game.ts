@@ -98,6 +98,9 @@ import { attachKeyboard } from "../input/keyboard";
 import { attachTouch } from "../input/touch";
 // IDEA-038: the optional on-screen D-pad, an alternative to swipe on phones.
 import { attachDpad, type DpadHandle } from "../input/dpad";
+// IDEA-049: the thumbstick — the third alternative, for players who don't want
+// to lift the thumb between turns.
+import { attachStick, type StickHandle } from "../input/stick";
 import {
   attachTutorialCarousel,
   type TutorialCarouselHandle,
@@ -311,6 +314,7 @@ export class Game {
   // startChallenge(getChallengeProgress()) auto-continue call.
   private readonly levelMap: LevelMapHandle;
   private readonly dpad: DpadHandle;
+  private readonly stick: StickHandle;
   private readonly detachPauseButton: () => void;
   private readonly detachHomeButton: () => void;
   private readonly detachMenuResize: () => void;
@@ -654,9 +658,13 @@ export class Game {
 
     this.detachKeyboard = attachKeyboard((d) => { this.beagle.queued = d; });
     this.detachTouch = attachTouch(canvas, (d) => { this.beagle.queued = d; });
-    // IDEA-038: the D-pad feeds the SAME queued-direction model as swipe and
-    // the keyboard, so nothing downstream knows or cares which was used.
+    // IDEA-038/049: the pad and the stick feed the SAME queued-direction model
+    // as swipe and the keyboard, so nothing downstream knows or cares which was
+    // used. Both are mounted always and only one is ever VISIBLE — building
+    // them lazily would mean tearing DOM up and down on a settings toggle, for
+    // two elements that cost nothing while hidden.
     this.dpad = attachDpad(document.body, (d) => { this.beagle.queued = d; });
+    this.stick = attachStick(document.body, (d) => { this.beagle.queued = d; });
     this.detachPauseButton = this.attachPauseButton();
     this.detachHomeButton = this.attachHomeButton();
 
@@ -798,23 +806,31 @@ export class Game {
     // interface layer 6 dB so a tap can never mask a chomp or a death.
     this.sound.ui.menuBed(false);
     this.sound.ui.setRunActive(true);
-    // Leaving the menu means a run is starting — show the pad if the player
-    // asked for it. (The CSS hides it under every full-screen page anyway, so
-    // this only has to answer "does this player want buttons at all".)
-    this.syncDpadVisibility();
+    // Leaving the menu means a run is starting — put up whichever on-screen
+    // control the player asked for. (The CSS hides both under every full-screen
+    // page anyway, so this only has to answer "which control does this player
+    // want", not "is one allowed right now".)
+    this.syncTouchControls();
   }
 
-  /** IDEA-038: the pad is shown only when the player's account says so.
-   *  Called on every transition into play and whenever the setting changes. */
-  private syncDpadVisibility(): void {
-    this.dpad.setVisible(getControlScheme() === "dpad");
+  /** IDEA-038/049: the on-screen control is whichever one the player's account
+   *  asks for, and swipe asks for neither. Called on every transition into play
+   *  and whenever the setting changes.
+   *
+   *  Both are told explicitly, rather than only the winner: switching from the
+   *  pad to the stick has to take the pad off screen, and a setVisible(false)
+   *  is also what drops the body class the power-up tray reads. */
+  private syncTouchControls(): void {
+    const scheme = getControlScheme();
+    this.dpad.setVisible(scheme === "dpad");
+    this.stick.setVisible(scheme === "stick");
   }
 
-  /** Called by the settings toggle so the pad appears/disappears immediately
-   *  rather than at the next run. */
+  /** Called by the settings toggle so the control appears/disappears
+   *  immediately rather than at the next run. */
   setControlSchemePreference(scheme: ControlScheme): void {
     setControlScheme(scheme);
-    this.syncDpadVisibility();
+    this.syncTouchControls();
   }
 
   /**
@@ -911,6 +927,7 @@ export class Game {
     this.shop.detach();
     this.levelMap.detach();
     this.dpad.detach();
+    this.stick.detach();
     this.menuScene.dispose();
     this.shopScene.dispose();
   }

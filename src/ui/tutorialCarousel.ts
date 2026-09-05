@@ -72,6 +72,25 @@ function diagramHtml(kind: NonNullable<TutorialSlide["diagram"]>): string {
       "</div>"
     );
   }
+  if (kind === "stick") {
+    // The real control, at diagram size: the plate, its four gates, and the
+    // ball sitting off-centre in the one that is lit. A stick drawn at rest
+    // says nothing about what it does — this one is mid-push.
+    return (
+      '<div class="tut-stick" aria-hidden="true">' +
+      // Deliberately NOT .engaged: that turns the ball amber, and an amber ball
+      // filling the diagram is the only thing you see. The ball stays ivory,
+      // offset into a lit gate — which is the picture that says "push it".
+      '<span class="stick-plate">' +
+      '<span class="stick-gate stick-gate-up"></span>' +
+      '<span class="stick-gate stick-gate-down"></span>' +
+      '<span class="stick-gate stick-gate-left on"></span>' +
+      '<span class="stick-gate stick-gate-right"></span>' +
+      '<span class="stick-well"></span>' +
+      '<span class="stick-ball"></span>' +
+      "</span></div>"
+    );
+  }
   return (
     '<div class="tut-swipe" aria-hidden="true">' +
     '<span class="tut-swipe-track"><span class="tut-swipe-dot"></span></span>' +

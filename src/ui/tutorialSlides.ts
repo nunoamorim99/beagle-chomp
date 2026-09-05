@@ -30,7 +30,7 @@ import type { ControlScheme } from "../game/profileStore";
 export type TutorialStage = "beagle" | "enemy" | "maze" | "goldenBone" | "powerup";
 
 /** A flat input diagram, for the one thing 3D cannot show: a gesture. */
-export type TutorialDiagram = "keys" | "swipe" | "dpad";
+export type TutorialDiagram = "keys" | "swipe" | "dpad" | "stick";
 
 export interface TutorialSlide {
   id: string;
@@ -60,6 +60,12 @@ function movement(input: DeviceInput): { body: string; diagram: TutorialDiagram 
     return {
       body: "Tap the pad at the bottom of the screen to send the beagle around the maze. It keeps going until you turn it.",
       diagram: "dpad",
+    };
+  }
+  if (input.scheme === "stick") {
+    return {
+      body: "Rest your thumb on the stick at the bottom of the screen and push the way you want to go. It keeps going until you turn it — so you can leave your thumb where it is.",
+      diagram: "stick",
     };
   }
   return {

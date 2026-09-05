@@ -34,6 +34,7 @@ function section(title: string): void {
 const desktop = buildSlides({ coarsePointer: false, scheme: "swipe" });
 const phoneSwipe = buildSlides({ coarsePointer: true, scheme: "swipe" });
 const phonePad = buildSlides({ coarsePointer: true, scheme: "dpad" });
+const phoneStick = buildSlides({ coarsePointer: true, scheme: "stick" });
 
 section("Shape");
 // Six since IDEA-046. The count is pinned rather than left open because the
@@ -80,6 +81,22 @@ section("Movement copy follows the DEVICE, not the account");
   ok("a D-pad player is told to tap the pad", /tap the pad/i.test(p.body), p.body);
   ok("…and not to swipe", !/swipe/i.test(p.body), p.body);
   ok("D-pad gets the pad diagram", p.diagram === "dpad", p.diagram);
+
+  // IDEA-049. The stick's slide has one job the other two do not: say that the
+  // thumb can STAY there. That is the whole reason to pick it over the pad, and
+  // it is not something a player discovers by looking at a picture of a ball.
+  const t = phoneStick[0];
+  ok("a stick player is told about the stick", /\bstick\b/i.test(t.body), t.body);
+  ok("…and told they can leave the thumb on it", /leave your thumb/i.test(t.body), t.body);
+  ok("…and not to swipe", !/swipe/i.test(t.body), t.body);
+  ok("stick gets the stick diagram", t.diagram === "stick", t.diagram);
+
+  // Every scheme has to be answered. A scheme that falls through the if-chain
+  // gets the SWIPE copy — correct-looking, and wrong for the player reading it.
+  ok(
+    "no two schemes get the same movement slide",
+    new Set([s.body, p.body, t.body]).size === 3,
+  );
 }
 
 section("No slide ever names a ghost count");
@@ -87,7 +104,7 @@ section("No slide ever names a ghost count");
   // The bug that started this rewrite. "all four" is wrong on 14 of the 18
   // levels in a lap, so the copy must describe the rule, not a number.
   const numberWords = /\b(one|two|three|four|five|1|2|3|4|5)\s+(enem|ghost|of them|in the pack)/i;
-  for (const set of [desktop, phoneSwipe, phonePad]) {
+  for (const set of [desktop, phoneSwipe, phonePad, phoneStick]) {
     for (const slide of set) {
       ok(
         `"${slide.id}" does not count the enemies`,

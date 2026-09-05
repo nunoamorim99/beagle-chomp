@@ -308,8 +308,45 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v7.
   hung every Playwright click on `#playBtn` — an element whose bounding box
   never settles never becomes actionable. Any new decoration on a control has
   to leave the hit target still.
-- **Input / UI / PWA**: `src/input/{touch,keyboard}.ts`, `src/ui/{hud,sound,install}.ts`,
+- **Input / UI / PWA**: `src/input/{touch,keyboard,dpad,stick}.ts`, `src/ui/{hud,sound,install}.ts`,
   `public/icons/*` (192, 512, 512-maskable).
+- **THERE ARE THREE TOUCH SCHEMES** (IDEA-049): swipe (default), the D-pad, and the
+  **THUMBSTICK**. All three feed the same `beagle.queued = d`, so gameplay knows nothing
+  about which is on. Six things are load-bearing:
+  - **`ControlScheme` is a per-ACCOUNT column with a CHECK constraint.** Adding a scheme
+    is a MIGRATION (`005_control_scheme_stick.sql`) plus `profileService`'s list plus the
+    client type — miss the migration and the API answers 400 and the client's optimistic
+    choice is reverted on the next sync, which looks exactly like the toggle not working.
+    Migration 005 drops the old CHECK by LOOKUP, not by guessed name: a wrong guess leaves
+    both constraints and every write of the new value fails in production only.
+  - **The feel is one pure function**, `resolveStickDir` in `src/input/stick.ts`, tested
+    headlessly by `scripts/test-thumbstick.ts`. Its two rules are asymmetric on purpose:
+    switching AXIS is gated by `STICK_SWITCH_RATIO` (the switch sits at atan(1.2) = 50.2°,
+    a few degrees PAST the diagonal, so a thumb parked on the corner cannot chatter), while
+    REVERSING along the same axis is instant and ungated. Inside the dead zone the held
+    direction is KEPT, never cancelled — the beagle has no "stop" to flicker to.
+  - **It emits only on CHANGE.** `Entity.queued` persists until overwritten (movement.ts),
+    so a held stick keeps asking for free and a turn refused at one junction is still
+    waiting at the next.
+  - **`.stick-well`'s inset IS the throw.** stick.ts measures that element, not the plate,
+    so the ball can never ride out over the gate it is lighting, and the landscape and
+    tutorial sizes need no second copy of any number in JS.
+  - **Three tones or it is a black disc.** Bezel `--bc-wood`, well `--bc-ink`, ball
+    `--bc-biscuit`. The first pass used `--bc-scrim-raised` on `--bc-ink` and the whole
+    control read as one hole with a dot in it. The ball's bottom edge is a WARM shade, not
+    the ink one — ink on a near-black well is invisible. The circle's depth is a 0-blur
+    `box-shadow`, because a thicker `border-bottom` on `border-radius:50%` deforms the
+    circle into an egg.
+  - **In LANDSCAPE the stick moves to the bottom-left**, unlike the D-pad, which stays
+    centred. The board fills the height there, so a centred filled circle sits on the part
+    of the maze you are reading — and a phone held at both ends has no thumb in the middle.
+    The power-up tray is re-aimed to start to its right; `--bc-pad-block` is set per scheme
+    on `body.dpad-on` / `body.stick-on` so the tray never has to ask which control is up.
+  `scripts/test-stick-ui.ts` (`npm run test:stick-ui`) measures all of it in the real app
+  at 390×844 and in landscape — including that every icon renders as a GLYPH rather than
+  its ligature name, which is the one check that can catch the font subset going stale.
+  **Signup is rate-limited to 5/hour per IP**, so a rerun after a few passes needs
+  `docker compose restart api`.
 - **Wall surfaces are PROCEDURAL** (`src/render/wallTexture.ts`): each theme's
   palette carries a `wallTexture` kind — `hedge` (garden/forest/park), `sand`
   (beach), `brick` (city), `flat` (arcade) — drawn to a 256px canvas at runtime,

@@ -123,7 +123,7 @@ export function purchaseRemote(
 /** IDEA-038: persist the control-scheme preference against the account, so it
  *  follows the player to any device. */
 export function setControlSchemeRemote(
-  controlScheme: "swipe" | "dpad",
+  controlScheme: "swipe" | "dpad" | "stick",
 ): Promise<{ profile: ServerProfile }> {
   return apiRequest<{ profile: ServerProfile }>("/api/v1/profile/settings", {
     method: "PATCH",

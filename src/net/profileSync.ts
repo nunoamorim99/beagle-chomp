@@ -152,7 +152,7 @@ export function enqueueEquip(payload: EquipPayload): void {
 }
 
 /** IDEA-038: persist the control scheme. */
-export function enqueueControlScheme(scheme: "swipe" | "dpad"): void {
+export function enqueueControlScheme(scheme: "swipe" | "dpad" | "stick"): void {
   enqueue(async () => {
     const { profile } = await setControlSchemeRemote(scheme);
     adopt(profile);

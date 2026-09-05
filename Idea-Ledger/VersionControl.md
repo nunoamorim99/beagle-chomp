@@ -16,7 +16,12 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
 > lines here roll up into the numbered version below and this section is cleared (hold a line back
 > only if you explicitly choose to).
 
-_(nothing awaiting a release — everything shipped so far is in v7.0 below)_
+- **[[IDEA-049]] v1** (2026-09-05) — **the thumbstick**. A third touch scheme beside
+  swipe and the D-pad, and the one that removes the LIFT: the thumb stays on the
+  control between turns, so a change of direction is a roll rather than a whole new
+  gesture. Drawn as an arcade ball top in a wooden gate plate with four notches that
+  light amber as you push into them. Full-stack — the control scheme is a per-account
+  column with a CHECK constraint, so a new one is a migration.
 
 ## 📌 Planned
 > Forward-looking targets from `/plan-version`. Each is a checklist of IDEAs intended for a

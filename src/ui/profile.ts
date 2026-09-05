@@ -40,6 +40,45 @@ export interface ProfileCallbacks {
   onClose?: () => void;
 }
 
+/** The three touch schemes, as one table rather than three near-identical
+ *  blocks of markup and three near-identical listeners — which is what this was
+ *  at two, and adding the third to it would have meant editing four places.
+ *
+ *  Each carries a NOTE, because the difference between these is a feeling and
+ *  not a name: "Buttons" and "Stick" both mean "something on screen", and the
+ *  one line under the row is where a player finds out which one is worth
+ *  switching to. Only the chosen option's note is shown — three at once is a
+ *  paragraph nobody reads on a settings screen. */
+const CONTROL_OPTIONS: ReadonlyArray<{
+  id: string;
+  scheme: ControlScheme;
+  glyph: string;
+  label: string;
+  note: string;
+}> = [
+  {
+    id: "controlSwipe",
+    scheme: "swipe",
+    glyph: ICON.swipe,
+    label: "Swipe",
+    note: "Flick anywhere on the screen. Nothing covers the maze.",
+  },
+  {
+    id: "controlDpad",
+    scheme: "dpad",
+    glyph: ICON.dpad,
+    label: "Buttons",
+    note: "Four keys under the maze. Tap the way you want to go.",
+  },
+  {
+    id: "controlStick",
+    scheme: "stick",
+    glyph: ICON.stick,
+    label: "Stick",
+    note: "Rest your thumb on it and roll. The fastest way to turn — you never lift.",
+  },
+];
+
 function require<T extends HTMLElement>(id: string): T {
   const el = document.getElementById(id) as T | null;
   if (!el) throw new Error(`attachProfile: missing element #${id} — check index.html`);
@@ -82,19 +121,19 @@ export function attachProfile(callbacks: ProfileCallbacks): ProfileHandle {
           <h2>Controls</h2>
           <p>How you steer the beagle on a touchscreen.</p>
           <div class="control-choice" role="group" aria-label="Control scheme">
-            <button type="button" id="controlSwipe"
-                    class="control-option${scheme === "swipe" ? " is-active" : ""}"
-                    aria-pressed="${scheme === "swipe"}">
-              <span class="control-icon bc-i" aria-hidden="true">swipe</span>
-              <span>Swipe</span>
-            </button>
-            <button type="button" id="controlDpad"
-                    class="control-option${scheme === "dpad" ? " is-active" : ""}"
-                    aria-pressed="${scheme === "dpad"}">
-              <span class="control-icon bc-i" aria-hidden="true">stadia_controller</span>
-              <span>Buttons</span>
-            </button>
+            ${CONTROL_OPTIONS.map(
+              (opt) => `
+              <button type="button" id="${opt.id}"
+                      class="control-option${scheme === opt.scheme ? " is-active" : ""}"
+                      aria-pressed="${scheme === opt.scheme}">
+                <span class="control-icon bc-i" aria-hidden="true">${opt.glyph}</span>
+                <span>${opt.label}</span>
+              </button>`,
+            ).join("")}
           </div>
+          <p class="control-note">${escapeHtml(
+            CONTROL_OPTIONS.find((o) => o.scheme === scheme)?.note ?? "",
+          )}</p>
         </section>
 
         <section class="profile-setting">
@@ -149,14 +188,12 @@ export function attachProfile(callbacks: ProfileCallbacks): ProfileHandle {
       callbacks.onShowPrivacy();
     });
 
-    root.querySelector("#controlSwipe")?.addEventListener("click", () => {
-      callbacks.onControlSchemeChange?.("swipe");
-      render();
-    });
-    root.querySelector("#controlDpad")?.addEventListener("click", () => {
-      callbacks.onControlSchemeChange?.("dpad");
-      render();
-    });
+    for (const opt of CONTROL_OPTIONS) {
+      root.querySelector(`#${opt.id}`)?.addEventListener("click", () => {
+        callbacks.onControlSchemeChange?.(opt.scheme);
+        render();
+      });
+    }
 
     root.querySelector("#replayTutorialBtn")?.addEventListener("click", () => {
       // Opens the carousel there and then. The older version only set
