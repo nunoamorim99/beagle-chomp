@@ -37,8 +37,8 @@ profileRoutes.patch("/profile/equipped", async (c) => {
 
 // --- settings ---------------------------------------------------------------
 
-/** IDEA-038: swipe vs on-screen D-pad. A per-account preference, so it follows
- *  the player to any device they sign in from. */
+/** IDEA-038/049: swipe, the on-screen D-pad, or the thumbstick. A per-account
+ *  preference, so it follows the player to any device they sign in from. */
 profileRoutes.patch("/profile/settings", async (c) => {
   const body = await readBody(c);
   const userId = c.get("user").id;

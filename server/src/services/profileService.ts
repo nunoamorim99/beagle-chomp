@@ -136,18 +136,27 @@ export async function purchase(
 
 // --- settings ---------------------------------------------------------------
 
-/** IDEA-038: the player's control scheme ('swipe' | 'dpad').
+/** IDEA-038/049: the player's control scheme ('swipe' | 'dpad' | 'stick').
  *
- *  Stored per ACCOUNT rather than per device: someone who prefers buttons
- *  prefers them on every phone they sign in from. */
+ *  Stored per ACCOUNT rather than per device: someone who prefers buttons — or
+ *  the thumbstick — prefers them on every phone they sign in from.
+ *
+ *  CONTROL_SCHEMES has to stay in step with the CHECK constraint on
+ *  users.control_scheme (migrations 002, then 005 for 'stick'). Failing here
+ *  rather than at the database is deliberate: a scheme the column rejects comes
+ *  back as a 500 with a constraint name in it, where this is a 400 that says
+ *  what was wrong. */
+const CONTROL_SCHEMES = ["swipe", "dpad", "stick"] as const;
+type ControlScheme = (typeof CONTROL_SCHEMES)[number];
+
 export async function setControlScheme(
   userId: string,
   schemeInput: unknown,
 ): Promise<PublicProfile> {
-  if (schemeInput !== "swipe" && schemeInput !== "dpad") {
+  if (!CONTROL_SCHEMES.includes(schemeInput as ControlScheme)) {
     throw new ApiError(400, "VALIDATION_FAILED", "Unknown control scheme.");
   }
-  const updated = await usersRepo.updateControlScheme(userId, schemeInput);
+  const updated = await usersRepo.updateControlScheme(userId, schemeInput as ControlScheme);
   return toPublicProfile(updated);
 }
 

@@ -210,10 +210,11 @@ export async function purchaseItem(
   return rows[0];
 }
 
-/** IDEA-038: persist the player's control-scheme preference. */
+/** IDEA-038/049: persist the player's control-scheme preference. The union
+ *  mirrors the CHECK constraint on users.control_scheme — see migration 005. */
 export async function updateControlScheme(
   userId: string,
-  scheme: "swipe" | "dpad",
+  scheme: "swipe" | "dpad" | "stick",
   client?: Executor,
 ): Promise<UserRow> {
   const { rows } = await run(client)<UserRow>(
