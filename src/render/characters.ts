@@ -590,7 +590,7 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
   g.traverse((o) => {
     if (o instanceof THREE.Mesh) o.castShadow = true;
   });
-  g.scale.setScalar(0.9);
+  g.scale.setScalar(1.1);
 
   const parts: BeagleParts = {
     earL,
