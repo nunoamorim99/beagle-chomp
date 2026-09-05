@@ -9,6 +9,15 @@
 // single-account tests can't demonstrate), and that other players' usernames
 // are rendered as text rather than markup.
 
+// reducedMotion: "reduce" on every context.
+//
+// The menu’s Play button carries an idle bob (design system §09). An element
+// whose bounding box never settles never becomes actionable in Playwright, so
+// a looping animation on a control hangs every click on it. Asking for reduced
+// motion is the honest fix: it is a real user preference the stylesheet already
+// honours, it stills the button, and it means the product keeps the motion
+// instead of dropping it to suit a test runner.
+
 import { chromium, type Browser, type Page } from "playwright";
 
 const BASE_URL = process.argv[2] ?? "http://localhost:5175";
@@ -35,7 +44,9 @@ const uniqueName = (prefix: string): string =>
 
 /** Sign up in a fresh browser context, returning the page and the username. */
 async function signUp(browser: Browser, prefix: string): Promise<{ page: Page; username: string }> {
-  const page = await browser.newContext().then((c) => c.newPage());
+  const page = await browser
+    .newContext({ reducedMotion: "reduce" })
+    .then((c) => c.newPage());
   const username = uniqueName(prefix);
 
   await page.goto(BASE_URL, { waitUntil: "networkidle" });

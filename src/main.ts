@@ -107,13 +107,13 @@ async function startApp(): Promise<void> {
   }
 
   if (outcome === "needs-signin") {
-    boot.hide();
+    await boot.hide();
     // Resolves only once the player is authenticated AND — for a new account or
     // a consumed recovery code — has confirmed they saved their recovery code.
     currentUsername = await authGate.open();
   }
 
-  boot.hide();
+  await boot.hide();
 
   // Only now is it safe to construct the game: the profile cache is hydrated,
   // so initProfileFromCache() in the Game constructor has something to read.

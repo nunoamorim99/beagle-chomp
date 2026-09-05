@@ -30,6 +30,13 @@
 
 
 *{box-sizing:border-box;margin:0;padding:0}
+html{
+  /* Kill the platform tap highlight. Chrome on Android paints a light blue
+     rectangle over the pressed element, which ignores our radii and reads as
+     a rendering fault next to the press-into-the-edge animation every button
+     already has. The button's own :active state IS the feedback. */
+  -webkit-tap-highlight-color:transparent;
+}
 html,body{height:100%;overflow:hidden;background:var(--bc-ink);color:var(--bc-text);
   font-family:var(--bc-font-body);font-weight:500;
   /* respect notches on installed PWAs */
@@ -448,12 +455,20 @@ body.install-open .menu-top{margin-top:clamp(84px,15vh,132px)}
 .menu-play .bc-i{font-size:32px}
 
 /* §09's idle bob lives HERE and nowhere else on the menu: "the primary action
-   on an idle screen breathes so the eye finds it". It animates the ICON, not
-   the block — a bobbing button is a moving tap target, and it also hangs every
-   automated click, since an element whose bounding box never settles never
-   becomes actionable. */
-.menu-play .bc-i{animation:bc-bob 1.6s ease-in-out infinite}
-.menu-play:hover .bc-i{animation-play-state:paused}
+   on an idle screen breathes so the eye finds it". The WHOLE block moves.
+
+   An earlier pass animated only the icon, because a permanently-moving element
+   never satisfies Playwright's actionability check and every automated click on
+   #playBtn hung forever. That was solving a test problem inside the product.
+   The right lever was already in this stylesheet: the animation is cancelled
+   under prefers-reduced-motion, so the browser-driven suites now ask for it
+   (`reducedMotion: "reduce"` on the Playwright context) and get a still button,
+   while players get the motion the design asks for.
+
+   It pauses on hover and while pressed, so a pointer that has already arrived
+   is never chasing it. */
+.menu-play{animation:bc-bob 1.6s ease-in-out infinite}
+.menu-play:hover,.menu-play:active{animation-play-state:paused}
 
 .menu-tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
 
@@ -623,8 +638,12 @@ body.map-open #mainMenu{display:none}
   border-bottom-width:var(--bc-line)}
 .shop-back:focus-visible,.map-back:focus-visible{
   outline:var(--bc-line) solid var(--bc-cream);outline-offset:2px}
+/* Same size as the leaderboard's title — they are two pages of the same app
+   and their headings should match. This used to be a flat 26px with a phone
+   override down to 18px, which made the shop look like the smaller screen. */
 .shop-title{flex:1 1 auto;text-align:center;font-family:var(--bc-font-display);
-  font-weight:800;font-size:26px;letter-spacing:-.01em;color:var(--bc-cream);
+  font-weight:800;font-size:clamp(21px,6vw,24px);letter-spacing:-.01em;
+  color:var(--bc-cream);
   -webkit-text-stroke:5px var(--bc-outline);paint-order:stroke fill}
 .shop-balance{flex:0 0 auto;display:inline-flex;align-items:center;gap:7px;
   background:var(--bc-scrim);border:var(--bc-line) solid var(--bc-outline);
@@ -686,8 +705,32 @@ body.map-open #mainMenu{display:none}
   overflow-x:auto;overscroll-behavior-x:contain;touch-action:pan-x;
   scroll-snap-type:x proximity;padding:var(--bc-s1) 2px var(--bc-s3);
   -webkit-overflow-scrolling:touch}
-.shop-rail::-webkit-scrollbar{height:6px}
-.shop-rail::-webkit-scrollbar-thumb{background:rgba(255,247,232,.2);border-radius:999px}
+/* The NATIVE scrollbar is hidden outright, and the rail draws its own.
+
+   Chrome uses overlay scrollbars here (measured: the rail's offsetHeight and
+   clientHeight are equal on both desktop and touch), so the native bar takes no
+   space and fades away at rest no matter how it is styled — which is why the
+   only cue that more skins exist past the edge was invisible until you were
+   already scrolling. shop.ts sizes .shop-rail-bar-thumb from scrollLeft and
+   hides the whole groove when the rail does not overflow. */
+.shop-rail{scrollbar-width:none}
+.shop-rail::-webkit-scrollbar{display:none}
+
+/* An ink groove with a biscuit bar — the same inset/raised pairing everything
+   else uses, so it reads as part of the board rather than as OS furniture. */
+/* order:3 — BELOW the rail. On a phone .shop-panel is display:contents, so
+   this becomes a child of .shop-stage, where every sibling is placed by an
+   explicit `order` (tabs -1, hero 0, info 1, rail 2). Without one it defaults
+   to 0 and lands in the middle of the hero, which is where it first appeared. */
+.shop-rail-bar{order:3;position:relative;flex:0 0 auto;height:8px;margin:0 auto var(--bc-s2);
+  width:min(160px,55%);border-radius:999px;
+  background:var(--bc-ink);border:2px solid var(--bc-outline);overflow:hidden}
+.shop-rail-bar-thumb{position:absolute;top:0;bottom:0;
+  min-width:24px;border-radius:999px;background:var(--bc-biscuit);
+  transition:left var(--bc-d-press) linear,width var(--bc-d-state) linear}
+/* Desktop turns the rail VERTICAL inside the side panel, where a horizontal
+   indicator would describe an axis that no longer scrolls. */
+@media (min-width:821px){.shop-rail-bar{display:none}}
 
 /* §06 Item card. Three state signals, never mixed: selection is an AMBER
    OUTLINE, ownership a GREEN "ON" badge, locked a dimmed card with a padlock.
@@ -746,7 +789,6 @@ body.map-open #mainMenu{display:none}
   #shop{padding:calc(10px + env(safe-area-inset-top)) calc(10px + env(safe-area-inset-right))
     calc(10px + env(safe-area-inset-bottom)) calc(10px + env(safe-area-inset-left))}
   .shop-page{gap:var(--bc-s2)}
-  .shop-title{font-size:18px}
   .shop-hero-info{padding:10px var(--bc-s3)}
   .shop-hero-name{font-size:15px}
   .shop-rail-card{width:84px}
@@ -1067,7 +1109,9 @@ body.leaderboard-open #mainMenu{display:none}
    the line to read, which a desaturated green-black is and a brown is not. */
 #authGate,#recoveryCode,#profile,#privacy,#boot{
   position:fixed;inset:0;z-index:60;
-  display:flex;align-items:center;justify-content:center;
+  /* flex-start + the sheet's own `margin:auto` — see the sheet rule below for
+     why `align-items:center` cannot be used on a scrolling container. */
+  display:flex;align-items:flex-start;justify-content:center;
   padding:max(var(--bc-s4),env(safe-area-inset-top)) var(--bc-s4) max(var(--bc-s4),env(safe-area-inset-bottom));
   background:#151A16;
   background-image:radial-gradient(1200px 600px at 20% -5%,#22301F 0%,#151A16 60%);
@@ -1081,8 +1125,18 @@ body.leaderboard-open #mainMenu{display:none}
 
 /* .lb-sheet is deliberately NOT here: the leaderboard is a full-screen page
    in the redesign, not a card floating on a backdrop. */
+/* NO max-height. It used to be `100%`, which capped the board at the viewport
+   while the PAGE kept scrolling — so on any screen taller than the window the
+   brown surface stopped mid-content and the last controls (Sign out, Delete
+   my account, the privacy notice's closing sections) sat on the bare page
+   behind it. The sheet is now as tall as its content and the page scrolls it.
+
+   `margin:auto` is what still centres it when it DOES fit: an auto margin on
+   a flex item absorbs the free space, and collapses to zero when there is
+   none — unlike `align-items:center`, which centres an over-tall item by
+   pushing its top out of the scrollable area where it cannot be reached. */
 .auth-card,.recovery-sheet,.profile-sheet,.privacy-sheet,.boot-sheet{
-  width:min(520px,100%);max-height:100%;
+  width:min(520px,100%);margin:auto;
   background:var(--bc-bark);
   border:var(--bc-line) solid var(--bc-outline);
   border-bottom-width:var(--bc-edge-board);
@@ -1761,7 +1815,7 @@ body.map-open .powerups{display:none}
   /* bc-rise ends at opacity 1 / translateY(0), so collapsing it is safe — but
      the bob and the beacon end MID-cycle, which would leave the Play icon
      lifted and the beacon ring frozen at 45% opacity. Cancel those outright. */
-  .menu-play .bc-i{animation:none;transform:none}
+  .menu-play{animation:none;transform:none}
   .map-node-glow{animation:none;opacity:0}
   .tut-swipe-dot{animation:none}
 }

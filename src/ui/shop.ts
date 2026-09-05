@@ -345,7 +345,45 @@ export function attachShop(root: ParentNode, callbacks: ShopCallbacks = {}): Sho
     const cards = currentRegistry()
       .map((item) => renderRailCard(item, currentIsOwned(item.id), item.id === equippedId))
       .join("");
-    return `<div class="shop-rail" id="shopRail">${cards}</div>`;
+    // The rail’s own scroll indicator, not the browser’s.
+    //
+    // Chrome uses OVERLAY scrollbars here — measured, the rail’s offsetHeight and
+    // clientHeight are identical on both desktop and touch — so the native bar
+    // takes no space and fades out at rest however it is styled. That left the
+    // only hint that there are more skins past the edge invisible until you were
+    // already scrolling, which is exactly when you no longer need it.
+    //
+    // Drawn as a groove and a thumb in the interface’s own language, sized and
+    // positioned from scrollLeft by syncRailBar() below, and hidden entirely when
+    // the rail has nothing to scroll — a dead indicator is worse than none.
+    return (
+      `<div class="shop-rail" id="shopRail">${cards}</div>` +
+      '<div class="shop-rail-bar" id="shopRailBar" aria-hidden="true">' +
+      '<div class="shop-rail-bar-thumb" id="shopRailThumb"></div>' +
+      "</div>"
+    );
+  }
+
+  /** Point the indicator at the rail’s current scroll position. Cheap enough to
+   *  run on every scroll event: two style writes, no layout reads beyond the
+   *  three the rail already tracks. */
+  function syncRailBar(): void {
+    const rail = shopRoot.querySelector<HTMLElement>("#shopRail");
+    const bar = shopRoot.querySelector<HTMLElement>("#shopRailBar");
+    const thumb = shopRoot.querySelector<HTMLElement>("#shopRailThumb");
+    if (!rail || !bar || !thumb) return;
+
+    const overflow = rail.scrollWidth - rail.clientWidth;
+    // 2px of slack: a rail that overflows by a hair is not worth an indicator.
+    if (overflow <= 2) {
+      bar.hidden = true;
+      return;
+    }
+    bar.hidden = false;
+    const visible = rail.clientWidth / rail.scrollWidth;
+    const at = rail.scrollLeft / rail.scrollWidth;
+    thumb.style.width = `${visible * 100}%`;
+    thumb.style.left = `${at * 100}%`;
   }
 
   /** The hero info block: selected skin's name, a price/status line, and ONE
@@ -460,6 +498,13 @@ export function attachShop(root: ParentNode, callbacks: ShopCallbacks = {}): Sho
     shopRoot.querySelectorAll<HTMLButtonElement>("[data-action]").forEach((btn) => {
       btn.addEventListener("click", () => onHeroAction(btn));
     });
+
+    // The indicator is rebuilt with the rail on every render, so the listener
+    // goes on with it — the old rail node is discarded, and its listener with it.
+    const rail = shopRoot.querySelector<HTMLElement>("#shopRail");
+    rail?.addEventListener("scroll", syncRailBar, { passive: true });
+    // Measure after layout: scrollWidth is 0 until the cards have been laid out.
+    requestAnimationFrame(syncRailBar);
 
     // Keep the selected rail card scrolled into view (e.g. after a tab
     // switch lands on an equipped skin that isn't the first card).

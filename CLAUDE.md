@@ -232,6 +232,25 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v7.
   157 and the gap 8, so map (75) + lives must fit 197. Five hearts at 16px with
   a 2px gap and 8px padding measure 110, which fits by four pixels — change any
   of those and re-measure, or lives drops to a line of its own.
+  **A looping animation on a CONTROL needs `reducedMotion: "reduce"` in the
+  browser tests.** Playwright will not click an element whose bounding box
+  never settles, so the menu’s bobbing Play button hangs every click on
+  `#playBtn` forever. The stylesheet already cancels every animation under
+  `prefers-reduced-motion`, so the Playwright contexts ask for it — the product
+  keeps the motion and the suites get a still button. Add the option to any new
+  context that drives the real UI.
+  **Two rendering traps this project has now hit twice each:**
+  - **Never put `max-height:100%` on a sheet inside a scrolling page.** It caps
+    the board at the viewport while the page keeps scrolling, so the surface
+    stops mid-content and the last controls sit on the bare background. The
+    sheets size to their content and centre with `margin:auto` — an auto margin
+    collapses to zero when there is no room, whereas `align-items:center`
+    pushes an over-tall item’s top out of the scrollable area entirely.
+  - **Chrome here uses OVERLAY scrollbars** (measured: `offsetHeight ===
+    clientHeight` on a scroller, desktop and touch alike), so `::-webkit-
+    scrollbar` styling is invisible at rest however loud it is. A scroll cue
+    that has to be seen before you scroll must be drawn by the app — see the
+    shop rail’s `.shop-rail-bar` and `syncRailBar()`.
   **THE POWER-UP TRAY SITS UNDER THE MAZE, AND THE SPACE THERE IS TINY.**
   `src/render/scene.ts` publishes **`--bc-board-bottom`** (the board AABB's
   lowest projected corner, recomputed in `resize()`) because the maze is 3D and

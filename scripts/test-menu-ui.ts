@@ -10,6 +10,15 @@
 // top of the menu buttons) would have passed any "is it in the DOM" check.
 // Screenshots land in .tmp-screens/ for a human look.
 
+// reducedMotion: "reduce" on every context.
+//
+// The menu’s Play button carries an idle bob (design system §09). An element
+// whose bounding box never settles never becomes actionable in Playwright, so
+// a looping animation on a control hangs every click on it. Asking for reduced
+// motion is the honest fix: it is a real user preference the stylesheet already
+// honours, it stills the button, and it means the product keeps the motion
+// instead of dropping it to suit a test runner.
+
 import { chromium, type Browser, type Page } from "playwright";
 import { mkdirSync } from "node:fs";
 
@@ -235,7 +244,7 @@ async function main(): Promise<void> {
   try {
     // --- desktop ------------------------------------------------------------
     const desktop = await browser
-      .newContext({ viewport: { width: 1280, height: 800 } })
+      .newContext({ viewport: { width: 1280, height: 800 }, reducedMotion: "reduce" })
       .then((c) => c.newPage());
     desktop.on("console", (m) => {
       if (m.type() === "error") consoleErrors.push(m.text());
@@ -256,6 +265,7 @@ async function main(): Promise<void> {
         isMobile: true,
         hasTouch: true,
         deviceScaleFactor: 3,
+        reducedMotion: "reduce",
       })
       .then((c) => c.newPage());
     phone.on("console", (m) => {
