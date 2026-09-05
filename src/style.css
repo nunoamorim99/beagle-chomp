@@ -1117,6 +1117,27 @@ body.leaderboard-open #mainMenu{display:none}
   background-image:radial-gradient(1200px 600px at 20% -5%,#22301F 0%,#151A16 60%);
   overflow-y:auto;overscroll-behavior:contain}
 
+/* THE GATE OPENS IN THE GARDEN.
+
+   It is the first thing anyone ever sees of this game, and it was a dark sheet
+   on a darker ground — which said "account system", not "a beagle in a hedge
+   maze". Sky above, hedge below, and the form board sits between them.
+
+   The hedge is two stacked pseudo-elements rather than an image: a rounded
+   crown and a flat band under it, the same silhouette the 3D menu scene shows
+   behind the real game. Nothing is fetched for it. */
+#authGate{
+  background:linear-gradient(180deg,#CFE9F7 0%,var(--bc-sky) 46%,#8BBFDD 100%);
+  background-image:linear-gradient(180deg,#CFE9F7 0%,var(--bc-sky) 46%,#8BBFDD 100%);
+}
+#authGate::before,#authGate::after{
+  content:"";position:fixed;left:0;right:0;bottom:0;pointer-events:none;z-index:0}
+#authGate::before{height:210px;background:var(--bc-hedge);
+  border-top:4px solid var(--bc-go-edge);border-radius:60% 40% 0 0 / 34px 34px 0 0}
+#authGate::after{height:96px;background:#357C31}
+/* Everything the gate draws sits above the horizon. */
+.auth-card--gate{position:relative;z-index:1}
+
 /* The recovery screen sits ABOVE the auth gate: it opens while the gate is
    still mounted (the gate awaits it), so it must cover it. Warmer, because it
    is the one screen that is asking for something rather than offering it. */
@@ -1125,6 +1146,7 @@ body.leaderboard-open #mainMenu{display:none}
 
 /* .lb-sheet is deliberately NOT here: the leaderboard is a full-screen page
    in the redesign, not a card floating on a backdrop. */
+
 /* NO max-height. It used to be `100%`, which capped the board at the viewport
    while the PAGE kept scrolling — so on any screen taller than the window the
    brown surface stopped mid-content and the last controls (Sign out, Delete
@@ -1144,6 +1166,38 @@ body.leaderboard-open #mainMenu{display:none}
   padding:clamp(20px,5vw,var(--bc-s6));
   animation:bc-rise var(--bc-d-entry) var(--bc-ease-back) both}
 
+/* THE GATE'S CARD IS NOT A BOARD — only the FORM inside it is.
+
+   Brand, tabs, the recovery row and the legal line sit directly on the garden,
+   which is what makes the screen read as the game's world with a form in it
+   rather than as a form with a picture behind it.
+
+   Scoped to --gate on purpose: .auth-card is ALSO the recovery view, which is a
+   real board and must stay one. And it has to come after the shared sheet rule
+   above — same specificity, so order is what decides it. Putting this before
+   that rule is exactly how the gate first rendered as a full-screen slab of
+   bark with dark-ink body text on it. */
+.auth-card--gate{background:none;border:none;
+  /* 10px gaps and tight padding, measured: at --bc-s3 (12) the privacy line
+     landed 15px below the fold on a 390x844 screen, and it is the one line on
+     this screen that should not need scrolling to. */
+  display:flex;flex-direction:column;gap:8px;
+  /* Fills the frame so .auth-panel’s flex:1 has something to grow into — that
+     is what pins the primary action to the bottom of the form board. Grows
+     past it (and scrolls) on a short screen rather than compressing. */
+  min-height:100%;
+  /* The LOGIN tab fits a 390x844 frame outright. The signup tab runs ~30px
+     past it and scrolls, which is correct rather than a defect: it carries a
+     warning tag, two hint lines and a strength meter that login does not,
+     and an error message adds ~50px more on top of that. Squeezing it flat
+     would mean shaving touch targets for a case that scrolls anyway. */
+  padding:calc(var(--bc-s3) + env(safe-area-inset-top)) 0
+    calc(var(--bc-s2) + env(safe-area-inset-bottom));
+  animation:none}
+/* The brand is generous on a tall screen and tightens on a short one, so the
+   form board and the recovery row below it always make the frame. */
+.auth-card--gate .auth-logo{width:clamp(56px,16vw,68px);height:clamp(56px,16vw,68px)}
+
 .auth-title,.recovery-sheet h1,.privacy-sheet h1,.boot-sheet h1{
   font-family:var(--bc-font-display);font-weight:700;
   margin:0 0 6px;font-size:clamp(22px,5vw,30px);line-height:1.15;
@@ -1158,23 +1212,144 @@ body.leaderboard-open #mainMenu{display:none}
    account is worth having — before showing any form. */
 
 .auth-brand{display:flex;flex-direction:column;align-items:center;
-  text-align:center;gap:var(--bc-s1);margin-bottom:20px}
-/* The icon gets the same ink outline as every other object in the system, so
-   the first thing the player sees already speaks the language. */
-.auth-logo{width:clamp(64px,18vw,88px);height:auto;border-radius:20px;
-  border:var(--bc-line) solid var(--bc-outline)}
-.auth-brand .auth-title{margin:10px 0 0;justify-content:center}
-.auth-brand .auth-sub{margin:0;max-width:34ch}
+  text-align:center;gap:6px}
+/* The real favicon, not a glyph plate: it is the game's own artwork and the
+   same image the installed PWA shows, so the gate opens on something the
+   player already recognises. Outlined and bottom-edged like every other
+   object in the system, so it belongs to the same world. */
+.auth-logo{width:76px;height:76px;border-radius:22px;
+  border:var(--bc-line) solid var(--bc-outline);border-bottom-width:8px}
+/* Stroked, like every other title that sits on the sky. */
+.auth-brand .auth-title{margin:0;justify-content:center;
+  font-size:clamp(28px,8.5vw,34px);line-height:1;color:var(--bc-cream);
+  -webkit-text-stroke:6px var(--bc-outline);paint-order:stroke fill}
+/* DARK ink: this line is on the sky, not on a board, and cream on pale blue
+   is the one combination §08 rules out. */
+.auth-brand .auth-sub{margin:0;max-width:30ch;color:var(--bc-ink);
+  font-weight:600;font-size:14.5px;line-height:1.5}
 
 .auth-tabs{display:grid;grid-template-columns:1fr 1fr}
-.auth-panel{margin-top:var(--bc-s1)}
+/* THE FORM IS THE BOARD, and it hugs its own content.
 
-/* The recovery path sits below the tabs, deliberately quieter: it's the rare
-   case, and making it a third equal option would clutter the common one. */
-.auth-alt{margin-top:18px;padding-top:var(--bc-s3);text-align:center;
-  border-top:2px solid var(--bc-hairline)}
-.auth-alt .btn-link{font-size:15px;color:var(--bc-amber)}
-.auth-alt-hint{margin:2px 0 0;font-size:13px;color:var(--bc-text-mute);line-height:1.45}
+   It used to stretch to fill the frame with the action pinned to its bottom by
+   an auto margin. On the real form — which is shorter than the design's mock —
+   that opened a large hole between the last field and the button, INSIDE the
+   board, which reads as something missing. The slack now falls between the
+   board and the recovery row instead (see .auth-alt's auto margin), where it
+   is just space between two things rather than a gap in one. */
+.auth-panel{flex:0 0 auto;display:flex;
+  background:var(--bc-bark);
+  border:var(--bc-line) solid var(--bc-outline);
+  border-bottom-width:9px;border-radius:22px;
+  padding:14px}
+.auth-form{flex:1 1 auto;min-width:0;gap:0}
+.auth-form button[type=submit]{margin-top:var(--bc-s4);width:100%;
+  border-radius:18px;font-size:21px;padding:12px}
+
+/* Field labels carry a biscuit-tinted glyph — the eye finds the two fields
+   before it reads either word. */
+.auth-form label{display:flex;align-items:center;gap:7px}
+.auth-form label .bc-i{font-size:20px;color:var(--bc-biscuit)}
+
+/* A field that wraps its input (the login password, which carries a reveal
+   toggle) has to look exactly like a bare one. */
+.auth-field{position:relative;display:flex;align-items:center}
+.auth-field input{flex:1 1 auto;min-width:0;padding-right:52px}
+/* Anchored to the field with top/bottom 0 and an auto block margin, NOT left to
+   its static position. An absolutely positioned child of a flex container takes
+   its static position from the container's content-box origin rather than from
+   align-items, and it was also picking up a 16px top margin from the form's own
+   rhythm — between them the eye sat 12px low and hung 4px below the input.
+   margin:auto centres it without a transform, which matters because :active
+   sets transform:none here. */
+/* .auth-field .auth-reveal, not .auth-reveal: `.auth-form button` further
+   down sets a 16px top margin for the form’s vertical rhythm, and at one class
+   this rule lost to it — which is what pushed the eye 16px down and 4px out of the
+   bottom of the field. */
+.auth-field .auth-reveal{position:absolute;right:6px;top:0;bottom:0;margin:auto 0;
+  width:40px;height:40px;min-height:0;
+  padding:0;background:none;border:none;color:var(--bc-text-mute);font-size:22px;
+  display:flex;align-items:center;justify-content:center}
+.auth-field .auth-reveal:hover{color:var(--bc-cream);transform:none}
+.auth-field .auth-reveal:active{transform:none}
+.auth-field .auth-reveal[aria-pressed="true"]{color:var(--bc-amber)}
+
+/* THE NICKNAME WARNING — the first thing on the form, above the field it
+   governs. Not a hint: it is the one thing here a player can get wrong in a
+   way they cannot undo, because the name goes onto a public leaderboard.
+
+   It carries the system's full 3px outline rather than a 2px one, and the
+   glyph gets a plate. Under the input at 2px it read as a third grey rule
+   after two other grey rules; leading the form at full weight it reads as the
+   thing to settle before typing. Warning-orange, the same colour a challenge
+   twist and an expiring power-up wear. */
+.auth-warn{display:flex;align-items:center;gap:10px;
+  margin:0 0 var(--bc-s3);padding:11px 13px;
+  background:var(--bc-ink);border:var(--bc-line) solid var(--bc-expiring);
+  border-radius:var(--bc-r-plate);
+  font-size:13px;line-height:1.45;color:var(--bc-expiring-ink)}
+.auth-warn .bc-i{flex:0 0 auto;width:30px;height:30px;border-radius:9px;
+  background:var(--bc-expiring);color:#3A1408;font-size:19px;
+  display:inline-flex;align-items:center;justify-content:center}
+.auth-warn strong{color:var(--bc-cream);display:block}
+
+/* PASSWORD STRENGTH. The rule is a length minimum, so a bar filling toward it
+   says the same thing as the sentence without asking anyone to count. */
+.auth-meter{display:flex;align-items:center;gap:var(--bc-s2);margin-top:var(--bc-s2)}
+.auth-meter-track{flex:1 1 auto;height:8px;border-radius:999px;
+  background:var(--bc-ink);border:2px solid var(--bc-outline);overflow:hidden}
+.auth-meter-fill{width:0;height:100%;background:var(--bc-expiring);
+  transition:width var(--bc-d-state) var(--bc-ease),
+             background var(--bc-d-state) var(--bc-ease)}
+.auth-meter-fill.is-ok{background:var(--bc-enemy-green)}
+.auth-meter-label{flex:0 0 auto;font-family:var(--bc-font-mono);font-size:11px;
+  color:var(--bc-text-mute)}
+.auth-meter-label.is-ok{color:var(--bc-enemy-green)}
+
+/* THE RETURNING-PLAYER CARD. An inset well inside the board: a readout of who
+   last played here, that happens to be tappable. */
+.auth-last{width:100%;display:flex;align-items:center;gap:11px;
+  margin-bottom:var(--bc-s3);padding:10px 12px;min-height:0;
+  background:var(--bc-ink);border:var(--bc-line) solid var(--bc-outline);
+  border-radius:var(--bc-r-card);text-align:left;font:inherit;color:inherit}
+.auth-last:hover{transform:none}
+.auth-last:active{transform:none;border-color:var(--bc-amber)}
+.auth-last .bc-plate{width:38px;height:38px;font-size:22px;border-radius:12px}
+.auth-last-body{flex:1 1 auto;min-width:0}
+.auth-last-label{display:block;font-family:var(--bc-font-mono);font-size:10px;
+  letter-spacing:.2em;text-transform:uppercase;color:var(--bc-text-mute)}
+.auth-last-name{display:block;font-family:var(--bc-font-display);font-weight:800;
+  font-size:18px;line-height:1.15;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
+.auth-last-score{flex:0 0 auto;font-family:var(--bc-font-mono);font-size:11px;
+  color:var(--bc-biscuit)}
+
+/* THE RECOVERY ROW. It used to be a text link under the form, which is the
+   easiest thing on a screen to miss — and with no email on file this is the
+   ONLY way back into an account. A row with a plate and a chevron is
+   unmistakably a place you can go.
+
+   Teal, not amber: amber marks the single next action on a screen (§08), and
+   that is Create account / Log in. This is the way out of the common path. */
+/* Takes the card's leftover height, so the recovery row and the legal line
+   below it settle against the bottom of the frame while the form board stays
+   with the brand above. */
+.auth-alt{margin-top:auto;width:100%;display:flex;align-items:center;gap:11px;
+  padding:9px 13px;min-height:0;text-align:left;font:inherit;color:inherit;
+  background:var(--bc-scrim);border:var(--bc-line) solid var(--bc-outline);
+  border-radius:var(--bc-r-card)}
+.auth-alt:hover{transform:none}
+.auth-alt:active{transform:none;border-color:var(--bc-enemy-teal)}
+.auth-alt-plate{flex:0 0 auto;width:34px;height:34px;border-radius:11px;
+  background:var(--bc-enemy-teal);border:2px solid var(--bc-outline);
+  display:inline-flex;align-items:center;justify-content:center;
+  font-size:20px;color:#0E3B39}
+.auth-alt-body{flex:1 1 auto;min-width:0}
+.auth-alt-title{display:block;font-family:var(--bc-font-display);font-weight:800;
+  font-size:15px;color:var(--bc-enemy-teal)}
+.auth-alt-hint{display:block;margin:0;font-size:12px;line-height:1.45;
+  color:var(--bc-text-mute)}
+.auth-alt-go{flex:0 0 auto;font-size:22px;color:rgba(255,247,232,.5)}
 .auth-form{display:flex;flex-direction:column;gap:6px}
 .auth-form label{font-family:var(--bc-font-display);font-weight:700;font-size:15px;
   color:var(--bc-cream);margin-top:var(--bc-s3)}
@@ -1188,7 +1363,7 @@ body.leaderboard-open #mainMenu{display:none}
   font-family:var(--bc-font-body);font-weight:600;font-size:16px;
   color:var(--bc-cream);background:var(--bc-ink);
   border:var(--bc-line) solid var(--bc-outline);border-radius:var(--bc-r-plate);
-  padding:13px var(--bc-s4);min-height:var(--bc-touch);
+  padding:11px var(--bc-s4);min-height:var(--bc-touch);
   transition:border-color var(--bc-d-state) var(--bc-ease)}
 .auth-form input:focus,.profile-danger input:focus{
   outline:none;border-color:var(--bc-amber)}
@@ -1203,7 +1378,11 @@ body.leaderboard-open #mainMenu{display:none}
 .auth-checkbox input,.recovery-confirm input{
   width:22px;height:22px;flex:0 0 auto;margin-top:1px;accent-color:var(--bc-amber)}
 .auth-hidden{display:none}
-.auth-legal{font-size:13px;color:var(--bc-text-mute);margin:18px 0 0;line-height:1.5}
+/* On the sky like the brand line, so DARK ink for the same reason. */
+.auth-legal{margin:0;padding:0 6px;text-align:center;
+  font-size:11px;line-height:1.4;font-weight:600;color:var(--bc-ink)}
+.auth-legal .btn-link{font-size:inherit;font-weight:700;color:#2A4A0E;padding:0}
+.auth-legal .btn-link:hover{color:var(--bc-outline)}
 .auth-form button{margin-top:var(--bc-s4)}
 
 /* --- the recovery code itself: this is the thing the player must copy, so it

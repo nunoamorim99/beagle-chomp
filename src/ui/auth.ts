@@ -11,11 +11,65 @@
 // Follows the attachX(root, callbacks) => handle pattern; no `three` imports.
 
 import { escapeHtml } from "./escape";
-import { ICON, iconHtml } from "./icons";
+import { ICON, iconHtml, plateHtml } from "./icons";
 import { signup, login, recover, type AuthResponse } from "../net/endpoints";
 import { setToken, ApiError } from "../net/api";
 import { setProfileCache } from "../game/profileCache";
+
+/**
+ * Who last signed in on this device, and what they had scored.
+ *
+ * Feeds the login screen's "Last played as" card — one tap to a filled
+ * username, and the returning player sees their own best waiting for them
+ * rather than an empty form.
+ *
+ * localStorage, like the mute preference and for the same reason: this is a
+ * UI convenience, not core state (CLAUDE.md's rule is about score/lives/level).
+ * It must degrade silently — private browsing and disabled storage both throw
+ * — and it holds nothing secret: a username that is public on the leaderboard
+ * and a score that is too. No token, ever; that has its own storage in api.ts.
+ */
+const LAST_PLAYER_KEY = "bc_last_player";
+
+interface LastPlayer {
+  username: string;
+  highScore: number;
+}
+
+function readLastPlayer(): LastPlayer | null {
+  try {
+    const raw = window.localStorage.getItem(LAST_PLAYER_KEY);
+    if (!raw) return null;
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== "object" || parsed === null) return null;
+    const { username, highScore } = parsed as Partial<LastPlayer>;
+    if (typeof username !== "string" || username === "") return null;
+    return { username, highScore: typeof highScore === "number" ? highScore : 0 };
+  } catch {
+    return null;
+  }
+}
+
+function writeLastPlayer(player: LastPlayer): void {
+  try {
+    window.localStorage.setItem(LAST_PLAYER_KEY, JSON.stringify(player));
+  } catch {
+    /* storage unavailable — the card simply won't appear next time */
+  }
+}
 import { fromServerProfile } from "../game/profileMapping";
+
+/** Group a score the way the leaderboard and the HUD do. Plain toLocaleString
+ *  leaves 4-digit numbers ungrouped in several locales, which would print the
+ *  same figure two different ways on two screens. */
+const scoreFormat = new Intl.NumberFormat(undefined, {
+  useGrouping: "always",
+} as unknown as Intl.NumberFormatOptions);
+
+function formatScore(n: number): string {
+  return scoreFormat.format(n);
+}
+
 
 /** IDEA-035: the gate is now two screens, not four. `auth` is the tabbed
  *  main screen (Create account / Login, defaulting to Create account, since a
@@ -60,6 +114,12 @@ export function attachAuthGate(callbacks: AuthGateCallbacks): AuthGateHandle {
   async function completeAuth(result: AuthResponse, context: "signup" | "recovery"): Promise<void> {
     setToken(result.token);
     setProfileCache(fromServerProfile(result.profile));
+    // Both figures come from the response the server just sent, so the login
+    // screen's returning-player card shows real data rather than a guess.
+    writeLastPlayer({
+      username: result.user.username,
+      highScore: result.profile.highScore,
+    });
 
     // Signup and recovery both return a plaintext code that will never be
     // shown again. Awaiting here is what makes the screen genuinely blocking.
@@ -117,14 +177,23 @@ export function attachAuthGate(callbacks: AuthGateCallbacks): AuthGateHandle {
   /** The brand block: app icon, game name, and the one-line reason to sign up.
    *  This is the first thing a player ever sees, so it leads with identity
    *  rather than with a form. */
+  /** The app icon, the stroked name, and one line on why an account is worth
+   *  having. The line differs by tab: a new player is being asked for
+   *  something, a returning one is being welcomed back.
+   *
+   *  The mark is the real FAVICON (icons/icon-192.png), not the design's amber
+   *  `pets` plate — it is the game's own artwork and the same image the
+   *  installed PWA shows, so the gate opens on something the player recognises. */
   function renderBrand(): string {
+    const sub =
+      tab === "login"
+        ? "Welcome back — your coins, skins and high score are waiting."
+        : "Create an account to keep your coins, skins and high score — on any device.";
     return `
       <div class="auth-brand">
         <img class="auth-logo" src="./icons/icon-192.png" alt="" width="88" height="88" />
         <h1 class="auth-title">Beagle Chomp</h1>
-        <p class="auth-sub">
-          Create an account to keep your coins, skins and high score — on any device.
-        </p>
+        <p class="auth-sub">${sub}</p>
       </div>
     `;
   }
@@ -149,41 +218,97 @@ export function attachAuthGate(callbacks: AuthGateCallbacks): AuthGateHandle {
     // the redundant string escape away before the browser sees it.
     return `
       <form id="signupForm" class="auth-form" autocomplete="off">
-        <label for="signupUsername">Username</label>
+        <!-- The nickname rule leads the form, ABOVE the field it governs.
+
+             It is a WARNING, not a hint: the one thing here a player can get
+             wrong in a way they cannot undo, because the name goes onto a
+             public leaderboard. Under the input it was read after the damage
+             was typed — and read as one more grey rule among three. It wears
+             the same warning-orange as a challenge twist and an expiring
+             power-up. -->
+        <p class="auth-warn">
+          ${iconHtml(ICON.reveal)}
+          <span><strong>Pick a nickname, not your real name</strong>
+          — it's shown on the leaderboard.</span>
+        </p>
+
+        <label for="signupUsername">${iconHtml(ICON.username)}Username</label>
         <input id="signupUsername" name="username" type="text" required
                minlength="3" maxlength="20"
                autocapitalize="none" autocorrect="off" spellcheck="false" />
-        <p class="auth-hint">
-          3–20 characters: letters, numbers, hyphens, underscores.
-          <strong>Pick a nickname, not your real name</strong> — it's shown on the leaderboard.
-        </p>
+        <p class="auth-hint">3–20 characters · letters, numbers, - and _</p>
 
-        <label for="signupPassword">Password</label>
-        <input id="signupPassword" name="password" type="password" required
-               minlength="8" autocomplete="new-password" />
-        <p class="auth-hint">At least 8 characters.</p>
+        <label for="signupPassword">${iconHtml(ICON.key)}Password</label>
+        <!-- The same reveal the login form has. A password you are CHOOSING is
+             the one you most need to see: it is typed once, blind, on a phone
+             keyboard, and a typo here is a password you can never enter again. -->
+        <div class="auth-field">
+          <input id="signupPassword" name="password" type="password" required
+                 minlength="8" autocomplete="new-password" />
+          <button type="button" id="signupReveal" class="auth-reveal"
+                  aria-label="Show password" aria-pressed="false">${iconHtml(ICON.reveal)}</button>
+        </div>
+        <!-- A strength METER rather than a sentence: the rule is a length
+             minimum, so a bar filling toward it says the same thing without
+             asking anyone to count characters. Driven by wire(). -->
+        <div class="auth-meter">
+          <div class="auth-meter-track"><div class="auth-meter-fill" id="signupStrength"></div></div>
+          <span class="auth-meter-label" id="signupStrengthLabel">At least 8 characters.</span>
+        </div>
 
         ${errorHtml()}
 
-        <button type="submit" class="btn-primary">Create account</button>
+        <button type="submit" class="btn-primary">${iconHtml(ICON.play)}Create account</button>
       </form>
+    `;
+  }
+
+  /** The returning-player card: who last signed in on this device and what
+   *  they had scored, as a button that fills the username in.
+   *
+   *  Absent on a device that has never signed in — which is exactly when it
+   *  would be a lie. The score is omitted rather than shown as 0 for a player
+   *  who has never posted one. */
+  function renderLastPlayer(): string {
+    const last = readLastPlayer();
+    if (!last) return "";
+    const score =
+      last.highScore > 0
+        ? `<span class="auth-last-score">${formatScore(last.highScore)}</span>`
+        : "";
+    return `
+      <button type="button" id="useLastPlayer" class="auth-last">
+        ${plateHtml("trophy", "inline")}
+        <span class="auth-last-body">
+          <span class="auth-last-label">Last played as</span>
+          <span class="auth-last-name">${escapeHtml(last.username)}</span>
+        </span>
+        ${score}
+      </button>
     `;
   }
 
   function renderLoginForm(): string {
     return `
       <form id="loginForm" class="auth-form" autocomplete="off">
-        <label for="loginUsername">Username</label>
+        ${renderLastPlayer()}
+        <label for="loginUsername">${iconHtml(ICON.username)}Username</label>
         <input id="loginUsername" name="username" type="text" required
                autocapitalize="none" autocorrect="off" spellcheck="false" />
 
-        <label for="loginPassword">Password</label>
-        <input id="loginPassword" name="password" type="password" required
-               autocomplete="current-password" />
+        <label for="loginPassword">${iconHtml(ICON.key)}Password</label>
+        <!-- A reveal toggle: this is a phone keyboard and a password typed
+             blind is the most common reason a correct one gets rejected. -->
+        <div class="auth-field">
+          <input id="loginPassword" name="password" type="password" required
+                 autocomplete="current-password" />
+          <button type="button" id="loginReveal" class="auth-reveal"
+                  aria-label="Show password" aria-pressed="false">${iconHtml(ICON.reveal)}</button>
+        </div>
 
         ${errorHtml()}
 
-        <button type="submit" class="btn-primary">Login</button>
+        <button type="submit" class="btn-primary">${iconHtml(ICON.play)}Log in &amp; play</button>
       </form>
     `;
   }
@@ -191,24 +316,32 @@ export function attachAuthGate(callbacks: AuthGateCallbacks): AuthGateHandle {
   /** The tabbed main screen. */
   function renderAuth(): string {
     return `
-      <div class="auth-card">
+      <div class="auth-card auth-card--gate">
         ${renderBrand()}
         ${renderTabs()}
+        <!-- The form is the BOARD now, and the brand/tabs/legal sit on the
+             garden around it — the gate opens in the game's own world rather
+             than on a grey sheet. -->
         <div class="auth-panel">
           ${tab === "signup" ? renderSignupForm() : renderLoginForm()}
         </div>
-        <div class="auth-alt">
-          <button type="button" id="goRecover" class="btn-link">
-            Use a recovery code
-          </button>
-          <p class="auth-alt-hint">
-            ${
-              tab === "login"
-                ? "Forgotten your password? Your recovery code gets you back in."
-                : "Signing in on a new device? Use the code you saved."
-            }
-          </p>
-        </div>
+        <!-- A ROW you can hit, not a link. It is the whole way back into an
+             account with no email on file, and a text link under a form is the
+             easiest thing on the screen to miss. -->
+        <button type="button" id="goRecover" class="auth-alt">
+          <span class="auth-alt-plate">${iconHtml(ICON.recoveryKey)}</span>
+          <span class="auth-alt-body">
+            <span class="auth-alt-title">Use a recovery code</span>
+            <span class="auth-alt-hint">
+              ${
+                tab === "login"
+                  ? "Forgot your password? The code you saved gets you back in."
+                  : "Signing in on a new device? Use the code you saved."
+              }
+            </span>
+          </span>
+          <span class="auth-alt-go">${iconHtml(ICON.next)}</span>
+        </button>
         <p class="auth-legal">
           We store a username, a hashed password, a hashed recovery code, your score,
           coins and unlocked skins — nothing else.
@@ -278,6 +411,56 @@ export function attachAuthGate(callbacks: AuthGateCallbacks): AuthGateHandle {
     root.querySelector("#goRecover")?.addEventListener("click", () => go("recover"));
     root.querySelector("#backToAuth")?.addEventListener("click", () => go("auth"));
     root.querySelector("#privacyLink")?.addEventListener("click", () => callbacks.onShowPrivacy());
+
+    // The returning-player card fills the username and moves the cursor to the
+    // password — the one field it cannot know.
+    root.querySelector("#useLastPlayer")?.addEventListener("click", () => {
+      const last = readLastPlayer();
+      const nameEl = root.querySelector<HTMLInputElement>("#loginUsername");
+      const passEl = root.querySelector<HTMLInputElement>("#loginPassword");
+      if (!last || !nameEl) return;
+      nameEl.value = last.username;
+      passEl?.focus();
+    });
+
+    // Reveal the password, on BOTH forms. A phone keyboard plus a masked field
+    // is the most common reason a CORRECT password gets typed wrong and then
+    // reported as broken — and on signup a typo is permanent, because the value
+    // is only ever typed once.
+    const wireReveal = (buttonId: string, inputId: string): void => {
+      const button = root.querySelector<HTMLButtonElement>(`#${buttonId}`);
+      const input = root.querySelector<HTMLInputElement>(`#${inputId}`);
+      if (!button || !input) return;
+      button.addEventListener("click", () => {
+        const show = input.type === "password";
+        input.type = show ? "text" : "password";
+        button.setAttribute("aria-pressed", String(show));
+        button.setAttribute("aria-label", show ? "Hide password" : "Show password");
+        input.focus();
+      });
+    };
+    wireReveal("loginReveal", "loginPassword");
+    wireReveal("signupReveal", "signupPassword");
+
+    // The strength meter. It measures the ONE rule the server enforces — a
+    // length minimum — rather than inventing a scoring system the form does not
+    // actually apply, which would tell a player their accepted password is weak.
+    const pw = root.querySelector<HTMLInputElement>("#signupPassword");
+    const fill = root.querySelector<HTMLElement>("#signupStrength");
+    const label = root.querySelector<HTMLElement>("#signupStrengthLabel");
+    if (pw && fill && label) {
+      const MIN = 8;
+      const syncStrength = (): void => {
+        const n = pw.value.length;
+        const ok = n >= MIN;
+        fill.style.width = `${Math.min(1, n / MIN) * 100}%`;
+        fill.classList.toggle("is-ok", ok);
+        label.classList.toggle("is-ok", ok);
+        label.textContent = ok ? "Long enough." : `At least ${MIN} characters.`;
+      };
+      pw.addEventListener("input", syncStrength);
+      syncStrength();
+    }
 
     // Set here rather than in the markup: see renderSignup's note. The escape
     // must reach the browser intact, and a build transform would strip it from
