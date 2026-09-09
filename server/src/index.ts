@@ -24,6 +24,7 @@ import { authRoutes } from "./routes/auth.js";
 import { profileRoutes } from "./routes/profile.js";
 import { sessionRoutes } from "./routes/sessions.js";
 import { adminRoutes } from "./routes/admin.js";
+import { announcementRoutes } from "./routes/announcements.js";
 import { sweepStaleSessions, purgeOldSessions } from "./services/scoreService.js";
 import { metricsMiddleware } from "./http/metrics-middleware.js";
 import { snapshot, resetWindow, formatSnapshotLines } from "./http/metrics.js";
@@ -80,6 +81,8 @@ v1.route("/auth", authRoutes);
 // panel would silently inherit profileRoutes' 120/min game-client rate limit
 // and a redundant auth round trip.
 v1.route("/admin", adminRoutes);
+// IDEA-052. Own prefix, registered before the "/" mounts, same reason.
+v1.route("/", announcementRoutes);
 // profileRoutes and sessionRoutes declare their own full paths (/profile,
 // /leaderboard, /sessions/*) because each shares one auth+rate-limit middleware
 // stack across paths that sit at different roots.

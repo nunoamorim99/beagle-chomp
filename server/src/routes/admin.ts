@@ -40,6 +40,10 @@ import {
 import { snapshot } from "../http/metrics.js";
 import { ENEMY_SLOT_LABELS, FRUIT_LABELS } from "../catalog.generated.js";
 import { APP_VERSION } from "../version.js";
+import * as announcements from "../repo/announcements.js";
+import { parseAnnouncement, PROBLEM_MESSAGE } from "../validation/announcement.js";
+import { readBody } from "../http/body.js";
+import { badRequest, notFound } from "../http/errors.js";
 
 export const adminRoutes = new Hono<{ Variables: AuthVars }>();
 
@@ -226,3 +230,66 @@ adminRoutes.get("/players/:username/rewind", async (c) => {
     favouriteBeagleSkin: row.favourite_beagle_skin,
   });
 });
+
+// ---------------------------------------------------------------------------
+// Announcements — the composer (IDEA-052)
+//
+// The ONLY writes in this file, and the only path anywhere that creates
+// player-facing content. Everything above is read-only.
+//
+// Publishing is always a separate call from saving. `create` makes a draft and
+// nothing else can; going live is an explicit POST to /publish. That means the
+// composer's Save is never one mis-click away from every player's screen, which
+// matters more here than the extra round trip costs.
+// ---------------------------------------------------------------------------
+
+adminRoutes.get("/announcements", async (c) => {
+  const rows = await announcements.listAll(100);
+  return c.json({ items: rows.map(toAdminDto) });
+});
+
+adminRoutes.post("/announcements", async (c) => {
+  const parsed = parseAnnouncement(await readBody(c));
+  if (!parsed.ok) throw badRequest(PROBLEM_MESSAGE[parsed.problem]);
+  const row = await announcements.create(parsed.value);
+  return c.json({ announcement: toAdminDto(row) }, 201);
+});
+
+adminRoutes.patch("/announcements/:id", async (c) => {
+  const parsed = parseAnnouncement(await readBody(c));
+  if (!parsed.ok) throw badRequest(PROBLEM_MESSAGE[parsed.problem]);
+  const row = await announcements.update(c.req.param("id"), parsed.value);
+  if (!row) throw notFound("No such announcement.");
+  return c.json({ announcement: toAdminDto(row) });
+});
+
+/** Go live, or pull it back to draft. Body: `{ published: boolean }`. */
+adminRoutes.post("/announcements/:id/publish", async (c) => {
+  const body = await readBody(c);
+  const published = body.published !== false; // absent means publish
+  const row = await announcements.setPublished(c.req.param("id"), published);
+  if (!row) throw notFound("No such announcement.");
+  return c.json({ announcement: toAdminDto(row) });
+});
+
+adminRoutes.delete("/announcements/:id", async (c) => {
+  const gone = await announcements.remove(c.req.param("id"));
+  if (!gone) throw notFound("No such announcement.");
+  return c.body(null, 204);
+});
+
+function toAdminDto(a: announcements.AnnouncementRow) {
+  return {
+    id: a.id,
+    kind: a.kind,
+    version: a.version,
+    title: a.title,
+    body: a.body,
+    // The operator needs to see WHICH are drafts, so this is the full
+    // timestamp rather than the date the players' feed shows.
+    publishedAt: a.published_at ? a.published_at.toISOString() : null,
+    isDraft: a.published_at === null,
+    createdAt: a.created_at.toISOString(),
+    updatedAt: a.updated_at.toISOString(),
+  };
+}

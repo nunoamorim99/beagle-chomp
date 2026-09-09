@@ -35,6 +35,10 @@ export interface UserRow {
   /** IDEA-051: may read the metrics portal. Set ONLY by a hand-written UPDATE
    *  — there is deliberately no endpoint that writes it. */
   is_admin: boolean;
+  /** IDEA-052: when this player last opened the News screen. NULL means never,
+   *  which counts everything published as unread — a player who has not seen
+   *  the screen has genuinely not seen any of it. */
+  announcements_seen_at: Date | null;
   created_at: Date;
 }
 
@@ -142,6 +146,7 @@ export function userColumns(alias?: string): string {
     "control_scheme",
     "tutorial_done",
     "is_admin",
+    "announcements_seen_at",
     "created_at",
   ]
     .map((c) => p + c)

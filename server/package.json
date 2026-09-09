@@ -19,9 +19,10 @@
     "test:db": "tsx scripts/test-auth.ts",
     "test:catalog": "tsx scripts/test-catalog.ts",
     "test:metrics": "tsx scripts/test-metrics.ts",
-    "test": "npm run test:units && npm run test:catalog && npm run test:plausibility && npm run test:analytics && npm run test:metrics",
+    "test": "npm run test:units && npm run test:catalog && npm run test:plausibility && npm run test:analytics && npm run test:announcements && npm run test:metrics",
     "test:plausibility": "tsx scripts/test-plausibility.ts",
     "test:analytics": "tsx scripts/test-analytics.ts",
+    "test:announcements": "tsx scripts/test-announcements.ts",
     "test:sessions": "tsx scripts/test-sessions.ts"
   },
   "dependencies": {
