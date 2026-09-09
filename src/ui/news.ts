@@ -71,6 +71,10 @@ export function attachNews(callbacks: NewsCallbacks = {}): NewsHandle {
   const bell = document.getElementById("menuNewsBtn");
   const dot = document.getElementById("menuNewsDot");
   let isOpenState = false;
+  // Removes the live listeners on detach. startApp() re-runs on sign-out and on
+  // a mid-session 401, so without this they stack one set per session.
+  const live = new AbortController();
+  const liveSignal = live.signal;
 
   /**
    * One card. NOTHING here touches innerHTML.
@@ -346,24 +350,76 @@ export function attachNews(callbacks: NewsCallbacks = {}): NewsHandle {
     callbacks.onClose?.();
   }
 
-  async function refreshBadge(): Promise<void> {
+  /** Guards against re-checking on every tab switch. A note is published a few
+   *  times a year; once a minute is already generous. */
+  let lastBadgeCheck = 0;
+  const BADGE_MIN_GAP_MS = 60_000;
+
+  async function refreshBadge(force = false): Promise<void> {
+    if (!force && Date.now() - lastBadgeCheck < BADGE_MIN_GAP_MS) return;
+    lastBadgeCheck = Date.now();
     try {
       const feed = await fetchAnnouncements();
       setUnread(feed.unread);
     } catch {
       // A failed badge check is not worth surfacing — the bell simply shows no
-      // dot, and the next boot tries again.
+      // dot, and the next check tries again.
     }
   }
+
+  /**
+   * Keep the bell HONEST while the game is open.
+   *
+   * The badge used to be read exactly once, at sign-in. That is wrong in the
+   * one case that matters most: a note published while the player already has
+   * the game open never appeared — they got the push on their phone, opened the
+   * app, and the bell was bare. Reported from a real device.
+   *
+   * Two cheap signals cover it:
+   *   - `visibilitychange`, for "I tapped the notification and came back to a
+   *     tab that was already loaded". Throttled, because switching tabs is
+   *     common and publishing is not.
+   *   - a message from the service worker, which is precise: push-sw.js tells
+   *     every open window the moment a push lands, so the pill appears while
+   *     the player is looking at the menu. Not throttled — a push IS the event.
+   *
+   * Deliberately NOT a poll. A timer would be a request per player per interval,
+   * forever, for something that changes a few times a year.
+   */
+  function watchForNews(): void {
+    document.addEventListener(
+      "visibilitychange",
+      () => {
+        if (document.visibilityState === "visible" && !isOpenState) void refreshBadge();
+      },
+      { signal: liveSignal },
+    );
+
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.addEventListener(
+        "message",
+        (event: MessageEvent) => {
+          const data = event.data as { type?: string } | null;
+          if (data?.type !== "beagle-push") return;
+          // force: a push is the event itself, so the throttle must not eat it.
+          if (!isOpenState) void refreshBadge(true);
+        },
+        { signal: liveSignal },
+      );
+    }
+  }
+
+  watchForNews();
 
   return {
     open,
     close,
     detach: () => {
+      live.abort();
       close();
       setUnread(0);
     },
     isOpen: () => isOpenState,
-    refreshBadge,
+    refreshBadge: () => refreshBadge(true),
   };
 }

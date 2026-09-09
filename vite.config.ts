@@ -159,7 +159,7 @@ export default defineConfig({
         //
         // BUMP THE ?v= WHEN push-sw.js CHANGES. It is served from public/ and
         // is therefore NOT content-hashed, so a browser may hold the old copy.
-        importScripts: ["push-sw.js?v=2"]
+        importScripts: ["push-sw.js?v=3"]
       },
       devOptions: { enabled: true }
     })

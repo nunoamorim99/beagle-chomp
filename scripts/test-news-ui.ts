@@ -256,6 +256,50 @@ async function main(): Promise<void> {
   await page.waitForTimeout(900);
   ok("…and it stays gone after a reload", await page.locator("#menuNewsDot").isHidden());
 
+  // --- the bell stays honest while the game is open -------------------------
+  section("A note published while the app is open lights the bell");
+
+  // THE BUG THIS COVERS, reported from a real phone: the badge was read exactly
+  // once, at sign-in. A note published while the player already had the game
+  // open never appeared — they got the push, opened the app, and the bell was
+  // bare.
+  ok("the bell starts bare after reading", await page.locator("#menuNewsDot").isHidden());
+
+  const late = await post("/api/v1/admin/announcements", {
+    kind: "notice",
+    title: "Published while you were looking",
+    body: "This should light the bell without a reload.",
+  });
+  const lateId = ((await late.json()) as { announcement: { id: string } }).announcement.id;
+  await post(`/api/v1/admin/announcements/${lateId}/publish`, { published: true });
+  await page.waitForTimeout(400);
+
+  ok(
+    "…and stays bare until something says otherwise",
+    await page.locator("#menuNewsDot").isHidden(),
+  );
+
+  // push-sw.js posts this to every open window the moment a push lands. Not
+  // throttled, because a push IS the event.
+  await page.evaluate(() => {
+    navigator.serviceWorker.dispatchEvent(
+      new MessageEvent("message", { data: { type: "beagle-push" } }),
+    );
+  });
+  await page.waitForTimeout(1500);
+
+  ok("a push message lights it immediately", await page.locator("#menuNewsDot").isVisible());
+  ok(
+    "…with the right count",
+    (await page.locator("#menuNewsDot").textContent())?.trim() === "1",
+    await page.locator("#menuNewsDot").textContent(),
+  );
+
+  await fetch(`${API}/api/v1/admin/announcements/${lateId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${adminToken}` },
+  });
+
   ok("no page errors throughout", errors.length === 0, errors.join(" | "));
 
   await browser.close();

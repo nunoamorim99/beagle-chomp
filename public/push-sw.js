@@ -72,8 +72,21 @@ self.addEventListener("push", (event) => {
     // worth branching on: this is what every platform renders.
   };
 
-  // waitUntil, or the worker can be killed before the notification is shown.
-  event.waitUntil(self.registration.showNotification(title, options));
+  // Show the notification AND tell any open copy of the game, so the bell's
+  // unread count updates without waiting for a reload. A player who is looking
+  // at the menu when a note is published should see the pill appear, not
+  // discover it tomorrow.
+  event.waitUntil(
+    Promise.all([
+      self.registration.showNotification(title, options),
+      (async () => {
+        const windows = await clients.matchAll({ type: "window", includeUncontrolled: true });
+        for (const client of windows) {
+          client.postMessage({ type: "beagle-push", tag: options.tag });
+        }
+      })(),
+    ]),
+  );
 });
 
 self.addEventListener("notificationclick", (event) => {
