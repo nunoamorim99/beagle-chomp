@@ -34,54 +34,6 @@ _(empty — nothing to triage)_
   level) and appear on the level map ([[IDEA-014]]).
 - **Dependencies:** —
 
-### IDEA-052 — News in the app, and push worth granting 💡
-- **Priority:** 🟡
-- **Area:** ux · backend
-- **Registered:** 2026-09-08
-- **Description:** (Nuno) from the portal I want to send update notes and notifications to the app,
-  so I can announce what changed on every launch and reach players when needed — which means the
-  game needs a new screen where those notes can be read. Plus one automatic one: if I hold the third
-  best score and somebody beats it, I should be told my score was beaten.
-- **Notes:** the News screen is a normal `attachNews()` factory like every other screen, but its
-  entry point is deliberately **a bell in the top `.menu-bar` beside mute, not a fifth destination
-  tile**. `.menu-tiles` is `repeat(4,1fr)` and `test-menu-ui.ts` asserts the count is exactly 4 with
-  per-tile geometry; a fifth tile drops each to ~67px at 390px, under the display font's 12px floor,
-  and there is no spare `--bc-enemy-*` hue left (rose is `--bc-danger`). A bell also gives the unread
-  badge its natural home. Adding the icons means RE-CUTTING the font subset — a name not in the file
-  renders as that word on the button, which is [[IDEA-048]]'s lesson learned the hard way.
-  **The announcement body is the highest-severity thing here.** "Admin-authored" is not a safety
-  property: to the renderer it is a server-controlled non-constant string going into a DOM sink,
-  exactly like a leaderboard username, and `innerHTML` appears 36 times across 13 files in `src/ui/`.
-  So it follows `leaderboard.ts` (createElement + textContent, markup structurally impossible), NOT
-  `escape.ts` — `escapeHtml` is a text-node escaper, not a sanitizer, and does not stop
-  `javascript:` in a link.
-  **Web Push lifts a STACK.md §6 deferral** and is registered as such rather than slipped in. It
-  costs one server dependency (`web-push` — the one place worth spending against the minimal-deps
-  instinct, because a hand-rolled RFC 8291 fails SILENTLY: one wrong byte in the HKDF info string
-  still returns 201 and the notification simply never arrives), a VAPID keypair, a subscriptions
-  table and one imported file in the service worker. It does NOT switch the PWA to `injectManifest`:
-  at the installed `vite-plugin-pwa` that would silently drop the `workbox.globPatterns` precache
-  list, and — worse — break `registerType: "autoUpdate"` permanently after the first install, since
-  `generateSW` bakes in the `skipWaiting` that `injectManifest` does not. `workbox.importScripts`
-  plus a plain `public/push-sw.js` gets the same listeners on the same registration for a three-line
-  diff. The real constraint is **iOS**: push needs 16.4+ AND the game added to the Home Screen, so
-  `install.ts`'s hint stops being a nicety. Permission comes from an explicit toggle, called
-  synchronously in the click handler — never at boot.
-  The automatic alert needs no new trigger: because the Players board ranks by PERSONAL BEST, one row
-  per player, `isNewHighScore` — which `finishSession` already computes — is exactly and only the
-  moment anyone's rank can move. Notify just the players actually overtaken (high score strictly
-  between the runner's old and new best; a player TIED at the new score got there first and is not
-  overtaken, since the runner's `high_score_at` resets to now), capped to whoever was in the top 10
-  so a leap from #50 to #1 tells ten people rather than forty-nine, with a per-recipient cooldown so
-  one good evening can't fire ten notifications at the same victim. Selected inside the existing
-  transaction, sent AFTER the commit — the shape `invalidateBoardCache()` already uses, because
-  network I/O must not happen under a row lock.
-  One real bug source to design around: `index.html`'s stale-shell recovery script unregisters EVERY
-  service worker on a failed asset load, which silently destroys the push subscription — so the
-  client re-checks on boot and the server treats the table as disposable.
-- **Dependencies:** [[IDEA-051]], [[IDEA-048]], [[IDEA-020]]
-
-
 ## In progress 🔨
 
 ### IDEA-048 — Toon boards, not glass panels: a real design system for the 2D layer 🔨
@@ -206,6 +158,114 @@ _(empty — nothing to triage)_
 
 ## Delivered ✅
 > Already in production. Do NOT delete. Each keeps its version history.
+
+### IDEA-052 — News in the app, and push worth granting ✅
+- **Priority:** 🟡
+- **Area:** ux · backend
+- **Registered:** 2026-09-08
+- **Description:** (Nuno) from the portal I want to send update notes and notifications to the app,
+  so I can announce what changed on every launch and reach players when needed — which means the
+  game needs a new screen where those notes can be read. Plus one automatic one: if I hold the third
+  best score and somebody beats it, I should be told my score was beaten.
+- **Notes:** the News screen is a normal `attachNews()` factory like every other screen, but its
+  entry point is deliberately **a bell in the top `.menu-bar` beside mute, not a fifth destination
+  tile**. `.menu-tiles` is `repeat(4,1fr)` and `test-menu-ui.ts` asserts the count is exactly 4 with
+  per-tile geometry; a fifth tile drops each to ~67px at 390px, under the display font's 12px floor,
+  and there is no spare `--bc-enemy-*` hue left (rose is `--bc-danger`). A bell also gives the unread
+  badge its natural home. Adding the icons means RE-CUTTING the font subset — a name not in the file
+  renders as that word on the button, which is [[IDEA-048]]'s lesson learned the hard way.
+  **The announcement body is the highest-severity thing here.** "Admin-authored" is not a safety
+  property: to the renderer it is a server-controlled non-constant string going into a DOM sink,
+  exactly like a leaderboard username, and `innerHTML` appears 36 times across 13 files in `src/ui/`.
+  So it follows `leaderboard.ts` (createElement + textContent, markup structurally impossible), NOT
+  `escape.ts` — `escapeHtml` is a text-node escaper, not a sanitizer, and does not stop
+  `javascript:` in a link.
+  **Web Push lifts a STACK.md §6 deferral** and is registered as such rather than slipped in. It
+  costs one server dependency (`web-push` — the one place worth spending against the minimal-deps
+  instinct, because a hand-rolled RFC 8291 fails SILENTLY: one wrong byte in the HKDF info string
+  still returns 201 and the notification simply never arrives), a VAPID keypair, a subscriptions
+  table and one imported file in the service worker. It does NOT switch the PWA to `injectManifest`:
+  at the installed `vite-plugin-pwa` that would silently drop the `workbox.globPatterns` precache
+  list, and — worse — break `registerType: "autoUpdate"` permanently after the first install, since
+  `generateSW` bakes in the `skipWaiting` that `injectManifest` does not. `workbox.importScripts`
+  plus a plain `public/push-sw.js` gets the same listeners on the same registration for a three-line
+  diff. The real constraint is **iOS**: push needs 16.4+ AND the game added to the Home Screen, so
+  `install.ts`'s hint stops being a nicety. Permission comes from an explicit toggle, called
+  synchronously in the click handler — never at boot.
+  The automatic alert needs no new trigger: because the Players board ranks by PERSONAL BEST, one row
+  per player, `isNewHighScore` — which `finishSession` already computes — is exactly and only the
+  moment anyone's rank can move. Notify just the players actually overtaken (high score strictly
+  between the runner's old and new best; a player TIED at the new score got there first and is not
+  overtaken, since the runner's `high_score_at` resets to now), capped to whoever was in the top 10
+  so a leap from #50 to #1 tells ten people rather than forty-nine, with a per-recipient cooldown so
+  one good evening can't fire ten notifications at the same victim. Selected inside the existing
+  transaction, sent AFTER the commit — the shape `invalidateBoardCache()` already uses, because
+  network I/O must not happen under a row lock.
+  One real bug source to design around: `index.html`'s stale-shell recovery script unregisters EVERY
+  service worker on a failed asset load, which silently destroys the push subscription — so the
+  client re-checks on boot and the server treats the table as disposable.
+- **Dependencies:** [[IDEA-051]], [[IDEA-048]], [[IDEA-020]]
+- **History:**
+  - **v1** (2026-09-10) — the game can finally say what changed. A **News screen**
+    behind a **bell in the menu bar** (not a fifth destination tile: that row is a
+    hard-coded 4-up grid already at the display font's 12.5px label floor on a
+    390px screen, and there is no spare `--bc-enemy` hue left), a **composer** in
+    the metrics portal, and **Web Push** — which lifts STACK.md §6's own
+    deferral, flagged rather than slipped in.
+    **Saving and publishing are different acts.** A draft is invisible to
+    players and `published_at IS NULL` is the only thing enforcing it, so the
+    player-facing reads filter on it in SQL rather than trusting a caller; the
+    admin reads are separate FUNCTIONS rather than an `includeDrafts` boolean
+    anyone can get backwards. Publishing is a second, confirmed press.
+    **The body is plain text, and the parser deliberately does NOT escape it.**
+    `<script>` is stored verbatim, because the game renders with createElement +
+    textContent — the pattern `leaderboard.ts` uses for usernames — so markup
+    arrives as visible characters. Escaping server-side too would double-escape
+    and show the operator their own text back as `&lt;script&gt;`. This is the
+    first free-form server-authored string the client has ever rendered, and
+    "admin-authored" is not a safety property: to the renderer it is a
+    server-controlled string in a DOM sink, exactly like a username. The place
+    it would most plausibly go wrong is the paragraph split, where the tempting
+    one-liner is `replace(/\n\n/g, "<br><br>")` into innerHTML —
+    `test-news-ui.ts` publishes a note whose title and body ARE `<script>` and an
+    onerror image and fails the moment anyone writes it.
+    **The rank alert needed no new trigger.** The Players board ranks by personal
+    best, one row per player, so a position can only move when someone sets a new
+    one — which `finishSession` already computes. Selected inside the
+    transaction, sent after the commit. What it REFUSES to do is the point: a
+    player tied at the new score got there first and is not told; only the top
+    ten are told, so a leap from #50 to #1 notifies ten rather than forty-nine;
+    a six-hour cooldown stops one good evening firing ten alerts at one victim;
+    and the cooldown is stamped only for players actually reached, so a failed
+    send does not silence anyone.
+    **Four bugs found by looking rather than by testing.** The bell rendered as a
+    SPEAKER — it had borrowed `.mute-btn` for styling, but that class is a
+    BEHAVIOUR (`attachMuteButton` rewrites the inner `<i>` of every one),
+    now split into `.chrome-btn`. The Back button read "[object HTMLElement]"
+    (`icon()` returns an element; only `iconHtml()` returns a string). Dates
+    rendered in Portuguese under English copy. And the status-bar mark was a
+    plain WHITE RECTANGLE: `Notification.badge` uses only the ALPHA channel and
+    paints it white, so a normal opaque icon is by definition a white block —
+    now a transparent paw from the game's own `pets` glyph, guarded by
+    `npm run test:badge`.
+    **And one found from a real phone**: the bell was stale, not broken. The
+    unread count was read once at sign-in, so a note published while the player
+    already had the game open never appeared. push-sw.js now messages every open
+    window when a push lands, plus a throttled `visibilitychange` — never a poll.
+    `workbox.importScripts` rather than `injectManifest`, which at this plugin
+    version would silently drop the precache globs, break `autoUpdate` after the
+    first install, and leak `devOptions.type` into production. Measuring that
+    turned up worse: Workbox emits the import INSIDE its define() callback right
+    before `skipWaiting`, so a syntax error in push-sw.js leaves the worker
+    reporting "activated" with an EMPTY cache and a blank page offline, silently.
+    `scripts/test-service-worker.ts` now checks precache and offline rather than
+    the status flag that lies. 38 announcement + 27 rank-alert + 18 push +
+    35 news-UI + 7 service-worker + 5 badge checks pass.
+    `server/migrations/00{8,9}_*.sql`, `server/src/repo/{announcements,pushSubscriptions}.ts`,
+    `server/src/services/pushService.ts`, `server/src/notifications/rankAlert.ts`,
+    `server/src/validation/announcement.ts`, `server/src/routes/{announcements,push}.ts`,
+    `src/ui/{news,push,profile}.ts`, `src/admin/news.ts`, `public/push-sw.js`,
+    `scripts/make-notification-icons.ts`. _(8ab6848, 3612d9e, d1acffe, 9f95b1f, cdf1d31, 09b40d9, 0972f02)_
 
 ### IDEA-050 — Persist the run: what actually happened, not just the score ✅
 - **Priority:** 🔴
