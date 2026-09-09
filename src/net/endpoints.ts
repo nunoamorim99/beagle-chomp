@@ -229,6 +229,11 @@ export interface RunSubmissionPayload {
    *  on a device before this shipped omits it, and the validator falls back to
    *  bounding fruit between the cheapest and dearest entry. */
   fruitPoints?: number;
+  /** IDEA-050: how many of each fruit, indexed by position in FRUITS. Lets the
+   *  server price fruit EXACTLY rather than over the 100..500 band, and feeds
+   *  the year-end rewind's "favourite fruit". Optional on the wire like
+   *  fruitPoints — a run queued before this shipped omits it. */
+  fruitKindCounts?: number[];
   /** IDEA-046: how many power-ups were collected, and which kinds. Optional on
    *  the wire like fruitPoints — a run queued before this shipped omits both,
    *  and the validator treats an absent list as "no power-ups". */
@@ -237,6 +242,10 @@ export interface RunSubmissionPayload {
   ghostsEaten: number;
   coinsCollected: number;
   livesLost: number;
+  /** IDEA-050: deaths per enemy, indexed by position in GHOST_DEFS
+   *  (rose · teal · amber · violet · leaf). Sums to `livesLost`, which the
+   *  server verifies. Optional on the wire, same backward-compat rule. */
+  deathsByGhost?: number[];
   playSeconds: number;
 }
 

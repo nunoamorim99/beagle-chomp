@@ -28,12 +28,14 @@ import {
   COIN_THRESHOLDS,
   LIFE_THRESHOLDS,
   FRUIT_THRESHOLDS,
+  FRUIT_VALUES,
   MAX_FRUIT_POINTS,
   MIN_FRUIT_POINTS,
   POWERUP_THRESHOLDS,
   POWERUP_IDS,
   POWERUP_MULTIPLIER,
   SCORE_DOUBLING_POWERUPS,
+  GHOSTS_STAGE_3,
   type ChallengeLevelFacts,
 } from "../catalog.generated.js";
 
@@ -49,6 +51,22 @@ export type RejectionReason =
   | "LEVEL_LOCKED"
   | "SESSION_TOO_OLD"
   | "MALFORMED_SUBMISSION";
+
+/**
+ * How many distinct enemy slots the game can ever field (IDEA-050).
+ *
+ * DERIVED from the catalog rather than written as 5, for exactly the reason
+ * MAX/MIN_FRUIT_POINTS are derived on the client: a hardcoded number here
+ * would price a rejection, and the day a sixth enemy is added it would start
+ * refusing honest runs with MALFORMED_SUBMISSION — the worse of the two
+ * failure modes. The widest of classic, the stage-3 count, and every challenge
+ * level is the true ceiling.
+ */
+const MAX_ENEMY_SLOTS = Math.max(
+  CLASSIC_MODIFIERS.ghostCount,
+  GHOSTS_STAGE_3,
+  ...CHALLENGE_LEVELS.map((level) => level.ghostCount),
+);
 
 /** What the client reports at the end of a run. Everything here is untrusted. */
 export interface RunSubmission {
@@ -99,6 +117,21 @@ export interface RunSubmission {
    */
   fruitPoints?: number;
   /**
+   * IDEA-050: how many of each fruit was eaten, indexed by position in FRUITS.
+   *
+   * Collected for the year-end rewind ("your favourite fruit"), but it EARNS
+   * ITS PLACE here: knowing the kinds lets `fruitPoints` be checked exactly
+   * — sum(count[i] * FRUIT_POINTS[i]) — instead of against the 5x-wide band
+   * between fruitEaten * MIN and fruitEaten * MAX. A narrower honest bound is
+   * strictly better anti-cheat than a wide one, so this is the rare analytics
+   * field that also tightens validation.
+   *
+   * Trusted no more than anything else: the counts must sum to fruitEaten, and
+   * every index must exist in the catalog. OPTIONAL for backward
+   * compatibility — absent means "fall back to the wide band".
+   */
+  fruitKindCounts?: number[];
+  /**
    * IDEA-046: how many power-ups were collected, and which kinds.
    *
    * Two of the five DOUBLE SCORE, so the per-level ceiling has to know whether
@@ -114,6 +147,19 @@ export interface RunSubmission {
   ghostsEaten: number;
   coinsCollected: number;
   livesLost: number;
+  /**
+   * IDEA-050: deaths per ENEMY, indexed by position in GHOST_DEFS
+   * (rose · teal · amber · violet · leaf).
+   *
+   * Purely observational — it buys the "which enemy keeps killing me" answer
+   * and the rewind's nemesis line. It cannot loosen any bound: the only check
+   * is that it sums to `livesLost` and names no more enemies than the run's
+   * levels could have had, so a client either reports it consistently or gets
+   * MALFORMED_SUBMISSION.
+   *
+   * OPTIONAL for backward compatibility.
+   */
+  deathsByGhost?: number[];
   /** The client's own accumulated play time. ADVISORY ONLY — it may tighten a
    *  bound, never loosen one, because it is trivially forgeable. */
   playSeconds: number;
@@ -521,8 +567,45 @@ export function validateRun(input: RunSubmission, ctx: RunContext): ValidationRe
         detail: { ...detail, field: "fruitPoints" },
       };
     }
-    const maxFruitPoints = input.fruitEaten * MAX_FRUIT_POINTS;
-    const minFruitPoints = input.fruitEaten * MIN_FRUIT_POINTS;
+    let maxFruitPoints = input.fruitEaten * MAX_FRUIT_POINTS;
+    let minFruitPoints = input.fruitEaten * MIN_FRUIT_POINTS;
+
+    // IDEA-050: if the run named WHICH fruits it ate, the band collapses to a
+    // single exact number. This is the analytics field paying for itself — the
+    // fallback above allows anything between 100 and 500 per fruit, and four
+    // fruits alone is 1600 points of slack for a fabricated score to hide in.
+    if (input.fruitKindCounts !== undefined) {
+      const counts = input.fruitKindCounts;
+      if (
+        !Array.isArray(counts) ||
+        counts.length > FRUIT_VALUES.length ||
+        counts.some((n) => !isNonNegativeInt(n))
+      ) {
+        return {
+          accepted: false,
+          reasonCode: "MALFORMED_SUBMISSION",
+          detail: { ...detail, field: "fruitKindCounts" },
+        };
+      }
+      const claimed = counts.reduce((sum, n) => sum + n, 0);
+      if (claimed !== input.fruitEaten) {
+        return {
+          accepted: false,
+          reasonCode: "MALFORMED_SUBMISSION",
+          detail: {
+            ...detail,
+            field: "fruitKindCounts does not sum to fruitEaten",
+            actual: claimed,
+            expected: input.fruitEaten,
+          },
+        };
+      }
+      // Exact, both sides — no band left at all.
+      const exact = counts.reduce((sum, n, i) => sum + n * FRUIT_VALUES[i], 0);
+      maxFruitPoints = exact;
+      minFruitPoints = exact;
+    }
+
     if (input.fruitPoints > maxFruitPoints || input.fruitPoints < minFruitPoints) {
       return {
         accepted: false,
@@ -533,6 +616,39 @@ export function validateRun(input: RunSubmission, ctx: RunContext): ValidationRe
           actual: input.fruitPoints,
           max: maxFruitPoints,
           min: minFruitPoints,
+        },
+      };
+    }
+  }
+
+  // --- MAX-4a2: deaths per enemy (IDEA-050) --------------------------------
+  // Observational only — it cannot loosen a bound. The one thing worth
+  // checking is INTERNAL CONSISTENCY: a client that inflates livesLost (to
+  // widen the time floor's death allowance) while leaving this behind, or vice
+  // versa, is reporting two contradictory versions of the same run.
+  if (input.deathsByGhost !== undefined) {
+    const deaths = input.deathsByGhost;
+    if (
+      !Array.isArray(deaths) ||
+      deaths.length > MAX_ENEMY_SLOTS ||
+      deaths.some((n) => !isNonNegativeInt(n))
+    ) {
+      return {
+        accepted: false,
+        reasonCode: "MALFORMED_SUBMISSION",
+        detail: { ...detail, field: "deathsByGhost", maxSlots: MAX_ENEMY_SLOTS },
+      };
+    }
+    const totalDeaths = deaths.reduce((sum, n) => sum + n, 0);
+    if (totalDeaths !== input.livesLost) {
+      return {
+        accepted: false,
+        reasonCode: "MALFORMED_SUBMISSION",
+        detail: {
+          ...detail,
+          field: "deathsByGhost does not sum to livesLost",
+          actual: totalDeaths,
+          expected: input.livesLost,
         },
       };
     }

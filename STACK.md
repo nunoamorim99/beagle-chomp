@@ -242,6 +242,23 @@ Auth is always **Better Auth, self-hosted**. How it's configured differs by proj
 - **GDPR note:** no-email lightens obligations but does not remove them entirely — IP addresses and
   persistent user IDs can still be personal data. A short privacy note becomes worthwhile once there
   are real users. Not a blocker for building.
+- **First-party gameplay analytics ARE allowed under this model** (Beagle Chomp, IDEA-050,
+  2026-09-08). "No personal data" above means no email, no name, no IP address and no device id —
+  it never meant no product measurement. Per-run statistics keyed to the account are fine, and are
+  what tell you whether a feature worked. The line that must hold:
+  - **First-party only.** No third-party analytics SDK, no ad network, no cross-site identifier.
+    Nothing in the client bundle phones out. (Same reasoning as the self-hosted fonts: a blocked
+    CDN request once took Beagle Chomp's entire visual language down.)
+  - **The account is the key**, and in these games that is a username the player chose knowing it
+    appears on a public leaderboard. Don't add a second identifier alongside it.
+  - **It must cascade.** "Delete my account" stays a single `DELETE FROM users`, so every analytics
+    table needs `ON DELETE CASCADE` and a test that proves it. Beagle Chomp asserts this in
+    `server/scripts/test-sessions.ts`.
+  - **Say so in the privacy note.** A promise kept in the schema and broken in the copy is still
+    broken. Beagle Chomp's `src/ui/privacy.ts` was rewritten in the same change — it had promised
+    "no analytics", which stopped being true.
+  - A **push subscription endpoint is a device identifier** and is the one thing here that genuinely
+    is personal data. It needs the same cascade and its own line in the privacy note.
 
 ### História (the couple's app) — closed, two fixed accounts
 

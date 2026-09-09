@@ -26,7 +26,7 @@ import {
   SPEEDS,
   SCORE,
   TIMING,
-  COLORS,
+  ENEMY_SLOTS,
   COINS,
   COIN_THRESHOLDS,
   LIVES,
@@ -61,7 +61,7 @@ import {
   starActive,
   type PowerupState,
 } from "./powerups";
-import { rollFruit } from "./fruits";
+import { rollFruit, fruitIndexById } from "./fruits";
 import { coinsDueFromScore } from "./coins";
 import { shouldFireThreshold } from "./pickups";
 import { type GameMode, createInitialGameState } from "./state";
@@ -93,7 +93,7 @@ import { submitRunWithRetry } from "../net/runSubmit";
 import { replaceProfileCache } from "./profileCache";
 import { fromServerProfile } from "./profileMapping";
 import { makeEntity, stepEntity, entityWorld, reverseEntity, type Entity } from "./movement";
-import { chooseGhostDir, type Ghost, type GlobalMode } from "./ghostAI";
+import { chooseGhostDir, type Ghost, type GhostKind, type GlobalMode } from "./ghostAI";
 import { attachKeyboard } from "../input/keyboard";
 import { attachTouch } from "../input/touch";
 // IDEA-038: the optional on-screen D-pad, an alternative to swipe on phones.
@@ -204,13 +204,24 @@ function setPauseGlyph(paused: boolean): void {
 // "chaser"/"ambusher" for the two new personalities (mirroring the
 // chaser/ambusher/clyde spread of the original 3, just without a second
 // "clyde" — clyde's shyness rule reads oddly duplicated).
+// IDEA-050: the COLOURS and their ORDER now come from ENEMY_SLOTS in config.ts,
+// which is the single place that ordering is defined. This file still owns each
+// enemy's scatter corner and chase `kind` — the parts only the game needs —
+// while the identity (slot 0 is the rose one) is shared with the telemetry that
+// reports which enemy caught the beagle and the portal that names it. Written
+// as a positional map rather than five repeated `COLORS.ghost*` reads so the
+// two lists cannot silently fall out of order.
 const GHOST_DEFS = [
-  { color: COLORS.ghostRose, corner: { x: COLS - 2, y: 1 }, kind: "chaser" },
-  { color: COLORS.ghostTeal, corner: { x: 1, y: 1 }, kind: "ambusher" },
-  { color: COLORS.ghostAmber, corner: { x: 1, y: ROWS - 2 }, kind: "clyde" },
-  { color: COLORS.ghostViolet, corner: { x: COLS - 2, y: ROWS - 2 }, kind: "chaser" },
-  { color: COLORS.ghostLeaf, corner: { x: Math.floor((COLS - 1) / 2), y: ROWS - 2 }, kind: "ambusher" },
-] as const;
+  { corner: { x: COLS - 2, y: 1 }, kind: "chaser" },
+  { corner: { x: 1, y: 1 }, kind: "ambusher" },
+  { corner: { x: 1, y: ROWS - 2 }, kind: "clyde" },
+  { corner: { x: COLS - 2, y: ROWS - 2 }, kind: "chaser" },
+  { corner: { x: Math.floor((COLS - 1) / 2), y: ROWS - 2 }, kind: "ambusher" },
+].map((def, i) => ({ ...def, color: ENEMY_SLOTS[i].color })) as ReadonlyArray<{
+  readonly color: number;
+  readonly corner: { readonly x: number; readonly y: number };
+  readonly kind: GhostKind;
+}>;
 
 // Seconds each ghost waits in the pen before its AI takes over, staggered so
 // they don't all pour out of 'G' at once (prototype resetActors: i*0.9).
@@ -1262,10 +1273,14 @@ export class Game {
     // make the whole feature invisible.
     if (this.fruitTile && this.fruitTile.x === tx && this.fruitTile.y === ty) {
       const points = this.fruitKind.points;
+      // IDEA-050: read the KIND's index before despawnFruit() clears the tile,
+      // so the rewind can name a favourite fruit and the server can price the
+      // fruit contribution exactly instead of over a 100..500 band.
+      const fruitIdx = fruitIndexById(this.fruitKind.id);
       // Grabbed in time — i.e. before tickFruitLifespan's countdown reached 0.
       this.despawnFruit();
       this.score += points;
-      recordFruit(this.telemetry, points);
+      recordFruit(this.telemetry, points, fruitIdx);
       this.effects.pelletEaten(worldX(tx), worldZ(ty), "biscuit");
       this.effects.scorePopup(worldX(tx), worldZ(ty), points);
       this.hud.setScore(this.score);
@@ -1677,7 +1692,11 @@ export class Game {
 
   private checkCollisions(): void {
     const bw = entityWorld(this.beagle);
-    for (const rig of this.ghosts) {
+    // IDEA-050: the INDEX is the enemy's identity — `Ghost` carries no id and
+    // no colour, and this.ghosts[i] lines up 1:1 with GHOST_DEFS[i] (see
+    // resetActors' slice-from-0 and rebuildEnemySkins' in-place map). It is
+    // what beagleDies() records so "which one keeps killing me" is answerable.
+    for (const [ghostIdx, rig] of this.ghosts.entries()) {
       if (rig.releaseDelay > 0) continue;
       const gh = rig.gh;
       const gw = entityWorld(gh.e);
@@ -1735,14 +1754,17 @@ export class Game {
             this.syncPowerupHud();
             return;
           }
-          this.beagleDies();
+          this.beagleDies(ghostIdx);
           return;
         }
       }
     }
   }
 
-  private beagleDies(): void {
+  /** `ghostIdx` is the GHOST_DEFS index of the enemy that caught the beagle
+   *  (IDEA-050). Required rather than optional: there is one caller and it
+   *  always knows, and the server checks that these tally to livesLost. */
+  private beagleDies(ghostIdx: number): void {
     this.mode = "dying";
     this.stateTimer = TIMING.deathSeconds;
     this.lives--;
@@ -1752,7 +1774,7 @@ export class Game {
     this.shieldGrace = 0;
     this.beagleMesh.visible = true;
     this.syncPowerupHud();
-    recordDeath(this.telemetry);
+    recordDeath(this.telemetry, ghostIdx);
     this.hud.setLives(this.lives);
     const bw = entityWorld(this.beagle);
     this.effects.beagleDied(bw.x, bw.z);
@@ -2117,6 +2139,11 @@ export class Game {
       // honest run that ate four mangos looks the same to it as one that ate
       // four apples and inflated its score.
       fruitPoints: this.telemetry.fruitPoints,
+      // IDEA-050: which fruits, so the server can price them exactly rather
+      // than over the 100..500 band above — and so the rewind can name a
+      // favourite. Sent unconditionally; an empty array is the truth for a run
+      // that ate none, and the server treats absent as "old client".
+      fruitKindCounts: this.telemetry.fruitKindCounts,
       // IDEA-046: the two doublers multiply score, so the server sizes its
       // ceiling from what was actually collected rather than assuming the
       // best case on every run.
@@ -2125,6 +2152,10 @@ export class Game {
       ghostsEaten: this.telemetry.ghostsEaten,
       coinsCollected: this.telemetry.coinsCollected,
       livesLost: this.telemetry.livesLost,
+      // IDEA-050: which enemy did the killing, by GHOST_DEFS index. Sums to
+      // livesLost by construction, which is exactly what the server checks —
+      // so this can tighten a bound but never loosen one.
+      deathsByGhost: this.telemetry.deathsByGhost,
       playSeconds: Math.round(this.telemetry.playSeconds),
     };
 

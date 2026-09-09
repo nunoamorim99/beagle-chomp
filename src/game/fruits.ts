@@ -61,3 +61,20 @@ export function rollFruit(rand: () => number = Math.random): Fruit {
 export function fruitById(id: FruitId): Fruit {
   return FRUITS.find((f) => f.id === id) ?? FRUITS[0];
 }
+
+/**
+ * A fruit's POSITION in FRUITS (IDEA-050).
+ *
+ * The telemetry tallies fruit by index rather than by id, because that is what
+ * survives the wire cheaply and what the server's own generated catalog is
+ * ordered by. Lives here rather than in game.ts so the table's shape stays
+ * knowledge of this module — the same reason `rollFruit` walks FRUITS in order
+ * instead of anyone hardcoding boundaries.
+ *
+ * Returns -1 for an unknown id, which `recordFruit` drops rather than writing
+ * a hole; the resulting sum mismatch is caught server-side instead of
+ * corrupting the array.
+ */
+export function fruitIndexById(id: FruitId): number {
+  return FRUITS.findIndex((f) => f.id === id);
+}

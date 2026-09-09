@@ -199,6 +199,49 @@ function extractFruitValues(source: string): number[] {
 
 const fruitValues = extractFruitValues(configSrc);
 
+/**
+ * IDEA-050/051: the human LABELS for the two indexed telemetry arrays.
+ *
+ * `deaths_by_ghost` and `fruit_kind_counts` are stored as bare arrays indexed
+ * by position, which is right for storage and useless in a dashboard — "slot 2
+ * killed you 40 times" is not an answer. The portal needs names, and the names
+ * must come from the same tables the indices do, or the day a fruit is renamed
+ * the chart quietly lies. Extracted rather than hand-copied for exactly the
+ * reason the header gives about prices.
+ */
+function extractLabels(source: string, constName: string): string[] {
+  const arr = sliceArray(source, constName);
+  const labels = [...arr.matchAll(/\blabel:\s*"([^"]+)"/g)].map((m) => m[1]);
+  if (labels.length === 0) {
+    throw new Error(`could not find any labels in ${constName}`);
+  }
+  return labels;
+}
+
+const enemySlotLabels = extractLabels(configSrc, "ENEMY_SLOTS");
+const enemySlotIds = [
+  ...sliceArray(configSrc, "ENEMY_SLOTS").matchAll(/\bid:\s*"([a-z]+)"/g),
+].map((m) => m[1]);
+const fruitLabels = extractLabels(configSrc, "FRUITS");
+
+// Same loud-failure rule as the fruit values below: a regex that quietly
+// matched three of the five would ship a chart that silently drops enemies.
+if (enemySlotLabels.length !== 5 || enemySlotIds.length !== 5) {
+  console.error(
+    `[sync] extracted ${enemySlotLabels.length} enemy labels and ` +
+      `${enemySlotIds.length} ids, expected 5 each — the ENEMY_SLOTS format in ` +
+      `config.ts probably changed.`,
+  );
+  process.exit(1);
+}
+if (fruitLabels.length !== fruitValues.length) {
+  console.error(
+    `[sync] ${fruitLabels.length} fruit labels but ${fruitValues.length} values — ` +
+      `the FRUITS format in config.ts probably changed.`,
+  );
+  process.exit(1);
+}
+
 const coinThresholds = numberArray(configSrc, "COIN_THRESHOLDS");
 const lifeThresholds = numberArray(configSrc, "LIFE_THRESHOLDS");
 // The same "loud failure rather than a silently short catalog" argument as the
@@ -440,6 +483,17 @@ export const FRUIT_THRESHOLDS = ${JSON.stringify(fruitThresholds)} as const;
 export const FRUIT_VALUES = ${JSON.stringify(fruitValues)} as const;
 export const MAX_FRUIT_POINTS = ${Math.max(...fruitValues)};
 export const MIN_FRUIT_POINTS = ${Math.min(...fruitValues)};
+
+/** IDEA-050: what the indexed telemetry arrays MEAN, for the portal.
+ *
+ *  ENEMY_SLOT_* is ordered by ENEMY_SLOTS in config.ts, which is the same order
+ *  deaths_by_ghost is indexed by — slot 0 is the rose one. Reordering that list
+ *  silently relabels every death already recorded, so it is pinned by
+ *  scripts/test-telemetry.ts on the client side and by test-catalog.ts here. */
+export const ENEMY_SLOT_IDS = ${JSON.stringify(enemySlotIds)} as const;
+export const ENEMY_SLOT_LABELS = ${JSON.stringify(enemySlotLabels)} as const;
+/** Ordered by FRUITS, matching FRUIT_VALUES and fruit_kind_counts. */
+export const FRUIT_LABELS = ${JSON.stringify(fruitLabels)} as const;
 
 /** IDEA-046: how many power-ups can spawn per level, every id that exists, and
  *  by how much the two doublers double. SCORE_DOUBLING_POWERUPS is the pair the

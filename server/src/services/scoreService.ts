@@ -27,6 +27,7 @@ import { validateRun, MAX_RUN_HOURS } from "../validation/plausibility.js";
 // was reachable from the DB-free suite — which is how a field the client
 // sends went unread for a whole release without anything noticing.
 import { readSubmission } from "../validation/wire.js";
+import { insertRunStats, type RunStatsInsert } from "../repo/runStats.js";
 import { invalidateBoardCache } from "./boardCache.js";
 import { CHALLENGE_LEVELS, CHALLENGE_LEVEL_COUNT } from "../catalog.generated.js";
 
@@ -50,6 +51,70 @@ const MAX_OPEN_SESSIONS = 3;
 export interface StartSessionResult {
   sessionId: string;
   serverTime: string;
+}
+
+/**
+ * Shape one run_stats row from everything the finish already knows (IDEA-050).
+ *
+ * Nothing here is a new question asked of the client: the telemetry arrived in
+ * the submission, and the four cosmetic columns come off the `users` row that
+ * `requireAuth` already loaded — so they are stamped server-side and cannot be
+ * forged, which is what makes "which skin was actually being PLAYED" a
+ * different and more useful question than "what is equipped right now".
+ *
+ * NaN is coerced to 0 rather than passed through: a rejected run may carry
+ * whatever nonsense earned it the rejection, `readSubmission` turns non-numbers
+ * into NaN by design, and Postgres refuses NaN in an integer column. Letting
+ * that throw would take out the analytics write for exactly the runs whose
+ * analytics matter most — the malformed ones.
+ */
+function buildRunStats(
+  session: { id: string; mode: "classic" | "challenge"; challenge_idx: number | null },
+  user: UserRow,
+  submission: ReturnType<typeof readSubmission>,
+  elapsedServerSeconds: number,
+  accepted: boolean,
+): RunStatsInsert {
+  const int = (value: number | undefined): number =>
+    typeof value === "number" && Number.isFinite(value) ? Math.trunc(value) : 0;
+
+  const levelIdx = submission.levelIdxSequence ?? [];
+
+  return {
+    sessionId: session.id,
+    userId: user.id,
+    accepted,
+    mode: session.mode,
+    challengeIdx: session.challenge_idx,
+    score: int(submission.score),
+    elapsedSeconds: int(elapsedServerSeconds),
+
+    levelsPlayed: Array.isArray(submission.mazeIdxSequence)
+      ? submission.mazeIdxSequence.length
+      : 0,
+    levelsCleared: int(submission.levelsCleared),
+    // The furthest the player actually got, which is the "where do runs end"
+    // number. Challenge runs have no classic level index, hence null.
+    maxLevelIdx: levelIdx.length > 0 ? int(Math.max(...levelIdx)) : null,
+    pelletsEaten: int(submission.pelletsEaten),
+    bonesEaten: int(submission.bonesEaten),
+    fruitEaten: int(submission.fruitEaten),
+    fruitPoints: int(submission.fruitPoints),
+    // null (unknown — old client) is preserved as distinct from [] (ate none).
+    fruitKindCounts: submission.fruitKindCounts?.map(int) ?? null,
+    powerupsCollected: int(submission.powerupsCollected),
+    powerupIds: submission.powerupIds ?? [],
+    ghostsEaten: int(submission.ghostsEaten),
+    coinsCollected: int(submission.coinsCollected),
+    livesLost: int(submission.livesLost),
+    deathsByGhost: submission.deathsByGhost?.map(int) ?? null,
+    playSeconds: int(submission.playSeconds),
+
+    beagleSkinId: user.equipped_beagle_skin_id,
+    enemySkinId: user.equipped_enemy_skin_id,
+    mazeThemeId: user.equipped_maze_theme_id,
+    controlScheme: user.control_scheme,
+  };
 }
 
 export async function startSession(
@@ -145,6 +210,12 @@ export async function finishSession(
   // panel would not see the run they just finished.
   let acceptedClassic = false;
 
+  // IDEA-050: the analytics row, built inside the transaction (where the
+  // session, the verdict and the user's cosmetics are all in hand) but WRITTEN
+  // after it commits. See repo/runStats.ts for why the ordering is deliberate:
+  // statistics are a by-product and must never be able to roll back a score.
+  let statsRow: RunStatsInsert | null = null;
+
   const result = await withTransaction(async (client) => {
     const session = await sessionsRepo.findSessionForUpdate(sessionId, user.id, client);
 
@@ -188,6 +259,11 @@ export async function finishSession(
       challengeIdx: session.challenge_idx,
       currentChallengeProgress: user.challenge_progress,
     });
+
+    // IDEA-050: built for BOTH verdicts. A table that only knows about accepted
+    // runs cannot measure the rejection rate, and that rate is the alarm that
+    // says `npm run sync` was forgotten and honest runs are being refused.
+    statsRow = buildRunStats(session, user, submission, elapsedServerSeconds, verdict.accepted);
 
     if (!verdict.accepted) {
       await sessionsRepo.finishSession(sessionId, "rejected", submission.score, null, client);
@@ -270,6 +346,19 @@ export async function finishSession(
   });
 
   if (acceptedClassic) invalidateBoardCache();
+
+  // IDEA-050. AFTER the commit and deliberately best-effort: the run is already
+  // banked by this point, so nothing that happens here can unbank it. A failure
+  // costs one row of statistics and is logged loudly enough to notice in the
+  // Dokploy log, which is the right trade — see repo/runStats.ts.
+  if (statsRow) {
+    try {
+      await insertRunStats(statsRow);
+    } catch (err) {
+      console.error(`[run-stats] failed to record session ${sessionId}:`, err);
+    }
+  }
+
   return result;
 }
 

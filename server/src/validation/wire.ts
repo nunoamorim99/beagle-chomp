@@ -65,6 +65,13 @@ export function readSubmission(body: Record<string, unknown>): RunSubmission {
     // run queued before the update) omits it, which the validator handles by
     // falling back to the wide fruit-value bound.
     fruitPoints: body.fruitPoints === undefined ? undefined : num(body.fruitPoints),
+    // IDEA-050: which fruits, by index in FRUITS. Same absent-vs-empty rule as
+    // powerupIds — ABSENT means "old client, fall back to the wide
+    // MIN/MAX_FRUIT_POINTS band", while EMPTY is the truth for a run that ate
+    // no fruit at all. Collapsing them would make every fruitless run look
+    // like a client that cannot be priced exactly.
+    fruitKindCounts:
+      body.fruitKindCounts === undefined ? undefined : numArray(body.fruitKindCounts),
     // IDEA-046: optional on the wire, same backward-compat rule as fruitPoints.
     // An ABSENT list means "no power-ups", which is what every run queued before
     // this shipped truthfully was.
@@ -74,6 +81,11 @@ export function readSubmission(body: Record<string, unknown>): RunSubmission {
     ghostsEaten: num(body.ghostsEaten),
     coinsCollected: num(body.coinsCollected),
     livesLost: num(body.livesLost),
+    // IDEA-050: deaths per enemy, by index in GHOST_DEFS. Optional on the wire
+    // for backward compatibility; when present the validator requires it to
+    // sum to livesLost, so it can only ever tighten the picture.
+    deathsByGhost:
+      body.deathsByGhost === undefined ? undefined : numArray(body.deathsByGhost),
     playSeconds: num(body.playSeconds),
   };
 }

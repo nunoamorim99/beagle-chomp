@@ -217,9 +217,16 @@ async function main(): Promise<void> {
       ok("reports the score back", result.score === 3350, result.score);
       ok("flags a new high score", result.isNewHighScore);
       ok("high score is stored", result.highScore === 3350, result.highScore);
-      // floor(3350/1000)=3 milestone coins + 2 collected
-      ok("coins awarded server-side (3 milestones + 2 pickups)", result.coinsAwarded === 5, result.coinsAwarded);
-      ok("the profile reflects the new coins", result.profile.coins === 5, result.profile.coins);
+      // IDEA-016 v2 (v7.0): COINS COME FROM THE MAZE, AND ONLY THE MAZE. This
+      // used to expect 5 — floor(3350/1000)=3 milestone coins plus the 2
+      // collected — and was left behind when the points-to-coins conversion was
+      // deleted, so it had been failing since v7.0 shipped while the code was
+      // right. The award is now exactly `coinsCollected * coinPickupValue`,
+      // independent of score, which is the whole point: earning no longer
+      // scales with how long you survive, only with how many coins you actually
+      // went and got.
+      ok("coins awarded server-side (2 pickups, no milestones)", result.coinsAwarded === 2, result.coinsAwarded);
+      ok("the profile reflects the new coins", result.profile.coins === 2, result.profile.coins);
     }
   }
 
@@ -537,6 +544,81 @@ async function main(): Promise<void> {
   }
 
   // --- cleanup --------------------------------------------------------------
+  // --- IDEA-050: the run is recorded, and recording it is never fatal --------
+  section("run_stats records what happened");
+  {
+    const player = await newUser();
+
+    // An ACCEPTED run, carrying the two new fields.
+    const good = await scoreService.startSession(player, "classic", null);
+    await backdateSession(good.sessionId, 300);
+    await scoreService.finishSession(
+      player,
+      good.sessionId,
+      goodRun({
+        fruitPoints: 200,
+        fruitKindCounts: [2, 0, 0, 0, 0],
+        livesLost: 2,
+        deathsByGhost: [1, 0, 1],
+      }),
+    );
+
+    const { rows: acceptedRows } = await pool.query<{
+      accepted: boolean;
+      score: number;
+      pellets_eaten: number;
+      deaths_by_ghost: number[] | null;
+      fruit_kind_counts: number[] | null;
+      beagle_skin_id: string | null;
+      maze_theme_id: string | null;
+      control_scheme: string | null;
+      elapsed_seconds: number;
+    }>(`SELECT * FROM run_stats WHERE session_id = $1`, [good.sessionId]);
+
+    ok("an accepted run writes exactly one row", acceptedRows.length === 1);
+    if (acceptedRows[0]) {
+      const r = acceptedRows[0];
+      ok("…marked accepted", r.accepted === true);
+      ok("…with the telemetry the client sent", r.pellets_eaten === 175, r.pellets_eaten);
+      // The whole point of IDEA-050: which enemy, and which fruit.
+      ok("…deaths attributed per enemy", JSON.stringify(r.deaths_by_ghost) === "[1,0,1]", JSON.stringify(r.deaths_by_ghost));
+      ok("…fruit attributed per kind", JSON.stringify(r.fruit_kind_counts) === "[2,0,0,0,0]", JSON.stringify(r.fruit_kind_counts));
+      // Stamped from the users row, never sent by the client — so a run always
+      // knows what was actually being worn while it was played.
+      ok("…cosmetics stamped server-side", r.beagle_skin_id !== null && r.maze_theme_id !== null, `${r.beagle_skin_id}/${r.maze_theme_id}`);
+      ok("…control scheme stamped too", r.control_scheme !== null, r.control_scheme);
+      // Server clock at both ends — the number the client cannot forge.
+      ok("…elapsed measured server-side", r.elapsed_seconds >= 299, r.elapsed_seconds);
+    }
+
+    // A REJECTED run must be recorded too, or the rejection RATE — the alarm
+    // for a forgotten `npm run sync` — cannot be measured from this table.
+    const bad = await scoreService.startSession(player, "classic", null);
+    await backdateSession(bad.sessionId, 300);
+    const badVerdict = await scoreService.finishSession(
+      player,
+      bad.sessionId,
+      goodRun({ score: 9_999_999 }),
+    );
+    ok("the implausible run was rejected", !badVerdict.accepted);
+
+    const { rows: rejectedRows } = await pool.query<{ accepted: boolean }>(
+      `SELECT accepted FROM run_stats WHERE session_id = $1`,
+      [bad.sessionId],
+    );
+    ok("…and still recorded", rejectedRows.length === 1);
+    ok("…marked as not accepted", rejectedRows[0]?.accepted === false);
+
+    // The privacy promise: delete the account and the statistics go with it.
+    // This is the check that keeps "delete means delete" true after IDEA-050.
+    await pool.query(`DELETE FROM users WHERE id = $1`, [player.id]);
+    const { rows: left } = await pool.query<{ count: string }>(
+      `SELECT count(*) AS count FROM run_stats WHERE user_id = $1`,
+      [player.id],
+    );
+    ok("deleting the account cascades run_stats away", Number(left[0].count) === 0, left[0].count);
+  }
+
   section("Cleanup");
   const { rowCount } = await pool.query(`DELETE FROM users WHERE id = ANY($1::uuid[])`, [createdUserIds]);
   ok(`removed ${rowCount ?? 0} test accounts (sessions + rejections cascade)`, true);

@@ -384,3 +384,33 @@ export const COLORS = {
   ghostLeaf: 0x6fb84a,
   frightened: 0x2537c8,
 } as const;
+
+/**
+ * The five enemy SLOTS, in the order the game fields them (IDEA-050).
+ *
+ * This is the ordering `GHOST_DEFS` in game.ts builds from, and the one
+ * `runTelemetry.deathsByGhost` is indexed by — slot 0 is the rose one, slot 4
+ * the leaf one. A challenge level with fewer enemies takes a `slice(0, n)` from
+ * the front, so an index means the same enemy on every level of every mode.
+ *
+ * It lives HERE rather than beside GHOST_DEFS because three separate things now
+ * need to agree on it and only one of them can import game.ts: the game itself,
+ * the telemetry that reports "which enemy caught you", and the admin portal
+ * that has to put a NAME on that number. game.ts owns each enemy's corner and
+ * chase `kind`; this owns only their identity and order, which is the part
+ * everyone else needs. Reordering this reorders the enemies — and silently
+ * relabels every death already recorded — so don't, and append instead.
+ *
+ * `id` is stable and storage-safe; `label` is what a human reads. The colours
+ * are the same values the meshes and `--bc-enemy-*` in tokens.css use, so the
+ * portal can tint a bar chart with the hue the player actually saw.
+ */
+export const ENEMY_SLOTS = [
+  { id: "rose", label: "Rose", color: COLORS.ghostRose },
+  { id: "teal", label: "Teal", color: COLORS.ghostTeal },
+  { id: "amber", label: "Amber", color: COLORS.ghostAmber },
+  { id: "violet", label: "Violet", color: COLORS.ghostViolet },
+  { id: "leaf", label: "Leaf", color: COLORS.ghostLeaf },
+] as const;
+
+export type EnemySlotId = (typeof ENEMY_SLOTS)[number]["id"];

@@ -19,7 +19,7 @@ Living backlog of ideas. Two purposes:
 _(empty — nothing to triage)_
 
 ## Backlog (open ideas)
-> New registered ideas go here. Next free ID: IDEA-050
+> New registered ideas go here. Next free ID: IDEA-053
 
 ### IDEA-028 — Challenge twist: moving walls / maze changes mid-level 💡
 - **Priority:** 🟢
@@ -32,29 +32,131 @@ _(empty — nothing to triage)_
   exit, and never crushing/trapping an entity mid-move; the render layer needs walls that animate
   in/out. Would slot into `challenges.ts` as a new modifier level (a C9, or replacing a mid-ladder
   level) and appear on the level map ([[IDEA-014]]).
-- **v2** (2026-09-04) — the SCREENS, from the companion design file "Redesigned
-  Screens.dc.html". v1 built the component system; this applies it to the six
-  screens and changes their structure where the design asks for it. The menu
-  carousel is deleted (Play becomes a full-width block, four destinations
-  become a fixed 4-up row that fits without scrolling, `menuCarousel.ts` gone);
-  `.hud` becomes two columns with the chrome row inside the right one instead
-  of fixed at a measured offset; game over becomes a result BOARD with maps
-  cleared, coins earned and the gap to the personal best; the challenge map
-  gains a progress bar, padlock-faced locked stones and a "Play stone N"
-  button; the leaderboard gets numbered gold/silver/bronze rank plates; and
-  shop items gain a required `blurb`, with the price moved onto the action
-  button to make room for it. Two findings worth keeping: a `<br>` contributes
-  no whitespace to `textContent`, so the two-line menu title was announced as
-  "BeagleChomp" until a real space went before the break; and the fonts had to
-  be SELF-HOSTED and subset (108 KiB) after a blocked Google Fonts request on
-  Nuno’s machine printed every icon’s ligature name on its own button
-  ("arrow_back Menu") — which also exposed that Google’s icon subsetter does
-  not preserve the private-use CODEPOINTS, so glyphs are addressed by ligature
-  everywhere, SVG included. `test-menu-ui.ts` rewritten for the tile row;
-  `test-leaderboard-ui.ts` for the rank plates.
 - **Dependencies:** —
 
+### IDEA-051 — The portal: one operator, every metric 💡
+- **Priority:** 🟡
+- **Area:** backend · tooling
+- **Registered:** 2026-09-08
+- **Description:** (Nuno) a portal to check these metrics — deployed, and only I have an account
+  that can log into it.
+- **Notes:** [[IDEA-039]] already built real ops metrics — p95 per route, error counts, a
+  token-gated `GET /metrics` — and **nothing consumes them**; there is no UI anywhere in the
+  project. This is the screen that reads them, next to the gameplay data from [[IDEA-050]] and the
+  `score_rejections` audit log, which has been the tuning input since [[IDEA-020]] and has never
+  been looked at.
+  Admin identity is an `is_admin` column granted by one hand-written UPDATE, and `requireAdmin`
+  **404s** rather than 403s for everyone else — the same posture as `/metrics`, where a wrong token
+  gets a 404 so nothing confirms the surface even exists. The portal signs in through the EXISTING
+  `/api/v1/auth/login`, so there is no second credential system and revocation already works.
+  It is a SECOND Cloudflare Pages project built from an `admin/` folder in this repo, never served
+  from the VPS (STACK.md §1) — which also keeps admin code out of the players' bundle and out of the
+  PWA precache, the same by-construction exclusion `/editor/` and `/preview/` already rely on.
+  Charts are hand-rolled inline SVG on `tokens.css`; no chart library, no new moving part.
+  One trap to respect: `profileRoutes` and `sessionRoutes` are both mounted at `/` under `/api/v1`
+  and each declares its own `use("*")`, which is why a sessions request currently runs `requireAuth`
+  TWICE. An admin sub-app mounted after them would silently inherit the profile rate limit, so it
+  mounts at its own prefix, registered first.
+  The rejection board is the one panel that earns its place immediately: a rejection rate that RISES
+  after a `config.ts` change is the signal that `npm run sync` was forgotten and honest runs are
+  being thrown away.
+- **Dependencies:** [[IDEA-050]], [[IDEA-039]]
+
+### IDEA-052 — News in the app, and push worth granting 💡
+- **Priority:** 🟡
+- **Area:** ux · backend
+- **Registered:** 2026-09-08
+- **Description:** (Nuno) from the portal I want to send update notes and notifications to the app,
+  so I can announce what changed on every launch and reach players when needed — which means the
+  game needs a new screen where those notes can be read. Plus one automatic one: if I hold the third
+  best score and somebody beats it, I should be told my score was beaten.
+- **Notes:** the News screen is a normal `attachNews()` factory like every other screen, but its
+  entry point is deliberately **a bell in the top `.menu-bar` beside mute, not a fifth destination
+  tile**. `.menu-tiles` is `repeat(4,1fr)` and `test-menu-ui.ts` asserts the count is exactly 4 with
+  per-tile geometry; a fifth tile drops each to ~67px at 390px, under the display font's 12px floor,
+  and there is no spare `--bc-enemy-*` hue left (rose is `--bc-danger`). A bell also gives the unread
+  badge its natural home. Adding the icons means RE-CUTTING the font subset — a name not in the file
+  renders as that word on the button, which is [[IDEA-048]]'s lesson learned the hard way.
+  **The announcement body is the highest-severity thing here.** "Admin-authored" is not a safety
+  property: to the renderer it is a server-controlled non-constant string going into a DOM sink,
+  exactly like a leaderboard username, and `innerHTML` appears 36 times across 13 files in `src/ui/`.
+  So it follows `leaderboard.ts` (createElement + textContent, markup structurally impossible), NOT
+  `escape.ts` — `escapeHtml` is a text-node escaper, not a sanitizer, and does not stop
+  `javascript:` in a link.
+  **Web Push lifts a STACK.md §6 deferral** and is registered as such rather than slipped in. It
+  costs one server dependency (`web-push` — the one place worth spending against the minimal-deps
+  instinct, because a hand-rolled RFC 8291 fails SILENTLY: one wrong byte in the HKDF info string
+  still returns 201 and the notification simply never arrives), a VAPID keypair, a subscriptions
+  table and one imported file in the service worker. It does NOT switch the PWA to `injectManifest`:
+  at the installed `vite-plugin-pwa` that would silently drop the `workbox.globPatterns` precache
+  list, and — worse — break `registerType: "autoUpdate"` permanently after the first install, since
+  `generateSW` bakes in the `skipWaiting` that `injectManifest` does not. `workbox.importScripts`
+  plus a plain `public/push-sw.js` gets the same listeners on the same registration for a three-line
+  diff. The real constraint is **iOS**: push needs 16.4+ AND the game added to the Home Screen, so
+  `install.ts`'s hint stops being a nicety. Permission comes from an explicit toggle, called
+  synchronously in the click handler — never at boot.
+  The automatic alert needs no new trigger: because the Players board ranks by PERSONAL BEST, one row
+  per player, `isNewHighScore` — which `finishSession` already computes — is exactly and only the
+  moment anyone's rank can move. Notify just the players actually overtaken (high score strictly
+  between the runner's old and new best; a player TIED at the new score got there first and is not
+  overtaken, since the runner's `high_score_at` resets to now), capped to whoever was in the top 10
+  so a leap from #50 to #1 tells ten people rather than forty-nine, with a per-recipient cooldown so
+  one good evening can't fire ten notifications at the same victim. Selected inside the existing
+  transaction, sent AFTER the commit — the shape `invalidateBoardCache()` already uses, because
+  network I/O must not happen under a row lock.
+  One real bug source to design around: `index.html`'s stale-shell recovery script unregisters EVERY
+  service worker on a failed asset load, which silently destroys the push subscription — so the
+  client re-checks on boot and the server treats the table as disposable.
+- **Dependencies:** [[IDEA-051]], [[IDEA-048]], [[IDEA-020]]
+
+
 ## In progress 🔨
+
+### IDEA-050 — Persist the run: what actually happened, not just the score 🔨
+- **Priority:** 🔴
+- **Area:** backend
+- **Registered:** 2026-09-08
+- **Building:** started 2026-09-08. Client + server + migration + tests are in; see the plan for what remains (the portal reads this — [[IDEA-051]]).
+- **Description:** (Nuno) time to work on the observability of the game — a set of metrics to
+  judge retention and how the app is performing, plus the fun things: how many times each player
+  dies to each enemy colour, which skins and themes actually get used, which challenge level takes
+  longest and kills the most, how much fruit each player collects, how long they spend playing.
+  Data worth keeping so that at the end of the year we can hand each player a rewind of their own.
+  Only the username is ever attached — no name, nothing personal.
+- **Notes:** the striking thing found while planning this is that **the data already crosses the
+  wire and is then THROWN AWAY**. `runTelemetry.ts` accumulates pellets, bones, fruit and its exact
+  points, power-up ids, ghosts eaten, coins, lives lost, play seconds and the maze/level sequences;
+  the client sends all of it; `plausibility.ts` judges it — and then `scoreService.finishSession`
+  writes `reported_score`/`accepted_score` and discards the rest. It survives ONLY for REJECTED
+  runs, as `score_rejections.detail`. So step one is a `run_stats` row, not new collection.
+  Two consequences shape the whole idea. First, **every retention metric is answerable
+  RETROACTIVELY** — `game_sessions` has held one server-timestamped row per run since [[IDEA-019]],
+  so DAU/WAU/MAU, signup cohorts, D1/D7/D30, churn, run duration and the whole challenge funnel
+  (attempts, clears, clear-rate, median time-to-clear per level) work over the full history the day
+  this ships. Second, **almost nothing new needs collecting client-side**: the equipped skins, theme
+  and control scheme are already columns on the `users` row that `requireAuth` has loaded and the
+  finish transaction is holding, so they get STAMPED server-side — unforgeable and free.
+  Exactly ONE new client field is genuinely required: `deathsByGhost`, counts indexed by position
+  in `GHOST_DEFS`. That index is the only identity an enemy has — `Ghost` in `ghostAI.ts` carries no
+  id and no colour — and `checkCollisions` already holds the rig and the loop index at the fatal
+  branch and simply drops them; `beagleDies()` takes no arguments today. `fruitKindCounts` is the
+  optional second, wanted for the rewind's favourite fruit, and it PAYS FOR ITSELF on the validator
+  side: the server could then price fruit exactly instead of falling back to the
+  `fruitEaten x MIN/MAX_FRUIT_POINTS` band. Both are optional on the wire so runs already queued in
+  `runSubmit.ts`'s localStorage still validate — and both must be named in `wire.ts` or they are
+  silently dropped, which is the [[IDEA-040]] v3 bug exactly.
+  **The privacy contract has to change, honestly.** `001_init.sql` opens with "no analytics" and
+  `src/ui/privacy.ts` ships "No analytics, no ads, no tracking" to players. The spirit survives —
+  first-party only, no third parties, no ads, no cross-site tracking, keyed to a username that is
+  already public, cascade-deleted with the account — but the words don't, and they get rewritten in
+  the same change. NOT in `001_init.sql`: the migration runner checksums applied files and aborts,
+  and it runs from the Dockerfile CMD before the server binds, so editing it would break every
+  deploy. The amendment goes in the new migration's header and in STACK.md §8.
+  Aggregate on READ, no rollup tables and no cron: at ~100 runs/day the queries are trivial, and the
+  project already owns the honest trigger for changing its mind — the `[slow-query]` line at 200 ms
+  from [[IDEA-039]], which is STACK.md §6's own Redis threshold.
+- **Dependencies:** [[IDEA-019]], [[IDEA-020]], [[IDEA-039]]
+
 
 ### IDEA-048 — Toon boards, not glass panels: a real design system for the 2D layer 🔨
 - **Priority:** 🔴
@@ -83,6 +185,26 @@ _(empty — nothing to triage)_
   `#playBtn`. Verified by screenshotting every screen against a live API — auth, recovery,
   menu, shop, challenge map, leaderboard, account, tutorial and a real run with the HUD,
   power-up tray and D-pad on screen.
+- **v2** (2026-09-04) — the SCREENS, from the companion design file "Redesigned
+  Screens.dc.html". v1 built the component system; this applies it to the six
+  screens and changes their structure where the design asks for it. The menu
+  carousel is deleted (Play becomes a full-width block, four destinations
+  become a fixed 4-up row that fits without scrolling, `menuCarousel.ts` gone);
+  `.hud` becomes two columns with the chrome row inside the right one instead
+  of fixed at a measured offset; game over becomes a result BOARD with maps
+  cleared, coins earned and the gap to the personal best; the challenge map
+  gains a progress bar, padlock-faced locked stones and a "Play stone N"
+  button; the leaderboard gets numbered gold/silver/bronze rank plates; and
+  shop items gain a required `blurb`, with the price moved onto the action
+  button to make room for it. Two findings worth keeping: a `<br>` contributes
+  no whitespace to `textContent`, so the two-line menu title was announced as
+  "BeagleChomp" until a real space went before the break; and the fonts had to
+  be SELF-HOSTED and subset (108 KiB) after a blocked Google Fonts request on
+  Nuno’s machine printed every icon’s ligature name on its own button
+  ("arrow_back Menu") — which also exposed that Google’s icon subsetter does
+  not preserve the private-use CODEPOINTS, so glyphs are addressed by ligature
+  everywhere, SVG included. `test-menu-ui.ts` rewritten for the tile row;
+  `test-leaderboard-ui.ts` for the rank plates.
 - **Dependencies:** —
 
 ### IDEA-047 — The beagle, rebuilt from a real reference 🔨
@@ -199,7 +321,6 @@ _(empty — nothing to triage)_
     centred — the board fills the height there and a filled circle in the middle
     sits on the part of the maze you are reading. Both were found by LOOKING at a
     render, not by an assertion, all of which passed.
-
 
 
 ### IDEA-046 — Power-ups: pickups that change how the run plays ✅

@@ -75,6 +75,17 @@ export const FRUIT_VALUES = [100,200,300,400,500] as const;
 export const MAX_FRUIT_POINTS = 500;
 export const MIN_FRUIT_POINTS = 100;
 
+/** IDEA-050: what the indexed telemetry arrays MEAN, for the portal.
+ *
+ *  ENEMY_SLOT_* is ordered by ENEMY_SLOTS in config.ts, which is the same order
+ *  deaths_by_ghost is indexed by — slot 0 is the rose one. Reordering that list
+ *  silently relabels every death already recorded, so it is pinned by
+ *  scripts/test-telemetry.ts on the client side and by test-catalog.ts here. */
+export const ENEMY_SLOT_IDS = ["rose","teal","amber","violet","leaf"] as const;
+export const ENEMY_SLOT_LABELS = ["Rose","Teal","Amber","Violet","Leaf"] as const;
+/** Ordered by FRUITS, matching FRUIT_VALUES and fruit_kind_counts. */
+export const FRUIT_LABELS = ["Apple","Banana","Carrot","Strawberry","Mango"] as const;
+
 /** IDEA-046: how many power-ups can spawn per level, every id that exists, and
  *  by how much the two doublers double. SCORE_DOUBLING_POWERUPS is the pair the
  *  score ceiling has to account for; the other three change speed or absorb a

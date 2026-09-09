@@ -781,9 +781,15 @@ section("IDEA-040 v3 — the wire format");
     bonesEaten: 8,
     fruitEaten: 6,
     fruitPoints: 1400,
+    // IDEA-050. Four apples and two mangos: sums to fruitEaten (6) and prices
+    // to exactly fruitPoints (4*100 + 2*500 = 1400), so this body stays
+    // internally consistent for the validator checks further down.
+    fruitKindCounts: [4, 0, 0, 0, 2],
     ghostsEaten: 14,
     coinsCollected: 5,
     livesLost: 2,
+    // IDEA-050. Sums to livesLost (2), which is what the validator requires.
+    deathsByGhost: [1, 0, 1],
     playSeconds: 640,
   };
   const parsed = readSubmission(body);
@@ -1054,6 +1060,126 @@ expectReject(
   );
   const absent = readSubmission({ score: 0, mazeIdxSequence: [0] });
   ok("…and leaves them undefined when absent", absent.powerupsCollected === undefined && absent.powerupIds === undefined);
+}
+
+section("IDEA-050 — fruit kinds price the run exactly");
+
+// The point of collecting WHICH fruits: it collapses a 5x band to one number.
+// Four fruits under the old rule allowed anything from 400 to 2000 — 1600
+// points of slack on every honest run, and 1600 points of cover for a faked one.
+{
+  // Two apples and two mangos: 2*100 + 2*500 = 1200, exactly.
+  const exact = makeRun({ fruitEaten: 4, fruitKindCounts: [2, 0, 0, 0, 2], fruitPoints: 1200 });
+  const verdict = validateRun(exact, classicCtx());
+  ok("an exactly-priced basket is accepted", verdict.accepted, verdict.accepted ? "" : verdict.reasonCode);
+
+  // THE TIGHTENING, stated as a test: claiming four apples but pricing them as
+  // four mangos. Under the old MIN/MAX band 2000 <= 4 * MAX_FRUIT_POINTS, so
+  // this was ACCEPTED. Naming the kinds makes it arithmetic.
+  const lying = makeRun({
+    fruitEaten: 4,
+    fruitKindCounts: [4, 0, 0, 0, 0],
+    fruitPoints: 4 * MAX_FRUIT_POINTS,
+  });
+  const lyingVerdict = validateRun(lying, classicCtx());
+  ok(
+    "four apples priced as four mangos is refused",
+    !lyingVerdict.accepted && lyingVerdict.reasonCode === "ITEM_COUNT_IMPOSSIBLE",
+    lyingVerdict.accepted ? "accepted" : lyingVerdict.reasonCode,
+  );
+  ok(
+    "…and the same claim WITHOUT the kinds still passes the wide band",
+    validateRun(
+      makeRun({ fruitEaten: 4, fruitPoints: 4 * MAX_FRUIT_POINTS }),
+      classicCtx(),
+    ).accepted,
+    "if this fails the fallback band changed, not the new check",
+  );
+
+  const badSum = makeRun({ fruitEaten: 4, fruitKindCounts: [1, 1, 0, 0, 0], fruitPoints: 300 });
+  const badSumVerdict = validateRun(badSum, classicCtx());
+  ok(
+    "counts that don't sum to fruitEaten are malformed",
+    !badSumVerdict.accepted && badSumVerdict.reasonCode === "MALFORMED_SUBMISSION",
+    badSumVerdict.accepted ? "accepted" : badSumVerdict.reasonCode,
+  );
+
+  const tooMany = makeRun({ fruitEaten: 1, fruitKindCounts: [1, 0, 0, 0, 0, 0], fruitPoints: 100 });
+  ok(
+    "a sixth fruit slot is malformed",
+    !validateRun(tooMany, classicCtx()).accepted,
+  );
+
+  const negative = makeRun({ fruitEaten: 2, fruitKindCounts: [3, -1, 0, 0, 0], fruitPoints: 200 });
+  ok("a negative count is malformed", !validateRun(negative, classicCtx()).accepted);
+
+  // Backward compatibility: a run queued before this shipped omits the field
+  // entirely and must still be judged, on the old wide band.
+  ok(
+    "an absent basket still validates on the old band",
+    validateRun(makeRun({ fruitEaten: 2 }), classicCtx()).accepted,
+  );
+}
+
+section("IDEA-050 — deaths name the enemy that caused them");
+
+{
+  const consistent = makeRun({ livesLost: 2, deathsByGhost: [1, 0, 1] });
+  ok(
+    "deaths that sum to livesLost are accepted",
+    validateRun(consistent, classicCtx()).accepted,
+  );
+
+  // The only thing this field can catch: a client telling two different
+  // stories about the same run. livesLost widens the time floor's allowance,
+  // so the two must agree.
+  const mismatch = makeRun({ livesLost: 3, deathsByGhost: [1, 0, 1] });
+  const mismatchVerdict = validateRun(mismatch, classicCtx());
+  ok(
+    "deaths that contradict livesLost are malformed",
+    !mismatchVerdict.accepted && mismatchVerdict.reasonCode === "MALFORMED_SUBMISSION",
+    mismatchVerdict.accepted ? "accepted" : mismatchVerdict.reasonCode,
+  );
+
+  ok(
+    "more enemy slots than the game can field is malformed",
+    !validateRun(makeRun({ livesLost: 6, deathsByGhost: [1, 1, 1, 1, 1, 1] }), classicCtx())
+      .accepted,
+  );
+
+  ok(
+    "an absent deathsByGhost is still accepted",
+    validateRun(makeRun({ livesLost: 1 }), classicCtx()).accepted,
+  );
+
+  // A zero-death run reports an empty array, and that must not read as a
+  // contradiction with livesLost: 0.
+  ok(
+    "an empty array agrees with zero deaths",
+    validateRun(makeRun({ livesLost: 0, deathsByGhost: [] }), classicCtx()).accepted,
+  );
+}
+
+// ABSENT vs EMPTY, the same distinction levelIdxSequence and powerupIds keep.
+{
+  const absent = readSubmission({ score: 0, mazeIdxSequence: [0] });
+  ok(
+    "absent fruitKindCounts/deathsByGhost stay undefined",
+    absent.fruitKindCounts === undefined && absent.deathsByGhost === undefined,
+  );
+  const empty = readSubmission({
+    score: 0,
+    mazeIdxSequence: [0],
+    fruitKindCounts: [],
+    deathsByGhost: [],
+  });
+  ok(
+    "…and empty ones stay empty arrays",
+    Array.isArray(empty.fruitKindCounts) &&
+      empty.fruitKindCounts.length === 0 &&
+      Array.isArray(empty.deathsByGhost) &&
+      empty.deathsByGhost.length === 0,
+  );
 }
 
 console.log(`\n${"-".repeat(60)}`);
