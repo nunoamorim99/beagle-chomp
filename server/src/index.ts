@@ -144,6 +144,17 @@ const server = serve({ fetch: app.fetch, port: env.PORT }, (info) => {
         env.SESSION_RETENTION_DAYS > 0 ? `${env.SESSION_RETENTION_DAYS}d` : "off"
       }`,
   );
+  // IDEA-052b: say it out loud at boot. Push is configured entirely through
+  // env vars in a hosting panel, and the failure mode of getting it wrong is
+  // SILENCE — no route, no error, nothing sent, and nothing to tell you why.
+  // One line in the container log turns "did that work?" into a fact.
+  console.log(
+    `[api] push ${
+      env.pushEnabled
+        ? `ENABLED · rank alerts to top ${env.RANK_ALERT_TOP_N}, ${env.RANK_ALERT_COOLDOWN_HOURS}h cooldown`
+        : "disabled (set VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY and VAPID_SUBJECT)"
+    }`,
+  );
 });
 
 // Abandon runs whose players never came back — a quit-to-menu deliberately
