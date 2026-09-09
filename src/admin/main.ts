@@ -13,6 +13,7 @@
 
 import "./admin.css";
 import * as api from "./api.js";
+import { renderNewsTab } from "./news.js";
 import {
   ENEMY_HUES,
   barChart,
@@ -36,7 +37,7 @@ const esc = (s: unknown): string =>
 
 const app = document.getElementById("app") as HTMLDivElement;
 
-type TabId = "overview" | "retention" | "difficulty" | "content" | "health" | "players";
+type TabId = "overview" | "retention" | "difficulty" | "content" | "health" | "players" | "news";
 
 const TABS: { id: TabId; label: string }[] = [
   { id: "overview", label: "Overview" },
@@ -45,6 +46,8 @@ const TABS: { id: TabId; label: string }[] = [
   { id: "content", label: "Content" },
   { id: "health", label: "Health" },
   { id: "players", label: "Players" },
+  // The only tab that WRITES anything.
+  { id: "news", label: "News" },
 ];
 
 let currentTab: TabId = "overview";
@@ -160,6 +163,13 @@ async function loadTab(): Promise<void> {
         return view(renderHealth(await api.fetchHealth()));
       case "players":
         return renderPlayers();
+      case "news": {
+        // Owns its own host: the composer re-renders itself on every save,
+        // publish and delete, so it needs the element rather than a string.
+        const el = document.getElementById("view");
+        if (el) await renderNewsTab(el);
+        return;
+      }
     }
   } catch (err: unknown) {
     if (err instanceof api.AdminApiError && err.status === 401) {

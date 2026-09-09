@@ -191,3 +191,39 @@ button.ghost {
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
+
+/* --- the composer (IDEA-052) ---------------------------------------------- */
+
+.composer { display: grid; gap: var(--s3); }
+.composer .row { display: flex; gap: var(--s3); align-items: flex-end; flex-wrap: wrap; }
+.composer select, .composer textarea {
+  font: inherit; padding: 10px 12px; border-radius: 8px;
+  border: 2px solid var(--outline); background: var(--ink); color: var(--cream);
+}
+.composer textarea { resize: vertical; min-height: 160px; line-height: 1.5; }
+.count { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12px; }
+
+.pill { padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700;
+  border: 1px solid var(--outline); }
+/* A draft is the SAFE state, so it is not painted as a warning — amber here is
+   reserved for "live", which is the one that reached players. */
+.pill--draft { background: var(--card); color: var(--muted); }
+.pill--live { background: var(--amber); color: #3a2205; }
+
+.row-actions { display: flex; gap: 6px; }
+button.sm { padding: 4px 10px; font-size: 12px; border-bottom-width: 3px; }
+button.danger { color: #ffc9d5; }
+
+/* The preview renders the body the way the GAME does, so it cannot flatter the
+   real thing — including showing markup as characters. */
+.news-preview {
+  background: var(--card); border: 2px solid var(--outline); border-bottom-width: 4px;
+  border-radius: var(--r); padding: var(--s3);
+}
+.news-preview h3 { margin: 0; font-size: 17px; overflow-wrap: anywhere; }
+.news-preview p { margin: 0 0 var(--s2); overflow-wrap: anywhere; }
+.news-preview .sub { color: var(--muted); font-size: 12px; }
+
+/* The label text and its character counter share one line — the counter is a
+   companion to the field name, not a row of its own between name and input. */
+.field-head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--s3); }
