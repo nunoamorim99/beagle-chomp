@@ -2408,3 +2408,38 @@ body.map-open .powerups{display:none}
 .notify-kind{display:flex;align-items:center;gap:var(--bc-s2);
   color:var(--bc-cream);font-size:14px;cursor:pointer}
 .notify-kind input{width:20px;height:20px;accent-color:var(--bc-amber);cursor:pointer}
+
+/* IDEA-052b: the News list is for SCANNING — a card shows a few lines and the
+   whole note opens in a sheet. A 4,000-character release note rendered inline
+   would push every other card off the screen. */
+.news-card{cursor:pointer}
+.news-card:hover{border-color:var(--bc-amber-edge)}
+.news-card:focus-visible{outline:var(--bc-line) solid var(--bc-amber);outline-offset:2px}
+/* line-clamp rather than a character truncation: it cuts at whatever the box
+   actually fits, so it stays right at 320px and at 430px without a second
+   number to tune. */
+.news-body--clamp{
+  display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;
+  overflow:hidden}
+.news-more{color:var(--bc-amber);font-size:13px;font-weight:700}
+
+/* The detail sheet. Inside #news, so closing it returns to the list with the
+   scroll position intact — going "into" a note and back must not lose the
+   player's place. */
+.news-detail{position:absolute;inset:0;z-index:5;
+  display:flex;align-items:center;justify-content:center;
+  padding:var(--bc-s4);
+  /* PAINT, never opacity — §"dim by paint": a translucent layer over the board
+     picks up what is behind it and turns the whole sheet blue-grey. */
+  background:rgba(10,8,6,.82)}
+.news-detail-sheet{
+  width:min(560px,100%);max-height:100%;
+  display:flex;flex-direction:column;gap:var(--bc-s3);
+  background:var(--bc-card);
+  border:var(--bc-line) solid var(--bc-outline);
+  border-bottom-width:var(--bc-edge-card);
+  border-radius:var(--bc-r-card);
+  padding:var(--bc-s4)}
+.news-detail-body{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;
+  display:flex;flex-direction:column;gap:var(--bc-s2)}
+.news-detail-sheet > .btn-primary{flex:0 0 auto;align-self:center;min-width:160px}

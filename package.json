@@ -36,6 +36,8 @@
     "test:auth-ui": "tsx scripts/test-auth-ui.ts",
     "test:score-ui": "tsx scripts/test-score-ui.ts",
     "test:leaderboard-ui": "tsx scripts/test-leaderboard-ui.ts",
+    "make:icons": "tsx scripts/make-notification-icons.ts",
+    "test:badge": "tsx scripts/test-badge-icon.ts",
     "test:icon-font": "tsx scripts/test-icon-font.ts",
     "test:sw": "tsx scripts/test-service-worker.ts",
     "test:news-ui": "tsx scripts/test-news-ui.ts",

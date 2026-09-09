@@ -118,24 +118,132 @@ export function attachNews(callbacks: NewsCallbacks = {}): NewsHandle {
 
     card.append(head);
 
-    // Paragraphs from blank lines. A real <p> each — see the header for why
-    // this is not a replace() into innerHTML.
-    for (const para of a.body.split(/\n{2,}/)) {
+    // A PREVIEW on the card, the whole thing in the detail sheet. The list is
+    // for scanning — a 4,000-character release note would push every other
+    // card off the screen and bury the one you were looking for.
+    const preview = document.createElement("p");
+    preview.className = "news-body news-body--clamp";
+    preview.textContent = a.body.replace(/\s*\n\s*/g, " ").trim();
+    card.append(preview);
+
+    const more = document.createElement("span");
+    more.className = "news-more";
+    more.textContent = "Read more";
+    card.append(more);
+
+    // The whole card is the target, not just the link — a 44px row is easier to
+    // hit than a word, and the affordance is already the card.
+    card.setAttribute("role", "button");
+    card.tabIndex = 0;
+    card.addEventListener("click", () => openDetail(a));
+    card.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        openDetail(a);
+      }
+    });
+
+    return card;
+  }
+
+  /**
+   * Render a plain-text body into real paragraphs.
+   *
+   * Blank lines separate paragraphs; single newlines become real <br>
+   * ELEMENTS between text nodes. NEVER a string containing "<br>" — that is the
+   * one line that would turn this whole screen back into an innerHTML sink, and
+   * it is the most tempting shortcut in the file. See the header.
+   */
+  function renderBody(host: HTMLElement, body: string): void {
+    for (const para of body.split(/\n{2,}/)) {
       const text = para.trim();
       if (text.length === 0) continue;
       const p = document.createElement("p");
       p.className = "news-body";
-      // Single newlines inside a paragraph become real <br> ELEMENTS, appended
-      // between text nodes. Never a string containing "<br>".
-      const lines = text.split("\n");
-      lines.forEach((line, i) => {
+      text.split("\n").forEach((line, i) => {
         if (i > 0) p.append(document.createElement("br"));
         p.append(document.createTextNode(line));
       });
-      card.append(p);
+      host.append(p);
     }
+  }
 
-    return card;
+  /**
+   * The full note, over the list.
+   *
+   * A sheet rather than a second screen: the player is reading a list and wants
+   * one item out of it, so going "into" a note and back should not lose their
+   * place. Escape and the backdrop both close it, because a modal you can only
+   * leave by finding the right button is a trap on a phone.
+   */
+  function openDetail(a: Announcement): void {
+    const existing = root.querySelector(".news-detail");
+    if (existing) existing.remove();
+
+    const overlay = document.createElement("div");
+    overlay.className = "news-detail";
+    overlay.setAttribute("role", "dialog");
+    overlay.setAttribute("aria-modal", "true");
+
+    const sheet = document.createElement("div");
+    sheet.className = "news-detail-sheet";
+
+    const head = document.createElement("header");
+    head.className = "news-card-head";
+
+    const mark = document.createElement("span");
+    mark.className = `news-mark news-mark--${a.kind}`;
+    mark.setAttribute("aria-hidden", "true");
+    const glyph = document.createElement("i");
+    glyph.className = "bc-i";
+    // An icon element carries its ligature as TEXT — this is the one place a
+    // textContent write is the correct way to set an icon.
+    glyph.textContent = a.kind === "release" ? ICON.announcement : ICON.news;
+    mark.append(glyph);
+
+    const titles = document.createElement("div");
+    titles.className = "news-titles";
+    const h = document.createElement("h2");
+    h.textContent = a.title;
+    const sub = document.createElement("p");
+    sub.className = "news-sub";
+    const day = formatDay(a.publishedAt);
+    sub.textContent = a.version ? `${a.version} · ${day}` : day;
+    titles.append(h, sub);
+    head.append(mark, titles);
+    sheet.append(head);
+
+    const bodyHost = document.createElement("div");
+    bodyHost.className = "news-detail-body";
+    renderBody(bodyHost, a.body);
+    sheet.append(bodyHost);
+
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "btn-primary";
+    // `icon()` returns an ELEMENT — interpolating it into a template string
+    // gives "[object HTMLElement]".
+    close.append(icon(ICON.close), document.createTextNode("Close"));
+    sheet.append(close);
+
+    const dismiss = (): void => {
+      overlay.remove();
+      document.removeEventListener("keydown", onKey);
+    };
+    function onKey(e: KeyboardEvent): void {
+      if (e.key === "Escape") dismiss();
+    }
+    close.addEventListener("click", dismiss);
+    // Backdrop only — a click INSIDE the sheet must not close it, which is the
+    // usual bug with this pattern.
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) dismiss();
+    });
+    document.addEventListener("keydown", onKey);
+
+    overlay.append(sheet);
+    root.append(overlay);
+    close.focus();
   }
 
   /** Paint the bell's unread dot. Hidden at zero rather than shown empty. */

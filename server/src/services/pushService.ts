@@ -54,6 +54,11 @@ export interface PushMessage {
    *  first rather than stacking. Two "you've been overtaken" alerts in a row
    *  should be one line on the lock screen, not two. */
   tag?: string;
+  /** The large image in the notification shade, relative to the app's scope.
+   *  Differs by KIND so a release note and a notice are distinguishable before
+   *  a word is read. The small status-bar BADGE is not set here — it is one
+   *  brand mark for everything, in push-sw.js. */
+  icon?: string;
 }
 
 /**
@@ -135,6 +140,7 @@ export async function notifyAnnouncement(title: string, kind: string): Promise<v
       title: kind === "release" ? "Beagle Chomp updated" : "Beagle Chomp",
       body: title,
       url: "/?news=1",
+      icon: kind === "release" ? "icons/notify-release.png" : "icons/notify-notice.png",
       // One tag for all announcements: if two are published in a day, the
       // second replaces the first rather than stacking two lines nobody reads.
       tag: "beagle-news",
@@ -178,6 +184,7 @@ export async function notifyRankAlerts(targets: readonly RankTarget[]): Promise<
         title: target.title,
         body: target.body,
         url: "/?board=1",
+        icon: "icons/notify-rank.png",
         // Per-user tag: a later alert replaces this player's previous one, so a
         // busy evening leaves one line rather than a column of them.
         tag: `beagle-rank-${target.userId}`,

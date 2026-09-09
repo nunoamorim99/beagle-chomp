@@ -161,14 +161,52 @@ async function main(): Promise<void> {
   await page.waitForTimeout(900);
 
   ok("the news screen opened", await page.locator("#news .news-sheet").isVisible());
-  const cards = await page.locator(".news-card").count();
-  ok("…and shows both published notes", cards === 2, `${cards} cards`);
+  // Scoped to THIS test's own notes rather than a global count: the database
+  // may already hold real announcements, and asserting "exactly 2 cards" made
+  // the suite fail on a perfectly healthy app.
+  const releaseCard = page.locator(".news-card", { hasText: "A test release" });
+  const hostileCard = page.locator(".news-card", { hasText: "<script>" });
+  ok("the release note is listed", (await releaseCard.count()) === 1);
+  ok("the notice is listed", (await hostileCard.count()) === 1);
+
   // A release note carries its version; a notice has none, and must not render
   // a stray separator where one would have gone.
-  const releaseSub = await page.locator(".news-card").last().locator(".news-sub").innerText();
+  const releaseSub = await releaseCard.locator(".news-sub").innerText();
   ok("a release note shows its version", releaseSub.includes("v9.9"), releaseSub);
-  const noticeSub = await page.locator(".news-card").first().locator(".news-sub").innerText();
+  const noticeSub = await hostileCard.locator(".news-sub").innerText();
   ok("a notice shows no version separator", !noticeSub.includes("·"), noticeSub);
+
+  // --- the detail sheet -----------------------------------------------------
+  section("A card opens the full note");
+
+  // The LIST is for scanning, so a card shows a clamped preview and a
+  // "Read more". The whole body lives in the sheet.
+  ok(
+    "cards show a Read more affordance",
+    (await releaseCard.locator(".news-more").count()) === 1,
+  );
+  const clamped = await releaseCard
+    .locator(".news-body--clamp")
+    .evaluate((el) => {
+      const s = getComputedStyle(el);
+      return { clamp: s.webkitLineClamp, overflow: s.overflow };
+    });
+  ok("…and the preview is clamped, not full-length", clamped.clamp === "3", JSON.stringify(clamped));
+
+  await releaseCard.click();
+  await page.waitForTimeout(600);
+  ok("clicking a card opens the sheet", (await page.locator(".news-detail").count()) === 1);
+
+  // A click INSIDE must not close it — the usual bug with this pattern.
+  await page.locator(".news-detail-sheet h2").click();
+  await page.waitForTimeout(250);
+  ok("…a click inside keeps it open", (await page.locator(".news-detail").count()) === 1);
+
+  ok("Escape closes it", await (async () => {
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(350);
+    return (await page.locator(".news-detail").count()) === 0;
+  })());
 
   // --- markup is TEXT, not markup ------------------------------------------
   section("A hostile note renders as text");
@@ -183,6 +221,21 @@ async function main(): Promise<void> {
   const xssBody = await page.evaluate(() => (window as unknown as Record<string, unknown>).__XSS_BODY);
   ok("the title's script did not run", xssTitle === undefined);
   ok("the body's onerror did not run", xssBody === undefined);
+
+  // Open the hostile note's own sheet: the body is rendered a SECOND time
+  // there, and a regression in that path would be invisible if only the list
+  // were checked.
+  await hostileCard.click();
+  await page.waitForTimeout(600);
+  ok(
+    "no <script> element inside the detail sheet either",
+    (await page.locator(".news-detail script").count()) === 0,
+  );
+  ok("no <img> inside the sheet either", (await page.locator(".news-detail img").count()) === 0);
+  const sheetText = (await page.locator(".news-detail").innerText()).replace(/\s+/g, " ");
+  ok("…and the sheet shows the markup as characters", sheetText.includes("<img src=x"), sheetText.slice(0, 90));
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(350);
 
   const newsText = (await page.locator("#news").innerText()).replace(/\s+/g, " ");
   ok("the title is shown verbatim, as characters", newsText.includes("<script>"), newsText.slice(0, 120));
