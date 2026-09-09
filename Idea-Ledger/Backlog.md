@@ -34,34 +34,6 @@ _(empty — nothing to triage)_
   level) and appear on the level map ([[IDEA-014]]).
 - **Dependencies:** —
 
-### IDEA-051 — The portal: one operator, every metric 💡
-- **Priority:** 🟡
-- **Area:** backend · tooling
-- **Registered:** 2026-09-08
-- **Description:** (Nuno) a portal to check these metrics — deployed, and only I have an account
-  that can log into it.
-- **Notes:** [[IDEA-039]] already built real ops metrics — p95 per route, error counts, a
-  token-gated `GET /metrics` — and **nothing consumes them**; there is no UI anywhere in the
-  project. This is the screen that reads them, next to the gameplay data from [[IDEA-050]] and the
-  `score_rejections` audit log, which has been the tuning input since [[IDEA-020]] and has never
-  been looked at.
-  Admin identity is an `is_admin` column granted by one hand-written UPDATE, and `requireAdmin`
-  **404s** rather than 403s for everyone else — the same posture as `/metrics`, where a wrong token
-  gets a 404 so nothing confirms the surface even exists. The portal signs in through the EXISTING
-  `/api/v1/auth/login`, so there is no second credential system and revocation already works.
-  It is a SECOND Cloudflare Pages project built from an `admin/` folder in this repo, never served
-  from the VPS (STACK.md §1) — which also keeps admin code out of the players' bundle and out of the
-  PWA precache, the same by-construction exclusion `/editor/` and `/preview/` already rely on.
-  Charts are hand-rolled inline SVG on `tokens.css`; no chart library, no new moving part.
-  One trap to respect: `profileRoutes` and `sessionRoutes` are both mounted at `/` under `/api/v1`
-  and each declares its own `use("*")`, which is why a sessions request currently runs `requireAuth`
-  TWICE. An admin sub-app mounted after them would silently inherit the profile rate limit, so it
-  mounts at its own prefix, registered first.
-  The rejection board is the one panel that earns its place immediately: a rejection rate that RISES
-  after a `config.ts` change is the signal that `npm run sync` was forgotten and honest runs are
-  being thrown away.
-- **Dependencies:** [[IDEA-050]], [[IDEA-039]]
-
 ### IDEA-052 — News in the app, and push worth granting 💡
 - **Priority:** 🟡
 - **Area:** ux · backend
@@ -111,52 +83,6 @@ _(empty — nothing to triage)_
 
 
 ## In progress 🔨
-
-### IDEA-050 — Persist the run: what actually happened, not just the score 🔨
-- **Priority:** 🔴
-- **Area:** backend
-- **Registered:** 2026-09-08
-- **Building:** started 2026-09-08. Client + server + migration + tests are in; see the plan for what remains (the portal reads this — [[IDEA-051]]).
-- **Description:** (Nuno) time to work on the observability of the game — a set of metrics to
-  judge retention and how the app is performing, plus the fun things: how many times each player
-  dies to each enemy colour, which skins and themes actually get used, which challenge level takes
-  longest and kills the most, how much fruit each player collects, how long they spend playing.
-  Data worth keeping so that at the end of the year we can hand each player a rewind of their own.
-  Only the username is ever attached — no name, nothing personal.
-- **Notes:** the striking thing found while planning this is that **the data already crosses the
-  wire and is then THROWN AWAY**. `runTelemetry.ts` accumulates pellets, bones, fruit and its exact
-  points, power-up ids, ghosts eaten, coins, lives lost, play seconds and the maze/level sequences;
-  the client sends all of it; `plausibility.ts` judges it — and then `scoreService.finishSession`
-  writes `reported_score`/`accepted_score` and discards the rest. It survives ONLY for REJECTED
-  runs, as `score_rejections.detail`. So step one is a `run_stats` row, not new collection.
-  Two consequences shape the whole idea. First, **every retention metric is answerable
-  RETROACTIVELY** — `game_sessions` has held one server-timestamped row per run since [[IDEA-019]],
-  so DAU/WAU/MAU, signup cohorts, D1/D7/D30, churn, run duration and the whole challenge funnel
-  (attempts, clears, clear-rate, median time-to-clear per level) work over the full history the day
-  this ships. Second, **almost nothing new needs collecting client-side**: the equipped skins, theme
-  and control scheme are already columns on the `users` row that `requireAuth` has loaded and the
-  finish transaction is holding, so they get STAMPED server-side — unforgeable and free.
-  Exactly ONE new client field is genuinely required: `deathsByGhost`, counts indexed by position
-  in `GHOST_DEFS`. That index is the only identity an enemy has — `Ghost` in `ghostAI.ts` carries no
-  id and no colour — and `checkCollisions` already holds the rig and the loop index at the fatal
-  branch and simply drops them; `beagleDies()` takes no arguments today. `fruitKindCounts` is the
-  optional second, wanted for the rewind's favourite fruit, and it PAYS FOR ITSELF on the validator
-  side: the server could then price fruit exactly instead of falling back to the
-  `fruitEaten x MIN/MAX_FRUIT_POINTS` band. Both are optional on the wire so runs already queued in
-  `runSubmit.ts`'s localStorage still validate — and both must be named in `wire.ts` or they are
-  silently dropped, which is the [[IDEA-040]] v3 bug exactly.
-  **The privacy contract has to change, honestly.** `001_init.sql` opens with "no analytics" and
-  `src/ui/privacy.ts` ships "No analytics, no ads, no tracking" to players. The spirit survives —
-  first-party only, no third parties, no ads, no cross-site tracking, keyed to a username that is
-  already public, cascade-deleted with the account — but the words don't, and they get rewritten in
-  the same change. NOT in `001_init.sql`: the migration runner checksums applied files and aborts,
-  and it runs from the Dockerfile CMD before the server binds, so editing it would break every
-  deploy. The amendment goes in the new migration's header and in STACK.md §8.
-  Aggregate on READ, no rollup tables and no cron: at ~100 runs/day the queries are trivial, and the
-  project already owns the honest trigger for changing its mind — the `[slow-query]` line at 200 ms
-  from [[IDEA-039]], which is STACK.md §6's own Redis threshold.
-- **Dependencies:** [[IDEA-019]], [[IDEA-020]], [[IDEA-039]]
-
 
 ### IDEA-048 — Toon boards, not glass panels: a real design system for the 2D layer 🔨
 - **Priority:** 🔴
@@ -280,6 +206,149 @@ _(empty — nothing to triage)_
 
 ## Delivered ✅
 > Already in production. Do NOT delete. Each keeps its version history.
+
+### IDEA-050 — Persist the run: what actually happened, not just the score ✅
+- **Priority:** 🔴
+- **Area:** backend
+- **Registered:** 2026-09-08
+- **Description:** (Nuno) time to work on the observability of the game — a set of metrics to
+  judge retention and how the app is performing, plus the fun things: how many times each player
+  dies to each enemy colour, which skins and themes actually get used, which challenge level takes
+  longest and kills the most, how much fruit each player collects, how long they spend playing.
+  Data worth keeping so that at the end of the year we can hand each player a rewind of their own.
+  Only the username is ever attached — no name, nothing personal.
+- **Notes:** the striking thing found while planning this is that **the data already crosses the
+  wire and is then THROWN AWAY**. `runTelemetry.ts` accumulates pellets, bones, fruit and its exact
+  points, power-up ids, ghosts eaten, coins, lives lost, play seconds and the maze/level sequences;
+  the client sends all of it; `plausibility.ts` judges it — and then `scoreService.finishSession`
+  writes `reported_score`/`accepted_score` and discards the rest. It survives ONLY for REJECTED
+  runs, as `score_rejections.detail`. So step one is a `run_stats` row, not new collection.
+  Two consequences shape the whole idea. First, **every retention metric is answerable
+  RETROACTIVELY** — `game_sessions` has held one server-timestamped row per run since [[IDEA-019]],
+  so DAU/WAU/MAU, signup cohorts, D1/D7/D30, churn, run duration and the whole challenge funnel
+  (attempts, clears, clear-rate, median time-to-clear per level) work over the full history the day
+  this ships. Second, **almost nothing new needs collecting client-side**: the equipped skins, theme
+  and control scheme are already columns on the `users` row that `requireAuth` has loaded and the
+  finish transaction is holding, so they get STAMPED server-side — unforgeable and free.
+  Exactly ONE new client field is genuinely required: `deathsByGhost`, counts indexed by position
+  in `GHOST_DEFS`. That index is the only identity an enemy has — `Ghost` in `ghostAI.ts` carries no
+  id and no colour — and `checkCollisions` already holds the rig and the loop index at the fatal
+  branch and simply drops them; `beagleDies()` takes no arguments today. `fruitKindCounts` is the
+  optional second, wanted for the rewind's favourite fruit, and it PAYS FOR ITSELF on the validator
+  side: the server could then price fruit exactly instead of falling back to the
+  `fruitEaten x MIN/MAX_FRUIT_POINTS` band. Both are optional on the wire so runs already queued in
+  `runSubmit.ts`'s localStorage still validate — and both must be named in `wire.ts` or they are
+  silently dropped, which is the [[IDEA-040]] v3 bug exactly.
+  **The privacy contract has to change, honestly.** `001_init.sql` opens with "no analytics" and
+  `src/ui/privacy.ts` ships "No analytics, no ads, no tracking" to players. The spirit survives —
+  first-party only, no third parties, no ads, no cross-site tracking, keyed to a username that is
+  already public, cascade-deleted with the account — but the words don't, and they get rewritten in
+  the same change. NOT in `001_init.sql`: the migration runner checksums applied files and aborts,
+  and it runs from the Dockerfile CMD before the server binds, so editing it would break every
+  deploy. The amendment goes in the new migration's header and in STACK.md §8.
+  Aggregate on READ, no rollup tables and no cron: at ~100 runs/day the queries are trivial, and the
+  project already owns the honest trigger for changing its mind — the `[slow-query]` line at 200 ms
+  from [[IDEA-039]], which is STACK.md §6's own Redis threshold.
+- **Dependencies:** [[IDEA-019]], [[IDEA-020]], [[IDEA-039]]
+- **History:**
+  - **v1** (2026-09-09) — the run stopped being forgotten. Every run already crossed
+    the wire with full telemetry and `finishSession` **threw it away**, keeping only the
+    score; the detail survived for REJECTED runs only, so the server knew more about the
+    games it refused than the ones it accepted. `run_stats` is now one row per finished
+    run, accepted or not — the rejected ones are what make the rejection RATE
+    measurable, and that rate is the alarm for a forgotten `npm run sync`. Backfilled
+    from `game_sessions`, so score, timing and mode are real history all the way back;
+    the item counts are deliberately NOT invented for those rows.
+    **Written AFTER the transaction commits, not inside it.** Inside, a bug in an
+    analytics insert would roll back the banked score, the coins and the high score with
+    it — and this project has already shipped three separate causes of vanished runs. A
+    by-product does not get to become a fourth. The cost is bounded: a crash in that
+    window loses one row of statistics and nobody's score.
+    Two new client fields, both optional on the wire so queued runs still validate.
+    `deathsByGhost` — the index IS the enemy's identity, since `Ghost` carries no id or
+    colour, and `checkCollisions` already held it at the fatal branch and dropped it.
+    `fruitKindCounts` — wanted for the rewind, but it EARNS its place in the validator:
+    fruit is now priced exactly instead of across the 100..500 band, which was 1600
+    points of slack on a four-fruit run. `ENEMY_SLOTS` moved to `config.ts` as the one
+    ordering the game, the telemetry and the portal all index by, with `GHOST_DEFS`
+    deriving its colours from it positionally — that order is a STORAGE FORMAT, and
+    reordering it silently relabels every death already recorded.
+    **The privacy copy was rewritten because it stopped being true.** `privacy.ts`
+    promised "No analytics, no ads, no tracking" and the first third is now false. What
+    still holds is enforced and tested: no email, no name, no IP, no device id, no third
+    party, and "delete my account" is still one DELETE — both foreign keys cascade,
+    which `test-sessions.ts` proves. `001_init.sql`'s contract is amended in the new
+    migration's header rather than edited, since `migrate.ts` checksums applied files and
+    runs before the server binds. Also fixed two assertions in `test-sessions.ts` that
+    had been failing since v7.0, expecting the coin milestones IDEA-016 v2 deleted.
+    109 plausibility + 65 analytics + 28 telemetry + 79 session checks pass.
+    `server/migrations/006_run_stats.sql`, `server/src/repo/{runStats,analytics}.ts`,
+    `server/src/analytics/aggregate.ts`, `server/src/validation/{wire,plausibility}.ts`,
+    `server/src/services/scoreService.ts`, `src/game/{runTelemetry,config,fruits,game}.ts`,
+    `src/net/endpoints.ts`, `src/ui/privacy.ts`, `scripts/test-telemetry.ts`,
+    `server/scripts/test-analytics.ts`, `STACK.md`. _(39ed9d7)_
+
+### IDEA-051 — The portal: one operator, every metric ✅
+- **Priority:** 🟡
+- **Area:** backend · tooling
+- **Registered:** 2026-09-08
+- **Description:** (Nuno) a portal to check these metrics — deployed, and only I have an account
+  that can log into it.
+- **Notes:** [[IDEA-039]] already built real ops metrics — p95 per route, error counts, a
+  token-gated `GET /metrics` — and **nothing consumes them**; there is no UI anywhere in the
+  project. This is the screen that reads them, next to the gameplay data from [[IDEA-050]] and the
+  `score_rejections` audit log, which has been the tuning input since [[IDEA-020]] and has never
+  been looked at.
+  Admin identity is an `is_admin` column granted by one hand-written UPDATE, and `requireAdmin`
+  **404s** rather than 403s for everyone else — the same posture as `/metrics`, where a wrong token
+  gets a 404 so nothing confirms the surface even exists. The portal signs in through the EXISTING
+  `/api/v1/auth/login`, so there is no second credential system and revocation already works.
+  It is a SECOND Cloudflare Pages project built from an `admin/` folder in this repo, never served
+  from the VPS (STACK.md §1) — which also keeps admin code out of the players' bundle and out of the
+  PWA precache, the same by-construction exclusion `/editor/` and `/preview/` already rely on.
+  Charts are hand-rolled inline SVG on `tokens.css`; no chart library, no new moving part.
+  One trap to respect: `profileRoutes` and `sessionRoutes` are both mounted at `/` under `/api/v1`
+  and each declares its own `use("*")`, which is why a sessions request currently runs `requireAuth`
+  TWICE. An admin sub-app mounted after them would silently inherit the profile rate limit, so it
+  mounts at its own prefix, registered first.
+  The rejection board is the one panel that earns its place immediately: a rejection rate that RISES
+  after a `config.ts` change is the signal that `npm run sync` was forgotten and honest runs are
+  being thrown away.
+- **Dependencies:** [[IDEA-050]], [[IDEA-039]]
+- **History:**
+  - **v1** (2026-09-09) — [[IDEA-039]] built real ops metrics and **nothing consumed
+    them**; there was no UI anywhere in the project. This is the screen that reads them,
+    beside the gameplay data and the `score_rejections` audit log, which had been the
+    tuning input since [[IDEA-020]] and had never once been looked at. Deployed as a
+    SECOND Cloudflare Pages project on its own subdomain, behind Cloudflare Access —
+    two locks, since `requireAdmin` is the inner one and Access the outer.
+    Admin is one column granted by a hand-written UPDATE. There is deliberately no
+    endpoint that SETS it: the answer is "one account, once, ever", and a grant route
+    would be a privilege-escalation surface bought for no convenience. `requireAdmin`
+    answers **404, never 403** — a 403 confirms the endpoint is real and hands a map of
+    the admin surface to anyone with a game account.
+    **Two bugs worth keeping, neither visible to a compiler.** `findUserByToken`
+    hand-listed all 19 user columns for its JOIN — a SECOND copy of `users.ts`'s list —
+    and `is_admin` went into one and not the other; `query<UserRow>` is an unchecked
+    CAST, so the flag simply arrived `undefined` and every admin request 404'd while the
+    database said true. `tutorial_done` had done the identical thing before. Both lists
+    now come from one `userColumns()`. And the retention grid zero-filled every offset
+    to the window's width regardless of a cohort's AGE, so a four-day-old cohort read
+    "0%" under D7/D14/D30 — and the headline COUNTED those zeroes, so every new signup
+    dragged retention down. Found by rendering the grid and reading it, not by a test.
+    `requireAdmin` lives in its own module because `auth-middleware.ts` transitively
+    imports `db.ts`, which opens a pool on import — the same trap that put `wire.ts` out
+    of `npm test`'s reach for a release. The gate deciding who reads every player's data
+    has to be testable with no services running.
+    Charts are hand-rolled SVG, 20 KB total, no library. The palette was VALIDATED
+    rather than eyeballed: the game's enemy hues failed the lightness band on the dark
+    surface and were stepped down to pass; rose/teal sit at ΔE 6.3 for deuteranopia, in
+    the band legal only with secondary encoding, so every enemy bar carries a direct
+    name label. Aggregate on READ — no rollups, no cron, no cache, with the
+    `[slow-query]` line at 200 ms as the honest trigger to revisit.
+    `server/migrations/007_admin.sql`, `server/src/routes/admin.ts`,
+    `server/src/http/admin-middleware.ts`, `server/src/repo/{types,users,tokens}.ts`,
+    `admin/index.html`, `src/admin/*`, `vite.config.admin.ts`. _(21b70aa)_
 
 ### IDEA-049 — Thumbstick: a third touch control, and the retro one ✅
 - **Priority:** 🟡

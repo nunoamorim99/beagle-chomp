@@ -16,6 +16,19 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
 > lines here roll up into the numbered version below and this section is cleared (hold a line back
 > only if you explicitly choose to).
 
+- **[[IDEA-050]] v1** (2026-09-09) — **the run stopped being forgotten**. Every run
+  already reported what happened inside it; the server judged that report and then threw
+  it away, keeping only the score. It is now kept — including which enemy caught you and
+  which fruit you ate, two new signals worth having — and written after the transaction
+  commits so a statistics bug can never cost anyone a score. Backfilled, so retention is
+  answerable over the whole history from day one. The privacy note was rewritten in the
+  same change, because it had promised "no analytics".
+- **[[IDEA-051]] v1** (2026-09-09) — **a metrics portal**. [[IDEA-039]] had been
+  measuring the API into a log nobody read; this is the screen that reads it, beside the
+  gameplay data and the anti-cheat audit log. Its own Cloudflare Pages site behind
+  Cloudflare Access, signed in with an ordinary account carrying one hand-granted flag —
+  and 404, never 403, for everyone else.
+
 - **[[IDEA-049]] v1** (2026-09-05) — **the thumbstick**. A third touch scheme beside
   swipe and the D-pad, and the one that removes the LIFT: the thumb stays on the
   control between turns, so a change of direction is a roll rather than a whole new
