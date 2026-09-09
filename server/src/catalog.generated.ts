@@ -23,6 +23,7 @@ export const ENEMY_SKINS: readonly CatalogItem[] = [
   { id: "beetle", price: 0 },
   { id: "bee", price: 25 },
   { id: "ladybug", price: 25 },
+  { id: "flea", price: 25 },
   { id: "ghost", price: 0 },
 ];
 

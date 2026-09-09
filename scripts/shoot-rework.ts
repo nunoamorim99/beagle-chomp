@@ -12,7 +12,14 @@ import { mkdirSync } from "node:fs";
 const label = process.argv[2] ?? "now";
 const baseUrl = process.argv[3] ?? "http://localhost:5173";
 const toon = process.env.TOON === "1" ? "&toon=1" : "";
-const OUT = `.img2threejs/renders/${label}`;
+// MODEL picks which generated rework factory the viewer builds (beagle|flea).
+// Renders land under that subject's own workspace so two runs never overwrite
+// each other's evidence.
+const model = process.env.MODEL ?? "beagle";
+const OUT =
+  model === "beagle"
+    ? `.img2threejs/renders/${label}`
+    : `.img2threejs/${model}/renders/${label}`;
 
 mkdirSync(OUT, { recursive: true });
 
@@ -39,7 +46,9 @@ for (const [name, qs] of Object.entries(VIEWS)) {
   // warm-up); a blank full-page PNG is ~5KB vs ~50KB+ for a real frame, so
   // retry on suspiciously small screenshots.
   for (let attempt = 0; attempt < 3; attempt++) {
-    await page.goto(`${baseUrl}/preview-rework/?${qs}&grid=0&hud=0${toon}`, { waitUntil: "networkidle" });
+    await page.goto(`${baseUrl}/preview-rework/?${qs}&model=${model}&grid=0&hud=0${toon}`, {
+      waitUntil: "networkidle",
+    });
     await page.waitForFunction(() => document.title.includes("ready"), null, { timeout: 20_000 });
     await page.waitForTimeout(400);
     const buf = await page.screenshot({ path: `${OUT}/${name}.png` });

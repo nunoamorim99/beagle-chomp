@@ -136,6 +136,54 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v7.
   renders the real `makeBeagle()` with orbit controls, six preset camera angles
   (`?view=`) and part isolation (`?solo=`). Not a rollup input, so it never
   ships (same construction as `/editor/`).
+- **THE FLEA IS THE SECOND img2threejs REBUILD** (IDEA-053): a fifth enemy skin,
+  `makeFlea()` in `characters.ts`. It follows IDEA-047's split exactly — the
+  pipeline's generated factory sits unused in `src/render/rework/`, and the
+  SHIPPED mesh is hand-authored from the numbers the pipeline locked (proportion
+  base **HD = 0.32**, the head diameter; every dimension derives from it). The
+  whole evidence trail is `.img2threejs/flea/` — **a per-subject workspace, so a
+  new run never overwrites the beagle's**; do the same for the next one.
+  Four rules are load-bearing:
+  1. **The segment bands and the jumping hind leg ARE the identity** (ranks 1
+     and 2 of the reference read). The game already ships a beetle and a
+     ladybug; a flea that loses either joins that cluster, which is the spec's
+     own #1 recorded risk. It was hit twice — the first stance read as a beetle
+     in the comparison sheet, and the first two hind legs read as a rudder and
+     then a twig.
+  2. **`creaseMat` is deliberately NOT in `accentMats`.** It started on the
+     shared dark accent, which does follow the frightened recolour — so
+     frightened painted body and creases the same blue and the banding vanished
+     exactly when the player is chasing it. This is `GhostUserData`'s documented
+     small-accent-vs-large-accent rule applied correctly: the limbs, antennae
+     and belly are a large share of the silhouette and DO recolour; six
+     hairlines do not.
+  3. **A map-stripped clay render is worth capturing** (`/preview-rework/?flat=1`).
+     It is what found rule 2 — in normal colour the model looked finished.
+  4. **The reference is a watermarked stock image.** No pixel of it is used as
+     colour or PBR evidence, and projection was rejected partly for that reason.
+- **`preview-rework/index.html`** grew a **`?model=`** switch (`beagle` ·
+  `flea-gen` = the generated factory · `flea`/`beetle`/`bee`/`ladybug`/`ghost` =
+  the REAL shipped builders), plus **`?state=frightened|eaten`** and
+  **`?flat=1`**. `scripts/shoot-rework.ts` takes `MODEL=<id>` and writes a
+  non-beagle subject's turntable under `.img2threejs/<id>/renders/`.
+  `scripts/_scratch-enemy-cast.ts` measures the whole cast in one line — use it
+  before guessing a size or triangle budget for a new skin. The real numbers:
+  ghost 8 256 tris / crown 0.660, flea 12 828 / 0.600, bee 16 868 / 0.803,
+  beetle 18 088 / 0.765, ladybug 20 624 / 0.656.
+- **A limb capsule must be sized from its JOINT SPAN, never from a fraction of
+  it.** `CapsuleGeometry`'s length argument is the CYLINDER only — the caps add
+  `radius` on top. The flea's legs first passed 0.72/0.82/0.80 of each segment
+  and left the round caps to cover the rest, which holds only while the radius
+  is large relative to the segment. It is on the front and middle legs and is
+  NOT on the HIND leg, which is twice as long and (at `girth` 0.72) thinner: the
+  femur fell 0.0134 short of the knee and the tibia 0.0111 short of the ankle,
+  so the jumping leg rendered in three visibly separated pieces. Segments now
+  span `L` with half a radius of overlap, and a **knuckle ball sits at every
+  knee and ankle** — overlap closes a gap along the limb's axis but not ACROSS a
+  132° fold, where two tangent capsules leave an open wedge.
+  `scripts/_scratch-flea-gaps.ts` proves all 12 joints are CONTAINED in a solid;
+  it is a containment test on purpose, since a distance-to-nearest-vertex check
+  cannot tell inside from outside and reports a joint ball's own radius as a gap.
 - **THE 2D LAYER HAS A DESIGN SYSTEM** (IDEA-048, "Toon boards, not glass panels"):
   the tokens live in **`src/ui/tokens.css`** and every component in
   `src/style.css` is built from them. Read tokens.css before touching any

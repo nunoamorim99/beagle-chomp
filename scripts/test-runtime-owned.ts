@@ -169,17 +169,17 @@ console.log("\n--- the registry agrees with the REAL animation code ---");
   // EVERY character now builds its own eyes. The shared addPaintedEyes helper
   // has been fully superseded and removed — which is the EnemyBehaviour seam
   // working as intended: the shared layer holds what is genuinely common and
-  // nothing else. What all four still share is the dart PIVOT and its name,
+  // nothing else. What all five still share is the dart PIVOT and its name,
   // which is why one registry rule covers every enemy.
   check(
     "the superseded shared eye helper is gone",
     !/addPaintedEyes/.test(SRC),
   );
   // One site per enemy now: addPaintedEyes for the ghost, and one each in the
-  // beetle, bee and ladybug.
+  // beetle, bee, ladybug and flea.
   check(
     "every enemy still names its dart pivot pupilPivotL/R",
-    (SRC.match(/"pupilPivotL" : "pupilPivotR"/g) ?? []).length === 4,
+    (SRC.match(/"pupilPivotL" : "pupilPivotR"/g) ?? []).length === 5,
   );
   check("PUPIL_SWEEP still exists", /const PUPIL_SWEEP\s*=/.test(SRC));
   check(

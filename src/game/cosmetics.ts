@@ -271,6 +271,9 @@ export const ENEMY_SKINS: readonly EnemySkin[] = [
   { id: "beetle", name: "Beetle", blurb: "The garden's own · shell and six legs", price: 0 },
   { id: "bee", name: "Bee", blurb: "Striped and buzzing · wings that blur", price: 25 },
   { id: "ladybug", name: "Ladybug", blurb: "Red shell, black spots · small and quick", price: 25 },
+  // The one enemy that actually belongs on a beagle. Priced with the bee and
+  // the ladybug — it is a sibling skin, not a premium one.
+  { id: "flea", name: "Flea", blurb: "The beagle's own pest · banded shell, spring-loaded legs", price: 25 },
   // THE EASTER EGG. Free, but not listed until it is revealed, and revealed by
   // owning the Pac-Beagle coat: the two tributes to the arcade game this one
   // descends from unlock each other, which needs no UI copy to explain. Price 0

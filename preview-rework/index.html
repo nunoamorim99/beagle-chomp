@@ -29,6 +29,8 @@
       import * as THREE from "three";
       import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
       import { createBeaglePuppyToonCharacterModel } from "/src/render/rework/createBeagleModel.ts";
+      import { createCartoonFleaModel } from "/src/render/rework/createFleaModel.ts";
+      import { makeEnemy, applyGhostState } from "/src/render/characters.ts";
       import { toon } from "/src/render/toon.ts";
 
       const q = new URLSearchParams(location.search);
@@ -75,8 +77,47 @@
       grid.visible = q.get("grid") !== "0";
       scene.add(grid);
 
-      const model = createBeaglePuppyToonCharacterModel({ castShadow: true });
+      // ?model=beagle|flea — one harness, one subject at a time. The rework
+      // folder holds a generated factory per img2threejs run, and each needs the
+      // same turntable/gate treatment, so the viewer switches rather than forking.
+      // "flea-gen" is the img2threejs GENERATED factory; "flea" is the REAL
+      // shipped builder. The review gates run against the real one on purpose —
+      // the generated factory never ships, so measuring it would be measuring
+      // the wrong mesh. ?color= sets the team colour the enemy is built with.
+      const MODELS = {
+        beagle: createBeaglePuppyToonCharacterModel,
+        "flea-gen": createCartoonFleaModel,
+        flea: () => makeEnemy("flea", Number(q.get("color") ?? 0xe8615f)),
+        beetle: () => makeEnemy("beetle", Number(q.get("color") ?? 0xe8615f)),
+        ladybug: () => makeEnemy("ladybug", Number(q.get("color") ?? 0xe8615f)),
+        bee: () => makeEnemy("bee", Number(q.get("color") ?? 0xe8615f)),
+        ghost: () => makeEnemy("ghost", Number(q.get("color") ?? 0xe8615f)),
+      };
+      const modelName = q.get("model") ?? "beagle";
+      const makeModel = MODELS[modelName] ?? MODELS.beagle;
+      const model = makeModel({ castShadow: true });
       scene.add(model);
+
+      // ?state=frightened|eaten — the two recolours an enemy skin has to
+      // survive. Worth a real render rather than a unit assertion: the question
+      // is whether the model still READS as edible / as a pair of eyes, which
+      // no assertion can answer.
+      const state = q.get("state");
+      if (state && model.userData?.bodyMat) {
+        applyGhostState(model, state, { x: 0, y: 1 });
+      }
+
+      // ?flat=1 — map-stripped clay render for the blockout gate. Every material
+      // becomes one neutral grey so the FORM is judged with nothing to flatter
+      // it: no team colour, no dark/light contrast between body and limbs, no
+      // catchlight. A silhouette that only works because the legs are dark
+      // fails here, which is the point.
+      if (q.get("flat") === "1") {
+        const clay = new THREE.MeshLambertMaterial({ color: 0xb9b2a8 });
+        model.traverse((o) => {
+          if (o.isMesh) o.material = clay;
+        });
+      }
 
       // ?toon=1 — judge the model in the GAME's material system: every lit
       // surface swapped to the shared 3-step cel ramp, keeping each mesh's color.
@@ -134,7 +175,7 @@
         tris += g.index ? g.index.count / 3 : g.attributes.position.count / 3;
       });
       hud.textContent =
-        `az ${az} el ${el}${q.get("toon") === "1" ? " toon" : ""}\n` +
+        `${modelName}  az ${az} el ${el}${q.get("toon") === "1" ? " toon" : ""}\n` +
         `size    ${size.x.toFixed(2)} w x ${size.y.toFixed(2)} h x ${size.z.toFixed(2)} l\n` +
         `floor   ${box.min.y.toFixed(3)}\n` +
         `meshes  ${meshes}\n` +

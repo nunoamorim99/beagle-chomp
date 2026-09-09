@@ -160,6 +160,7 @@ export const CHARACTERS: readonly CharacterDef[] = [
   enemyDef("beetle", "Beetle", "makeBeetle"),
   enemyDef("bee", "Bee", "makeBee"),
   enemyDef("ladybug", "Ladybug", "makeLadybug"),
+  enemyDef("flea", "Flea", "makeFlea"),
 ];
 
 /**

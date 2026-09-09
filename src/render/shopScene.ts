@@ -640,9 +640,10 @@ export interface ShopScene {
    *  the current hero is already this exact beagle skin (still fine to call
    *  every time — see the doc comment below). */
   showBeagle(skin: BeagleSkin): void;
-  /** Swaps the hero to the enemy form for `skinId` (ghost/beetle/bee/ladybug),
-   *  in the canonical preview color. Disposes the previous hero and resets
-   *  the turntable angle. */
+  /** Swaps the hero to the enemy form for `skinId` (ghost/beetle/bee/ladybug/
+   *  flea), in the canonical preview color. Disposes the previous hero and
+   *  resets the turntable angle. Dispatches through `makeEnemy`, so a new skin
+   *  needs nothing here. */
   showEnemy(skinId: string): void;
   /** IDEA-026: swaps the hero to `themeId`'s maze-corner diorama (a small
    *  floor + L-shaped wall run + biscuit trail + bone + theme-appropriate

@@ -19,7 +19,7 @@ Living backlog of ideas. Two purposes:
 _(empty — nothing to triage)_
 
 ## Backlog (open ideas)
-> New registered ideas go here. Next free ID: IDEA-053
+> New registered ideas go here. Next free ID: IDEA-054
 
 ### IDEA-028 — Challenge twist: moving walls / maze changes mid-level 💡
 - **Priority:** 🟢
@@ -157,6 +157,75 @@ _(empty — nothing to triage)_
   from [[IDEA-039]], which is STACK.md §6's own Redis threshold.
 - **Dependencies:** [[IDEA-019]], [[IDEA-020]], [[IDEA-039]]
 
+
+### IDEA-053 — The flea: the one enemy that belongs on a beagle 🔨
+- **Priority:** 🟡
+- **Area:** skins
+- **Registered:** 2026-09-08
+- **Description:** Nuno: add more enemies, starting with "the more common enemy of the dogs,
+  the flea", built from two reference images through the img2threejs pipeline and sold in the
+  shop like the rest. Every enemy so far is a garden bug that happens to be in the maze; a
+  flea is the first one with a reason to be chasing a beagle specifically.
+- **Notes:** a fifth `EnemySkin`, so it costs no new machinery — `makeEnemy` dispatches, the
+  registry gains a row, and `GhostUserData` is satisfied exactly as the beetle/bee/ladybug
+  satisfy it. Priced 25 with its siblings. Built through the **img2threejs** pipeline in its
+  own workspace (`.img2threejs/flea/`) so the beagle's IDEA-047 evidence trail was left
+  untouched; the pipeline ran to `status=complete` with all eight build passes recorded and
+  part coverage clean. Following the IDEA-047 precedent, the pipeline's generated factory
+  stays in `src/render/rework/` (never imported) and the SHIPPED mesh is hand-authored in
+  `characters.ts` from the numbers the pipeline locked — the reasoning is written into the
+  spec's `deviationRecord`.
+- **Dependencies:** [[IDEA-009]], [[IDEA-012]], [[IDEA-047]]
+- **History:**
+  - **v1** (2026-09-08) — `makeFlea()`: a banded ovoid abdomen, an oversized head with amber
+    eyes, swept beaded antennae and three limb pairs whose rear pair folds into a jumping Z.
+    Proportion base HD = 0.32 (head diameter), measured off the references in head-diameters;
+    crown 0.600 against ghost 0.660 / ladybug 0.656, 12 828 triangles — the cheapest of the
+    four insects. Registry + dispatch + editor tab + shop card + `catalog.generated.ts`
+    (server `npm run sync`, now 5 enemy skins). `characters.ts`, `cosmetics.ts`,
+    `editor/registry.ts`, `ui/shop.ts`, `preview-rework/`, `scripts/shoot-rework.ts`,
+    `test-cosmetics.ts`, `test-runtime-owned.ts`. Build + full suite green.
+
+    **Four things are written into the code because each was a real defect a gate caught,
+    not a preference.** **The chirality gate caught an inverted left/right convention**
+    before a line of code existed: with `forward:+Z` in a right-handed frame the character's
+    own left is +X, and the spec had `-l` at negative x. Harmless here (the model is
+    symmetric) but it would have driven the wrong side of any pose addressed by joint name.
+    **The band creases needed their own material.** They started on the shared dark accent,
+    which sits in `accentMats` — so the frightened recolour painted body and creases the same
+    blue and the segment banding, the model's rank-1 identity feature, vanished in the one
+    state where the player is chasing it. Only the map-stripped clay render showed it; in
+    normal colour it looked fine. **The hind leg took two rounds** — first a rudder sticking
+    straight back, then a zigzag twig — before folding into a Z with the knee above the body
+    line, which is the difference between reading as a flea and reading as a grub. **And the
+    comparison sheet said "beetle"**: the first stance was tall and the body elongated, so it
+    joined the cluster it exists to be distinct from. Lowered and rounded.
+
+    **The primary reference is a watermarked stock image** — legible over the abdomen once
+    the detail-zone scan enlarged it, which is exactly where a material analysis would sample.
+    No pixel of it is used as colour or PBR evidence anywhere; every hue is authored from the
+    observed read. It independently confirms the projection-first rejection, since projecting
+    it would have baked the watermark onto the model.
+
+    **A fifth defect, and the first one no gate caught — Nuno did, from a screenshot.** The
+    HIND legs rendered in three disconnected pieces: femur, tibia and tarsus with daylight
+    between them. `CapsuleGeometry`'s length argument is the CYLINDER only, the two round caps
+    add `radius` on top, and each segment was passing an arbitrary FRACTION of its joint
+    distance (0.72/0.82/0.80) with the caps left to cover the rest. That holds while the radius
+    is large relative to the segment — true of the front and middle legs, and false of the hind
+    leg, which is more than twice as long and, at `girth` 0.72, thinner as well. Measured: the
+    femur fell 0.0134 short of the knee and the tibia 0.0111 short of the ankle. Segments are
+    now sized from their real span with half a radius of overlap, and a **knuckle ball sits at
+    every knee and ankle**, because overlap closes a gap along the limb's axis but not ACROSS
+    the hind knee's 132° fold, where two tangent capsules leave an open wedge.
+    `scripts/_scratch-flea-gaps.ts` proves all 12 joints are contained in a solid — a
+    CONTAINMENT test, after a first attempt measuring distance-to-nearest-vertex reported every
+    joint "open" because a ball centred on a joint returns exactly its own radius. Cost: 10 860
+    to 12 828 triangles, still the cheapest of the four insect skins.
+
+    **Not done:** no dedicated shop glyph. A fifth icon means re-cutting the Material Symbols
+    subset, and an unlisted name renders as that word on the card, so the flea uses the
+    documented fallback until the subset is re-cut.
 
 ### IDEA-048 — Toon boards, not glass panels: a real design system for the 2D layer 🔨
 - **Priority:** 🔴

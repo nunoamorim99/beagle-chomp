@@ -2318,9 +2318,510 @@ export function makeLadybug(color: number): THREE.Group {
   return g;
 }
 
+// --- FLEA (IDEA-053) -------------------------------------------------------
+// Rebuilt from .img2threejs/reference/flea/, gated by the img2threejs pipeline.
+// The proportion lock, the ranked identity features and every number below come
+// from .img2threejs/flea/object-sculpt-spec.json — re-run that pipeline rather
+// than eyeballing these tables. Two findings from it are load-bearing here:
+//
+//   1. THE SEGMENT BANDS AND THE JUMPING HIND LEG ARE THE IDENTITY. They are
+//      ranks 1 and 2 of the reference read, and rank 1 is the only feature
+//      present in BOTH references. Lose either and this reads as one more
+//      rounded garden bug beside the beetle and the ladybug — which is the
+//      single biggest risk the spec records for this skin.
+//   2. THE REFERENCE IS A WATERMARKED STOCK IMAGE. No colour here was sampled
+//      from its pixels; every hue is authored from the observed
+//      hue/value/saturation read. See .img2threejs/flea/evidence/.
+//
+// The reference is a LATERAL view. This model is authored facing +Z like every
+// other enemy, i.e. rotated 90° out of the reference's own view.
+const FLEA_DARK = 0x4a2510;
+// The band creases. Darker than FLEA_DARK because they read as a recess, and
+// separate from it because they must survive the frightened recolour (see makeFlea).
+const FLEA_CREASE = 0x37200f;
+
+const FL_SCUTTLE_FREQ = 15; // rad/s — a shade calmer than the ladybug's 16
+const FL_SCUTTLE_SWING = 0.2;
+const FL_HOP = 0.022; // deliberately TINY — see fleaBehaviour
+const FL_HOP_FREQ = 1.45 * Math.PI * 2;
+const FL_CROUCH = 0.22; // hind-femur flex, in phase with the hop
+const FL_ANTENNA_TWITCH = 0.11;
+
+/**
+ * The flea's idle: an alternating-tripod scuttle, a small HOP, and an antenna
+ * twitch.
+ *
+ * The hop is the whole point of the character and also the thing most likely to
+ * go wrong, so it is deliberately small (0.022 world units — about 3% of the
+ * model's height). Enemies move by tile-stepping on the grid; the mesh must
+ * never look like it is leaving the maze plane, or it stops reading as a piece
+ * on the board. What sells the jump is not height but the CROUCH: the hind
+ * femurs flex in phase with the rise, so the leg does the work the vertical
+ * travel is not allowed to do.
+ *
+ * Body y is written here rather than added to the shared bob because
+ * syncToEntity sets `obj.position.y` BEFORE calling this, so a behaviour that
+ * wants its own vertical motion must own it outright — the same reason the
+ * ladybug takes over its own bob.
+ */
+function fleaBehaviour(
+  legs: THREE.Object3D[],
+  hindLegs: THREE.Object3D[],
+  antennae: THREE.Object3D[],
+  body: THREE.Object3D,
+): EnemyBehaviour {
+  const legRest = legs.map((l) => l.rotation.y);
+  const hindRest = hindLegs.map((l) => l.rotation.z);
+  const antennaRest = antennae.map((a) => a.rotation.x);
+  const bodyRestY = body.position.y;
+  return {
+    animate: (t, idleT, moveBlend) => {
+      // Same tripod grouping as the beetle and the ladybug: legs arrive in
+      // build order (F-L, F-R, M-L, M-R, B-L, B-R), so 0/3/4 form one tripod
+      // and 1/2/5 the other.
+      const stride = Math.sin(t * FL_SCUTTLE_FREQ) * FL_SCUTTLE_SWING * moveBlend;
+      for (let i = 0; i < legs.length; i++) {
+        const tripodA = i === 0 || i === 3 || i === 4;
+        legs[i].rotation.y = legRest[i] + (tripodA ? stride : -stride);
+      }
+      // One hop cycle drives both the body rise and the hind-leg crouch, so
+      // they can never drift out of phase.
+      const hop = Math.abs(Math.sin(idleT * FL_HOP_FREQ));
+      body.position.y = bodyRestY + hop * FL_HOP;
+      for (let i = 0; i < hindLegs.length; i++) {
+        // Sign follows the leg's own side: hindRest already carries it.
+        hindLegs[i].rotation.z = hindRest[i] * (1 + (1 - hop) * FL_CROUCH);
+      }
+      for (let i = 0; i < antennae.length; i++) {
+        antennae[i].rotation.x =
+          antennaRest[i] + Math.sin(idleT * 1.7 + i * 1.3) * FL_ANTENNA_TWITCH;
+      }
+    },
+  };
+}
+
+export function makeFlea(color: number): THREE.Group {
+  const g = new THREE.Group();
+
+  // PROPORTION BASE: HEAD DIAMETER = HD, every number derived from it, exactly
+  // as the spec measures the reference (in head-diameters). HD = 0.32 puts the
+  // model's crown at ~0.63 — beside the ghost's 0.66 and the ladybug's 0.65,
+  // which is what matters for a row of mixed enemies in one maze.
+  const HD = 0.32;
+  const HR = HD / 2;
+
+  // The body carries the TEAM colour — and unlike the ladybug, so does the
+  // HEAD. The spec calls for that explicitly: the three team colours are how a
+  // player tells the enemies apart and how "frightened" announces itself, so
+  // this skin needs a large coloured area. Only the limbs, antennae, belly and
+  // face marks are the dark accent.
+  const bodyMat = toon({ color, emissive: color, emissiveIntensity: 0.12 });
+  const darkMat = toon({ color: FLEA_DARK });
+  darkMat.userData.baseColor = FLEA_DARK;
+
+  // The band creases get their OWN material, deliberately kept OUT of
+  // accentMats. GhostUserData's rule is that a large accent should follow the
+  // frightened recolour (or the "edible now" read is blunted) while a small
+  // fixed accent keeps its own colour — and the creases are the small case:
+  // six hairlines, a negligible share of the silhouette.
+  //
+  // It has to be a separate material because the first build shared darkMat,
+  // which IS in accentMats. Frightened therefore repainted body and creases the
+  // same blue and the banding vanished completely — the model's rank-1 identity
+  // feature disappearing in the one state where the player is chasing it. The
+  // map-stripped clay render is what exposed it; in normal colour it looked fine.
+  const creaseMat = toon({ color: FLEA_CREASE });
+  creaseMat.userData.baseColor = FLEA_CREASE;
+
+  // --- abdomen: one continuous ovoid, arched so the BACK is the tallest mass -
+  // Built as a unit sphere and scaled, so every band decal below can share the
+  // exact same scale and sit flush on the curve at any radius factor.
+  const ABD_POS = new THREE.Vector3(0, 0.292, -0.10);
+  const ABD_SCALE = new THREE.Vector3(0.150, 0.171, 0.225);
+  const abdomen = new THREE.Mesh(new THREE.SphereGeometry(1, 26, 16), bodyMat);
+  abdomen.name = "abdomen";
+  abdomen.scale.copy(ABD_SCALE);
+  abdomen.position.copy(ABD_POS);
+  g.add(abdomen);
+
+  /**
+   * A band tile on the abdomen. Same position and scale as the abdomen itself,
+   * so it lies exactly on the curve instead of having to be fitted — the
+   * ladybug's shell-decal construction.
+   *
+   * The geometry is rotated so its pole points along +Z (the body's long axis),
+   * which is what makes a theta range a TRANSVERSE ring rather than a cap on
+   * top. `theta` is measured from the anterior end.
+   */
+  const bandTile = (
+    factor: number,
+    thetaStart: number,
+    thetaLen: number,
+    mat: THREE.MeshToonMaterial,
+    widthSeg: number,
+    heightSeg: number,
+  ): THREE.Mesh => {
+    const geo = new THREE.SphereGeometry(
+      factor, widthSeg, heightSeg, 0, Math.PI * 2, thetaStart, thetaLen,
+    );
+    geo.rotateX(Math.PI / 2);
+    const m = new THREE.Mesh(geo, mat);
+    m.scale.copy(ABD_SCALE);
+    m.position.copy(ABD_POS);
+    return m;
+  };
+
+  // SIX segment bands — identity rank 1, and the count both references agree
+  // on. Each plate steps slightly PROUD of the one in front of it (the radius
+  // factor grows front to back), which is what the reference shows: overlapping
+  // plates, not evenly spaced grooves. A dark separator sits in each crevice,
+  // because at gameplay size the step alone is too shallow to shade and the
+  // line is what keeps the banding legible.
+  //
+  // THE CREASE MATERIAL IS THE LOAD-BEARING PART, not the step. A deeper step
+  // was tried (plates standing 7.5% proud, with the base showing through as a
+  // real groove) and it bought almost nothing: these plates are thin open
+  // shells with smooth vertex normals, so the discontinuity at a plate edge
+  // shades continuously and no ridge appears. What the map-stripped clay render
+  // was really reporting was not "too shallow" but "carried entirely by
+  // colour" — and that colour was darkMat, which is in accentMats, so the
+  // frightened recolour painted body and creases the same blue and the banding
+  // vanished exactly when the player is chasing the thing. Hence creaseMat.
+  const BAND_START = 0.42;
+  const BAND_LEN = 0.36;
+  const BAND_GAP = 0.055;
+  for (let i = 0; i < 6; i++) {
+    const t0 = BAND_START + i * BAND_LEN;
+    const plate = bandTile(1.0 + i * 0.014, t0, BAND_LEN, bodyMat, 22, 5);
+    plate.name = `band${i}`;
+    g.add(plate);
+    // A thin crisp line sitting just proud of the plate it separates. A wide
+    // soft band was tried and read as a stripe rather than a seam.
+    const crease = bandTile(1.0 + i * 0.014 + 0.02, t0 - BAND_GAP / 2, BAND_GAP, creaseMat, 22, 2);
+    crease.name = `bandCrease${i}`;
+    g.add(crease);
+  }
+
+  // Underside: a dark mass the legs grow from, and the thing that stops you
+  // seeing the band tiles' open edges where they wrap under.
+  const belly = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 10), darkMat);
+  belly.name = "belly";
+  belly.scale.set(0.142, 0.062, 0.208);
+  belly.position.set(0, 0.183, ABD_POS.z);
+  g.add(belly);
+
+  // --- head: no neck, embedded straight into the abdomen -------------------
+  const HEAD_POS = new THREE.Vector3(0, 0.268, 0.208);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(HR, 24, 16), bodyMat);
+  head.name = "head";
+  head.scale.set(1, 1, 0.92); // slightly flattened front-to-back
+  head.position.copy(HEAD_POS);
+  g.add(head);
+
+  // The rostrum, drawn as a nose in both references. Real relief, sunk in so it
+  // reads as part of the capsule rather than a bead stuck on it.
+  const rostrum = new THREE.Mesh(new THREE.SphereGeometry(HD * 0.10, 10, 8), darkMat);
+  rostrum.name = "rostrum";
+  rostrum.scale.set(1, 0.86, 0.9);
+  rostrum.position.set(0, HEAD_POS.y - HR * 0.24, HEAD_POS.z + HR * 0.84);
+  g.add(rostrum);
+
+
+  // --- antennae: the tallest thing on the model ----------------------------
+  // Built as a CHAIN of tapering segments, each a child of the last with a
+  // small extra bend, so the shaft is a real swept arc rather than a straight
+  // cone — and the beading comes free from the same construction. They sweep
+  // postero-dorsally (back over the body), which is both what the reference
+  // shows and what keeps the model inside the enemy height band: swept
+  // straight up, this length would stand ~0.20 taller than the ghost.
+  const ANT_N = 6;
+  const ANT_SEG = 0.045;
+  const makeAntenna = (s: number): THREE.Group => {
+    const pivot = new THREE.Group();
+    pivot.name = s < 0 ? "antennaPivotL" : "antennaPivotR";
+    pivot.position.set(0.052 * s, 0.398, 0.192);
+    pivot.rotation.x = -0.44;
+    pivot.rotation.z = -0.42 * s;
+    let parent: THREE.Object3D = pivot;
+    for (let i = 0; i < ANT_N; i++) {
+      const joint = new THREE.Group();
+      joint.name = `${s < 0 ? "antJointL" : "antJointR"}${i}`;
+      joint.position.y = i === 0 ? 0 : ANT_SEG;
+      joint.rotation.x = i === 0 ? 0 : -0.10;
+      parent.add(joint);
+      const r0 = HD * 0.070 * (1 - i / (ANT_N + 1));
+      const r1 = HD * 0.070 * (1 - (i + 1) / (ANT_N + 1));
+      const bead = new THREE.Mesh(new THREE.CylinderGeometry(r1, r0, ANT_SEG, 7), darkMat);
+      bead.name = `${s < 0 ? "antBeadL" : "antBeadR"}${i}`;
+      bead.position.y = ANT_SEG / 2;
+      joint.add(bead);
+      parent = joint;
+    }
+    const tip = new THREE.Mesh(new THREE.SphereGeometry(HD * 0.032, 8, 6), darkMat);
+    tip.name = s < 0 ? "antTipL" : "antTipR";
+    tip.position.y = ANT_SEG;
+    parent.add(tip);
+    return pivot;
+  };
+  // Named per side rather than built in a mirrored loop — one loop statement
+  // owns both sides, which makes them un-editable in the character editor.
+  const antennaPivotL = makeAntenna(-1);
+  g.add(antennaPivotL);
+  const antennaPivotR = makeAntenna(1);
+  g.add(antennaPivotR);
+
+  // --- legs: three pairs, and the REAR pair is the character ----------------
+  /**
+   * One leg: a FAT femur lobe, a thin tibia, a thinner tarsus, a small foot.
+   *
+   * The fat/thin contrast is not decoration — it is what the detail-zone scan
+   * corrected. Read at whole-image scale the reference's limbs look uniformly
+   * thin; enlarged, the proximal segments are nearly as thick as they are long.
+   * Uniformly thin legs read as a spider, not a flea.
+   *
+   * `rise` tilts the femur UP instead of down and `tiltBack` swings it toward
+   * the tail; together they fold the hind limb into its Z and put the knee
+   * ABOVE the body line, which is the whole jumping-leg read. `girth` keeps the
+   * long rear femur from becoming a plank — at the front pair's thickness a
+   * 2 HD femur reads as a rudder, not a limb.
+   */
+  const makeLeg = (
+    tag: string,
+    s: number,
+    x: number,
+    y: number,
+    z: number,
+    len: number,
+    fanForward: number,
+    rise: number,
+    knee: number,
+    girth = 1,
+    tiltBack = 0,
+    ankleBend = 0.45,
+  ): THREE.Group => {
+    const root = new THREE.Group();
+    root.name = "leg" + tag + (s < 0 ? "L" : "R");
+    root.position.set(x * s, y, z);
+    // Outward and (usually) down. Same construction as the ladybug's nubs: a
+    // +Y capsule rotated past 90° about Z points away from the body and below
+    // the horizon. A NEGATIVE rise takes it back above the horizon instead.
+    root.rotation.z = -(Math.PI / 2 + rise) * s;
+    root.rotation.y = -fanForward * s;
+    root.rotation.x = tiltBack;
+
+    const femurLen = len * 0.42;
+    const tibiaLen = len * 0.36;
+    const tarsusLen = len * 0.22;
+
+    const femurR = HD * 0.105 * girth;
+    const tibiaR = HD * 0.042 * girth;
+    const tarsusR = HD * 0.028 * girth;
+
+    /**
+     * A limb segment that actually SPANS its joint, plus half a radius of
+     * overlap at each end.
+     *
+     * `CapsuleGeometry`'s length argument is the CYLINDER only — the two round
+     * caps add `radius` on top — so a segment's true reach is `length + 2r`.
+     * Each of these used to pass an arbitrary fraction of the joint distance
+     * (0.72 / 0.82 / 0.80) and leave the caps to make up the rest, which holds
+     * only while the radius is large relative to the segment. It is on the
+     * front and middle legs. It is NOT on the HIND leg, which is more than
+     * twice as long and, at `girth` 0.72, thinner as well: the femur fell
+     * 0.0134 short of the knee and the tibia 0.0111 short of the ankle, so the
+     * jumping leg — the one part of this model a player actually looks at —
+     * rendered in three visibly disconnected pieces.
+     *
+     * Sizing from the real span makes the gap unrepresentable rather than
+     * merely absent at the current numbers, so retuning a leg length or girth
+     * cannot bring it back.
+     */
+    const boneGeo = (r: number, spanLen: number, capSeg: number): THREE.CapsuleGeometry =>
+      new THREE.CapsuleGeometry(r, Math.max(spanLen - r, r * 0.2), capSeg, 8);
+
+    const femur = new THREE.Mesh(boneGeo(femurR, femurLen, 3), darkMat);
+    femur.name = "femur" + tag + (s < 0 ? "L" : "R");
+    femur.position.y = femurLen * 0.5;
+    root.add(femur);
+
+    // The knee: everything below it hangs from this joint, so the fold is one
+    // rotation rather than three hand-placed segments.
+    const kneeJoint = new THREE.Group();
+    kneeJoint.name = "knee" + tag + (s < 0 ? "L" : "R");
+    kneeJoint.position.y = femurLen;
+    kneeJoint.rotation.x = knee;
+    root.add(kneeJoint);
+
+    // A knuckle at each joint. Overlapping capsules close a gap along the
+    // limb's axis but not ACROSS a sharp bend — the hind knee folds 2.3 rad
+    // (132°), and two tangent capsules leave an open wedge on the outside of a
+    // fold that steep. A ball sitting at the pivot fills it from any angle, and
+    // it also bridges the step from the fat femur to the thin tibia, which the
+    // reference draws as a visible joint rather than a smooth taper.
+    const kneeBall = new THREE.Mesh(
+      new THREE.SphereGeometry(Math.max(tibiaR * 1.35, femurR * 0.58), 10, 8),
+      darkMat,
+    );
+    kneeBall.name = "kneeBall" + tag + (s < 0 ? "L" : "R");
+    kneeJoint.add(kneeBall);
+
+    const tibia = new THREE.Mesh(boneGeo(tibiaR, tibiaLen, 2), darkMat);
+    tibia.name = "tibia" + tag + (s < 0 ? "L" : "R");
+    tibia.position.y = tibiaLen * 0.5;
+    kneeJoint.add(tibia);
+
+    const ankle = new THREE.Group();
+    ankle.name = "ankle" + tag + (s < 0 ? "L" : "R");
+    ankle.position.y = tibiaLen;
+    ankle.rotation.x = knee * ankleBend;
+    kneeJoint.add(ankle);
+
+    const ankleBall = new THREE.Mesh(
+      new THREE.SphereGeometry(Math.max(tarsusR * 1.5, tibiaR * 1.05), 10, 8),
+      darkMat,
+    );
+    ankleBall.name = "ankleBall" + tag + (s < 0 ? "L" : "R");
+    ankle.add(ankleBall);
+
+    const tarsus = new THREE.Mesh(boneGeo(tarsusR, tarsusLen, 2), darkMat);
+    tarsus.name = "tarsus" + tag + (s < 0 ? "L" : "R");
+    tarsus.position.y = tarsusLen * 0.5;
+    ankle.add(tarsus);
+
+    const foot = new THREE.Mesh(new THREE.SphereGeometry(HD * 0.048 * girth, 8, 6), darkMat);
+    foot.name = "foot" + tag + (s < 0 ? "L" : "R");
+    foot.scale.set(1.05, 0.75, 1.2);
+    foot.position.y = tarsusLen;
+    ankle.add(foot);
+
+    return root;
+  };
+
+  // Front pair fans FORWARD, middle straight out, rear pair BACKWARD — the
+  // middle leg is the pivot the other two swing around, which is what makes the
+  // alternating tripod read.
+  const legFL = makeLeg("F", -1, 0.100, 0.198, 0.100, HD * 0.86, 0.60, 0.86, 0.50);
+  g.add(legFL);
+  const legFR = makeLeg("F", 1, 0.100, 0.198, 0.100, HD * 0.86, 0.60, 0.86, 0.50);
+  g.add(legFR);
+  const legML = makeLeg("M", -1, 0.118, 0.184, -0.055, HD * 0.78, 0.0, 0.98, 0.55);
+  g.add(legML);
+  const legMR = makeLeg("M", 1, 0.118, 0.184, -0.055, HD * 0.78, 0.0, 0.98, 0.55);
+  g.add(legMR);
+  // THE JUMPING PAIR — identity rank 2, and the difference between reading as a
+  // flea and reading as a grub. A NEGATIVE rise climbs the femur ABOVE the body
+  // line, tiltBack swings it toward the tail, and the knee then folds hard so
+  // the tibia drops back to the floor. The triangle of negative space between
+  // that femur and the abdomen is the clearest jumping-leg cue in profile —
+  // it is the thing to protect if these numbers are ever retuned.
+  //
+  // Length is 2.0 HD, not the 2.6 measured off the reference: 2.6 is the leg
+  // EXTENDED, and this one is folded. At 2.6 the femur alone reached past the
+  // tail and read as a rudder rather than a limb. `girth` 0.72 is the other
+  // half of that fix.
+  const legBL = makeLeg("B", -1, 0.118, 0.205, -0.200, HD * 2.0, 0, -1.12, -2.5, 0.72, -0.95, 0.14);
+  g.add(legBL);
+  const legBR = makeLeg("B", 1, 0.118, 0.205, -0.200, HD * 2.0, 0, -1.12, -2.5, 0.72, -0.95, 0.14);
+  g.add(legBR);
+  const legs = [legFL, legFR, legML, legMR, legBL, legBR];
+
+  // --- eyes ----------------------------------------------------------------
+  // Same protruding build as the beetle, bee and ladybug — a white ball with
+  // the iris, pupil and glint as flush caps on it. The one divergence is the
+  // IRIS COLOUR: this skin takes the reference's amber rather than the house
+  // blue. It is the reference's own value, and it keeps a fifth insect from
+  // looking like a recolour of the other four.
+  const scleraMat = toon({ color: 0xfdf9f2 });
+  const irisMat = toon({ color: 0xe8a317 });
+  const pupM = toon({ color: 0x0a0c12 });
+  const glintMat = toon({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.5 });
+  const fleaEyeMats = [scleraMat, irisMat, pupM, glintMat];
+
+  // Oversized on purpose: 0.34 of head width, measured off the reference. The
+  // mascot read depends entirely on them.
+  const EYE_R = HD * 0.17;
+  const EYE_FWD = Math.PI / 2;
+  const EYE_TILT = -0.1;
+  const eyeCap = (
+    factor: number,
+    rx: number,
+    ry: number,
+    thetaLen: number,
+    mat: THREE.MeshToonMaterial,
+  ): THREE.Mesh => {
+    const geo = new THREE.SphereGeometry(EYE_R * factor, 18, 12, 0, Math.PI * 2, 0, thetaLen);
+    geo.rotateX(rx);
+    geo.rotateY(ry);
+    return new THREE.Mesh(geo, mat);
+  };
+
+  const eyes: THREE.Object3D[] = [];
+  const pupPivots: THREE.Object3D[] = [];
+
+  const makeEye = (s: number): { ball: THREE.Mesh; pivot: THREE.Group } => {
+    const centre = new THREE.Vector3(0.081 * s, HEAD_POS.y + HR * 0.10, HEAD_POS.z + HR * 0.70);
+    const ball = new THREE.Mesh(new THREE.SphereGeometry(EYE_R, 18, 14), scleraMat);
+    ball.name = s < 0 ? "eyeL" : "eyeR";
+    ball.position.copy(centre);
+
+    const pivot = new THREE.Group();
+    pivot.name = s < 0 ? "pupilPivotL" : "pupilPivotR";
+    pivot.position.copy(centre);
+
+    const iris = eyeCap(1.012, EYE_FWD, EYE_TILT * s, 0.74, irisMat);
+    iris.name = s < 0 ? "irisL" : "irisR";
+    pivot.add(iris);
+
+    const pupil = eyeCap(1.03, EYE_FWD, EYE_TILT * s, 0.38, pupM);
+    pupil.name = s < 0 ? "pupilL" : "pupilR";
+    pivot.add(pupil);
+
+    const glint = eyeCap(1.05, EYE_FWD - 0.27, (EYE_TILT + 0.27) * s, 0.13, glintMat);
+    glint.name = s < 0 ? "glintL" : "glintR";
+    pivot.add(glint);
+
+    eyes.push(ball, iris, pupil, glint);
+    pupPivots.push(pivot);
+    return { ball, pivot };
+  };
+
+  const eyeLeft = makeEye(-1);
+  g.add(eyeLeft.ball, eyeLeft.pivot);
+  const eyeRight = makeEye(1);
+  g.add(eyeRight.ball, eyeRight.pivot);
+
+  g.traverse((o) => {
+    if (o instanceof THREE.Mesh) o.castShadow = true;
+  });
+
+  const userData: GhostUserData = {
+    bodyMat,
+    // The dark cuticle is on the limbs, antennae, belly and face marks — a
+    // large enough share of the silhouette that leaving it un-recoloured would
+    // blunt the "edible now" read, which is the same call the ladybug made.
+    accentMats: [darkMat],
+    eyes,
+    pupPivots,
+    pupM,
+    pupBaseColor: pupM.color.getHex(),
+    baseColor: color,
+    // Band tiles are flush decals on the body, not wobbling blobs, so there is
+    // no hem — and no `skirt`, so this character opts out of the shared
+    // breathe. Its idle is the hop, scuttle and antenna twitch below.
+    hem: [],
+    pupOffset: { x: 0, z: 0 },
+    behaviour: fleaBehaviour(legs, [legBL, legBR], [antennaPivotL, antennaPivotR], g),
+    eyeMats: fleaEyeMats,
+    spiritMats: collectSpiritMats(g, fleaEyeMats),
+  };
+  g.userData = userData;
+  return g;
+}
+
 /**
  * Builds an enemy mesh for `skinId`, dispatching between the classic ghost
- * and the garden beetle/bee/ladybug (IDEA-009) â€” all four satisfy the
+ * and the garden beetle/bee/ladybug/flea (IDEA-009, IDEA-053) â€” all five
+ * satisfy the
  * identical `GhostUserData` contract, so callers (game.ts) can treat the
  * result uniformly regardless of which skin is equipped. Falls back to the
  * ghost for any unrecognised id, mirroring cosmetics.ts's getEnemySkin
@@ -2330,6 +2831,7 @@ export function makeEnemy(skinId: string, color: number): THREE.Group {
   if (skinId === "beetle") return makeBeetle(color);
   if (skinId === "bee") return makeBee(color);
   if (skinId === "ladybug") return makeLadybug(color);
+  if (skinId === "flea") return makeFlea(color);
   return makeGhost(color);
 }
 

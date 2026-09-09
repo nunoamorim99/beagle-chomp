@@ -132,6 +132,13 @@ const ENEMY_ICONS: Record<string, string> = {
   beetle: "pest_control",
   bee: "hive",
   ladybug: "bug_report",
+  // NO ENTRY FOR THE FLEA, deliberately. A fifth glyph means re-cutting the
+  // Material Symbols subset (tokens.css) — the font holds only the names it was
+  // cut with, and an unlisted name renders as that word in plain text on the
+  // card. The documented fallback below is the safe behaviour until the subset
+  // is re-cut; `pest_control` was the obvious candidate but the beetle already
+  // wears it, and two skins sharing one picture reads worse than the generic
+  // face does.
 };
 
 function enemyIcon(id: string): string {
