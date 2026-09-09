@@ -104,7 +104,13 @@ function parseEnv() {
   // port is taken — and on this machine another project already holds
   // 5173/5174, so Beagle Chomp's dev server routinely lands on 5175. Without
   // these, dev would fail CORS in a way that looks like a server bug.
-  const devOrigins = [5173, 5174, 5175, 5176, 5177].flatMap((port) => [
+  //
+  // 5180 is the ADMIN PORTAL (IDEA-051), which runs its own Vite server on a
+  // deliberately separate, strict port — see vite.config.admin.ts. It is listed
+  // here only for development; in production the portal is a second Cloudflare
+  // Pages origin and must be added to CORS_ORIGINS in Dokploy by hand, or every
+  // dashboard panel fails with a CORS error that reads like an auth bug.
+  const devOrigins = [5173, 5174, 5175, 5176, 5177, 5180].flatMap((port) => [
     `http://localhost:${port}`,
     `http://127.0.0.1:${port}`,
   ]);

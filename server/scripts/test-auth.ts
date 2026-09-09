@@ -313,12 +313,21 @@ async function main(): Promise<void> {
   ok("multiple slots equip together", multi.equipped.beagleSkinId === "bagel" && multi.equipped.mazeThemeId === "forest");
 
   section("A token lookup returns the SAME columns as a direct lookup");
-  // repo/tokens.ts spells out its own column list for the JOIN, separate from
-  // users.ts's USER_COLUMNS. When tutorial_done was added to one and not the
-  // other, /auth/me silently dropped the field — the boot flow then read it as
-  // undefined and re-ran the first-run tutorial for players who had finished
-  // it. Nothing crashed; it just quietly misbehaved. Comparing the two shapes
-  // turns the next such omission into a failing test.
+  // THIS HAS NOW HAPPENED TWICE, and the second time is why the duplication is
+  // gone rather than merely tested.
+  //
+  // repo/tokens.ts used to spell out its own column list for the JOIN, separate
+  // from users.ts's USER_COLUMNS. First `tutorial_done` was added to one and not
+  // the other, so /auth/me silently dropped it and the boot flow re-ran the
+  // first-run tutorial for players who had finished it. Then IDEA-051's
+  // `is_admin` went the same way: granted in the database, absent from the token
+  // JOIN, so `user.is_admin` arrived `undefined` and every admin request 404'd
+  // as though the flag had never been set. Neither crashed. `query<UserRow>` is
+  // an unchecked CAST, not a validation, so TypeScript cannot see either one.
+  //
+  // Both lists now come from `userColumns()` in repo/types.ts, which makes the
+  // failure structurally impossible. This check stays anyway: it is what catches
+  // someone hand-writing a SELECT again, and it costs one query.
   {
     const viaId = await usersRepo.findById(signed.user.id);
     const viaToken = await tokensRepo.findUserByToken(hashToken(signed.token));

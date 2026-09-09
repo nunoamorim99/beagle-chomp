@@ -13,6 +13,10 @@
 // etc.): a tiny hand-rolled assert plus a failure counter, no test runner —
 // CLAUDE.md and STACK.md §0 both say don't add tooling we don't need.
 
+import { Hono } from "hono";
+import { requireAdmin, type AdminVars } from "../src/http/admin-middleware.js";
+import { ApiError } from "../src/http/errors.js";
+import type { UserRow } from "../src/repo/types.js";
 import {
   generateRecoveryCode,
   normalizeRecoveryCode,
@@ -172,6 +176,47 @@ async function main(): Promise<void> {
     dummyMs > 5,
     `${dummyMs}ms`,
   );
+
+  // --- requireAdmin (IDEA-051) ----------------------------------------------
+  section("requireAdmin hides the portal rather than refusing it");
+
+  // Driven through a real Hono app so the middleware is exercised the way a
+  // request exercises it — and so this stays DB-free, requireAuth is skipped and
+  // the user is set directly, which is exactly the state requireAuth leaves.
+  {
+    const app = new Hono<{ Variables: AdminVars }>();
+    app.use("/secret", async (c, next) => {
+      const flag = c.req.header("x-test-admin");
+      if (flag !== "absent") {
+        c.set("user", { is_admin: flag === "yes" } as unknown as UserRow);
+      }
+      await next();
+    });
+    app.use("/secret", requireAdmin);
+    app.get("/secret", (c) => c.json({ ok: true }));
+    app.onError((err, c) =>
+      err instanceof ApiError ? c.json(err.toBody(), err.status) : c.json({ e: 1 }, 500),
+    );
+
+    const asAdmin = await app.request("/secret", { headers: { "x-test-admin": "yes" } });
+    ok("an admin passes through", asAdmin.status === 200, asAdmin.status);
+
+    const asPlayer = await app.request("/secret", { headers: { "x-test-admin": "no" } });
+    // 404, NOT 403. A 403 confirms the endpoint is real and worth attacking,
+    // which hands a map of the admin surface to anyone with a game account.
+    ok("a normal player gets 404, not 403", asPlayer.status === 404, asPlayer.status);
+    const body = (await asPlayer.json()) as { error?: { code?: string } };
+    ok("…with the ordinary not-found code", body.error?.code === "NOT_FOUND", JSON.stringify(body));
+
+    // The failure that actually shipped: is_admin absent from the row because a
+    // SELECT forgot it. `undefined` must read as "not an admin", never as
+    // "unknown, allow".
+    const missingFlag = await app.request("/secret", { headers: { "x-test-admin": "missing" } });
+    ok("an absent is_admin is refused", missingFlag.status === 404, missingFlag.status);
+
+    const noUser = await app.request("/secret", { headers: { "x-test-admin": "absent" } });
+    ok("no user on the context is refused", noUser.status === 404, noUser.status);
+  }
 
   // --- summary --------------------------------------------------------------
   console.log(`\n${"-".repeat(60)}`);

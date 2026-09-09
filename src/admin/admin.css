@@ -1,0 +1,193 @@
+/* OWNER: backend / tooling (IDEA-051)
+ *
+ * The portal's styles. It borrows the GAME's palette and ink-outline language
+ * so the dashboard looks like it belongs to Beagle Chomp — but it deliberately
+ * does NOT import src/ui/tokens.css.
+ *
+ * Why not: tokens.css carries the game's whole component system (buttons,
+ * boards, HUD chips, the icon font's @font-face rules) and its five woff2 files.
+ * Pulling that in would drag 108 KiB of subset fonts into an operator tool that
+ * needs none of them, and would bind this app to a stylesheet whose rules exist
+ * for a 390px phone. The dozen values below are copied deliberately, and they
+ * are values — not behaviour — so there is nothing here to drift.
+ *
+ * One rule from the game's system IS suspended on purpose: tokens.css reserves
+ * the five enemy hues for STATE and forbids them as chrome. That rule protects
+ * the player's reading of a live game. Here they identify enemies in a chart,
+ * which is the one place colour SHOULD follow the entity — see charts.ts.
+ */
+
+:root {
+  --ink: #17130e;
+  --bark: #2f2318;
+  --card: #3b2c1e;
+  --wood: #4a3928;
+  --outline: #1b1512;
+  --cream: #fff7e8;
+  --muted: #a99883;
+  --amber: #e8a23d;
+  --amber-edge: #b8761f;
+  --good: #6fb84a;
+  --critical: #e0577a;
+
+  --r: 10px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 24px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--ink);
+  color: var(--cream);
+  font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Numbers line up when they are tabular. Anything that ticks or compares
+ * columns gets the mono stack — the same reasoning as the game's DM Mono. */
+.stat-value, .data td, .bar-value, .axis, .cell-text { font-variant-numeric: tabular-nums; }
+
+h1, h2 { font-weight: 700; letter-spacing: -0.01em; margin: 0; }
+h1 { font-size: 20px; }
+h2 { font-size: 15px; }
+
+a { color: var(--amber); }
+
+/* --- shell ---------------------------------------------------------------- */
+
+.topbar {
+  display: flex; align-items: center; gap: var(--s4);
+  padding: var(--s3) var(--s4);
+  background: var(--bark);
+  border-bottom: 3px solid var(--outline);
+  position: sticky; top: 0; z-index: 10;
+}
+.topbar .spacer { flex: 1; }
+.who { color: var(--muted); font-size: 13px; }
+
+.tabs { display: flex; gap: 4px; flex-wrap: wrap; padding: var(--s3) var(--s4) 0; }
+.tab {
+  appearance: none; cursor: pointer;
+  background: var(--card); color: var(--cream);
+  border: 2px solid var(--outline); border-bottom-width: 4px;
+  border-radius: var(--r); padding: 7px 14px; font: inherit; font-size: 14px;
+}
+.tab:hover { background: var(--wood); }
+/* Depth is a thick bottom border and pressing sinks INTO it — the box never
+ * changes size, so a row of tabs cannot reflow under a click. */
+.tab:active { border-bottom-width: 2px; transform: translateY(2px); }
+.tab[aria-selected="true"] {
+  background: var(--amber); color: #3a2205; border-color: var(--amber-edge); font-weight: 700;
+}
+
+main { padding: var(--s4); display: grid; gap: var(--s4); max-width: 1200px; }
+
+.panel {
+  background: var(--bark);
+  border: 3px solid var(--outline);
+  border-bottom-width: 5px;
+  border-radius: var(--r);
+  padding: var(--s4);
+}
+.panel > h2 { margin-bottom: 4px; }
+.panel > .sub { color: var(--muted); font-size: 13px; margin: 0 0 var(--s3); }
+
+.grid2 { display: grid; gap: var(--s4); grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+
+/* --- stat tiles ----------------------------------------------------------- */
+
+.stats { display: grid; gap: var(--s3); grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+.stat {
+  background: var(--card); border: 2px solid var(--outline); border-bottom-width: 4px;
+  border-radius: var(--r); padding: var(--s3);
+}
+.stat-label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+.stat-value { font-size: 26px; font-weight: 700; line-height: 1.2; }
+.stat-note { color: var(--muted); font-size: 12px; }
+
+/* --- charts --------------------------------------------------------------- */
+
+.chart { width: 100%; height: auto; display: block; overflow: visible; }
+.bar-label { fill: var(--cream); font-size: 12px; }
+.bar-value { fill: var(--muted); font-size: 12px; }
+.bar-track { fill: #2a2018; }
+.bar-row:hover .bar-track { fill: #372a1e; }
+.axis { fill: var(--muted); font-size: 11px; }
+.grid { stroke: var(--wood); stroke-width: 1; }
+.area { fill: rgb(232 162 61 / 0.14); }
+.dot { fill: var(--amber); stroke: var(--bark); stroke-width: 2; }
+.cell-text { fill: var(--cream); font-size: 11px; }
+/* Ink flips on the brightest ramp steps so the figure stays readable. */
+.cell-text.on-bright { fill: #3a2205; font-weight: 700; }
+.cell-void { fill: transparent; stroke: var(--wood); stroke-width: 1; stroke-dasharray: 3 3; }
+
+.legend { display: flex; flex-wrap: wrap; gap: var(--s3); margin-top: var(--s3); font-size: 12px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.swatch { width: 12px; height: 12px; border-radius: 3px; border: 1px solid var(--outline); }
+
+/* --- tables --------------------------------------------------------------- */
+
+.scroll { overflow-x: auto; }
+table.data { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.data th, table.data td {
+  text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--wood); white-space: nowrap;
+}
+table.data th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+table.data tbody tr:hover { background: var(--card); }
+table.data td.num { text-align: right; }
+
+/* --- states --------------------------------------------------------------- */
+
+.empty { color: var(--muted); font-style: italic; margin: var(--s3) 0; }
+.muted { fill: var(--muted); color: var(--muted); }
+.single-point { color: var(--cream); }
+
+.banner {
+  border-radius: var(--r); padding: var(--s3);
+  border: 2px solid var(--outline); border-bottom-width: 4px;
+  display: flex; gap: var(--s2); align-items: flex-start;
+}
+/* Status colours ship with a label, never colour alone. */
+.banner.bad { background: #4a1f2b; border-color: #7a2740; }
+.banner.ok { background: #24361c; border-color: #3a5a2c; }
+
+/* --- login ---------------------------------------------------------------- */
+
+.login-wrap { display: grid; place-items: center; min-height: 100vh; padding: var(--s4); }
+.login {
+  width: min(380px, 100%); background: var(--bark);
+  border: 3px solid var(--outline); border-bottom-width: 6px;
+  border-radius: var(--r); padding: var(--s5); display: grid; gap: var(--s3);
+}
+.login h1 { text-align: center; }
+.login .sub { color: var(--muted); font-size: 13px; text-align: center; margin: 0; }
+label { display: grid; gap: 5px; font-size: 13px; color: var(--muted); }
+input {
+  font: inherit; padding: 10px 12px; border-radius: 8px;
+  border: 2px solid var(--outline); background: var(--ink); color: var(--cream);
+}
+input:focus-visible, .tab:focus-visible, button:focus-visible {
+  outline: 3px solid var(--amber); outline-offset: 2px;
+}
+button.primary {
+  font: inherit; font-weight: 700; cursor: pointer;
+  background: var(--amber); color: #3a2205;
+  border: 2px solid var(--amber-edge); border-bottom-width: 5px;
+  border-radius: var(--r); padding: 10px 16px;
+}
+button.primary:active { border-bottom-width: 2px; transform: translateY(3px); }
+button.primary[disabled] { opacity: 0.6; cursor: progress; }
+button.ghost {
+  font: inherit; cursor: pointer; background: var(--card); color: var(--cream);
+  border: 2px solid var(--outline); border-bottom-width: 4px; border-radius: var(--r); padding: 7px 14px;
+}
+
+.error { color: #ffc9d5; background: #4a1f2b; border: 2px solid #7a2740; border-radius: 8px; padding: 10px; font-size: 13px; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}

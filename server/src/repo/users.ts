@@ -9,14 +9,11 @@
 
 import { query, pool } from "../db.js";
 import type { Executor, UserRow } from "./types.js";
+import { userColumns } from "./types.js";
 
-const USER_COLUMNS = `
-  id, username, username_lower, password_hash, recovery_code_hash,
-  recovery_code_version, coins, challenge_progress,
-  equipped_beagle_skin_id, equipped_enemy_skin_id, equipped_maze_theme_id,
-  owned_beagle_skin_ids, owned_enemy_skin_ids, owned_maze_theme_ids,
-  high_score, high_score_at, control_scheme, tutorial_done, created_at
-`;
+// One list, in repo/types.ts — see userColumns() there for why this is not
+// written out here (and formerly, again in tokens.ts).
+const USER_COLUMNS = userColumns();
 
 function run(client: Executor) {
   return client

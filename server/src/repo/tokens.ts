@@ -6,6 +6,7 @@
 
 import { query } from "../db.js";
 import type { Executor, UserRow } from "./types.js";
+import { userColumns } from "./types.js";
 
 export async function createToken(
   userId: string,
@@ -26,13 +27,7 @@ export async function createToken(
  *  token can never authenticate even if a caller forgets to compare dates. */
 export async function findUserByToken(tokenHash: Buffer): Promise<UserRow | null> {
   const { rows } = await query<UserRow>(
-    `SELECT u.id, u.username, u.username_lower, u.password_hash,
-            u.recovery_code_hash, u.recovery_code_version, u.coins,
-            u.challenge_progress, u.equipped_beagle_skin_id,
-            u.equipped_enemy_skin_id, u.equipped_maze_theme_id,
-            u.owned_beagle_skin_ids, u.owned_enemy_skin_ids,
-            u.owned_maze_theme_ids, u.high_score, u.high_score_at,
-            u.control_scheme, u.tutorial_done, u.created_at
+    `SELECT ${userColumns("u")}
        FROM auth_tokens t
        JOIN users u ON u.id = t.user_id
       WHERE t.token_hash = $1

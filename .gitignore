@@ -1,6 +1,8 @@
 node_modules
 dist
 dist-ssr
+# IDEA-051: the metrics portal build — its own Cloudflare Pages project
+dist-admin
 dev-dist
 *.local
 .DS_Store

@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Operator tool, never a public page. Belt and braces behind Cloudflare
+         Access: tell crawlers to stay out even if the domain is ever exposed. -->
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Beagle Chomp — Metrics</title>
+  </head>
+  <body>
+    <!-- Deliberately NOT a PWA: no manifest, no service worker registration. A
+         metrics dashboard that caches would serve yesterday's numbers with no
+         obvious way to tell. See vite.config.admin.ts. -->
+    <div id="app"></div>
+    <script type="module" src="/src/admin/main.ts"></script>
+  </body>
+</html>

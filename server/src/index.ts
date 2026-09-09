@@ -23,6 +23,7 @@ import { metricsRoutes } from "./routes/metrics.js";
 import { authRoutes } from "./routes/auth.js";
 import { profileRoutes } from "./routes/profile.js";
 import { sessionRoutes } from "./routes/sessions.js";
+import { adminRoutes } from "./routes/admin.js";
 import { sweepStaleSessions, purgeOldSessions } from "./services/scoreService.js";
 import { metricsMiddleware } from "./http/metrics-middleware.js";
 import { snapshot, resetWindow, formatSnapshotLines } from "./http/metrics.js";
@@ -72,6 +73,13 @@ app.route("/", metricsRoutes);
 const v1 = new Hono();
 v1.get("/", (c) => c.json({ api: "beagle-chomp", version: APP_VERSION }));
 v1.route("/auth", authRoutes);
+// IDEA-051. Mounted at its OWN prefix and registered BEFORE the two "/" mounts
+// below — deliberately. Those each declare a `use("*")` stack, which Hono turns
+// into `ALL /api/v1/*` running in registration order (it is why a /sessions
+// request currently authenticates twice). Registered after them, every admin
+// panel would silently inherit profileRoutes' 120/min game-client rate limit
+// and a redundant auth round trip.
+v1.route("/admin", adminRoutes);
 // profileRoutes and sessionRoutes declare their own full paths (/profile,
 // /leaderboard, /sessions/*) because each shares one auth+rate-limit middleware
 // stack across paths that sit at different roots.
