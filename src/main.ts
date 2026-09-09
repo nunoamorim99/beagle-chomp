@@ -29,6 +29,7 @@ import { attachPrivacy } from "./ui/privacy";
 import { attachProfile } from "./ui/profile";
 import { attachLeaderboard } from "./ui/leaderboard";
 import { attachNews } from "./ui/news";
+import { syncOnBoot as syncPushOnBoot } from "./ui/push";
 import { me } from "./net/endpoints";
 import {
   getToken,
@@ -197,6 +198,14 @@ async function startApp(): Promise<void> {
     signal: sessionListeners.signal,
   });
   void news.refreshBadge();
+
+  // IDEA-052b: re-assert an existing push subscription. Asks for nothing and
+  // creates nothing — it only tells the server about a subscription the browser
+  // already has, because the server's row can vanish without the browser
+  // knowing (a restored backup, or index.html's stale-shell recovery
+  // unregistering the worker and the browser later re-subscribing to a NEW
+  // endpoint while the old row lingers).
+  void syncPushOnBoot();
 
   // If the server ever rejects our token mid-session (deleted on another
   // device, revoked by a password reset), drop everything and go back to the

@@ -108,5 +108,10 @@ export function fromServerProfile(profile: ServerProfile): StoredProfile {
     // input layer, same defensive posture as the cosmetic ids above.
     controlScheme: knownScheme(profile.controlScheme),
     tutorialDone: profile.tutorialDone === true,
+    // Default TRUE when a server predates the field: the switch decides what a
+    // subscribed device receives, and nothing can be sent without a
+    // subscription, so defaulting on cannot surprise anyone.
+    notifyAnnouncements: profile.notifyAnnouncements !== false,
+    notifyRank: profile.notifyRank !== false,
   };
 }

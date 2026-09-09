@@ -367,3 +367,32 @@ export const deleteAnnouncement = (id: string): Promise<void> =>
  *  show a live counter instead of discovering them on submit. The SERVER is
  *  still the authority — these are for the operator's benefit, not a check. */
 export const LIMITS = { title: 120, body: 4000, version: 20 } as const;
+
+export interface NotificationsReport {
+  /** False when VAPID is unconfigured — then nobody CAN subscribe, and a zero
+   *  reach means "off", not "nobody wanted it". */
+  pushEnabled: boolean;
+  reach: {
+    players_total: number;
+    players_subscribed: number;
+    devices: number;
+    wants_announcements: number;
+    wants_rank: number;
+    devices_healthy: number;
+    devices_failing: number;
+  };
+  engagement: { opened_ever: number; opened_7d: number; never_opened: number };
+  notes: {
+    id: string;
+    kind: string;
+    version: string | null;
+    title: string;
+    publishedAt: string;
+    seenBy: number;
+    audience: number;
+    share: number | null;
+  }[];
+}
+
+export const fetchNotifications = (): Promise<NotificationsReport> =>
+  request("/api/v1/admin/notifications");

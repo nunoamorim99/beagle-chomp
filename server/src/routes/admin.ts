@@ -40,6 +40,7 @@ import {
 import { snapshot } from "../http/metrics.js";
 import { ENEMY_SLOT_LABELS, FRUIT_LABELS } from "../catalog.generated.js";
 import { APP_VERSION } from "../version.js";
+import { env } from "../env.js";
 import * as announcements from "../repo/announcements.js";
 import { parseAnnouncement, PROBLEM_MESSAGE } from "../validation/announcement.js";
 import { readBody } from "../http/body.js";
@@ -229,6 +230,44 @@ adminRoutes.get("/players/:username/rewind", async (c) => {
     favouriteFruit: topSlot(fruits),
     favouriteTheme: row.favourite_theme,
     favouriteBeagleSkin: row.favourite_beagle_skin,
+  });
+});
+
+/**
+ * Notifications: who can be reached, and who is looking (IDEA-052b).
+ *
+ * Deliberately does NOT claim to measure notification OPENS. Nothing reports a
+ * notification click back — that would need its own endpoint and its own table
+ * — so the honest proxy is whether a player opened the News screen after a note
+ * went live. The portal labels it that way rather than calling it a read
+ * receipt.
+ */
+adminRoutes.get("/notifications", async (c) => {
+  const [reach, perNote, engagement] = await Promise.all([
+    analytics.notifyReach(),
+    analytics.announcementReach(),
+    analytics.newsEngagement(),
+  ]);
+  return c.json({
+    // Whether push is configured at all. Without VAPID keys the routes do not
+    // exist and no subscription can ever be made, and the portal should say so
+    // rather than showing a permanent zero that looks like nobody opted in.
+    pushEnabled: env.pushEnabled,
+    reach,
+    engagement,
+    notes: perNote.map((n) => ({
+      id: n.id,
+      kind: n.kind,
+      version: n.version,
+      title: n.title,
+      publishedAt: n.published_at.toISOString().slice(0, 10),
+      seenBy: n.seen_by,
+      audience: n.audience,
+      // Guarded: a note published before anyone signed up has an audience of 0,
+      // and dividing would give NaN — which serialises to null and renders as a
+      // gap rather than an honest "no audience yet".
+      share: n.audience > 0 ? n.seen_by / n.audience : null,
+    })),
   });
 });
 

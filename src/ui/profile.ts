@@ -12,9 +12,10 @@
 
 import { escapeHtml } from "./escape";
 import { ICON, iconHtml, plateHtml } from "./icons";
-import { getProfileCache } from "../game/profileCache";
+import { getProfileCache, mutateProfileCache } from "../game/profileCache";
+import { pushSupport, isSubscribed, enable, disable } from "./push";
 import { getControlScheme, type ControlScheme } from "../game/profileStore";
-import { logout as logoutRemote, deleteAccount } from "../net/endpoints";
+import { logout as logoutRemote, deleteAccount, setNotifyPrefsRemote } from "../net/endpoints";
 import { clearToken, ApiError } from "../net/api";
 import { flushSync, clearSyncQueue } from "../net/profileSync";
 
@@ -136,6 +137,16 @@ export function attachProfile(callbacks: ProfileCallbacks): ProfileHandle {
           )}</p>
         </section>
 
+        <section class="profile-setting" id="notifySection">
+          <h2>Notifications</h2>
+          <p>
+            Get told when the game updates, or when someone beats your score.
+          </p>
+          <div id="notifyBody">
+            <p class="control-note">Checking…</p>
+          </div>
+        </section>
+
         <section class="profile-setting">
           <h2>How to play</h2>
           <p>A quick refresher on biscuits, bones and staying alive.</p>
@@ -194,6 +205,10 @@ export function attachProfile(callbacks: ProfileCallbacks): ProfileHandle {
         render();
       });
     }
+
+    // Painted after the synchronous render, since it has to consult the service
+    // worker — see paintNotifications.
+    void paintNotifications();
 
     root.querySelector("#replayTutorialBtn")?.addEventListener("click", () => {
       // Opens the carousel there and then. The older version only set
@@ -284,6 +299,93 @@ export function attachProfile(callbacks: ProfileCallbacks): ProfileHandle {
     document.body.classList.remove("profile-open");
     root.innerHTML = "";
     callbacks.onClose?.();
+  }
+
+  /**
+   * The notifications section.
+   *
+   * Painted ASYNCHRONOUSLY, after the rest of the screen, because deciding what
+   * to show needs `navigator.serviceWorker.ready` and a look at the current
+   * subscription. Blocking the whole account screen on the service worker would
+   * be a visible stall for a section most players will never open.
+   *
+   * TWO SWITCHES, and they are not the same thing:
+   *   - the DEVICE switch (browser permission + a push subscription) lives in
+   *     the browser and has to be turned on per device;
+   *   - the KIND switches live on the account and follow the player everywhere.
+   * The kind switches only appear once the device is on, because offering
+   * settings that cannot do anything yet is worse than offering none.
+   */
+  async function paintNotifications(): Promise<void> {
+    const host = root.querySelector("#notifyBody");
+    if (!host) return;
+
+    const support = pushSupport();
+    if (support.state !== "ready") {
+      // Say WHY, and on iOS what to do about it. An inert toggle with no
+      // explanation is worse than no toggle at all.
+      host.innerHTML = `<p class="control-note">${escapeHtml(support.reason)}</p>`;
+      return;
+    }
+
+    const on = await isSubscribed();
+    const profile = getProfileCache();
+
+    host.innerHTML = `
+      <button type="button" id="notifyToggleBtn" class="btn-secondary">
+        ${on ? "Turn off on this device" : "Turn on for this device"}
+      </button>
+      <p class="control-note" id="notifyNote">${
+        on ? "This device will get notifications." : "Notifications are off on this device."
+      }</p>
+      ${
+        on
+          ? `<div class="notify-kinds">
+               <label class="notify-kind">
+                 <input type="checkbox" id="notifyUpdates" ${
+                   profile.notifyAnnouncements ? "checked" : ""
+                 } />
+                 <span>Game updates and notices</span>
+               </label>
+               <label class="notify-kind">
+                 <input type="checkbox" id="notifyRank" ${profile.notifyRank ? "checked" : ""} />
+                 <span>When someone beats your score</span>
+               </label>
+             </div>`
+          : ""
+      }`;
+
+    // enable() asks for permission SYNCHRONOUSLY before it awaits anything, so
+    // it must be called straight from the gesture — nothing awaited here first.
+    host.querySelector("#notifyToggleBtn")?.addEventListener("click", () => {
+      if (on) {
+        void disable().then(() => paintNotifications());
+        return;
+      }
+      void enable().then((res) => {
+        if (!res.ok && res.reason) {
+          const note = host.querySelector("#notifyNote");
+          if (note) note.textContent = res.reason;
+          return undefined;
+        }
+        return paintNotifications();
+      });
+    });
+
+    const kind = (id: string, key: "notifyAnnouncements" | "notifyRank"): void => {
+      host.querySelector("#" + id)?.addEventListener("change", (e) => {
+        const value = (e.target as HTMLInputElement).checked;
+        // Optimistic locally, authoritative on the server — the same shape the
+        // control scheme and tutorial flags already use.
+        mutateProfileCache((p) => ({ ...p, [key]: value }));
+        void setNotifyPrefsRemote({ [key]: value }).catch(() => {
+          mutateProfileCache((p) => ({ ...p, [key]: !value }));
+          void paintNotifications();
+        });
+      });
+    };
+    kind("notifyUpdates", "notifyAnnouncements");
+    kind("notifyRank", "notifyRank");
   }
 
   return {

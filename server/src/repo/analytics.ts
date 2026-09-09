@@ -461,3 +461,100 @@ export async function playerList(q: string | null, limit: number): Promise<Playe
   );
   return rows;
 }
+
+// ---------------------------------------------------------------------------
+// Notifications (IDEA-052b)
+// ---------------------------------------------------------------------------
+
+export interface NotifyReachRow {
+  players_total: number;
+  players_subscribed: number;
+  devices: number;
+  wants_announcements: number;
+  wants_rank: number;
+  devices_healthy: number;
+  devices_failing: number;
+}
+
+/**
+ * How many people could actually be reached.
+ *
+ * "Subscribed" counts PLAYERS, not devices — one person with a phone and a
+ * laptop is one person who can be told, and reporting devices as reach would
+ * flatter the number. Both are returned so the difference is visible.
+ *
+ * `devices_healthy` is a subscription the push service has accepted something
+ * for. A device that has never had a successful send is not counted as healthy,
+ * because until one lands there is no evidence it works.
+ */
+export async function notifyReach(): Promise<NotifyReachRow> {
+  const { rows } = await query<NotifyReachRow>(
+    `SELECT
+       (SELECT count(*) FROM users)::int                                  AS players_total,
+       (SELECT count(DISTINCT user_id) FROM push_subscriptions)::int      AS players_subscribed,
+       (SELECT count(*) FROM push_subscriptions)::int                     AS devices,
+       (SELECT count(DISTINCT s.user_id) FROM push_subscriptions s
+          JOIN users u ON u.id = s.user_id WHERE u.notify_announcements)::int AS wants_announcements,
+       (SELECT count(DISTINCT s.user_id) FROM push_subscriptions s
+          JOIN users u ON u.id = s.user_id WHERE u.notify_rank)::int      AS wants_rank,
+       (SELECT count(*) FROM push_subscriptions WHERE last_ok_at IS NOT NULL)::int AS devices_healthy,
+       (SELECT count(*) FROM push_subscriptions WHERE failure_count > 0)::int      AS devices_failing`,
+  );
+  return rows[0];
+}
+
+export interface AnnouncementReachRow {
+  id: string;
+  kind: string;
+  version: string | null;
+  title: string;
+  published_at: Date;
+  seen_by: number;
+  audience: number;
+}
+
+/**
+ * Per note: how many players have OPENED the News screen since it went live.
+ *
+ * BE HONEST ABOUT WHAT THIS MEASURES. There is one `announcements_seen_at` per
+ * player, not a per-note receipt, so "seen" means "opened the News screen at
+ * some point after this was published" — which does mean the card was on their
+ * screen, since the feed shows the most recent 25 newest-first. It does NOT
+ * mean they read it, and it cannot distinguish a note they scrolled past.
+ *
+ * `audience` is players who existed WHEN IT WAS PUBLISHED. Counting everyone
+ * would make an old note look progressively less read every time somebody new
+ * signs up, which is backwards — they were never its audience.
+ */
+export async function announcementReach(): Promise<AnnouncementReachRow[]> {
+  const { rows } = await query<AnnouncementReachRow>(
+    `SELECT a.id, a.kind, a.version, a.title, a.published_at,
+            (SELECT count(*) FROM users u
+              WHERE u.announcements_seen_at >= a.published_at)::int AS seen_by,
+            (SELECT count(*) FROM users u
+              WHERE u.created_at <= a.published_at)::int            AS audience
+       FROM announcements a
+      WHERE a.published_at IS NOT NULL
+      ORDER BY a.published_at DESC
+      LIMIT 50`,
+  );
+  return rows;
+}
+
+export interface NewsEngagementRow {
+  opened_ever: number;
+  opened_7d: number;
+  never_opened: number;
+}
+
+/** How many players use the News screen at all. */
+export async function newsEngagement(): Promise<NewsEngagementRow> {
+  const { rows } = await query<NewsEngagementRow>(
+    `SELECT
+       count(*) FILTER (WHERE announcements_seen_at IS NOT NULL)::int AS opened_ever,
+       count(*) FILTER (WHERE announcements_seen_at >= now() - interval '7 days')::int AS opened_7d,
+       count(*) FILTER (WHERE announcements_seen_at IS NULL)::int     AS never_opened
+       FROM users`,
+  );
+  return rows[0];
+}

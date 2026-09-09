@@ -24,14 +24,14 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
 }
 
-function isStandalone(): boolean {
+export function isStandalone(): boolean {
   // Installed PWAs report display-mode:standalone (Chromium/desktop) or
   // navigator.standalone (iOS Safari's older, still-live vendor flag).
   const nav = navigator as Navigator & { standalone?: boolean };
   return window.matchMedia?.("(display-mode: standalone)").matches === true || nav.standalone === true;
 }
 
-function isIOSSafari(): boolean {
+export function isIOSSafari(): boolean {
   const ua = window.navigator.userAgent;
   const isIOS = /iphone|ipad|ipod/i.test(ua);
   // Exclude other iOS browsers that also include "Safari" in their UA

@@ -2400,3 +2400,11 @@ body.map-open .powerups{display:none}
   font-size:14px}
 
 .news-sheet > .btn-primary{flex:0 0 auto;align-self:center;min-width:180px}
+
+/* IDEA-052b: the notification kind switches on the account screen. They only
+   appear once THIS DEVICE is subscribed — the device switch is browser
+   permission, these are per-account and follow the player everywhere. */
+.notify-kinds{display:flex;flex-direction:column;gap:var(--bc-s2);margin-top:var(--bc-s3)}
+.notify-kind{display:flex;align-items:center;gap:var(--bc-s2);
+  color:var(--bc-cream);font-size:14px;cursor:pointer}
+.notify-kind input{width:20px;height:20px;accent-color:var(--bc-amber);cursor:pointer}

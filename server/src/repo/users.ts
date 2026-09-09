@@ -222,6 +222,24 @@ export async function updateControlScheme(
 }
 
 /** IDEA-040: remember that the player has been through the first-run coach. */
+/** IDEA-052b: the two notification switches. Both optional, so the account
+ *  screen can flip one without resending the other. */
+export async function updateNotifyPrefs(
+  userId: string,
+  prefs: { announcements?: boolean; rank?: boolean },
+  client?: Executor,
+): Promise<UserRow> {
+  const { rows } = await run(client)<UserRow>(
+    `UPDATE users
+        SET notify_announcements = COALESCE($2, notify_announcements),
+            notify_rank          = COALESCE($3, notify_rank)
+      WHERE id = $1
+      RETURNING ${USER_COLUMNS}`,
+    [userId, prefs.announcements ?? null, prefs.rank ?? null],
+  );
+  return rows[0];
+}
+
 export async function updateTutorialDone(
   userId: string,
   done: boolean,
