@@ -139,7 +139,27 @@ export default defineConfig({
       },
       workbox: {
         // precache the whole app so it plays fully offline once installed
-        globPatterns: ["**/*.{js,css,html,png,svg,woff2,glb,gltf,mp3,ogg}"]
+        globPatterns: ["**/*.{js,css,html,png,svg,woff2,glb,gltf,mp3,ogg}"],
+        // IDEA-052b: the push + notificationclick listeners, pulled into the
+        // GENERATED worker rather than replacing it.
+        //
+        // This is deliberately NOT `strategies: "injectManifest"`. That would
+        // hand us the whole worker and, at this plugin version, three silent
+        // failures with it: `workbox.globPatterns` above would be ignored (the
+        // option is named differently under injectManifest) so the fonts and
+        // audio would silently leave the precache; `registerType: "autoUpdate"`
+        // would stop working after the first install, because generateSW is
+        // what bakes in skipWaiting/clientsClaim and the auto register path
+        // never sends it — pinning every player to an old bundle forever; and
+        // the usual dev recipe's `devOptions.type: "module"` leaks into the
+        // PRODUCTION registration, since the plugin keys that off
+        // `devOptions.enabled` (true, just below) rather than serve-vs-build,
+        // which breaks Firefox. importScripts buys the same listeners for none
+        // of that. Full reasoning in public/push-sw.js.
+        //
+        // BUMP THE ?v= WHEN push-sw.js CHANGES. It is served from public/ and
+        // is therefore NOT content-hashed, so a browser may hold the old copy.
+        importScripts: ["push-sw.js?v=1"]
       },
       devOptions: { enabled: true }
     })

@@ -19,22 +19,26 @@
     "test:db": "tsx scripts/test-auth.ts",
     "test:catalog": "tsx scripts/test-catalog.ts",
     "test:metrics": "tsx scripts/test-metrics.ts",
-    "test": "npm run test:units && npm run test:catalog && npm run test:plausibility && npm run test:analytics && npm run test:announcements && npm run test:metrics",
+    "test": "npm run test:units && npm run test:catalog && npm run test:plausibility && npm run test:analytics && npm run test:announcements && npm run test:rank-alert && npm run test:metrics",
     "test:plausibility": "tsx scripts/test-plausibility.ts",
     "test:analytics": "tsx scripts/test-analytics.ts",
     "test:announcements": "tsx scripts/test-announcements.ts",
-    "test:sessions": "tsx scripts/test-sessions.ts"
+    "test:rank-alert": "tsx scripts/test-rank-alert.ts",
+    "test:sessions": "tsx scripts/test-sessions.ts",
+    "test:push": "tsx scripts/test-push.ts"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.0",
     "@node-rs/argon2": "^2.1.0",
     "hono": "^4.6.14",
     "pg": "^8.13.1",
+    "web-push": "^3.6.7",
     "zod": "^3.24.1"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
     "@types/pg": "^8.11.10",
+    "@types/web-push": "^3.6.4",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   }

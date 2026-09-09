@@ -25,6 +25,7 @@ import { profileRoutes } from "./routes/profile.js";
 import { sessionRoutes } from "./routes/sessions.js";
 import { adminRoutes } from "./routes/admin.js";
 import { announcementRoutes } from "./routes/announcements.js";
+import { pushRoutes } from "./routes/push.js";
 import { sweepStaleSessions, purgeOldSessions } from "./services/scoreService.js";
 import { metricsMiddleware } from "./http/metrics-middleware.js";
 import { snapshot, resetWindow, formatSnapshotLines } from "./http/metrics.js";
@@ -81,6 +82,12 @@ v1.route("/auth", authRoutes);
 // panel would silently inherit profileRoutes' 120/min game-client rate limit
 // and a redundant auth round trip.
 v1.route("/admin", adminRoutes);
+// IDEA-052b. Own prefix and registered BEFORE the "/" mounts, for the same
+// reason as /admin: those sub-apps' `use("*")` stacks become ALL /api/v1/* in
+// registration order. Mounted after them, the deliberately PUBLIC
+// /push/vapid-key inherited announcementRoutes' requireAuth and answered 401.
+// Registers nothing at all when VAPID is unconfigured.
+v1.route("/push", pushRoutes);
 // IDEA-052. Own prefix, registered before the "/" mounts, same reason.
 v1.route("/", announcementRoutes);
 // profileRoutes and sessionRoutes declare their own full paths (/profile,

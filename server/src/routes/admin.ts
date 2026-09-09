@@ -44,6 +44,7 @@ import * as announcements from "../repo/announcements.js";
 import { parseAnnouncement, PROBLEM_MESSAGE } from "../validation/announcement.js";
 import { readBody } from "../http/body.js";
 import { badRequest, notFound } from "../http/errors.js";
+import { notifyAnnouncement } from "../services/pushService.js";
 
 export const adminRoutes = new Hono<{ Variables: AuthVars }>();
 
@@ -267,8 +268,19 @@ adminRoutes.patch("/announcements/:id", async (c) => {
 adminRoutes.post("/announcements/:id/publish", async (c) => {
   const body = await readBody(c);
   const published = body.published !== false; // absent means publish
+  const wasDraft = (await announcements.findById(c.req.param("id")))?.published_at === null;
   const row = await announcements.setPublished(c.req.param("id"), published);
   if (!row) throw notFound("No such announcement.");
+
+  // IDEA-052b: push only on the DRAFT -> LIVE transition. Re-publishing
+  // something already live (or toggling it back and forth) must not notify
+  // everyone again — setPublished keeps the original published_at for exactly
+  // that reason, and this mirrors it. Fire-and-forget: the operator's request
+  // should not wait on a fan-out, and pushService swallows its own errors.
+  if (published && wasDraft) {
+    void notifyAnnouncement(row.title, row.kind);
+  }
+
   return c.json({ announcement: toAdminDto(row) });
 });
 
