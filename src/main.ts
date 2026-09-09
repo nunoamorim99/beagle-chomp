@@ -28,6 +28,7 @@ import { attachRecoveryCode } from "./ui/recoveryCode";
 import { attachPrivacy } from "./ui/privacy";
 import { attachProfile } from "./ui/profile";
 import { attachLeaderboard } from "./ui/leaderboard";
+import { attachNews } from "./ui/news";
 import { me } from "./net/endpoints";
 import {
   getToken,
@@ -187,6 +188,16 @@ async function startApp(): Promise<void> {
     { signal: sessionListeners.signal },
   );
 
+  // IDEA-052: release notes and notices, opened from the bell in the menu bar.
+  // The badge is refreshed once here rather than polled — a note published
+  // mid-session can wait until the next boot, and a poll would be a request per
+  // player per interval for something that changes a few times a year.
+  const news = attachNews();
+  document.getElementById("menuNewsBtn")?.addEventListener("click", () => news.open(), {
+    signal: sessionListeners.signal,
+  });
+  void news.refreshBadge();
+
   // If the server ever rejects our token mid-session (deleted on another
   // device, revoked by a password reset), drop everything and go back to the
   // gate rather than leaving a game running against a dead session.
@@ -194,6 +205,7 @@ async function startApp(): Promise<void> {
     game.stop();
     profile.detach();
     leaderboard.detach();
+    news.detach();
     clearProfileCache();
     bootApp();
   });

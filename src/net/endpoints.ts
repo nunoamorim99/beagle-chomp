@@ -283,3 +283,38 @@ export function finishSession(
     { method: "POST", body: payload, keepalive: true },
   );
 }
+
+// --- announcements (IDEA-052) -----------------------------------------------
+
+export interface Announcement {
+  id: string;
+  kind: "release" | "notice";
+  /** "v8.0" on a release note, null on a notice. */
+  version: string | null;
+  title: string;
+  /** PLAIN TEXT, and it must stay that way on the way to the DOM. Blank lines
+   *  separate paragraphs; there is no markup vocabulary. The News screen renders
+   *  it with createElement + textContent, the same rule leaderboard.ts follows
+   *  for usernames — this is a server-controlled free-form string, which is a
+   *  first for this client. */
+  body: string;
+  /** Date only (YYYY-MM-DD): a note is a thing that happened on a day. */
+  publishedAt: string | null;
+  /** New to THIS player since they last opened the screen. */
+  isNew: boolean;
+}
+
+export interface AnnouncementFeed {
+  /** Drives the bell's unread dot. */
+  unread: number;
+  items: Announcement[];
+}
+
+export function fetchAnnouncements(): Promise<AnnouncementFeed> {
+  return apiRequest<AnnouncementFeed>("/api/v1/announcements");
+}
+
+/** Mark the feed seen. The server stamps its own clock — nothing is sent. */
+export function markAnnouncementsSeen(): Promise<void> {
+  return apiRequest<void>("/api/v1/announcements/seen", { method: "POST" });
+}
