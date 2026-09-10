@@ -19,7 +19,8 @@ Living backlog of ideas. Two purposes:
 _(empty — nothing to triage)_
 
 ## Backlog (open ideas)
-> New registered ideas go here. Next free ID: IDEA-054
+> New registered ideas go here. Next free ID: IDEA-056
+> (IDEA-054 is reserved for a concurrent session's crab enemy; the mosquito took 055 so the two could not collide at merge.)
 
 ### IDEA-028 — Challenge twist: moving walls / maze changes mid-level 💡
 - **Priority:** 🟢
@@ -226,6 +227,85 @@ _(empty — nothing to triage)_
     **Not done:** no dedicated shop glyph. A fifth icon means re-cutting the Material Symbols
     subset, and an unlisted name renders as that word on the card, so the flea uses the
     documented fallback until the subset is re-cut.
+
+### IDEA-055 — The mosquito: all needle and wings 🔨
+- **Priority:** 🟡
+- **Area:** skins
+- **Registered:** 2026-09-10
+- **Description:** (Nuno) the next enemy after the flea — a cartoon mosquito, built from a
+  reference image through the img2threejs pipeline and sold in the shop like the rest.
+- **Notes:** a sixth `EnemySkin`, so it costs no new machinery — `makeEnemy` dispatches, the
+  registry gains a row, and `GhostUserData` is satisfied exactly as the other five satisfy it.
+  Priced 25 with its siblings. Built in its own workspace (`.img2threejs/mosquito/`) so neither
+  the beagle's IDEA-047 trail nor the flea's IDEA-053 one was touched. Following the same
+  precedent, the pipeline's generated factory stays in `src/render/rework/` (never imported) and
+  the SHIPPED mesh is hand-authored in `characters.ts` from the numbers the pipeline locked.
+  **ID 055 rather than the free 054**: a concurrent session was starting a crab, and taking the
+  next-free ID from both sides would have collided at merge.
+- **Dependencies:** [[IDEA-009]], [[IDEA-012]], [[IDEA-047]], [[IDEA-053]]
+- **History:**
+  - **v1** (2026-09-10) — `makeMosquito()`: a revolved banded abdomen on a pinched waist, a
+    near-black thorax, an oversized head with a 0.73 HD proboscis, two long translucent veined
+    wings and six splayed legs. Proportion base **HD = 0.27** — deliberately NOT the 0.32 the bee
+    and flea use, because a mosquito is a LONGER animal at the same envelope: at 0.32 the model
+    measured 0.90 along Z, past the beetle's 0.872 which is the cast's ceiling. Measured
+    w 0.812 / h 0.762 / l 0.865 / crown 0.780, 13 648 triangles, 56 meshes — all four dimensions
+    inside the shipped cast's band, triangles between the flea's 12 828 and the bee's 16 868.
+    Registry + dispatch + editor tab + shop card + `catalog.generated.ts` (server `npm run sync`,
+    now 6 enemy skins). `characters.ts`, `cosmetics.ts`, `editor/registry.ts`, `ui/shop.ts`,
+    `preview-rework/`, `test-cosmetics.ts`, `test-runtime-owned.ts`. Build + full suite green.
+
+    **THE WHOLE MODEL IS BUILT AGAINST ONE RISK: the bee.** The bee already has translucent
+    veined wings, antennae, a three-mass head→thorax→abdomen diagonal, six legs and a hover node
+    — and colour cannot separate them, because every skin takes the team colour and is recoloured
+    AGAIN when frightened. Silhouette carries the entire identity, so every separator is measured:
+    ONE wing pair against the bee's two; 1.90 HD wings against its 0.85 HD forewing; an abdomen of
+    aspect 0.51 coming to a point against its rounded 1.15 HD; a proboscis where the bee has
+    nothing; legs splayed wider than the body against its tucked four. Verified the way the risk
+    was written — both models rendered at the SAME team colour and the SAME play-camera angle,
+    not asserted in a test.
+
+    **Four defects, each caught by a specific instrument rather than by looking.**
+    **The envelope caught two inverted orientations.** The abdomen and the proboscis were both
+    aimed with hand-written Euler angles and both came out pointing the wrong way — the abdomen
+    forward-down, tucked under the model's own head. The measured length came back 0.67 against a
+    solved 0.842, which is what exposed it; a render alone reads as "a bit odd". Both are now
+    aimed with `setFromUnitVectors` from the solved layout, where a sign cannot be got wrong.
+    **The band boundaries zigzagged.** Triangles were bucketed into material groups by their own
+    mean height, but a lathe quad's two triangles have different means — so the two halves of
+    every quad landed on opposite sides of a boundary and the band edge alternated around the
+    circumference. That is IDEA-047's "spiky markings" defect in a new place. Classifying by RING
+    makes every boundary a clean circle. **The clay render caught the droop.** The reference
+    projects 60.2° and a first pass used 56°; the play camera sits at 59° elevation, so the
+    abdomen pointed almost straight down the view axis and foreshortened to a stub with almost no
+    form presence. 44° trails it visibly while staying steeper than the bee's 32°. **And the
+    comparison sheet rejected the wings at 1.60 HD** — the reference's wings dominate its
+    silhouette and at 1.60 the model read as a small-winged insect. Grown to 1.90, which is what
+    the crown and width budgets actually allowed; the length axis had none.
+
+    **IDEA-053's rule 2 was applied deliberately rather than relearned.** `creaseMat` is its own
+    material and is kept OUT of `accentMats`, so the frightened recolour cannot erase the
+    banding — verified by rendering the frightened state, not by assertion. The crease WIDTHS are
+    narrowed from the measured runs, and that one is a genuine deviation with a reason: the
+    reference's dark runs are brown-on-brown, a modest step, but here they sit against a saturated
+    team colour at maximum contrast, and at measured width the abdomen read as a WASP — the one
+    silhouette this model must not borrow.
+
+    **The leg-joint rule was applied from the start**, not rediscovered: every segment spans its
+    joint distance with half a radius of overlap and a knuckle ball sits at each knee and ankle.
+    `scripts/_scratch-mosquito-gaps.ts` proves it as a CONTAINMENT test — 3 618 centreline samples
+    across 6 legs, all inside a solid.
+
+    **The generated factory does not work, and that is recorded rather than hidden.** It produced
+    4 meshes and 384 triangles of fan shapes, because the spec describes its lathes by dimension
+    and the generator therefore invents the silhouette — unrecoverable for a subject whose
+    identity IS a measured 41-point revolved profile. Full account in
+    `.img2threejs/mosquito/evidence/pipeline-completion.md`. The pipeline's value here was the
+    measurement, the gates and the evidence trail, not its code.
+
+    **Not done:** no dedicated shop glyph, same as the flea — a sixth icon means re-cutting the
+    Material Symbols subset, so it uses the documented fallback. Not deployed; this is a product
+    change and wants its own release decision.
 
 ### IDEA-048 — Toon boards, not glass panels: a real design system for the 2D layer 🔨
 - **Priority:** 🔴

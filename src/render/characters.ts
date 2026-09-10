@@ -2818,6 +2818,599 @@ export function makeFlea(color: number): THREE.Group {
   return g;
 }
 
+
+// ---------------------------------------------------------------------------
+// THE MOSQUITO — the third img2threejs rebuild (IDEA-055), after the beagle
+// (IDEA-047) and the flea (IDEA-053). Same split as both: the pipeline's
+// generated factory sits unused in src/render/rework/createMosquitoModel.ts and
+// the SHIPPED mesh is hand-authored from the numbers that run locked. The whole
+// evidence trail is .img2threejs/mosquito/ — a per-subject workspace, so a new
+// run never overwrites another subject's.
+//
+// PROPORTION BASE: HEAD DIAMETER = HD, measured at 155 px on the reference,
+// and every dimension below is a multiple of it. HD = 0.27 here, NOT the 0.32
+// the bee and flea use, and that is deliberate: a mosquito is a LONGER animal
+// at the same envelope. At 0.32 the model measured 0.90 along Z, past the
+// beetle's 0.872 which is the cast's ceiling. At 0.27 it lands at 0.842 with
+// the head 16% smaller than the bee's — which is what the reference shows.
+//
+// Measured against the shipped cast (scripts/_scratch-enemy-cast.ts):
+//   w 0.587 (band 0.531-0.849) · h 0.636 (0.624-0.822)
+//   l 0.842 (0.610-0.872)      · crown 0.686 (0.600-0.803)
+const MOSQ_DARK = 0x2a1a0e; // thorax + large dark accent
+const MOSQ_CREASE = 0x241408; // abdomen creases — NOT in accentMats, see below
+const MOSQ_WING = 0xf7f4e2; // membrane, the reference's #FAF8E1
+const MOSQ_LIMB = 0x14100c; // legs and antennae
+
+// The abdomen's revolved profile, as fractions of the maximum half-width,
+// sampled every 0.025 along the axis off the reference (evidence/bands.py).
+// This is NOT a capsule and not an ellipsoid: the mass is pinched to a 6.5:1
+// waist, holds a near-constant STALK to about t=0.28, swells to its maximum
+// just PAST mid-length at t=0.475, then tapers to a rounded point. That stalk
+// -then-bulb silhouette is identity feature #3 and the thing a capsule loses.
+//
+// The two readings at t=0.05 and t=0.075 are dropped: the measuring ray hit the
+// thorax there and reported 0.83 and 0.69 against neighbours near 0.28 and 0.52.
+// They are interpolated instead of trusted.
+const MOSQ_ABDOMEN_PROFILE: readonly number[] = [
+  0.154, 0.282, 0.36, 0.44, 0.521, 0.53, 0.53, 0.538, 0.53, 0.521,
+  0.521, 0.504, 0.547, 0.607, 0.684, 0.744, 0.821, 0.88, 0.949, 1.0,
+  0.991, 0.94, 0.94, 0.974, 0.966, 0.949, 0.932, 0.906, 0.889, 0.855,
+  0.829, 0.795, 0.769, 0.727, 0.667, 0.624, 0.556, 0.487, 0.427, 0.325,
+  0.231,
+];
+
+// The measured banding, as [t0, t1] ranges that take the CREASE material.
+// Two narrow interior creases plus a dark base and a dark tip; the four
+// mid-tone segments between them are the body colour.
+const MOSQ_ABDOMEN_CREASES: readonly (readonly [number, number])[] = [
+  [0.16, 0.21],
+  [0.4, 0.45],
+  [0.67, 0.72],
+  [0.93, 1.06],
+];
+// The measured tone runs are wider than this — dark over 0.000-0.233,
+// 0.396-0.462, 0.678-0.744 and 0.903-1.000. They are NARROWED on purpose, and
+// the reason is the recolour rather than the reference.
+//
+// In the reference those runs are dark BROWN against mid brown: a modest step
+// that reads as shading between segments. Here the body carries the TEAM
+// COLOUR, so a fixed dark band sits against a saturated hue at maximum
+// contrast, and at the measured widths the abdomen came back as four heavy
+// black rings on red — a WASP, which is the one silhouette this model must not
+// borrow (the bee is its recorded collision risk). Narrow creases read as
+// segmentation; wide ones read as stripes. The band CENTRES are kept where the
+// measurement put them; only their widths are pulled in. The 0.16 crease stands
+// in for the measured dark base, whose real extent is swallowed by the thorax.
+
+/**
+ * Builds the abdomen as a lathe of the measured profile, with the creases as
+ * PER-TRIANGLE MATERIAL GROUPS rather than separate decal meshes — the same
+ * technique `splitCoatGroups` uses for the beagle's tricolor coat.
+ *
+ * Why groups and not decals: the flea's bands are shells laid on a sphere,
+ * which works because its abdomen IS a sphere. This profile is not a quadric,
+ * so a decal would have to be re-fitted at every radius and would still show
+ * its open edges where the curve changes fastest. A group costs nothing extra —
+ * the triangles already exist — and a band boundary lands EXACTLY on the
+ * measured t rather than near it.
+ *
+ * Triangles are bucketed by their own mid-axis position and the index buffer is
+ * rebuilt in bucket order, so the groups are contiguous without depending on
+ * how LatheGeometry happens to emit its index.
+ */
+function mosquitoAbdomenGeometry(length: number, maxRadius: number): THREE.BufferGeometry {
+  const pts: THREE.Vector2[] = [];
+  const n = MOSQ_ABDOMEN_PROFILE.length;
+  // A flat disc cap closes the waist end; without it the lathe is an open tube
+  // and you see straight up inside the abdomen from below.
+  pts.push(new THREE.Vector2(0.0001, 0));
+  for (let i = 0; i < n; i++) {
+    pts.push(new THREE.Vector2(MOSQ_ABDOMEN_PROFILE[i] * maxRadius, (i / (n - 1)) * length));
+  }
+  // Close to a rounded POINT, not a hemispherical cap — measured half-width is
+  // still 0.231 at t=1.0, so the tip is a short cone off that last ring.
+  pts.push(new THREE.Vector2(0.0001, length * 1.03));
+
+  const geo = new THREE.LatheGeometry(pts, 24);
+  const index = geo.getIndex();
+  const pos = geo.getAttribute("position");
+  if (!index) return geo;
+
+  const isCrease = (t: number): boolean =>
+    MOSQ_ABDOMEN_CREASES.some(([a, b]) => t >= a && t <= b);
+
+  // Classify by RING, not by the triangle's own mean height.
+  //
+  // A lathe quad is two triangles between the same pair of profile rings, but
+  // one has two vertices on the lower ring and one on the upper, and the other
+  // is the reverse — so their mean y values differ, and a boundary tested
+  // against the mean puts the two halves of a quad on opposite sides of it. The
+  // band edge then alternates up and down around the circumference: the same
+  // zigzag IDEA-047 recorded as the beagle's "spiky" markings. Every triangle in
+  // a ring gets the ring's own midpoint here, so a boundary is a clean circle.
+  const ys = pts.map((p) => p.y);
+  const ringT = (y: number): number => {
+    let lo = 0;
+    for (let i = 0; i < ys.length - 1; i++) if (y >= ys[i] - 1e-6) lo = i;
+    return ((ys[lo] + ys[Math.min(lo + 1, ys.length - 1)]) / 2) / length;
+  };
+
+  const body: number[] = [];
+  const crease: number[] = [];
+  const arr = index.array;
+  for (let i = 0; i < arr.length; i += 3) {
+    const minY = Math.min(pos.getY(arr[i]), pos.getY(arr[i + 1]), pos.getY(arr[i + 2]));
+    (isCrease(ringT(minY)) ? crease : body).push(arr[i], arr[i + 1], arr[i + 2]);
+  }
+  geo.setIndex([...body, ...crease]);
+  geo.clearGroups();
+  geo.addGroup(0, body.length, 0);
+  geo.addGroup(body.length, crease.length, 1);
+  return geo;
+}
+
+/**
+ * Builds a garden-mosquito enemy from primitives (IDEA-055, the sixth enemy
+ * skin alongside the ghost, beetle, bee, ladybug and flea). Satisfies the
+ * identical `GhostUserData` contract, so game.ts treats it like any other.
+ *
+ * THE RISK THIS MODEL IS BUILT AGAINST IS THE BEE. The bee already has
+ * translucent veined wings, antennae, a three-mass head→thorax→abdomen diagonal,
+ * six legs and a hover node — and colour cannot separate them, because both
+ * take the team colour and both are recoloured again when frightened. So the
+ * SILHOUETTE carries the whole identity, and every separator here is measured:
+ *
+ *   ONE wing pair, not two          · wing 1.60 HD vs the bee's 0.85 HD forewing
+ *   abdomen aspect 0.51 and POINTED · vs the bee's rounded 1.15 HD
+ *   a 0.73 HD proboscis             · the bee has nothing there
+ *   legs splayed wider than the body · the bee's are tucked
+ *
+ * This is the same trap IDEA-053 recorded for the flea against the beetle and
+ * ladybug, and that one was hit twice before it read correctly.
+ */
+export function makeMosquito(color: number): THREE.Group {
+  const g = new THREE.Group();
+
+  const HD = 0.27;
+  const HR = HD / 2;
+
+  // The body carries the TEAM colour — head, proboscis and abdomen, which is a
+  // large enough coloured area to read at gameplay size. The thorax, limbs and
+  // antennae are the dark accent.
+  const bodyMat = toon({ color, emissive: color, emissiveIntensity: 0.12 });
+  const darkMat = toon({ color: MOSQ_DARK });
+  darkMat.userData.baseColor = MOSQ_DARK;
+  const limbMat = toon({ color: MOSQ_LIMB });
+  limbMat.userData.baseColor = MOSQ_LIMB;
+
+  // The creases get their OWN material, deliberately kept OUT of accentMats —
+  // IDEA-053's rule 2, learned the hard way on the flea. darkMat IS in
+  // accentMats, so sharing it would make the frightened recolour paint body and
+  // creases the same blue and the banding would vanish in the one state where
+  // the player is chasing the thing. Two narrow creases are a negligible share
+  // of the silhouette, which is exactly the small-fixed-accent case in
+  // GhostUserData's documented rule.
+  const creaseMat = toon({ color: MOSQ_CREASE });
+  creaseMat.userData.baseColor = MOSQ_CREASE;
+
+  const wingMat = toon({
+    color: MOSQ_WING,
+    transparent: true,
+    opacity: 0.55,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  const veinMat = toon({
+    color: 0xffffff,
+    transparent: true,
+    // Faint, and no depth write. At full opacity these punch through the head
+    // as bright whiskers when seen edge-on — the defect the bee already records.
+    opacity: 0.26,
+    depthWrite: false,
+  });
+
+  // A mosquito hovers, so everything hangs off this node and the behaviour bobs
+  // it. The root belongs to syncToEntity (position, yaw).
+  const hover = new THREE.Group();
+  hover.name = "hover";
+  g.add(hover);
+
+  // --- thorax: the hub ------------------------------------------------------
+  // Not a spine — head, abdomen, both wings and all six legs branch from here.
+  // Near-black in the reference and distinctly darker than the cuticle, which
+  // is what gives the three-mass value read.
+  const THORAX = new THREE.Vector3(0, 0.4, 0);
+  const thorax = new THREE.Mesh(new THREE.SphereGeometry(HD * 0.34, 20, 14), darkMat);
+  thorax.name = "thorax";
+  thorax.scale.set(0.96, 1.04, 1.0);
+  thorax.position.copy(THORAX);
+  hover.add(thorax);
+
+  // The one discrete specular mark on the subject: a lighter ellipse on the
+  // upper-front quadrant. Small and fixed, so like the creases it keeps its own
+  // colour rather than joining the recolour.
+  const glossMat = toon({ color: 0x5a5a5a });
+  glossMat.userData.baseColor = 0x5a5a5a;
+  const gloss = new THREE.Mesh(
+    new THREE.SphereGeometry(HD * 0.345, 14, 10, 0, Math.PI * 2, 0, 0.62),
+    glossMat,
+  );
+  gloss.name = "thoraxGloss";
+  gloss.scale.set(0.96, 1.04, 1.0);
+  gloss.position.copy(THORAX);
+  gloss.rotation.set(-0.5, 0, 0.7);
+  hover.add(gloss);
+
+  // --- head: forward and slightly above the thorax --------------------------
+  // 0.64 HD ahead of the thorax, not the 0.74 the reference measures. The head
+  // and thorax overlap either way — head radius 0.50 HD plus thorax 0.34 HD is
+  // 0.84 — so the joint looks identical, and the 0.10 HD bought back here pays
+  // for the shallower abdomen droop below without shortening either feature.
+  const HEAD = new THREE.Vector3(0, THORAX.y + HD * 0.065, THORAX.z + HD * 0.64);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(HR, 22, 16), bodyMat);
+  head.name = "head";
+  head.scale.set(1, 0.96, 1.02);
+  head.position.copy(HEAD);
+  hover.add(head);
+
+  // --- proboscis: identity rank 1 -------------------------------------------
+  // The one feature no other enemy in the cast has. A lathe rather than a bare
+  // cone so the base swell the reference shows survives — its widest run is
+  // 39 px and it drops away fast — and so the tip converges to a TRUE POINT
+  // rather than a flat cap.
+  const PROB_LEN = HD * 0.73;
+  const PROB_R = HD * 0.095;
+  const probPts = [
+    new THREE.Vector2(0.0001, 0),
+    new THREE.Vector2(PROB_R * 0.92, PROB_LEN * 0.02),
+    new THREE.Vector2(PROB_R, PROB_LEN * 0.1),
+    new THREE.Vector2(PROB_R * 0.66, PROB_LEN * 0.3),
+    new THREE.Vector2(PROB_R * 0.42, PROB_LEN * 0.55),
+    new THREE.Vector2(PROB_R * 0.22, PROB_LEN * 0.78),
+    new THREE.Vector2(0.0001, PROB_LEN),
+  ];
+  const proboscis = new THREE.Mesh(new THREE.LatheGeometry(probPts, 14), bodyMat);
+  proboscis.name = "proboscis";
+  // Leaves the head's front-lower face, 27.5° below horizontal (measured).
+  proboscis.position.set(0, HEAD.y - HR * 0.42, HEAD.z + HR * 0.86);
+  // Aimed by unit vectors rather than a hand-written Euler. The first pass wrote
+  // `rotation.x = PI/2 - 0.48`, which points the lathe's +Y axis UP-forward —
+  // the needle rose off the face instead of dropping below it. Deriving the
+  // direction from the solved layout makes the sign impossible to get wrong.
+  proboscis.quaternion.setFromUnitVectors(
+    new THREE.Vector3(0, 1, 0),
+    new THREE.Vector3(0, -0.462, 0.887).normalize(),
+  );
+  hover.add(proboscis);
+
+  // Two teeth on the lower front — the reference's grin.
+  const toothMat = toon({ color: 0xfdfaf2 });
+  const grin = new THREE.Mesh(
+    new THREE.SphereGeometry(HR * 0.98, 14, 10, 0, Math.PI * 2, 0, 0.3),
+    toothMat,
+  );
+  grin.name = "grin";
+  grin.position.copy(HEAD);
+  grin.rotation.set(1.15, 0, 0);
+  hover.add(grin);
+
+  // --- eyes: the flea/beetle/bee build — a white ball with flush caps -------
+  const scleraMat = toon({ color: 0xfdf9f2 });
+  const irisMat = toon({ color: 0x6b4a2a });
+  const pupM = toon({ color: 0x0a0c12 });
+  // The glint is the ONE deliberate unlit material in the model. A toon ramp
+  // quantises a highlight into the same band as everything else facing the
+  // light, and it stops reading as a catchlight.
+  const glintMat = toon({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.5 });
+  const mosquitoEyeMats = [scleraMat, irisMat, pupM, glintMat, toothMat];
+
+  // Oversized on purpose: 0.45 HD across, measured. The mascot read is entirely
+  // in them, and they are also what a player tracks while the enemy is eaten.
+  const EYE_R = HD * 0.225;
+  const EYE_FWD = Math.PI / 2;
+  const EYE_TILT = -0.12;
+  const eyeCap = (
+    factor: number,
+    rx: number,
+    ry: number,
+    thetaLen: number,
+    mat: THREE.MeshToonMaterial,
+  ): THREE.Mesh => {
+    const geo = new THREE.SphereGeometry(EYE_R * factor, 16, 12, 0, Math.PI * 2, 0, thetaLen);
+    geo.rotateX(rx);
+    geo.rotateY(ry);
+    return new THREE.Mesh(geo, mat);
+  };
+
+  const eyes: THREE.Object3D[] = [];
+  const pupPivots: THREE.Object3D[] = [];
+  const makeEye = (s: number): void => {
+    // Set on the LATERAL faces and standing proud of the head — the reference's
+    // cuticle wraps behind each eye rather than socketing it.
+    const centre = new THREE.Vector3(0.31 * HD * s, HEAD.y + HR * 0.33, HEAD.z + HR * 0.52);
+    const ball = new THREE.Mesh(new THREE.SphereGeometry(EYE_R, 16, 12), scleraMat);
+    ball.name = s < 0 ? "eyeL" : "eyeR";
+    ball.position.copy(centre);
+
+    const pivot = new THREE.Group();
+    pivot.name = s < 0 ? "pupilPivotL" : "pupilPivotR";
+    pivot.position.copy(centre);
+
+    const iris = eyeCap(1.012, EYE_FWD, (EYE_TILT + 0.5) * s, 0.78, irisMat);
+    iris.name = s < 0 ? "irisL" : "irisR";
+    pivot.add(iris);
+    // Half the sclera diameter — cartoon oversize, measured, not anatomy.
+    const pupil = eyeCap(1.03, EYE_FWD, (EYE_TILT + 0.5) * s, 0.52, pupM);
+    pupil.name = s < 0 ? "pupilL" : "pupilR";
+    pivot.add(pupil);
+    const glint = eyeCap(1.05, EYE_FWD - 0.3, (EYE_TILT + 0.78) * s, 0.15, glintMat);
+    glint.name = s < 0 ? "glintL" : "glintR";
+    pivot.add(glint);
+
+    eyes.push(ball, iris, pupil, glint);
+    pupPivots.push(pivot);
+    hover.add(ball, pivot);
+  };
+  makeEye(-1);
+  makeEye(1);
+
+  // --- antennae: ARCS, not rods --------------------------------------------
+  // Measured, the horizontal step per 24 px of rise falls 10.5 → 5 → 3, so the
+  // curve steepens toward the tip. Straight antennae read as a beetle's.
+  const antennae: THREE.Object3D[] = [];
+  ([-1, 1] as const).forEach((s) => {
+    const pivot = new THREE.Group();
+    pivot.name = s < 0 ? "antennaPivotL" : "antennaPivotR";
+    pivot.position.set(0.15 * HD * s, HEAD.y + HR * 0.86, HEAD.z + HR * 0.22);
+    hover.add(pivot);
+    antennae.push(pivot);
+
+    const A = HD * 0.58;
+    const curve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(0, 0, 0),
+      new THREE.Vector3(0.3 * A * s, 0.55 * A, -0.1 * A),
+      new THREE.Vector3(0.42 * A * s, 0.95 * A, -0.3 * A),
+    ]);
+    const ant = new THREE.Mesh(
+      new THREE.TubeGeometry(curve, 10, HD * 0.015, 6, false),
+      limbMat,
+    );
+    ant.name = s < 0 ? "antennaL" : "antennaR";
+    pivot.add(ant);
+  });
+
+  // --- wings: identity rank 2 ----------------------------------------------
+  // ONE pair — the bee has two — and each is 1.60 HD long against the bee's
+  // 0.85 HD forewing, so length is the separator that survives any recolour.
+  //
+  // 1.60 HD is a DOCUMENTED DEVIATION from the measured 2.22: at 2.22 the wing
+  // is 0.60 world units and, held at the reference's sweep, overruns the crown
+  // budget the cast occupies. Swept rearward at 35° the length loads the LENGTH
+  // axis instead, which had the room. It is still ~1.9x the bee's.
+  const wings: THREE.Object3D[] = [];
+  ([-1, 1] as const).forEach((s) => {
+    const mount = new THREE.Group();
+    mount.name = s < 0 ? "wingMountL" : "wingMountR";
+    // On the thorax DORSUM with the roots converging near the midline, as
+    // measured — not out on the flanks.
+    mount.position.set(0.07 * HD * s, THORAX.y + HD * 0.32, THORAX.z - HD * 0.034);
+    hover.add(mount);
+
+    const pivot = new THREE.Group();
+    pivot.name = s < 0 ? "wingL" : "wingR";
+    // Swept up 35°, back, and splayed 38° off the midline — aimed straight from
+    // the solved layout's root→tip vector. Composed Euler angles were tried and
+    // sent both wings FORWARD over the head, where a long translucent lobe reads
+    // as exactly the bee paddle this model exists not to be.
+    // Spread wide (52° off the midline) and lifted only 32°, so the wings flank
+    // the abdomen instead of lying along it. At the first pass's 38°/35° they
+    // covered the abdomen almost completely from the GAME CAMERA — which sits at
+    // 59° elevation, not the 12° a turntable defaults to — and a mosquito whose
+    // slender banded abdomen is invisible in play is a mosquito reduced to a head
+    // and two wings. That is the bee.
+    pivot.quaternion.setFromUnitVectors(
+      new THREE.Vector3(s, 0, 0),
+      new THREE.Vector3(0.668 * s, 0.53, -0.522).normalize(),
+    );
+    mount.add(pivot);
+    wings.push(pivot);
+
+    // 1.90 HD, against the reference's measured 2.22. A first pass used 1.60 and
+    // the side-by-side comparison sheet is what rejected it: the reference's
+    // wings DOMINATE its silhouette, and at 1.60 they read as a small-winged
+    // insect instead. The budget had the room — swept at 32° they load the
+    // crown (0.76 against a 0.803 ceiling) and the width (0.72 against 0.849)
+    // and not the length, which was the axis that had none.
+    const LEN = HD * 1.9;
+    // 3.45:1, against the reference's measured 2.85:1. Slimmer than measured
+    // because a broad lobe is the bee's read; length-to-width is the cheapest
+    // place to buy separation, and it costs nothing in the silhouette that
+    // matters.
+    const WIDE = HD * 0.55;
+    // A flattened lens, not an alpha-textured plane: this project builds every
+    // character from primitives and ships no textures, and a CanvasTexture would
+    // break the headless suites outright — they build these models in Node,
+    // where there is no document to draw on.
+    const blade = new THREE.Mesh(new THREE.SphereGeometry(LEN / 2, 18, 10), wingMat);
+    blade.name = s < 0 ? "wingBladeL" : "wingBladeR";
+    // The sphere's diameter IS LEN, so the width factor is WIDE/LEN — not
+    // twice that. The doubled version made the wing 0.33 wide against a measured
+    // 0.167 and it read as a rounded paddle, which is the bee.
+    blade.scale.set(1, 0.045, WIDE / LEN);
+    blade.position.x = (LEN / 2) * s;
+    pivot.add(blade);
+
+    // Four veins fanning from the root. Count is the midpoint of a 3-clear /
+    // 5-faint reading — at the game camera the FAN is the read, not the tally.
+    for (let i = 0; i < 4; i++) {
+      const vein = new THREE.Mesh(
+        new THREE.BoxGeometry(LEN * 0.6, LEN * 0.006, LEN * 0.006),
+        veinMat,
+      );
+      vein.name = `wingVein${i}${s < 0 ? "L" : "R"}`;
+      vein.position.set(LEN * 0.42 * s, 0, WIDE * (i - 1.5) * 0.2);
+      vein.rotation.y = (0.3 - i * 0.12) * s;
+      pivot.add(vein);
+    }
+  });
+
+  // --- abdomen: identity rank 3 --------------------------------------------
+  // Hung on its own pivot at the waist so the behaviour can swing it with lag.
+  const waist = new THREE.Group();
+  waist.name = "waistPivot";
+  // The socket sits HD*0.14 behind the thorax centre, not the HD*0.313 the
+  // reference measures. Both are inside the thorax's own 0.34 HD radius, so the
+  // joint looks the same — the abdomen emerges from the thorax's rear surface
+  // either way, and burying the first slice of a WAIST is what a waist is. The
+  // depth is a length-budget knob: the measured value pushed the model to 0.898
+  // along Z, past the beetle's 0.872 which is the shipped cast's ceiling.
+  // Spending it here costs nothing visible; shortening the abdomen or the
+  // proboscis would have cost identity features #3 and #1.
+  waist.position.set(0, THORAX.y - HD * 0.1, THORAX.z - HD * 0.1);
+  hover.add(waist);
+
+  const ABD_LEN = HD * 1.46;
+  const ABD_R = HD * 0.375;
+  const abdomen = new THREE.Mesh(mosquitoAbdomenGeometry(ABD_LEN, ABD_R), [
+    bodyMat,
+    creaseMat,
+  ]);
+  abdomen.name = "abdomen";
+  // The lathe is built along +Y; swing it to point REARWARD and 44° down.
+  //
+  // The reference projects a 60.2° droop and a first pass used 56°. Both are too
+  // steep FOR THIS GAME, and the map-stripped clay render is what proved it: the
+  // play camera sits at 59° elevation (scene.ts BASE_POS), so an abdomen hanging
+  // at 56° points almost straight along the view axis and foreshortens to a
+  // stub. With colour stripped it had nearly no form presence at all — identity
+  // feature #3 carried entirely by two dark bands, which is exactly the failure
+  // mode IDEA-053 recorded on the flea.
+  //
+  // 44° trails the abdomen visibly from above while staying clearly steeper than
+  // the bee's 32°. The separator from the bee was never the angle anyway: it is
+  // that this abdomen is slender (aspect 0.51) and comes to a point, where the
+  // bee's is rounded.
+  //
+  // Aimed by unit vectors. `rotation.x = PI/2 + 0.977` was tried and points the
+  // abdomen forward-down, tucking the model's LONGEST mass under its own head:
+  // the measured envelope came back 0.67 long against a solved 0.842, which is
+  // how the error was caught. Length is identity feature #3; it has to trail.
+  abdomen.quaternion.setFromUnitVectors(
+    new THREE.Vector3(0, 1, 0),
+    new THREE.Vector3(0, -0.695, -0.719).normalize(),
+  );
+  waist.add(abdomen);
+
+  // --- legs: six, splayed wider than the body ------------------------------
+  // A capsule's `length` argument is the CYLINDER ONLY — the caps add `radius`
+  // on top. So each segment SPANS its joint distance with half a radius of
+  // overlap, never a fraction of it: sizing a segment as a fraction of its span
+  // is what left the flea's hind leg rendering in three separated pieces
+  // (IDEA-053). A knuckle ball then sits at every knee and ankle, because
+  // overlap closes a gap ALONG the limb's axis but not ACROSS a ~132° fold,
+  // where two tangent capsules leave an open wedge.
+  const LEG_R = HD * 0.03;
+  const legSwings: THREE.Object3D[] = [];
+  const bone = (
+    from: THREE.Vector3,
+    to: THREE.Vector3,
+    name: string,
+    parent: THREE.Object3D,
+  ): void => {
+    const span = from.distanceTo(to);
+    const seg = new THREE.Mesh(
+      new THREE.CapsuleGeometry(LEG_R, Math.max(0.001, span - LEG_R), 4, 8),
+      limbMat,
+    );
+    seg.name = name;
+    seg.position.copy(from).add(to).multiplyScalar(0.5).sub(parent.position);
+    seg.quaternion.setFromUnitVectors(
+      new THREE.Vector3(0, 1, 0),
+      to.clone().sub(from).normalize(),
+    );
+    parent.add(seg);
+  };
+  const knuckle = (at: THREE.Vector3, name: string, parent: THREE.Object3D): void => {
+    const k = new THREE.Mesh(new THREE.SphereGeometry(LEG_R * 1.05, 8, 6), limbMat);
+    k.name = name;
+    k.position.copy(at).sub(parent.position);
+    parent.add(k);
+  };
+
+  // Solved off the measured yaw/pitch table (evidence/layout.json): front,
+  // middle and hind pairs at 64° / 108° / 128° from forward, pitched -38° /
+  // -44° / -40°, with the tibia folding to -84°. The resulting knee folds are
+  // 131-137°, against the ~132° measured off the reference.
+  const LEGS: readonly (readonly [string, number, number, number, number, number, number])[] = [
+    // tag, rootZ, kneeX, kneeY, kneeZ, ankleY, ankleZ  (X mirrored per side)
+    ["F", 0.0505, 0.145, 0.2335, 0.0977, 0.1029, 0.1004],
+    ["M", 0.0, 0.1417, 0.2227, -0.0304, 0.0921, -0.0323],
+    ["H", -0.0505, 0.1307, 0.2298, -0.1149, 0.0992, -0.1187],
+  ];
+  const ANKLE_X = [0.1506, 0.1476, 0.1356];
+  const TOE = [
+    [0.1632, 0.097, 0.1065],
+    [0.1598, 0.0862, -0.0362],
+    [0.1464, 0.0933, -0.1271],
+  ];
+  LEGS.forEach(([tag, rootZ, kx, ky, kz, ay, az], i) => {
+    ([-1, 1] as const).forEach((s) => {
+      const root = new THREE.Vector3(0.0483 * s, 0.3176, rootZ);
+      const swing = new THREE.Group();
+      swing.name = `legSwing${tag}${s < 0 ? "L" : "R"}`;
+      swing.position.copy(root);
+      hover.add(swing);
+      legSwings.push(swing);
+
+      const knee = new THREE.Vector3(kx * s, ky, kz);
+      const ankle = new THREE.Vector3(ANKLE_X[i] * s, ay, az);
+      const toe = new THREE.Vector3(TOE[i][0] * s, TOE[i][1], TOE[i][2]);
+
+      bone(root, knee, `femur${tag}${s < 0 ? "L" : "R"}`, swing);
+      knuckle(knee, `knee${tag}${s < 0 ? "L" : "R"}`, swing);
+      bone(knee, ankle, `tibia${tag}${s < 0 ? "L" : "R"}`, swing);
+      knuckle(ankle, `ankle${tag}${s < 0 ? "L" : "R"}`, swing);
+      bone(ankle, toe, `foot${tag}${s < 0 ? "L" : "R"}`, swing);
+    });
+  });
+
+  g.traverse((o) => {
+    if (o instanceof THREE.Mesh) o.castShadow = true;
+  });
+  // Wings never cast: a translucent blade throws a hard black shadow that
+  // instantly reads as a solid paddle.
+  for (const w of wings) {
+    w.traverse((o) => {
+      if (o instanceof THREE.Mesh) o.castShadow = false;
+    });
+  }
+
+  const userData: GhostUserData = {
+    bodyMat,
+    // The dark cuticle is the thorax, and limbMat the legs and antennae —
+    // together a large enough share of the silhouette that leaving them
+    // un-recoloured would blunt the "edible now" read. The creases and the
+    // thorax gloss are the small-fixed case and are deliberately absent here.
+    accentMats: [darkMat, limbMat, wingMat],
+    eyes,
+    pupPivots,
+    pupM,
+    pupBaseColor: pupM.color.getHex(),
+    baseColor: color,
+    // The mosquito's life is the hover, the wing beat and the trailing abdomen,
+    // not a hem wobble — so no hem and no skirt, which opts it out of the
+    // shared breathe.
+    hem: [],
+    pupOffset: { x: 0, z: 0 },
+    behaviour: beeBehaviour(hover, [waist], wings, antennae, legSwings),
+    eyeMats: mosquitoEyeMats,
+    spiritMats: collectSpiritMats(g, mosquitoEyeMats),
+  };
+  g.userData = userData;
+  return g;
+}
+
 /**
  * Builds an enemy mesh for `skinId`, dispatching between the classic ghost
  * and the garden beetle/bee/ladybug/flea (IDEA-009, IDEA-053) â€” all five
@@ -2832,6 +3425,7 @@ export function makeEnemy(skinId: string, color: number): THREE.Group {
   if (skinId === "bee") return makeBee(color);
   if (skinId === "ladybug") return makeLadybug(color);
   if (skinId === "flea") return makeFlea(color);
+  if (skinId === "mosquito") return makeMosquito(color);
   return makeGhost(color);
 }
 

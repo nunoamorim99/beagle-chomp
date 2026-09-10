@@ -161,15 +161,50 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v7.
      It is what found rule 2 — in normal colour the model looked finished.
   4. **The reference is a watermarked stock image.** No pixel of it is used as
      colour or PBR evidence, and projection was rejected partly for that reason.
+- **THE MOSQUITO IS THE THIRD img2threejs REBUILD** (IDEA-055): a sixth enemy
+  skin, `makeMosquito()` in `characters.ts`, following the same split — the
+  generated factory sits unused in `src/render/rework/` and the SHIPPED mesh is
+  hand-authored from the numbers the pipeline locked. Evidence in
+  `.img2threejs/mosquito/`. Five rules are load-bearing:
+  1. **Proportion base HD = 0.27, deliberately NOT the 0.32 the bee and flea
+     use.** A mosquito is a LONGER animal at the same envelope: at 0.32 it
+     measured 0.90 along Z, past the beetle's 0.872 which is the cast's ceiling.
+     The head is 16% smaller than the bee's, which is what the reference shows.
+  2. **The whole model is built against the BEE.** The bee already has
+     translucent veined wings, antennae, a three-mass diagonal body, six legs and
+     a hover. Colour cannot separate them — both take the team colour and both
+     are recoloured again when frightened — so SILHOUETTE carries the entire
+     identity. The measured separators: ONE wing pair not two; 1.90 HD wings vs
+     the bee's 0.85 HD forewing; abdomen aspect 0.51 and POINTED vs its rounded
+     1.15 HD; a 0.73 HD proboscis where the bee has nothing; legs splayed wider
+     than the body vs its tucked four. **Verify by rendering both at the SAME
+     team colour and the SAME play-camera angle**, never by assertion.
+  3. **The abdomen is a LATHE of a measured 41-point profile, not a capsule**,
+     and its creases are per-triangle MATERIAL GROUPS on that lathe assigned by
+     RING index. Classifying by a triangle's own mean height instead makes the
+     two halves of every quad land on opposite sides of a boundary, and the band
+     edge zigzags around the circumference — IDEA-047's "spiky markings" defect
+     in a new place. `creaseMat` is out of `accentMats`, per IDEA-053's rule 2.
+  4. **Aim long parts with `setFromUnitVectors`, not hand-written Euler angles.**
+     The abdomen and the proboscis were both authored with `rotation.x` and both
+     came out inverted — the abdomen forward-down, tucked under the model's own
+     head. What exposed it was the measured ENVELOPE (0.67 long against a solved
+     0.842), not the render.
+  5. **Tune against the PLAY camera, which sits at 59° elevation**
+     (`scene.ts` BASE_POS), not a turntable's default 12°. The reference's 60°
+     abdomen droop points almost straight down that view axis and foreshortens to
+     a stub; 44° trails it visibly. The map-stripped clay render is what showed
+     this — in colour it looked finished.
 - **`preview-rework/index.html`** grew a **`?model=`** switch (`beagle` ·
-  `flea-gen` = the generated factory · `flea`/`beetle`/`bee`/`ladybug`/`ghost` =
-  the REAL shipped builders), plus **`?state=frightened|eaten`** and
+  `flea-gen`/`mosquito-gen` = the generated factories ·
+  `flea`/`mosquito`/`beetle`/`bee`/`ladybug`/`ghost` = the REAL shipped
+  builders), plus **`?state=frightened|eaten`** and
   **`?flat=1`**. `scripts/shoot-rework.ts` takes `MODEL=<id>` and writes a
   non-beagle subject's turntable under `.img2threejs/<id>/renders/`.
   `scripts/_scratch-enemy-cast.ts` measures the whole cast in one line — use it
   before guessing a size or triangle budget for a new skin. The real numbers:
-  ghost 8 256 tris / crown 0.660, flea 12 828 / 0.600, bee 16 868 / 0.803,
-  beetle 18 088 / 0.765, ladybug 20 624 / 0.656.
+  ghost 8 256 tris / crown 0.660, flea 12 828 / 0.600, mosquito 13 648 / 0.780,
+  bee 16 868 / 0.803, beetle 18 088 / 0.765, ladybug 20 624 / 0.656.
 - **A limb capsule must be sized from its JOINT SPAN, never from a fraction of
   it.** `CapsuleGeometry`'s length argument is the CYLINDER only — the caps add
   `radius` on top. The flea's legs first passed 0.72/0.82/0.80 of each segment
