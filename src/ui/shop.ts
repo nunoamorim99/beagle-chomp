@@ -132,8 +132,8 @@ const ENEMY_ICONS: Record<string, string> = {
   beetle: "pest_control",
   bee: "hive",
   ladybug: "bug_report",
-  // NO ENTRY FOR THE FLEA, THE CRAB, THE MOSQUITO, THE MAKI OR THE NIGIRI,
-  // deliberately. Each new
+  // NO ENTRY FOR THE FLEA, THE CRAB, THE MOSQUITO, THE MAKI, THE NIGIRI OR THE
+  // PIZZA, deliberately. Each new
   // glyph means re-cutting the Material Symbols subset (tokens.css) — the font
   // holds only the names it was cut with, and an unlisted name renders as that
   // word in plain text on the card. The documented fallback below is the safe
@@ -141,10 +141,11 @@ const ENEMY_ICONS: Record<string, string> = {
   // candidate for the flea but the beetle already wears it, and two skins
   // sharing one picture reads worse than the generic face does. Neither the crab
   // nor the mosquito has a near-miss candidate at all in the 46 names the subset
-  // holds, and neither does the maki or the nigiri — the subset has no food
-  // glyph at all. FIVE skins now wait on one subset re-cut, which is well past
-  // the point where it should be its own small job rather than a rider on the
-  // next enemy.
+  // holds, and neither does the maki, the nigiri or the pizza — the subset has
+  // no food glyph at all (`local_pizza` exists upstream and is not in the 46),
+  // and neither does the burger (`lunch_dining` is upstream and not in the 46).
+  // SEVEN skins now wait on one subset re-cut, which is well past the point
+  // where it should be its own small job rather than a rider on the next enemy.
 };
 
 function enemyIcon(id: string): string {

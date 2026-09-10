@@ -19,10 +19,11 @@ Living backlog of ideas. Two purposes:
 _(empty — nothing to triage)_
 
 ## Backlog (open ideas)
-> New registered ideas go here. Next free ID: IDEA-058
+> New registered ideas go here. Next free ID: IDEA-060
 > (054 went to the crab and 055 to the mosquito — built in parallel by two sessions, which is
 > why the ids were split up front rather than both taking the next free one. 056 and 057 are the
-> sushi pair, registered together because neither is buildable without the other as its foil.)
+> sushi pair, registered together because neither is buildable without the other as its
+> foil. 058 is the pizza mascot and 059 the burger.)
 
 ### IDEA-028 — Challenge twist: moving walls / maze changes mid-level 💡
 - **Priority:** 🟢
@@ -667,6 +668,282 @@ _(empty — nothing to triage)_
     bounded on BOTH sides: too little and the machined straight edge comes back; at 0.38 the cap
     draped to the nori belt, buried the rice skirt on both flanks and cost the two-mass stack from
     every side view.
+
+  - **v2** (2026-09-10) — **the eye rejoins the cast, and that turns out to be a STATE fix rather
+    than a cosmetic one.** (Nuno) "keep the style of the other enemies' eyes to be consistent". Every
+    other skin builds the same stack — a cream sclera BALL, a dark pupil CAP and a catchlight on a
+    dart pivot inside it, with the flattening carried by the shared parent GROUP so the caps stay
+    flush however flat the lens is. This one had shipped a single dark cap in `pupM` with a gold lid
+    line over it: no white, no pupil, and the dart swinging the whole eye instead of a pupil inside
+    it.
+
+    **The consistency was load-bearing.** `applyEnemyLook` whitens `pupM` for the frightened look,
+    which reads as the classic blank stare only because there is a sclera behind it to be blank
+    against. Here `pupM` WAS the eye, so frightened turned both eyes cream-on-cream against a cream
+    rice block and the face lost its eyes at exactly the moment the player is chasing it — IDEA-053's
+    `creaseMat` defect in a new place, and the second time this skin has hit it (its `accentMats` is
+    empty for the same class of reason). The eaten state gained the same thing for free: `scleraMat`
+    joins `nigiriEyeMats`, the list `collectSpiritMats` excludes, so the eyes stay solid while the
+    body goes translucent and still read as the thing you follow home.
+
+    **A pale body needs the eye to carry its own boundary.** The maki's sclera sits on saturated
+    salmon and needs none; a cream sclera on a cream rice block has almost no edge, and none at all
+    once the pupil whitens. So the gold lid became a hooded RIM (the crab's collar) rather than a
+    line — a fixed accent outside `accentMats`, so the eye stays outlined in all three states. It
+    has to stay narrow and near-VERTICAL: swept 1.12 rad about an up-and-FORWARD axis it projected
+    almost entirely onto the flattened lens's front face, covering two thirds of the eye, and the
+    whole thing read as a brass button with a dark sliver under it. 0.62 rad about (0.16, 0.97,
+    0.18) lands where an eyelid does.
+
+    **Then Nuno opened the eye in the editor, and the half-lidded read went with it** — his numbers,
+    applied as given and mirrored to the left side. The ball takes its own scale (0.791, 1.31) inside
+    the lens, so it measures 0.072 wide by 0.079 tall: taller than wide, where v1's was 0.091 by
+    0.060. The pupil is sized off the BALL rather than the lens (0.89 of its width, 0.92 of its
+    height) so the white reads as an even rim instead of a crescent, and stands 0.01 proud because a
+    cap narrower than the ball it lies in would otherwise hang over surface that has already fallen
+    away. The lid lifts 0.02 clear and becomes a brow-line over an open eye. **So the separator from
+    the maki is no longer how far each eye is CLOSED** — it is size and furniture: 0.139 across with
+    a cyan iris ring and brows against 0.072 with a gold lid line and blush. Re-verified by rendering
+    both at one team colour (`_scratch-sushi-pair.ts`), and the symmetry by measuring where each
+    cap's lit pole actually lands (`_scratch-eye-sym.ts`: L +0.0010, R −0.0010, y and z identical),
+    because the glint's rotation mirrors by `s` while an editor position does not — authored on the
+    right eye alone, +0.02 would have put both catchlights on the same side of the face.
+
+    **No iris ring, unlike seven of the ten.** Cyan would converge with the maki, which the pair
+    cannot afford, and amber would muddle with the lid a millimetre away; the ghost and the pizza
+    ship without one too. **Ring counts are spent on the SWEEP**: `SphereGeometry` lays its height
+    segments across `thetaLen`, so a full sphere's 12 on a 0.7-rad cap bought nothing and cost about
+    1 500 triangles across four caps. At 5/3/4 rings the model lands at 14 624 — 252 over v1 — with
+    the envelope unchanged (w 0.811 / h 0.796 / crown 0.798). Turntable gate PASS on alpha (no holes,
+    segmentation reliable, all four azimuths), part coverage 27 specified / 123 built / 0 errors,
+    suite and build green. Editor saveability is unchanged at 1 of 123, which is the deferred
+    cast-wide `rewriteBlocker` job and not this one.
+
+### IDEA-059 — The burger: the first enemy whose body is a STACK ✅
+- **Priority:** 🟡
+- **Area:** skins
+- **Registered:** 2026-09-10
+- **Delivered:** 2026-09-10
+- **Description:** (Nuno) "another revolutionary enemy — a humanization of the hamburger."
+  Reference supplied at `.img2threejs/reference/hamburguer/hamburguer.png`: a 1930s rubber-hose
+  mascot whose body is a stacked sandwich, standing on hose legs in red boots, with a face on the
+  top bun and one white glove held up in a two-finger V.
+- **Notes:** eleventh `EnemySkin`, eighth img2threejs rebuild, own workspace
+  (`.img2threejs/burger/`). Same split as every rebuild before it, with one difference recorded
+  below. New geometry module `src/render/burgerSculpt.ts`.
+- **Dependencies:** [[IDEA-009]], [[IDEA-012]], [[IDEA-047]], [[IDEA-053]], [[IDEA-056]],
+  [[IDEA-057]], [[IDEA-058]]
+- **History:**
+  - **v1** (2026-09-10) — `makeBurger()`. Measured **w 0.842 / h 0.792 / l 0.811 / crown 0.797**,
+    17 758 triangles, 100 meshes. Typecheck, production build, the full headless suite, the seven
+    editor suites and the server catalog drift test all green.
+
+    **WHY IT IS REVOLUTIONARY, IN THE ONLY TERMS THAT COUNT — what a player can see.** Ten enemies
+    ship today and every one of them has a body that is ONE mass wearing marks: a shell, a drum, a
+    block, a wedge. This one's body is a **STACK** — six contrasting horizontal bands piled up, bun
+    over lettuce over onion and tomato over cheese over patty over bun. Nothing else in the cast is
+    striped across its full width, and a striped tower is not confusable with a smooth one whatever
+    colour it takes. The second novelty is smaller and it is on the hands: every gloved enemy in
+    this game wears the same blob mitt, and this one has **FINGERS**, two of which it holds up in a
+    V while it walks at you. It is the only gesture in the cast.
+
+    **PROPORTION BASE: BH = THE STACK HEIGHT, MEASURED at 261 px, built at 0.62.** No head for the
+    fourth subject running, and this time the reason is the plainest yet: the face is drawn ON the
+    top bun, which is band 1 of the body. IDEA-054's carapace width, IDEA-056/057's nori disc and
+    rice width, IDEA-058's slice height — and the HEIGHT rather than the width here, because the
+    identity is how the body is BANDED and the bands divide the height. Every number under it came
+    off the reference by scanline colour runs and enclosed-white component analysis
+    (`.img2threejs/burger/measure.py`).
+
+    **THE DEFECT WORTH KNOWING, AND IT WAS FOUND TWICE BY TWO DIFFERENT INSTRUMENTS.** Built to the
+    reference's own measured division — 0.632 bun / 0.218 garnish / 0.149 base — the model came
+    back a red **EGG** with a stripe round its middle, from every angle. The cause is not
+    proportion: the drawing has an ORANGE bun against four loud garnish colours and a hard ink
+    KEYLINE round every region, and this renderer has neither, because `bodyMat` is the BREAD (so
+    both bun masses take the same team hue) and the project has no outline pass at all. Two
+    same-coloured domes a fifth of the stack apart simply close into one form. Re-divided
+    0.53 / 0.30 / 0.17 and narrowed the base — and then the **map-stripped CLAY render** showed the
+    same thing again: a ball with a ruffled skirt, because the entire six-band identity was still
+    being carried by PAINT and the only geometric events on the body were the frill and the boots.
+    The real fix is that **a band has to be a LEDGE in the silhouette, not a stripe on it**: the
+    patty now ships at 0.372 — wider than the top bun (0.330), the bottom bun (0.275) AND the
+    frill's own troughs (0.368) — inverting the reference, so the profile is a real step sequence.
+
+    **THE FINDING THAT IS NOT A DEFECT: at the play camera the stack is not what a player sees.**
+    From 59 degrees of elevation the six bands are stacked along the one axis the camera
+    foreshortens, and the top bun is the highest thing on the model so it occludes what is under
+    it. The play read is a **sesame dome, a garnish ring, a face and a raised hand** — which is
+    still a burger, unmistakably, and still unlike anything else in the cast, since nothing else is
+    speckled and nothing else has a hand up. Every available fix was taken (bun narrowed, patty
+    widened past it, cheese corners pushed past the frill's troughs, the whole stack pitched back
+    15 degrees on an INNER group) and together they roughly double what the band contributes from
+    above. The rest is the camera, and it is recorded rather than fought: the full six bands are
+    what the shop, the menu vignette and any lower angle show.
+
+    **WHAT TAKES THE TEAM COLOUR: THE BREAD — and `accentMats` IS EMPTY ON PURPOSE.** A fourth
+    distinct arrangement after the maki (repaints its wrapper), the nigiri (its topping) and the
+    pizza (its face plate): the first skin whose team colour lands in TWO DISJOINT places, the
+    crown of the figure and its base, with fixed colour clamped between. The patty is the obvious
+    thing to add to `accentMats`, being the largest fixed mass — and adding it would turn bread AND
+    meat blue together and collapse the six-band identity exactly while the player is chasing it.
+    Two fixed colours are pushed off their sampled values for the same class of reason the pizza's
+    crust was: the **patty** to a deep brown (the reference's red-brown vanishes into the ROSE
+    team's bun) and the **onion** to a deeper purple. The LEAF-team/lettuce collision is bounded
+    and on the record rather than solved.
+
+    **THREE MORE, each caught by a different instrument.** *The clay render* found the ledge
+    problem above. *The comparison sheet* found that widening the patty had quietly put a new thing
+    in front of the cheese drips, taking them back to a sliver — two systems, one number. *And a
+    SIGN*: `rotation.z` positive swings a part toward +x only when it hangs at **-y**, and the
+    raised arm points UP, so +0.46 on the +x shoulder rendered the entire arm, hand, fingers and
+    cuff INSIDE the bun. A limb buried in a solid looks exactly like a limb that was never built —
+    the maki lost both of its arms the same way. Two smaller ones on the face: the nose was
+    authored at t 0.762 where the measurement is 0.700, which sat it on the smile's crest and read
+    as a **TONGUE**; and the brows' tilt term swamped their arch term, so what rendered from the
+    play camera was a straight bar over a big pupil and the mascot looked stern.
+
+    **A maths error worth writing down: a squircle's DIAGONAL radius is `halfWidth * 2^(0.5 - 1/n)`,
+    not `2^(1/n)`.** The cheese's four drips are one mechanism — a square laid on a circle overhangs
+    at exactly four places by construction, so whatever sticks out past the patty's radius droops
+    and the drips place themselves. At the first build's n = 2.4 the diagonal bulge is 6%, i.e.
+    very nearly a circle: the whole mechanism was present, correct and producing nothing. It ships
+    at n = 6.
+
+    **This is the first run where the img2threejs generator legitimately BLOCKED.** No
+    `createBurgerModel.ts` exists; the BLOCKED artifact is kept instead. `--strict-quality` requires
+    a roughness/normal/bump/displacement response from some material, while the schema's own
+    evidence-bearing `textureless` escape — which this subject qualifies for, and which every
+    material declares with the measurements (66.18% of the reference is a single flat value) —
+    forbids exactly those fields. The two gates are mutually exclusive for any textureless
+    material, and `MeshToonMaterial` has no roughness channel to describe anyway. Same category as
+    IDEA-054's silhouette-IoU finding, and it changes nothing about the shipped result: the
+    generated factory has been unused since IDEA-047.
+
+    **One thing found on the way that is not about the burger:** `Box3.setFromObject` OVER-REPORTS
+    any child with an off-axis rotation, because it builds each box in local space and transforms
+    its eight corners. The burger has two such children and between them they made
+    `_scratch-enemy-cast.ts` report a 0.930-wide model whose real width is 0.842 — 15%, and the
+    difference between taking the crab's recorded "widest in the cast" claim and not.
+    `scripts/_scratch-exact-cast.ts` measures from VERTICES and prints the inflation alongside;
+    six of the eleven skins' published numbers were optimistic.
+
+    **Separation from the other three food skins was RENDERED, not asserted**
+    (`scripts/_scratch-food-quartet.ts`): all four at the same team colour and the same play camera,
+    in BOTH the normal and the frightened states — the harder half, since three of the four go blue
+    in most of the same places. No overlap.
+
+### IDEA-058 — The pizza slice: the first enemy that is a person ✅
+- **Priority:** 🟡
+- **Area:** skins
+- **Registered:** 2026-09-10
+- **Delivered:** 2026-09-10
+- **Description:** (Nuno) "another revolutionary enemy — a humanization of the pizza slice."
+  Reference supplied at `.img2threejs/reference/pizza/pizza.png`: a 1930s rubber-hose mascot,
+  a slice standing on its tip with the crust worn as a pompadour, white gloves and boots.
+- **Notes:** tenth `EnemySkin`, seventh img2threejs rebuild, own workspace
+  (`.img2threejs/pizza/`). Same split as every rebuild before it — the generated factory sits
+  unused in `src/render/rework/createPizzaModel.ts` and the shipped mesh is hand-authored from
+  the numbers the run locked. New geometry module `src/render/pizzaSculpt.ts`.
+- **Dependencies:** [[IDEA-009]], [[IDEA-012]], [[IDEA-047]], [[IDEA-053]], [[IDEA-056]], [[IDEA-057]]
+- **History:**
+  - **v1** (2026-09-10) — `makePizza()`. Measured **w 0.611 / h 0.873 / l 0.363 / crown 0.873**,
+    15 748 triangles, 87 meshes. Build, full suite, editor suite and the server catalog test all
+    green.
+
+    **WHY IT IS REVOLUTIONARY, IN THE ONLY TERMS THAT COUNT — what a player can see.** Nine
+    enemies ship today: six bugs, a ghost, and two pieces of sushi. Every one of them is an
+    animate OBJECT. This one is a PERSON: it has HAIR (the crust, worn as a pompadour), it WEARS
+    things (white mitts and boots — no other enemy wears anything), and it WALKS, with a real
+    stride and counter-swinging arms. It is also the only TRIANGLE in the cast and the only
+    silhouette that is decisively taller than wide: at **0.70 wide-over-tall** against a cast
+    that runs 0.92 to 1.30, and the tallest crown in the game past the maki's 0.837. Being
+    vertical is not a side effect, it is the identity — every number that costs width was cut
+    against it.
+
+    **PROPORTION BASE: SH = THE SLICE HEIGHT, MEASURED at 1494 px, built at 0.72.** No head
+    again, and this time not even the pretence of one — the face is painted on the body, so there
+    is no crown, no chin and no neck, and a "head height" would be an invention every ratio under
+    it inherited. IDEA-054's carapace-width reasoning, third subject running. Everything else is
+    an SH multiple read off the reference by enclosed-white component analysis (the two eye
+    sclerae, the tooth band, both gloves and both boot soles are each a white region fully
+    enclosed by ink, so they measure exactly) and by scanline ink runs for the limb tubes.
+
+    **RUBBER HOSE MEANS NO ELBOWS AND NO KNEES, and that is a measurement.** The reference's arm
+    ink-run is the same width at two scanlines 100 px apart across a large change of direction,
+    with no taper and no joint bulge anywhere. So every limb is ONE swept tube of constant radius
+    and the bend lives in its own curve. A capsule chain would not have been a cheaper version of
+    the right answer, it would have been the wrong idiom — and it would have dragged in the
+    flea's and the crab's whole joint-gap problem. A tube with no joints cannot have a joint gap;
+    the defect is unrepresentable rather than merely absent.
+
+    **ONE OUTLINE, THREE PARTS.** `sectorOutline()` in the new `pizzaSculpt.ts` produces the
+    wedge solid, the cheese plate laid on it and the arc the crust is swept along — so the dough
+    rim is uniform by construction rather than by three numbers being kept in step. The cheese
+    plate is the same call with `edgeInset` set, because an inset sector is just a sector whose
+    apex has slid up the axis by `inset / sin(alpha)`.
+
+    **THE DEFECT WORTH KNOWING: the mouth had no dark in it.** The aperture is a real hole cut
+    out of the plate's `Shape`, with a dark floor behind it — but the floor was authored at
+    `T/2 - 0.008`, which is INSIDE the wedge, so the wedge's own tan front face showed through
+    the hole instead. What rendered was a cream band over a tan blob: an open mouth with nothing
+    open about it, reading as a pout. This is IDEA-057's buried nori belt in a new place — a part
+    correctly built, correctly coloured, and behind another surface — and again nothing about the
+    render says so. The z arithmetic does.
+
+    **Three more, each caught by a different instrument.** *The comparison sheet* said the quiff
+    was a rim, not hair: at the MEASURED 0.168 SH it under-read, because a drawing gets an ink
+    keyline round the roll and a toon mesh does not, so it ships 9% over the measurement at
+    0.183. *The clay render* (`?flat=1`) confirmed the opposite of the flea's finding — every
+    mark on this model is geometry, so nothing identity-defining is carried by a material alone.
+    *And a torus ARC is not symmetric*, so its mirror is a reflection (`pi - a0 - A`), not a
+    rotation by pi: mirrored the wrong way the model had one brow and one stray tick, and once
+    both were visible their tilt sign was the difference between friendly and a scowl.
+
+    **WHAT TAKES THE TEAM COLOUR: THE CHEESE PLATE — the FACE.** A third distinct arrangement
+    after the maki (repaints its wrapper) and the nigiri (repaints its topping). `accentMats` is
+    `[crustMat]`, shared by the quiff and both boots, so the frightened blue lands at the TOP and
+    the BOTTOM of the figure and nothing warm is left in the middle of the silhouette. The
+    crust's own normal colour is a baked BROWN-orange chosen to sit outside all five team hues:
+    the amber team is a warm orange, and a crust in that family would have collapsed the
+    bread/cheese two-tone on exactly one team and nowhere else. The pepperoni is deeper than the
+    reference's salmon for the same class of reason — salmon on the rose team's plate is
+    invisible — and it is RAISED as well, so it survives on geometry where it loses on hue.
+
+    **The width budget is a real constraint and it was paid twice.** The two spiral termini sit at
+    the sweep's ends and MEASURED 0.330 on the first build, wider than the gloves and the widest
+    thing on the model. `crustSweepPoints` gained a `tuck` that pulls the ends inward as they
+    curl forward — which a real quiff's sides do anyway — and that bought 0.06 of envelope for
+    nothing that reads. The caps also ship at 0.155 across against a measured 0.189, recorded as
+    a deliberate reduction rather than as a measurement.
+
+    **The -18 degree pitch is a play-camera decision, on an INNER group.** The plate carries the
+    entire face and vertical it projects at cos(59) = 0.515 from the game camera; leaning back 18
+    degrees puts it 41 degrees off the view direction, a 46% larger projected face, for 0.01 of
+    crown. Verified by rendering at el=59, not asserted. It lives on an inner group because
+    `applyGhostState` writes `rotation.x` on the ROOT every state change (IDEA-056 rule 3).
+
+    **Separation from the other two food skins was rendered, not asserted**
+    (`scripts/_scratch-food-trio.ts`): all three at the same team colour and the same
+    play-camera angle. A triangle with hair against a round drum and a squared block — no
+    overlap at any hue.
+
+    **One thing found on the way that is not about the pizza:** the maki's body was pitched at
+    `-0.071` rad (about 4 degrees) while its own `MK_PITCH` constant said -18 and went unused —
+    so `tsc --noEmit` was failing on `noUnusedLocals` and the branch would not build. Its leg
+    pivots are positioned from the -18 figure by their own comment, so -0.071 was the accident.
+    Restored to `MK_PITCH`.
+
+    **Nuno's cut, same day: the boot SOLES are gone.** The reference draws a pale sliver under
+    each boot and it was measured (0.116 x 0.057 SH by enclosed-white component analysis) and
+    built. It should not have been: the game camera sits at 59 degrees ELEVATION and looks DOWN,
+    so a boot's underside is a surface no player ever sees, and all the sliver did at play size
+    was put a bright rim between the boot and its own ground shadow — a halo that made the foot
+    read as hovering rather than as planted. The collar alone does what the pair was there for,
+    which is to separate a boot from a blob. The hips dropped 0.0044 so the boots' own rounded
+    undersides land back on y = 0; the detail stays in the inventory marked observed-and-not-built,
+    because the observation was right and the decision is the record. Worth generalising: a
+    reference detail that only exists in a view this game never takes is a candidate for deletion
+    rather than for shrinking.
 
 ### IDEA-049 — Thumbstick: a third touch control, and the retro one ✅
 - **Priority:** 🟡

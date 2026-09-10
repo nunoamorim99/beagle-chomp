@@ -28,6 +28,8 @@ export const ENEMY_SKINS: readonly CatalogItem[] = [
   { id: "mosquito", price: 25 },
   { id: "maki", price: 25 },
   { id: "nigiri", price: 25 },
+  { id: "pizza", price: 25 },
+  { id: "burger", price: 25 },
   { id: "ghost", price: 0 },
 ];
 

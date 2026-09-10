@@ -290,6 +290,17 @@ export const ENEMY_SKINS: readonly EnemySkin[] = [
   // with their siblings; nothing about them is premium.
   { id: "maki", name: "Maki Roll", blurb: "Nori, rice and a salmon face · stands on two boots", price: 25 },
   { id: "nigiri", name: "Nigiri", blurb: "A prawn on a rice pillow · belted in nori", price: 25 },
+  // THE PIZZA (IDEA-058). The first enemy that is a PERSON rather than an
+  // animate object: it has hair, it wears gloves and boots, and it walks. Also
+  // the tallest and most vertical thing in the cast, and the only triangle.
+  // Priced with its siblings — the cast has no premium tier and this is not
+  // where one starts.
+  { id: "pizza", name: "Pizza Slice", blurb: "Crust for hair, gloves and boots · the one that walks", price: 25 },
+  // THE BURGER (IDEA-059). Ten enemies have a body that is ONE mass wearing
+  // marks; this one's body is a STACK of six contrasting bands, and it is the
+  // only enemy in the game with FINGERS — it walks around holding a V up at
+  // the beagle. Priced with its siblings, like every skin since IDEA-009.
+  { id: "burger", name: "Burger", blurb: "Six stacked bands and a peace sign · sesame and red boots", price: 25 },
   // THE EASTER EGG. Free, but not listed until it is revealed, and revealed by
   // owning the Pac-Beagle coat: the two tributes to the arcade game this one
   // descends from unlock each other, which needs no UI copy to explain. Price 0

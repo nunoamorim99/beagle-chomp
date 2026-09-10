@@ -16,6 +16,30 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
 > lines here roll up into the numbered version below and this section is cleared (hold a line back
 > only if you explicitly choose to).
 
+- **[[IDEA-059]] v1** (2026-09-10) — **the burger**. An eleventh enemy skin, and the first whose
+  BODY is a stack: six contrasting horizontal bands — sesame bun, scalloped lettuce, onion and
+  tomato, a square cheese slice whose corners hang over, a thick dark patty and a base bun — where
+  every other enemy in the game has a body that is one mass wearing marks. It is also the only
+  enemy with FINGERS, and it walks at you holding two of them up in a V while its other arm swings.
+  It recolours in a fourth distinct place: the maki repaints its wrapper, the nigiri its topping,
+  the pizza its face, and this one repaints its BREAD — top and bottom, with the whole colourful
+  garnish band clamped between them and staying warm even when the bun turns frightened blue, which
+  is what keeps it reading as a burger while you are chasing it. Red boots, white gloves and 38
+  sesame seeds stay fixed on every team colour. Priced 25 with its siblings.
+
+- **[[IDEA-058]] v1** (2026-09-10) — **the pizza slice**. A tenth enemy skin, and the first one
+  that is a PERSON rather than an animate object: it has HAIR (the crust, worn as a pompadour with
+  a rolled dough spiral closing each end), it WEARS things (white four-fingered mitts and
+  high-collared boots — nothing else in the cast wears anything), and it WALKS, with a real stride,
+  counter-swinging arms and a quiff that lags behind the step. It is also the only TRIANGLE in the
+  game and the only silhouette clearly taller than it is wide: 0.611 x 0.873, a ratio of 0.70
+  against a cast that runs 0.92 to 1.30, and the tallest crown in the maze past the maki's 0.837.
+  Its face — huge close-set eyes, detached brows and an open grin with teeth and a tongue — is a
+  real aperture cut out of the cheese, not a mark painted on it, which is what lets it keep reading
+  when the plate takes the team colour. It recolours in a third distinct place: the maki repaints
+  its wrapper, the nigiri its topping, and this one repaints its FACE, with the crust and boots
+  following into the frightened blue while the gloves stay white. Priced 25 with its siblings.
+
 - **[[IDEA-056]] v1 + [[IDEA-057]] v1** (2026-09-10) — **the sushi pair**. Two enemy skins that
   break the cast's one rule: every other enemy is a bug, and these are FOOD, and they STAND UP. The
   **maki** is a nori drum on two booted legs whose cut face is a three-zone bullseye — dark rim,
@@ -27,6 +51,19 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
   them and seven measured silhouette separators do — plus an eighth that is not a shape, since the
   **two recolour in opposite places** (the maki repaints its wrapper, the nigiri its topping).
   Priced 25 with their siblings; nothing about them is premium.
+
+- **[[IDEA-057]] v2** (2026-09-10) — **the nigiri's eye rejoins the cast**. It had shipped as a
+  single dark cap where every other enemy builds a cream sclera ball with a dark pupil cap and a
+  catchlight on a dart pivot inside it — so it read as a painted bean, and, less visibly, it broke
+  the frightened state: whitening `pupM` is a blank stare only when there is a sclera behind it, and
+  here `pupM` WAS the eye, so both eyes went cream-on-cream against a cream rice block at exactly
+  the moment the player is chasing it. On a pale body the eye also has to carry its own outline, so
+  the gold lid became a hooded rim rather than a line — narrow and near-vertical, because a wide
+  forward-tilted hood projects onto the flattened lens and turns the eye into a brass button. Nuno
+  then opened the eye in the editor: the ball is 0.072 wide by 0.079 tall now, taller than wide
+  where v1's was the other way round, with the pupil sized off the ball so the white reads as an
+  even rim and the lid lifted clear as a brow-line. The half-lidded read is gone deliberately, so
+  the separator from the maki is the eye's SIZE and furniture rather than how far it is closed.
 
 - **[[IDEA-049]] v1** (2026-09-05) — **the thumbstick**. A third touch scheme beside
   swipe and the D-pad, and the one that removes the LIFT: the thumb stays on the

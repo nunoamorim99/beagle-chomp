@@ -109,7 +109,7 @@
       grid.visible = q.get("grid") !== "0";
       scene.add(grid);
 
-      // ?model=beagle|flea|crab|mosquito|maki|nigiri — one harness, one subject at a time. The rework
+      // ?model=beagle|flea|crab|mosquito|maki|nigiri|pizza|burger — one harness, one subject at a time. The rework
       // folder holds a generated factory per img2threejs run, and each needs the
       // same turntable/gate treatment, so the viewer switches rather than forking.
       // "flea-gen" is the img2threejs GENERATED factory; "flea" is the REAL
@@ -129,6 +129,8 @@
         mosquito: () => makeEnemy("mosquito", Number(q.get("color") ?? 0xe8615f)),
         maki: () => makeEnemy("maki", Number(q.get("color") ?? 0xe8615f)),
         nigiri: () => makeEnemy("nigiri", Number(q.get("color") ?? 0xe8615f)),
+        pizza: () => makeEnemy("pizza", Number(q.get("color") ?? 0xe8615f)),
+        burger: () => makeEnemy("burger", Number(q.get("color") ?? 0xe8615f)),
         ghost: () => makeEnemy("ghost", Number(q.get("color") ?? 0xe8615f)),
       };
       const modelName = q.get("model") ?? "beagle";

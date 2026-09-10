@@ -68,7 +68,14 @@ for (const [name, qs] of Object.entries(VIEWS)) {
   // retry on suspiciously small screenshots.
   for (let attempt = 0; attempt < 3; attempt++) {
     await page.goto(`${baseUrl}/preview-rework/?${qs}&model=${model}&grid=0&hud=0${toon}${flat}${state}${dist}${elev}${fov}${bg}${shadow}`, {
-      waitUntil: "networkidle",
+      // "domcontentloaded", not "networkidle". The Vite dev server holds an
+      // open HMR websocket, so the network is never idle and every view after
+      // the first times out — which looks like a broken model and is a broken
+      // wait. The readiness signal is the page's own title, checked below.
+      waitUntil: "domcontentloaded",
+      // A cold Vite dev server transforms characters.ts (7k lines) on the first
+      // request for it and can take well past Playwright's 30s default.
+      timeout: 90_000,
     });
     await page.waitForFunction(() => document.title.includes("ready"), null, { timeout: 20_000 });
     await page.waitForTimeout(400);

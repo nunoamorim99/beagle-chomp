@@ -23,6 +23,14 @@ import {
   type CoatRegion,
 } from "./beagleSculpt";
 import {
+  sectorOutline,
+  sectorHalfWidth,
+  crustSweepPoints,
+  spiralPoints,
+  hoseGeometry,
+  type SectorOutlineOptions,
+} from "./pizzaSculpt";
+import {
   squirclePillow,
   squirclePoints,
   squircleRadius,
@@ -35,6 +43,17 @@ import {
   squircleFrontZ,
   type BandedRing,
 } from "./sushiSculpt";
+import {
+  TOP_BUN_STATIONS,
+  BOTTOM_BUN_STATIONS,
+  PATTY_STATIONS,
+  bandProfile,
+  stationRadius,
+  onBand,
+  frillRing,
+  squircleSlab,
+  scatterOnBand,
+} from "./burgerSculpt";
 import { rng } from "./paint";
 
 /**
@@ -4319,7 +4338,7 @@ export function makeSushiMaki(color: number): THREE.Group {
   const body = new THREE.Group();
   body.name = "body";
   body.position.y = 0.4658;
-  body.rotation.set(-0.071, 0, 0);
+  body.rotation.set(MK_PITCH, 0, 0);
   g.add(body);
 
   // --- the nori sleeve: barrel and both rims as ONE revolved surface --------
@@ -4791,8 +4810,11 @@ export function makeSushiMaki(color: number): THREE.Group {
 // colour cannot separate them, exactly as it could not separate the mosquito
 // from the bee (IDEA-055). Seven measured separators do it instead: a square
 // block against a round drum; a pale dominant mass against a dark one; a face
-// on a smooth panel against a face on a saturated plug; half-lidded eyes
-// against wide-open ones with brows; a closed mouth curve against an open
+// on a smooth panel against a face on a saturated plug; small upright eyes
+// under a gold lid line against big ones with brows and a cyan iris ring
+// (0.072 across against 0.139 — they were half-lidded until v2 opened them, so
+// the separator is SIZE and furniture, not how far each is closed); a closed
+// mouth curve against an open
 // cavity with a tongue; bare feet against oversized boots; and a tail fan where
 // the maki has nothing above its crown.
 //
@@ -4895,9 +4917,13 @@ export function makeNigiri(color: number): THREE.Group {
   const lidMat = toon({ color: NG_LID });
   const mouthMat = toon({ color: NG_MOUTH });
   mouthMat.userData.baseColor = NG_MOUTH;
+  // The cast's own sclera cream, deliberately the same value the other nine
+  // use — the eye is the one part of an enemy that should read as belonging to
+  // the same set whatever the enemy is made of.
+  const scleraMat = toon({ color: 0xfdf9f2 });
   const pupM = toon({ color: NG_EYE });
   const glintMat = toon({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.5 });
-  const nigiriEyeMats = [pupM, lidMat, glintMat];
+  const nigiriEyeMats = [scleraMat, pupM, lidMat, glintMat];
 
   /** The block's OUTER surface — where the belt, the grains and the face marks
    *  all have to sit. */
@@ -5176,42 +5202,133 @@ export function makeNigiri(color: number): THREE.Group {
   const BLUSH_Y = PANEL_TOP - 0.73 * PANEL_H;
   const EYE_X = 0.19 * RW;
   const BLUSH_X = 0.3 * RW;
+  const EYE_R = 0.0455; // sclera radius — the pair spans 0.30 RW, well under the maki's 0.58 ND
+  const EYE_FLAT_Z = 0.3; // the lens is pressed into an inset panel, not a ball stuck on it
+
+  // A decal cap aimed down +Z, the same helper every other enemy's eye is built
+  // from. The pole is rotated from +Y to +Z so it points along the gaze; the
+  // `factor` stack keeps each cap a hair proud of the one under it, which is
+  // what stops the pupil z-fighting the sclera it lies on.
+  // `rings` is spent on the SWEEP, not on a whole sphere's worth of latitude:
+  // SphereGeometry lays its height segments across `thetaLen`, so leaving it at
+  // a full sphere's 12 buys nothing on a 0.7-rad cap and costs a thousand
+  // triangles across four caps. Each cap still clears the sclera it lies on —
+  // its polygonal surface sags to cos(dTheta/2) of its radius, which at these
+  // ring counts is under 1%, well inside the `factor` offsets below.
+  const eyeCap = (
+    factor: number,
+    thetaLen: number,
+    mat: THREE.MeshToonMaterial,
+    seg: number,
+    rings: number,
+  ): THREE.Mesh => {
+    const geo = new THREE.SphereGeometry(EYE_R * factor, seg, rings, 0, Math.PI * 2, 0, thetaLen);
+    geo.rotateX(Math.PI / 2);
+    return new THREE.Mesh(geo, mat);
+  };
 
   const eyes: THREE.Object3D[] = [];
   const pupPivots: THREE.Object3D[] = [];
   for (const s of [1, -1]) {
     const z = squircleFrontZ(s * EYE_X, HW, HD, SQ_N);
+
+    // THE CAST'S EYE, not a private one. Every other enemy builds a cream
+    // SCLERA ball with a dark pupil cap that darts on its own pivot and a
+    // catchlight over it; this one shipped as a single dark cap in `pupM` with
+    // a lid line on top, so it read as a painted bean rather than as an eye of
+    // the same family — and it broke the frightened state outright.
+    // `applyEnemyLook` whitens `pupM` when the beagle eats a bone, which on
+    // every other skin turns the PUPIL white inside a cream sclera (the blank
+    // stare). Here `pupM` WAS the whole eye, so both eyes went cream-on-cream
+    // against a cream rice block and the face lost its eyes at exactly the
+    // moment the player is chasing it — the flea's `creaseMat` defect
+    // (IDEA-053 rule 2) in a new place.
+    //
+    // A GROUP carries the flattening, never the ball: scaling the ball alone
+    // leaves the caps riding a surface that has moved out from under them.
+    // Scaled together, every cap stays flush however flat the lens is.
+    const eye = new THREE.Group();
+    eye.name = s > 0 ? "eyeL" : "eyeR";
+    // Nearly flush. This face is INSET where the maki's bulges, so the lens is
+    // seated into the block with only its front 2 mm proud of the surface.
+    eye.position.set(s * EYE_X, EYE_Y, z - EYE_R * EYE_FLAT_Z + 0.002);
+    // The lens the whole eye is flattened by. It USED to be the half-lidded
+    // read on its own; the ball's own scale below now overrides that, and the
+    // separator from the maki is the eye's SIZE and furniture instead — 0.072
+    // across against its 0.139, a gold lid line against brows and a cyan iris.
+    eye.scale.set(1, 0.66, EYE_FLAT_Z);
+    face.add(eye);
+
+    const ball = new THREE.Mesh(new THREE.SphereGeometry(EYE_R, 16, 12), scleraMat);
+    ball.name = s > 0 ? "eyeBallL" : "eyeBallR";
+    // NUNO'S SHAPE, set in the editor: narrower and much taller than the lens
+    // it sits in. Net of the group's 0.66 it stands at 0.87 of the eye's width
+    // — an upright almond rather than a wide slot, which is what stops the eye
+    // reading as a bean whatever is drawn inside it.
+    ball.scale.set(0.791, 1.31, 1);
+    eye.add(ball);
+
+    // The dart pivot sits at the ball's centre and carries ONLY the caps. The
+    // lid is deliberately outside it: a lid that swings with the glance is a
+    // rolling eyeball, not an eyelid.
     const pivot = new THREE.Group();
     pivot.name = s > 0 ? "pupilPivotL" : "pupilPivotR";
-    pivot.position.set(s * EYE_X, EYE_Y, 0);
-    face.add(pivot);
+    eye.add(pivot);
 
-    // The eye is a flush cap on the block's front, not a ball in front of it —
-    // this face is INSET, where the maki's bulges. Half-lidded: the mass is
-    // scaled down on Y and a gold lid line sits over its top third.
-    const eye = new THREE.Mesh(
-      new THREE.SphereGeometry(0.0455, 14, 10, 0, Math.PI * 2, 0, 0.95),
-      pupM,
-    );
-    eye.name = s > 0 ? "eyeL" : "eyeR";
-    eye.geometry.rotateX(Math.PI / 2);
-    eye.scale.set(1, 0.56, 0.3);
-    eye.position.z = z - 0.004;
-    pivot.add(eye);
+    const pupil = eyeCap(1.02, 0.72, pupM, 16, 5);
+    pupil.name = s > 0 ? "pupilL" : "pupilR";
+    // Editor values. The pupil takes the ball's proportions rather than the
+    // lens's — 0.89 of its width and 0.92 of its height — so the white reads as
+    // an even rim around it instead of a crescent under a lid. Pushed 0.01
+    // forward it stands PROUD of the sclera rather than lying flush on it: the
+    // cap is narrower than the ball it sits in, so at its rim the ball's own
+    // surface has already fallen away, and the offset closes that gap from the
+    // front. It is 3 mm of world depth after the group's 0.3 z-squash, which is
+    // why it stays a raised pupil and never becomes a floating disc.
+    pupil.position.set(0, 0, 0.01);
+    pupil.scale.set(0.701, 1.202, 1);
+    pivot.add(pupil);
 
-    const lid = new THREE.Mesh(new THREE.TorusGeometry(0.043, 0.008, 5, 14, Math.PI * 0.9), lidMat);
-    lid.name = s > 0 ? "lidL" : "lidR";
-    lid.scale.set(1, 0.62, 0.5);
-    lid.position.set(0, 0.006, z + 0.004);
-    pivot.add(lid);
-
-    const glint = new THREE.Mesh(new THREE.SphereGeometry(0.013, 10, 8), glintMat);
+    const glint = eyeCap(1.06, 0.24, glintMat, 10, 3);
     glint.name = s > 0 ? "glintL" : "glintR";
-    glint.scale.set(1, 0.9, 0.4);
-    glint.position.set(s * 0.012, 0.008, z + 0.004);
+    glint.rotation.set(-0.45, s * 0.45, 0);
+    // Out and forward, on top of the rotation that already aims it up-and-out.
+    // x is the ONE value in this set that mirrors: authored on the right eye at
+    // +0.02, it has to be -0.02 on the left or both catchlights sit on the same
+    // side of the face and the pair reads as a squint.
+    glint.position.set(s * -0.02, 0, 0.02);
     pivot.add(glint);
 
-    eyes.push(pivot, eye, lid, glint);
+    // THE LID IS A HOOD, not a line — the crab's collar solving a second
+    // problem at the same time. A cream sclera on a cream rice block has almost
+    // no boundary of its own (the maki's sits on saturated salmon and needs
+    // none), and once the pupil whitens for the frightened state it has none at
+    // all. The hood rims the eye's top and outer side in gold, which is a fixed
+    // accent outside `accentMats`, so the eye keeps an outline in every state.
+    // It has to be a RIM and nothing more. The first build swept 1.12 rad about
+    // an up-and-FORWARD axis, and because the lens is flattened to 0.3 in Z a
+    // forward-tilted cap projects almost entirely onto the front face: the gold
+    // covered two thirds of the eye and the whole thing read as a brass button
+    // with a dark sliver under it. Nearly vertical and half as wide, it lands
+    // where an eyelid does.
+    const lidGeo = new THREE.SphereGeometry(EYE_R * 1.1, 18, 4, 0, Math.PI * 2, 0, 0.62);
+    lidGeo.rotateX(Math.PI / 2);
+    const lid = new THREE.Mesh(lidGeo, lidMat);
+    lid.name = s > 0 ? "lidL" : "lidR";
+    lid.quaternion.setFromUnitVectors(
+      new THREE.Vector3(0, 0, 1),
+      new THREE.Vector3(s * 0.16, 0.97, 0.18).normalize(),
+    );
+    // Editor value: lifted clear of the ball's top instead of clamped over it.
+    // With the ball now 1.31 tall the old seated hood cut into the white, and
+    // this is what keeps the lid a BROW-LINE over an open eye. It is the change
+    // that moves the read from half-lidded toward alert — deliberate, and the
+    // reason the maki separator is now the eye's SHAPE and its brows rather
+    // than how far it is closed.
+    lid.position.set(0, 0.02, 0);
+    eye.add(lid);
+
+    eyes.push(eye, ball, pupil, glint, lid);
     pupPivots.push(pivot);
 
     // The blush. Completely FLAT — the reference gives it no highlight at any
@@ -5333,6 +5450,1864 @@ export function makeNigiri(color: number): THREE.Group {
   return g;
 }
 
+// ---------------------------------------------------------------------------
+// THE PIZZA SLICE — the seventh img2threejs rebuild (IDEA-058), and the first
+// enemy in this game that is a PERSON. Same split as every rebuild before it:
+// the generated factory sits unused in src/render/rework/createPizzaModel.ts
+// and the SHIPPED mesh below is hand-authored from the numbers the run locked.
+// Evidence in .img2threejs/pizza/, geometry machinery in ./pizzaSculpt.ts.
+//
+// WHY IT EXISTS. Nine enemies ship today: six bugs, a ghost, and two pieces of
+// sushi that stand up. Every one of them is an animate OBJECT. This one is a
+// 1930s rubber-hose MASCOT — it has hair, it wears gloves and boots, and it
+// walks. Those are three things the cast has never said, and each of them is a
+// thing a player can see at 25 px.
+//
+// PROPORTION BASE: SH = THE SLICE HEIGHT, crust top to cheese tip, MEASURED at
+// 1494 px in the reference and built at 0.72 world units. No head again, and
+// this time not even the pretence of one: the face is painted on the body, so
+// there is no crown, no chin and no neck, and a "head height" would be an
+// invention every ratio under it then inherited. That is IDEA-054's
+// carapace-width reasoning, and it is the third subject in a row it applies to.
+//
+// FOUR RULES ARE LOAD-BEARING.
+//
+//  1. BEING VERTICAL IS THE IDENTITY. The cast measures 0.92 to 1.30 wide over
+//     tall — nine enemies all roughly as wide as they are high. This one is
+//     0.58 x 0.86, a ratio of 0.67, and it is a TRIANGLE, which is the one
+//     silhouette family nobody else occupies. Widen it or shorten it and the
+//     skin has no reason to exist. Everything below that costs width — the
+//     sector angle, the spiral caps, the arm splay — was cut against that.
+//
+//  2. THE CRUST IS HAIR. A fat rolled tube swept across the top of the wedge,
+//     overhanging the face on both sides, with a visible dough SPIRAL closing
+//     each end. It reads as a pompadour, and that read is what turns a wedge
+//     with eyes on it into a character. It has to stay clearly fatter than the
+//     slice (0.121 against 0.095) or it stops being a mass and becomes a rim.
+//     Its ends are CURLED FORWARD on purpose: on a plain arc the two spirals
+//     face along +/-X, i.e. at the maze wall, and a player never sees them.
+//
+//  3. THE CHEESE PLATE IS bodyMat AND THE CRUST IS NOT. The plate is the
+//     largest reliably-visible surface, so the team colour goes on the FACE —
+//     a third distinct arrangement after the maki (repaints its wrapper) and
+//     the nigiri (repaints its topping). The crust and boots are in
+//     `accentMats`, so they follow the frightened blue but keep their own
+//     baked brown-orange the rest of the time. That brown is deliberately
+//     outside all five team hues (rose, teal, amber, violet, leaf): the amber
+//     team is a warm orange, and a crust in the same family would collapse the
+//     bread/cheese two-tone on exactly one team and nowhere else — the kind of
+//     bug that ships. Everything small stays fixed and OUT of accentMats:
+//     toppings, freckles, blisters, ink, and above all the GLOVES, which are
+//     what stops the frightened silhouette going to one blue mass.
+//
+//  4. RUBBER HOSE MEANS NO ELBOWS AND NO KNEES. Each limb is ONE swept tube of
+//     constant radius. That is a measurement, not a shortcut: the reference's
+//     arm ink-run is the same width at two scanlines 100 px apart across a
+//     large change of direction, with no taper and no joint bulge anywhere. It
+//     also makes the flea's and the crab's whole joint-gap problem
+//     unrepresentable here — a tube with no joints cannot have a joint gap.
+const PZ_CRUST = 0xc2761f; // crust roll + boots — IN accentMats
+const PZ_DOUGH = 0xe3a154; // the wedge solid: cut faces, rim, back — fixed
+const PZ_INK = 0x5c2a22; // limbs, brows, creases, strands — fixed
+const PZ_GLOVE = 0xfdfbf4; // mitts and teeth — fixed, and see rule 3
+const PZ_PUPIL = 0x3a1f18;
+const PZ_MOUTH = 0x6b2b26; // the cavity floor — deeper than the ink
+const PZ_TONGUE = 0xef6d6a;
+const PZ_PEP = 0xa8382c; // deeper than the reference's salmon, see makePizza
+const PZ_MUSH = 0xeee3c0;
+const PZ_OLIVE = 0x5e8c2e;
+const PZ_FRECKLE = 0xd9a63a;
+const PZ_BLISTER = 0xa35c15;
+
+// The walk. Faster than the maki's 9 rad/s would be wrong — this one has long
+// hose legs, and a long leg at a quick patter reads as running rather than
+// striding — so it sits just under it with a bigger swing instead.
+const PZ_STEP_FREQ = 8.4;
+const PZ_STEP_SWING = 0.34;
+const PZ_ARM_SWING = 0.28;
+const PZ_IDLE_FREQ = 1.1 * Math.PI * 2;
+const PZ_IDLE_ARM = 0.1;
+const PZ_IDLE_LEAN = 0.038;
+// The quiff LAGS. Half the step frequency and a quarter turn behind, which is
+// the nigiri's cap-lag trick reused for hair momentum — the one motion in the
+// cast that says "this thing has hair" rather than "this thing has a rim".
+const PZ_QUIFF_LAG = 0.075;
+const PZ_QUIFF_IDLE = 0.02;
+
+/**
+ * The pitch, in radians, that leans the whole slice BACK.
+ *
+ * A PLAY-CAMERA decision, not a measurement, which is why it is a named
+ * constant. The game camera sits at 59 degrees elevation (scene.ts BASE_POS).
+ * The cheese plate is a near-vertical plane carrying the ENTIRE face, and
+ * vertical it projects at cos(59) = 0.515 of its area. Leaning back 18 degrees
+ * puts the plate normal 41 degrees off the view direction (cos 0.75), a 46%
+ * larger projected face, for about 0.01 of crown height.
+ *
+ * It MUST live on an inner group. applyGhostState assigns `mesh.rotation.x` on
+ * the ROOT every time the state changes — 0 when normal, a shiver while
+ * frightened — so a pitch authored on the root is erased the first time the
+ * beagle eats a bone (IDEA-056 rule 3).
+ */
+const PZ_PITCH = -18 * (Math.PI / 180);
+
+interface PizzaParts {
+  legs: THREE.Object3D[]; // [left, right] hip pivots
+  arms: THREE.Object3D[]; // [left, right] shoulder pivots
+  quiff: THREE.Object3D; // the crust roll's own pivot, for the hair lag
+  body: THREE.Object3D; // the pitched group, for the idle lean
+}
+
+function pizzaBehaviour(parts: PizzaParts): EnemyBehaviour {
+  const { legs, arms, quiff, body } = parts;
+  const armRest = arms.map((a) => a.rotation.x);
+  const quiffRest = quiff.rotation.x;
+  return {
+    animate: (t, idleT, moveBlend) => {
+      const step = Math.sin(t * PZ_STEP_FREQ) * PZ_STEP_SWING * moveBlend;
+      legs[0].rotation.x = step;
+      legs[1].rotation.x = -step;
+      // Arms counter-phase to the legs while walking, and a slow hang-sway
+      // while standing. Blended rather than switched, so a stop eases out of
+      // the stride instead of snapping to attention. The rest angle is the
+      // shoulder's own counter-pitch and has to be added back, or setting
+      // rotation.x here would drop the arms into the body's lean.
+      const idleArm = Math.sin(idleT * PZ_IDLE_FREQ) * PZ_IDLE_ARM * (1 - moveBlend);
+      const ratio = PZ_ARM_SWING / PZ_STEP_SWING;
+      arms[0].rotation.x = armRest[0] - step * ratio + idleArm;
+      arms[1].rotation.x = armRest[1] + step * ratio - idleArm;
+      // Hair momentum: the quiff trails the stride, and breathes on its own
+      // when standing so a stopped mascot still reads as having hair.
+      quiff.rotation.x =
+        quiffRest +
+        Math.sin(t * PZ_STEP_FREQ * 0.5 - Math.PI / 2) * PZ_QUIFF_LAG * moveBlend +
+        Math.sin(idleT * PZ_IDLE_FREQ * 0.8) * PZ_QUIFF_IDLE * (1 - moveBlend);
+      // A triangle on two sticks needs SOME weight shift or it reads as a prop
+      // being slid along. A roll about the travel axis, added to the fixed
+      // pitch, which syncToEntity's own waddle then rides on top of.
+      body.rotation.z = Math.sin(idleT * PZ_IDLE_FREQ * 0.5) * PZ_IDLE_LEAN * (1 - moveBlend * 0.6);
+    },
+  };
+}
+
+/**
+ * Builds the pizza-slice mascot enemy skin (IDEA-058).
+ *
+ * Satisfies the same `GhostUserData` contract as every other skin, so game.ts
+ * never learns which one is equipped.
+ */
+export function makePizza(color: number): THREE.Group {
+  const g = new THREE.Group();
+
+  // --- proportions, all in SH multiples measured off the reference ----------
+  const SH = 0.72; // proportion base: the slice height
+  // 0.183 SH in diameter. The reference MEASURES 0.168 over the brow and this
+  // is deliberately over it: side by side against the reference at 0.168 the
+  // quiff read as a rim rather than as hair, because a drawing gets to put an
+  // ink keyline round the roll and a toon mesh does not. The extra 9% is what
+  // buys back the separation the keyline was doing.
+  const CR = 0.066; // crust roll radius
+  const R = SH - CR; // 0.654 sector radius, apex to the arc's centreline
+  const ALPHA = 20 * (Math.PI / 180); // sector HALF-angle; the slice spans 40
+  const T = 0.095; // dough thickness — INFERRED, see the spec's assumptions
+  const CT = 0.02; // cheese layer, proud of the dough's front face
+  const TIPY = 0.145; // world Y of the apex; the tip hangs between the boots
+  const INSET = 0.028; // cheese plate inset from the cut edges
+  const BOW = 0.042; // outward bulge on each cut edge — see pizzaSculpt
+
+  // ONE outline, three parts. The wedge solid, the cheese plate and the arc the
+  // crust is swept along are all derived from these two option sets, which is
+  // what makes the dough rim uniform BY CONSTRUCTION instead of by two numbers
+  // being kept in step. Checked against the reference: at the eye line this
+  // gives a plate half-width of 0.1276 against a MEASURED 0.126.
+  const WEDGE: SectorOutlineOptions = {
+    radius: R,
+    alpha: ALPHA,
+    bow: BOW,
+    tipRound: 0.035,
+    edgeInset: 0,
+    edgeSegments: 16,
+    arcSegments: 20,
+    tipSegments: 14,
+  };
+  const PLATE: SectorOutlineOptions = {
+    radius: R - CR * 0.72,
+    alpha: ALPHA,
+    bow: BOW,
+    // Much smaller than the wedge's own fillet, and that is the point: the
+    // plate's apex is already pushed 0.082 up the axis by the inset, and a
+    // generous fillet on top of that left a third of the slice bare tan. The
+    // reference runs cheese almost to the tip.
+    tipRound: 0.016,
+    edgeInset: INSET,
+    edgeSegments: 16,
+    arcSegments: 18,
+    tipSegments: 12,
+  };
+
+  const FACE_Z = T / 2 + CT; // the cheese plate's own front face
+  const EYE_Y = 0.424; // 0.589 SH — MEASURED
+  const EYE_X = 0.043; // half of a MEASURED 0.119 SH separation
+  const MOUTH_Y = 0.305; // 0.424 SH — MEASURED
+  // Nearly twice as wide as it is tall, which is what the reference's grin
+  // measures. The first build was 1.5:1 and read as a pout.
+  const MOUTH_HW = 0.078;
+  const MOUTH_H = 0.086;
+  const SHOULDER_Y = 0.396;
+
+  // --- materials ------------------------------------------------------------
+  const bodyMat = toon({ color, emissive: color, emissiveIntensity: 0.15 });
+  const crustMat = toon({ color: PZ_CRUST });
+  crustMat.userData.baseColor = PZ_CRUST;
+  const doughMat = toon({ color: PZ_DOUGH });
+  doughMat.userData.baseColor = PZ_DOUGH;
+  const inkMat = toon({ color: PZ_INK });
+  inkMat.userData.baseColor = PZ_INK;
+  const gloveMat = toon({ color: PZ_GLOVE });
+  gloveMat.userData.baseColor = PZ_GLOVE;
+  const mouthMat = toon({ color: PZ_MOUTH });
+  mouthMat.userData.baseColor = PZ_MOUTH;
+  const tongueMat = toon({ color: PZ_TONGUE });
+  tongueMat.userData.baseColor = PZ_TONGUE;
+  // Deeper than the reference's #f27666 on purpose. Salmon on the rose team's
+  // own #e0577a plate is invisible; this survives it — and the discs are RAISED
+  // as well, so they read on geometry even where they lose on hue.
+  const pepMat = toon({ color: PZ_PEP });
+  pepMat.userData.baseColor = PZ_PEP;
+  const mushMat = toon({ color: PZ_MUSH });
+  mushMat.userData.baseColor = PZ_MUSH;
+  const oliveMat = toon({ color: PZ_OLIVE });
+  oliveMat.userData.baseColor = PZ_OLIVE;
+  const freckleMat = toon({ color: PZ_FRECKLE });
+  freckleMat.userData.baseColor = PZ_FRECKLE;
+  const blisterMat = toon({ color: PZ_BLISTER });
+  blisterMat.userData.baseColor = PZ_BLISTER;
+  // Its own material rather than a share of the glove: it belongs to eyeMats,
+  // the list kept SOLID while the enemy is eaten, and sharing would leave the
+  // gloves solid too — a spirit coming home still wearing them.
+  const scleraMat = toon({ color: PZ_GLOVE });
+  const pupM = toon({ color: PZ_PUPIL });
+  const glintMat = toon({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.5 });
+  const pizzaEyeMats = [scleraMat, pupM, glintMat];
+
+  // --- the pitched body -----------------------------------------------------
+  // Everything above the hips hangs off this; the legs do not, so the lean
+  // never tips the stance. Pushed forward on Z because an 18-degree lean
+  // carries the crown 0.22 backwards, and without it the mass sits behind the
+  // feet and the mascot reads as falling over rather than as leaning back.
+  const body = new THREE.Group();
+  body.name = "body";
+  body.position.set(0, TIPY, 0.055);
+  body.rotation.x = PZ_PITCH;
+  g.add(body);
+
+  // --- the wedge ------------------------------------------------------------
+  // bevelEnabled is FALSE and stays false. IDEA-057 measured what a bevel does
+  // to an extrusion here: `bevelSize` grows OUTWARD, so a footprint of 0.560 x
+  // 0.403 came out 0.650 x 0.493 and swallowed three separate subsystems that
+  // had been positioned against the original outline. Everything on this model
+  // is positioned against this outline.
+  const wedgeShape = shapeFromPoints(sectorOutline(WEDGE));
+  const wedgeGeo = new THREE.ExtrudeGeometry(wedgeShape, {
+    depth: T,
+    bevelEnabled: false,
+    curveSegments: 1,
+  });
+  wedgeGeo.translate(0, 0, -T / 2);
+  const wedge = new THREE.Mesh(wedgeGeo, doughMat);
+  wedge.name = "sliceWedge";
+  wedge.castShadow = true;
+  body.add(wedge);
+
+  // --- the cheese plate, with the mouth cut OUT of it -----------------------
+  // The mouth is a real aperture, not a dark patch: the plate's own Shape
+  // carries a hole and a dark floor sits behind it. That matters here more
+  // than it did for the sushi, because this plate takes the TEAM COLOUR — a
+  // dark oval laid on a violet plate reads as a sticker, while a hole still
+  // reads as a hole at every hue.
+  const plateShape = shapeFromPoints(sectorOutline(PLATE));
+  plateShape.holes.push(
+    pathFromPoints(
+      smileHolePoints(MOUTH_HW, MOUTH_H, 22).map(
+        (p) => new THREE.Vector2(p.x, p.y + MOUTH_Y),
+      ),
+    ),
+  );
+  const plateGeo = new THREE.ExtrudeGeometry(plateShape, {
+    depth: CT,
+    bevelEnabled: false,
+    curveSegments: 1,
+  });
+  plateGeo.translate(0, 0, T / 2);
+  const plate = new THREE.Mesh(plateGeo, bodyMat);
+  plate.name = "cheesePlate";
+  plate.castShadow = true;
+  body.add(plate);
+
+  // --- the mouth's floor, teeth and tongue ----------------------------------
+  // The floor sits just PROUD of the dough's front face and 0.019 behind the
+  // plate's, so the aperture's own wall is what shades it.
+  //
+  // "Just proud of the dough" is the whole point and it was got wrong first:
+  // the floor was authored at T/2 - 0.008, which is INSIDE the wedge, and the
+  // wedge's own tan front face then showed through the hole instead. The mouth
+  // rendered as a cream band on a tan blob with no dark anywhere in it — an
+  // open mouth with nothing open about it. Same class of defect as IDEA-057's
+  // buried nori belt: a part correctly built, correctly coloured, and behind
+  // another surface. Nothing about the render says so; the z arithmetic does.
+  const wellShape = shapeFromPoints(
+    smileHolePoints(MOUTH_HW * 1.16, MOUTH_H * 1.16, 20)
+      .slice()
+      .reverse()
+      .map((p) => new THREE.Vector2(p.x, p.y + MOUTH_Y)),
+  );
+  const wellGeo = new THREE.ExtrudeGeometry(wellShape, {
+    depth: 0.006,
+    bevelEnabled: false,
+    curveSegments: 1,
+  });
+  wellGeo.translate(0, 0, T / 2 + 0.0006);
+  const well = new THREE.Mesh(wellGeo, mouthMat);
+  well.name = "mouthWell";
+  body.add(well);
+
+  // The tooth band FOLLOWS the aperture's top curve rather than lying flat
+  // across it. A straight bar poked out through the corners, where the smile's
+  // top edge falls to zero — the sort of thing that looks like a modelling
+  // choice from the front and like a defect from anywhere else.
+  const toothTop: THREE.Vector2[] = [];
+  const toothBot: THREE.Vector2[] = [];
+  for (let i = 0; i <= 18; i++) {
+    const u = i / 18;
+    const x = -MOUTH_HW * 0.9 + u * MOUTH_HW * 1.8;
+    const k = Math.sin(u * Math.PI);
+    const top = MOUTH_H * 0.22 * k * 0.94 - 0.001 + MOUTH_Y;
+    toothTop.push(new THREE.Vector2(x, top));
+    // TAPERED, and thin. The first build gave it a constant 0.019 and the band
+    // filled most of the aperture — leaving a white crescent with a sliver of
+    // pink under it, which reads as a downturned lip. An open mouth only reads
+    // as OPEN if DARK is the dominant thing inside it, so the teeth are a strip
+    // along the top lip and nothing more.
+    toothBot.push(new THREE.Vector2(x, top - (0.0035 + 0.0065 * k)));
+  }
+  const toothGeo = new THREE.ExtrudeGeometry(
+    shapeFromPoints([...toothTop, ...toothBot.reverse()]),
+    { depth: 0.012, bevelEnabled: false, curveSegments: 1 },
+  );
+  toothGeo.translate(0, 0, T / 2 + 0.004);
+  const teeth = new THREE.Mesh(toothGeo, gloveMat);
+  teeth.name = "toothBand";
+  body.add(teeth);
+
+  // Sized so the cavity stays visibly DARK above it and at both corners. It
+  // fills a little under half the aperture, which is what the reference shows.
+  const tongue = new THREE.Mesh(new THREE.SphereGeometry(0.05, 14, 10), tongueMat);
+  tongue.name = "tongue";
+  tongue.scale.set(1.05, 0.42, 0.24);
+  tongue.position.set(0, MOUTH_Y - 0.036, T / 2 + 0.004);
+  body.add(tongue);
+
+  // --- the crust roll, on its own pivot so the quiff can lag ----------------
+  const quiff = new THREE.Group();
+  quiff.name = "quiffPivot";
+  const QUIFF_PIVOT_Y = R * 0.45;
+  quiff.position.set(0, QUIFF_PIVOT_Y, 0);
+  body.add(quiff);
+
+  const CURL = 0.1; // how far the roll's ends carry forward
+  const DROP = 0.03;
+  const TUCK = 0.16; // and how far they pull IN — this is the width budget
+  const sweepPts = crustSweepPoints(R, ALPHA, CURL, DROP, TUCK, 22);
+  const { geometry: rollGeo, curve: rollCurve } = hoseGeometry(sweepPts, CR, 44, 12);
+  rollGeo.translate(0, -QUIFF_PIVOT_Y, 0);
+  const roll = new THREE.Mesh(rollGeo, crustMat);
+  roll.name = "crustRoll";
+  roll.castShadow = true;
+  quiff.add(roll);
+
+  // The parting. One ink line down the roll's length, and it is the whole
+  // difference between a hairstyle and a sausage. Its own fixed material, kept
+  // OUT of accentMats: the roll goes blue while frightened but six hairlines
+  // do not register, and if they followed they would vanish into it
+  // (IDEA-053 rule 2).
+  const partPts = sweepPts.map((p) => {
+    const rad = Math.hypot(p.x, p.y) || 1;
+    return new THREE.Vector3(
+      p.x + (p.x / rad) * CR * 0.62,
+      p.y + (p.y / rad) * CR * 0.62,
+      p.z + CR * 0.55,
+    );
+  });
+  const partGeo = hoseGeometry(partPts, 0.0055, 40, 6).geometry;
+  partGeo.translate(0, -QUIFF_PIVOT_Y, 0);
+  const parting = new THREE.Mesh(partGeo, inkMat);
+  parting.name = "crustParting";
+  quiff.add(parting);
+
+  // Oven blisters, counted along the sweep's own arc PARAMETER so the roll's
+  // length sets the spacing — change CR or ALPHA and there is still no bald
+  // patch. Deterministic: `rng`, never Math.random.
+  const blisterRand = rng(0x5a17);
+  for (let i = 0; i < 12; i++) {
+    const u = Math.min(0.97, Math.max(0.03, (i + 0.5) / 12 + (blisterRand() - 0.5) * 0.05));
+    const p = rollCurve.getPointAt(u);
+    const rad = Math.hypot(p.x, p.y) || 1;
+    const phi = blisterRand() * Math.PI * 2;
+    const c = Math.cos(phi) * CR * 0.88;
+    const s = Math.sin(phi) * CR * 0.88;
+    const blister = new THREE.Mesh(
+      new THREE.SphereGeometry(0.006 + blisterRand() * 0.004, 8, 6),
+      blisterMat,
+    );
+    blister.name = `crustBlister${i}`;
+    blister.position.set(
+      p.x + (p.x / rad) * c,
+      p.y - QUIFF_PIVOT_Y + (p.y / rad) * c,
+      p.z + s,
+    );
+    quiff.add(blister);
+  }
+
+  // --- the spiral termini ---------------------------------------------------
+  // Aimed with setFromUnitVectors against the sweep's own end TANGENT, never
+  // with hand-written Euler angles. IDEA-055 rule 4: the mosquito's abdomen and
+  // proboscis were both authored with rotation.x and both came out inverted,
+  // and what exposed it was a measured envelope rather than the render.
+  const CAP_R = 0.078;
+  for (const s of [1, -1] as const) {
+    const u = s > 0 ? 1 : 0; // the sweep runs left end -> right end
+    const at = rollCurve.getPointAt(u);
+    const tangent = rollCurve.getTangentAt(u).multiplyScalar(s > 0 ? 1 : -1);
+
+    const cap = new THREE.Group();
+    cap.name = s > 0 ? "crustCapL" : "crustCapR";
+    cap.position.set(at.x, at.y - QUIFF_PIVOT_Y, at.z);
+    cap.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), tangent);
+    quiff.add(cap);
+
+    // A rolled dough end BULGES — MEASURED at 0.262 SH across in the reference
+    // against the roll's own 0.168. Built at 0.155 rather than the measured
+    // 0.189 to hold the width budget (rule 1); the reduction is deliberate.
+    const capBody = new THREE.Mesh(
+      latheFromProfile(
+        [
+          [0.0001, -0.048],
+          [CAP_R * 0.55, -0.05],
+          [CAP_R * 0.92, -0.026],
+          [CAP_R, 0.004],
+          [CAP_R * 0.9, 0.028],
+          [CAP_R * 0.55, 0.04],
+          [0.0001, 0.044],
+        ],
+        22,
+        1,
+        1,
+        1,
+      ),
+      crustMat,
+    );
+    capBody.name = s > 0 ? "crustCapBodyL" : "crustCapBodyR";
+    capBody.castShadow = true;
+    cap.add(capBody);
+
+    const spiral = new THREE.Mesh(
+      hoseGeometry(spiralPoints(CAP_R * 0.13, CAP_R * 0.74, 1.55, 0.036, 44), 0.006, 44, 6)
+        .geometry,
+      inkMat,
+    );
+    spiral.name = s > 0 ? "crustSpiralL" : "crustSpiralR";
+    cap.add(spiral);
+  }
+
+  // --- everything scattered on the plate ------------------------------------
+  // Placed in (u, y) where u is a FRACTION of the plate's own half-width at
+  // that height, so nothing can clip through the rim however the sector angle
+  // or the inset changes. Same defence as the crab's joint test: make the
+  // defect unrepresentable rather than merely absent.
+  const plateX = (y: number, u: number) => u * sectorHalfWidth(PLATE, y);
+  const TOP_Z = FACE_Z;
+
+  // Four pepperoni. The face owns the plate between y=0.24 and y=0.51, so they
+  // go above the brows and beside the mouth, which is where the reference puts
+  // them too.
+  const PEPS: readonly [number, number, number][] = [
+    [-0.60, 0.558, 0.03],
+    [0.64, 0.545, 0.028],
+    [0.72, 0.352, 0.023],
+    [0.0, 0.213, 0.017],
+  ];
+  PEPS.forEach(([u, y, r], i) => {
+    const disc = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 0.013, 16), pepMat);
+    disc.name = `pepperoni${i}`;
+    disc.rotation.x = Math.PI / 2;
+    disc.position.set(plateX(y, u), y, TOP_Z + 0.005);
+    disc.castShadow = true;
+    body.add(disc);
+  });
+
+  // Two mushroom slices — a cap with a stem notch, which is the one shape that
+  // separates a mushroom from "a second pale pepperoni" at this size.
+  // Placed WELL clear of the eyes. The first build put one at y=0.352 directly
+  // under the left eye and it read as a wart on the cheek — a reminder that a
+  // scatter system still has to respect the face's own footprint.
+  const MUSH: readonly [number, number, number][] = [
+    [-0.86, 0.238, 0.023],
+    [0.78, 0.596, 0.021],
+  ];
+  MUSH.forEach(([u, y, r], i) => {
+    const x = plateX(y, u);
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(r, 12, 9), mushMat);
+    cap.name = `mushroomCap${i}`;
+    cap.scale.set(1, 0.82, 0.3);
+    cap.position.set(x, y + r * 0.16, TOP_Z + 0.004);
+    body.add(cap);
+    const stem = new THREE.Mesh(new THREE.SphereGeometry(r * 0.46, 10, 8), mushMat);
+    stem.name = `mushroomStem${i}`;
+    stem.scale.set(1, 1.1, 0.3);
+    stem.position.set(x, y - r * 0.62, TOP_Z + 0.004);
+    body.add(stem);
+  });
+
+  // Two olive crescents. The ONLY cool hue on the whole body, which is what
+  // makes them worth their triangles at this size.
+  const OLIVES: readonly [number, number, number][] = [
+    [-0.86, 0.588, 1.0],
+    [0.36, 0.596, -1.0],
+  ];
+  OLIVES.forEach(([u, y, flip], i) => {
+    const olive = new THREE.Mesh(
+      new THREE.TorusGeometry(0.019, 0.007, 5, 12, Math.PI * 0.85),
+      oliveMat,
+    );
+    olive.name = `olive${i}`;
+    olive.scale.set(1, 1, 0.45);
+    olive.rotation.z = flip > 0 ? 0.5 : Math.PI - 0.5;
+    olive.position.set(plateX(y, u), y, TOP_Z + 0.003);
+    body.add(olive);
+  });
+
+  // Ochre freckles. Texture only, and the first thing to cut if the triangle
+  // budget ever bites.
+  const FRECKLES: readonly [number, number][] = [
+    [-0.30, 0.585],
+    [0.24, 0.612],
+    [-0.86, 0.475],
+    [0.88, 0.462],
+    [-0.90, 0.402],
+    [0.90, 0.286],
+    [-0.72, 0.268],
+    [0.40, 0.238],
+    [-0.34, 0.223],
+    [0.62, 0.500],
+  ];
+  const freckleRand = rng(0x0b1e);
+  FRECKLES.forEach(([u, y], i) => {
+    const dot = new THREE.Mesh(
+      new THREE.SphereGeometry(0.005 + freckleRand() * 0.003, 7, 5),
+      freckleMat,
+    );
+    dot.name = `cheeseFreckle${i}`;
+    dot.scale.set(1, 1, 0.5);
+    dot.position.set(plateX(y, u), y, TOP_Z + 0.002);
+    body.add(dot);
+  });
+
+  // Cheese drip lobes on the plate's rim. Straddling the edge so half of each
+  // one overhangs, and ASYMMETRIC — three one side, two the other — because a
+  // mirrored drip reads as machining.
+  const DRIPS: readonly [number, number][] = [
+    [1, 0.30],
+    [1, 0.42],
+    [1, 0.545],
+    [-1, 0.355],
+    [-1, 0.50],
+  ];
+  DRIPS.forEach(([s, y], i) => {
+    const lobe = new THREE.Mesh(new THREE.SphereGeometry(0.032, 12, 9), bodyMat);
+    lobe.name = `cheeseDrip${i}`;
+    lobe.scale.set(0.78, 1.08, 0.62);
+    lobe.position.set(s * (sectorHalfWidth(PLATE, y) + 0.004), y, T / 2 + CT * 0.45);
+    body.add(lobe);
+  });
+
+  // Cheese-pull strands, in the dough rim between the plate's edge and the
+  // slice's own. They are what says MELTED rather than PAINTED, and putting
+  // them on the front rim rather than on the cut face is a play-camera call:
+  // the cut face is near edge-on from 59 degrees and these would never be seen
+  // there.
+  for (const s of [1, -1] as const) {
+    [0.3, 0.42, 0.545].forEach((y, i) => {
+      const mid = (sectorHalfWidth(WEDGE, y) + sectorHalfWidth(PLATE, y)) / 2;
+      const strand = new THREE.Mesh(new THREE.CapsuleGeometry(0.0055, 0.075, 3, 6), inkMat);
+      strand.name = `pullStrand${s > 0 ? "L" : "R"}${i}`;
+      strand.scale.set(1, 1, 0.45);
+      strand.rotation.z = -s * ALPHA;
+      strand.position.set(s * mid, y, T / 2 + 0.005);
+      body.add(strand);
+    });
+
+    // And three more ON the cut face itself, swept along the edge's own curve
+    // rather than laid across it as straight capsules — the edge bows, so a
+    // straight bar dips inside it at the middle and out of it at the ends.
+    //
+    // These exist for the SIDE view, which is the one the front-facing work
+    // never improves: from due right the whole model is one flat tan panel and
+    // nothing on it says pizza. That view is worth building for even though
+    // the game camera rarely takes it, because the shop's character stage does.
+    [-0.03, 0.0, 0.03].forEach((dz, i) => {
+      const pts: THREE.Vector3[] = [];
+      for (let k = 0; k <= 5; k++) {
+        const y = 0.24 + (0.32 * k) / 5;
+        pts.push(
+          new THREE.Vector3(s * (sectorHalfWidth(WEDGE, y) + 0.003), y, dz + (i - 1) * 0.004),
+        );
+      }
+      const groove = new THREE.Mesh(hoseGeometry(pts, 0.0045, 14, 5).geometry, inkMat);
+      groove.name = `cutStrand${s > 0 ? "L" : "R"}${i}`;
+      body.add(groove);
+    });
+  }
+
+  // --- the face -------------------------------------------------------------
+  const face = new THREE.Group();
+  face.name = "facePanel";
+  body.add(face);
+
+  const eyes: THREE.Object3D[] = [];
+  const pupPivots: THREE.Object3D[] = [];
+  for (const s of [1, -1] as const) {
+    const pivot = new THREE.Group();
+    pivot.name = s > 0 ? "pupilPivotL" : "pupilPivotR";
+    pivot.position.set(s * EYE_X, EYE_Y, 0);
+    face.add(pivot);
+
+    // MEASURED 0.063 wide x 0.088 tall, centres 0.086 apart — so the two
+    // nearly touch, with 0.023 of plate between them. That closeness is the
+    // single strongest cartoon signal the face carries; spaced at human
+    // proportions the whole read goes.
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.045, 16, 12), scleraMat);
+    eye.name = s > 0 ? "eyeL" : "eyeR";
+    eye.scale.set(0.7, 0.98, 0.34);
+    eye.position.z = FACE_Z - 0.006;
+    pivot.add(eye);
+
+    const pup = new THREE.Mesh(new THREE.SphereGeometry(0.026, 14, 10), pupM);
+    pup.name = s > 0 ? "pupilL" : "pupilR";
+    pup.scale.set(0.7, 0.88, 0.32);
+    pup.position.set(0, -0.004, FACE_Z + 0.004);
+    pivot.add(pup);
+
+    const glint = new THREE.Mesh(new THREE.SphereGeometry(0.011, 9, 7), glintMat);
+    glint.name = s > 0 ? "glintL" : "glintR";
+    glint.scale.set(1, 1, 0.45);
+    glint.position.set(s * 0.009, 0.016, FACE_Z + 0.011);
+    pivot.add(glint);
+
+    eyes.push(pivot, eye, pup, glint);
+    pupPivots.push(pivot);
+
+    // The brow is DETACHED and sits above the eye. Detached is the point: a
+    // brow drawn on the lid is an eyelid; a brow floating above it is an
+    // expression, and at 25 px it is most of the expression there is.
+    // A torus ARC is not symmetric, so its mirror is a REFLECTION, not a
+    // rotation by pi. An arc drawn from a0 over A reflects to (pi - a0 - A);
+    // rotating by pi instead lands it upside down on the other side, which is
+    // how the first build ended up with one brow and one stray tick.
+    // A shallow cap centred over the eye and tilted so its OUTER end drops.
+    // The tilt's sign is the difference between friendly and angry: rotating
+    // the arc counter-clockwise lowers the LEFT end, which on the left eye is
+    // the inner end — and two inner ends dropped is the universal cartoon
+    // scowl. The first build had exactly that and the whole mascot read cross.
+    const BROW_ARC = Math.PI * 0.62;
+    const BROW_REST = Math.PI / 2 - BROW_ARC / 2;
+    const brow = new THREE.Mesh(new THREE.TorusGeometry(0.026, 0.0075, 5, 12, BROW_ARC), inkMat);
+    brow.name = s > 0 ? "browL" : "browR";
+    brow.scale.set(1, 0.72, 0.5);
+    brow.rotation.z =
+      s > 0 ? BROW_REST - 0.2 : Math.PI - (BROW_REST - 0.2) - BROW_ARC;
+    brow.position.set(s * (EYE_X + 0.006), 0.508, FACE_Z - 0.002);
+    face.add(brow);
+
+    // The cheek hook. Three ink marks in total with the chin one, and they are
+    // what stops a flat plate reading as a card.
+    const CHEEK_ARC = Math.PI * 0.55;
+    const cheek = new THREE.Mesh(
+      new THREE.TorusGeometry(0.015, 0.0055, 5, 10, CHEEK_ARC),
+      inkMat,
+    );
+    cheek.name = s > 0 ? "cheekCreaseL" : "cheekCreaseR";
+    cheek.scale.set(1, 1, 0.45);
+    cheek.rotation.z = s > 0 ? -0.6 : Math.PI + 0.6 - CHEEK_ARC;
+    cheek.position.set(s * 0.105, 0.362, FACE_Z - 0.002);
+    face.add(cheek);
+  }
+
+  const chin = new THREE.Mesh(new THREE.TorusGeometry(0.02, 0.0055, 5, 12, Math.PI * 0.5), inkMat);
+  chin.name = "chinCrease";
+  chin.scale.set(1, 0.8, 0.45);
+  chin.rotation.z = Math.PI + 0.78;
+  chin.position.set(0, 0.228, FACE_Z - 0.002);
+  face.add(chin);
+
+  // --- arms -----------------------------------------------------------------
+  // The shoulder carries +18 degrees to CANCEL the body's lean, so the hose
+  // hangs vertically in world space. Authored on the pivot rather than by
+  // re-parenting to the root, so the idle body-lean still carries the arms with
+  // it. Positive rotation.z swings a part hanging at -y toward +x — the maki's
+  // first two passes got that backwards and buried both arms inside its own
+  // barrel, and widening the angle only buried them deeper.
+  const arms: THREE.Object3D[] = [];
+  for (const s of [1, -1] as const) {
+    const pivot = new THREE.Group();
+    pivot.name = s > 0 ? "armPivotL" : "armPivotR";
+    pivot.position.set(s * sectorHalfWidth(WEDGE, SHOULDER_Y), SHOULDER_Y, 0.012);
+    pivot.rotation.set(-PZ_PITCH, 0, s * 0.2);
+    body.add(pivot);
+
+    const hose = new THREE.Mesh(
+      hoseGeometry(
+        [
+          new THREE.Vector3(0, 0, 0),
+          new THREE.Vector3(s * 0.004, -0.075, 0.02),
+          new THREE.Vector3(s * 0.013, -0.152, 0.026),
+          new THREE.Vector3(s * 0.017, -0.226, 0.012),
+        ],
+        0.019,
+        20,
+        9,
+      ).geometry,
+      inkMat,
+    );
+    hose.name = s > 0 ? "armL" : "armR";
+    hose.castShadow = true;
+    pivot.add(hose);
+
+    // The mitt. Four-fingered cartoon gloves are drawn as a blob with
+    // separations, not as fingers — at this size a modelled hand is a smear.
+    // MEASURED 0.149 SH across.
+    const mitt = new THREE.Mesh(new THREE.SphereGeometry(0.054, 14, 11), gloveMat);
+    mitt.name = s > 0 ? "gloveL" : "gloveR";
+    mitt.scale.set(1, 0.92, 0.76);
+    mitt.position.set(s * 0.019, -0.249, 0.01);
+    mitt.castShadow = true;
+    pivot.add(mitt);
+
+    const thumb = new THREE.Mesh(new THREE.CapsuleGeometry(0.014, 0.022, 3, 7), gloveMat);
+    thumb.name = s > 0 ? "gloveThumbL" : "gloveThumbR";
+    thumb.rotation.set(0.35, 0, s * -0.85);
+    thumb.position.set(s * 0.052, -0.234, 0.024);
+    pivot.add(thumb);
+
+    arms.push(pivot);
+  }
+
+  // --- legs and boots -------------------------------------------------------
+  // Children of the ROOT, not of the pitched body: the slice leans, the stance
+  // does not. The hips sit BEHIND the wedge, which is what makes the tip hang
+  // down BETWEEN the legs — a detail the reference is explicit about, and the
+  // thing that makes the pose legible as standing rather than as balancing on
+  // a point.
+  const legs: THREE.Object3D[] = [];
+  for (const s of [1, -1] as const) {
+    const pivot = new THREE.Group();
+    pivot.name = s > 0 ? "legPivotL" : "legPivotR";
+    pivot.position.set(s * 0.072, 0.2856, -0.045);
+    pivot.rotation.z = s * 0.1;
+    g.add(pivot);
+
+    const hose = new THREE.Mesh(
+      hoseGeometry(
+        [
+          new THREE.Vector3(0, 0, 0),
+          new THREE.Vector3(0, -0.062, 0.014),
+          new THREE.Vector3(s * 0.002, -0.132, 0.046),
+          new THREE.Vector3(0, -0.203, 0.062),
+        ],
+        0.0205,
+        18,
+        9,
+      ).geometry,
+      inkMat,
+    );
+    hose.name = s > 0 ? "legL" : "legR";
+    hose.castShadow = true;
+    pivot.add(hose);
+
+    const boot = new THREE.Group();
+    boot.name = s > 0 ? "bootL" : "bootR";
+    boot.position.set(0, -0.203, 0.062);
+    pivot.add(boot);
+
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.041, 0.05, 0.078, 14), crustMat);
+    shaft.name = s > 0 ? "bootShaftL" : "bootShaftR";
+    shaft.position.set(0, -0.004, -0.014);
+    shaft.castShadow = true;
+    boot.add(shaft);
+
+    const foot = new THREE.Mesh(new THREE.SphereGeometry(0.05, 15, 11), crustMat);
+    foot.name = s > 0 ? "bootFootL" : "bootFootR";
+    foot.scale.set(0.98, 0.82, 1.1);
+    foot.position.set(0, -0.038, -0.006);
+    foot.castShadow = true;
+    boot.add(foot);
+
+    // The toe has to PROJECT past the ankle mass or the two spheres read as one
+    // ball: no front, no back, and a walk cycle that looks like sliding. The
+    // maki learned that at 0.9 on Z inside a boot already 1.35 long.
+    const toe = new THREE.Mesh(new THREE.SphereGeometry(0.046, 15, 11), crustMat);
+    toe.name = s > 0 ? "bootToeL" : "bootToeR";
+    toe.scale.set(0.95, 0.76, 1.42);
+    toe.position.set(0, -0.044, 0.052);
+    toe.castShadow = true;
+    boot.add(toe);
+
+    // The collar, and ONLY the collar. The reference draws a pale sole sliver
+    // under each boot (MEASURED 0.116 x 0.057 SH) and it was built, then cut:
+    // the game camera sits at 59 degrees ELEVATION and looks down, so the
+    // underside of a boot is a surface no player ever sees, and all the sliver
+    // did at play size was put a bright rim between the boot and its own ground
+    // shadow — a halo that made the foot read as hovering rather than as
+    // planted. A drawn detail that only exists in a view the game never takes
+    // is worth deleting, not shrinking. The collar alone still separates a boot
+    // from a blob, which was the pair's real job.
+    const collar = new THREE.Mesh(new THREE.TorusGeometry(0.045, 0.0115, 6, 16), crustMat);
+    collar.name = s > 0 ? "bootCollarL" : "bootCollarR";
+    collar.rotation.x = Math.PI / 2;
+    collar.scale.set(1, 1.08, 1);
+    collar.position.set(0, 0.031, -0.014);
+    boot.add(collar);
+
+    legs.push(pivot);
+  }
+
+  const userData: GhostUserData = {
+    bodyMat,
+    eyes,
+    pupPivots,
+    pupM,
+    pupBaseColor: pupM.color.getHex(),
+    baseColor: color,
+    // No hem and no skirt: this one WALKS, so it opts out of the shared ghost
+    // breathe entirely and supplies its own stride, hair lag and idle sway.
+    hem: [],
+    pupOffset: { x: 0, z: 0 },
+    // The crust roll and both boots, which share crustMat. They are a large
+    // share of the silhouette at the TOP and the BOTTOM of the figure, so
+    // following the frightened recolour is what stops a third of the enemy
+    // staying warm while the player is chasing it. Everything else is a small
+    // fixed accent and stays out (IDEA-053 rule 2) — and the gloves stay out
+    // for a second reason as well: white at both hands and in the mouth is
+    // what keeps the frightened silhouette from collapsing into one blue mass.
+    accentMats: [crustMat],
+    behaviour: pizzaBehaviour({ legs, arms, quiff, body }),
+    eyeMats: pizzaEyeMats,
+    spiritMats: collectSpiritMats(g, pizzaEyeMats),
+  };
+  g.userData = userData;
+  return g;
+}
+
+// ---------------------------------------------------------------------------
+// THE HAMBURGER — the eighth img2threejs rebuild (IDEA-059). Same split as
+// every rebuild before it: the pipeline's evidence trail lives in
+// .img2threejs/burger/ and the SHIPPED mesh below is hand-authored from the
+// numbers that run locked. Geometry machinery in ./burgerSculpt.ts.
+//
+// WHY IT EXISTS. Ten enemies ship today. Nine of them have a body that is ONE
+// mass — a shell, a drum, a block, a wedge — wearing marks. This one's body is
+// a STACK: six contrasting bands piled up, and the banding is the whole read.
+// Nothing else in the cast is striped across its full width, and at 25 px a
+// striped tower is not confusable with a smooth one whatever colour it is.
+//
+// The other novelty is smaller and it is on the hands. Every gloved enemy in
+// this game (the maki, the nigiri, the pizza) wears the same blob mitt. This
+// one has FINGERS, and it holds two of them up in a V. It is the only gesture
+// in the cast, and it is the reference's own pose.
+//
+// PROPORTION BASE: BH = THE STACK HEIGHT, top-bun crown to bottom-bun
+// underside, MEASURED at 261 px in the reference and built at 0.62 world
+// units. No head, and for the fourth subject running not even a stand-in for
+// one: the face is drawn ON the top bun, which is band 1 of the body, so there
+// is no crown, no chin and no neck and a "head height" would be an invention
+// every ratio under it inherited (IDEA-054's carapace width, IDEA-056/057's
+// nori disc and rice width, IDEA-058's slice height). The HEIGHT rather than
+// the width, because the identity is how the body is BANDED and the bands
+// divide the height.
+//
+// FIVE RULES ARE LOAD-BEARING.
+//
+//  1. THE BANDING IS THE IDENTITY, AND IT MUST SURVIVE THE FRIGHTENED
+//     RECOLOUR. bodyMat is the BREAD — shared by the top bun and the bottom
+//     bun, two DISJOINT masses at the top and the bottom of the body with the
+//     garnish clamped between them. That is a fourth distinct arrangement
+//     after the maki (repaints its wrapper), the nigiri (repaints its topping)
+//     and the pizza (repaints its face plate), and it is the first where the
+//     team colour lands in two separate places. `accentMats` is EMPTY ON
+//     PURPOSE: the patty is the obvious candidate, being the largest fixed
+//     mass, and putting it in would turn bread AND meat blue together and
+//     collapse the whole stack to one blue lump exactly while the player is
+//     chasing it. That is IDEA-053 rule 2, and here it applies to the biggest
+//     accent on the model rather than to six hairlines.
+//
+//  2. THE WAIST HAS TO BE RAGGED OR IT IS A LAYER CAKE. The measured band
+//     order DISAGREES between columns of the reference — lettuce/cheese/patty
+//     at x=250, lettuce/onion/cheese/patty at x=300, tomato/patty/cheese at
+//     x=460 — because the drawing overlaps its garnish rather than stacking
+//     it. So the lettuce is a SCALLOPED ring (`frillRing`) and not a disc, the
+//     cheese is a square slice whose corners hang over the patty
+//     (`squircleSlab`), and the tomato and onion are OFF-CENTRE discs that
+//     each peek out on one side only.
+//
+//  3. THE CHEESE'S FOUR DRIPS ARE ONE MECHANISM, NOT FOUR PARTS. A square laid
+//     on a circle overhangs at exactly four places by construction; make the
+//     overhang the part that droops and the drips place themselves. Four
+//     separate pendant meshes would be four numbers to keep in step with the
+//     patty's radius — the pizza's `sectorOutline` reasoning in a new place.
+//
+//  4. RUBBER HOSE MEANS NO ELBOWS AND NO KNEES. Every limb is ONE swept tube
+//     of constant radius, sharing the pizza's `hoseGeometry`. It is a
+//     measurement, not a shortcut: the reference's limb ink-run is the same
+//     width at scanlines 100 px apart across a large change of direction. It
+//     also makes the flea's and the crab's joint-gap problem unrepresentable
+//     rather than merely absent.
+//
+//  5. THE TWO ARMS ARE DELIBERATELY NOT MIRRORS. One holds the V and does not
+//     swing with the stride; the other is a closed fist and counter-swings
+//     normally. An asymmetric pose is the thing that reads as a decision
+//     rather than as a bug, so the raised arm gets its own slow wave — a rigid
+//     raised arm on a walking figure looks broken, a waving one looks pleased
+//     with itself.
+const BG_LETTUCE = 0x7d9a35; // pushed to olive off the sampled #839f3c, see below
+const BG_LETTUCE_DK = 0x5f7526;
+const BG_TOMATO = 0xd8434b;
+// Deepened from the sampled #b76c8a. That pink sits close enough to the ROSE
+// team hue (#e0577a) that the onion sliver read as more bun on that one team
+// — the lettuce/leaf collision in a second place, and this one is cheap to
+// fix because nothing about an onion insists on being pale.
+const BG_ONION = 0x9c5a86;
+const BG_CHEESE = 0xffd154;
+// The reference samples #8e3a2d, a red-brown, and it works there against an
+// ORANGE bun. Here the bun is whichever of five team hues this slot fields,
+// and on the ROSE team (#e0577a) a red-brown patty against a red bun is one
+// mass — the darkest band in the stack disappearing into the largest. So the
+// patty is taken to a deep BROWN instead: value contrast holds on all five
+// hues and on the frightened blue, where hue contrast holds on three.
+const BG_PATTY = 0x6b3a22;
+const BG_PATTY_DK = 0x3d1f0f; // the char dimples
+const BG_INK = 0x37110c; // limbs, brows, smile
+const BG_GLOVE = 0xfdfbf4;
+const BG_BOOT = 0xe5402c; // a VERMILION, not the sampled #ff4239 — see below
+const BG_BOOT_DK = 0xa82b1c;
+const BG_PUPIL = 0x3a1f18;
+const BG_SESAME = 0xf6e6bd;
+
+// The walk. Slower than the pizza's 8.4 and with less swing: this one is a
+// heavy wide body on short legs, and a wide body at a quick patter reads as
+// scurrying. It waddles instead.
+const BG_STEP_FREQ = 7.2;
+// 0.26, trimmed from 0.30, and the reason is measured rather than aesthetic.
+// This boot's toe projects a long way on +Z (that projection is what stops the
+// pair reading as urns), and rotating a long +Z part about X drops it BELOW its
+// rest height — so a big stride digs the foot into the maze floor. The whole
+// cast does this to some degree (ghost 0.035, pizza 0.029, crab 0.022, maki
+// 0.014 — see scripts/_scratch-cast-animated.ts), and at 0.30 this one was the
+// worst of them at 0.038. It is invisible in any still, which is exactly why it
+// needs measuring.
+const BG_STEP_SWING = 0.26;
+const BG_ARM_SWING = 0.22;
+const BG_IDLE_FREQ = 1.05 * Math.PI * 2;
+const BG_IDLE_ARM = 0.09;
+// The idle lean is a rotation.z on the stack, and the stack carries the raised
+// arm — so every 0.01 of lean also swings the highest, furthest-out part of the
+// model sideways. At 0.042 the burger's ANIMATED width reached 0.897, past the
+// crab's 0.861, which is the crab's own recorded identity claim; a claim that
+// only holds while both models stand still is not much of a claim.
+const BG_IDLE_LEAN = 0.030;
+/**
+ * The pitch, in radians, that leans the whole stack BACK.
+ *
+ * A PLAY-CAMERA decision, not a measurement, and the reasoning is the reverse
+ * of the pizza's. The pizza leans back to turn a vertical FACE toward a camera
+ * that is 59 degrees up. This one leans back to stop the camera looking down
+ * the axis its six BANDS are stacked along: with the stack upright the axis
+ * sits only 31 degrees off the view direction, so every band projects at
+ * sin(31) = 0.515 of its height AND the top bun, being the widest thing on the
+ * model and the highest, occludes most of what is under it. Leaning back 15
+ * degrees opens that to 46 degrees, sin 0.719 — a 40% taller band — and tips
+ * the bun off the things it was covering.
+ *
+ * It is deliberately MODEST rather than the ~59 degrees that would put the
+ * axis square to the view, for a reason worth writing down: `syncToEntity`
+ * turns the enemy to face its own travel direction, so the lean is away from
+ * the camera when it walks toward the player and toward the camera when it
+ * walks away. A big lean would buy a great read half the time and a worse one
+ * than upright the other half. 15 degrees reads as a jaunty backward lean from
+ * every heading and never as a model falling over.
+ *
+ * It MUST live on the stack group rather than the root: applyGhostState
+ * assigns `mesh.rotation.x` on the ROOT every time the state changes, so a
+ * pitch authored there is erased the first time the beagle eats a bone
+ * (IDEA-056 rule 3).
+ */
+const BG_PITCH = -15 * (Math.PI / 180);
+
+// The wave, on the raised arm only. Deliberately NOT locked to the stride — its
+// own frequency and phase, so the gesture never looks like part of the walk.
+//
+// It is ONE-SIDED, and that is a size decision as much as a motion one. A
+// symmetric wave swings the hand as far OUT as it swings it in, and the hand is
+// the furthest-out thing on the model: at an amplitude of 0.13 the burger's
+// animated width reached 0.895, past the crab's 0.861 and the mosquito's own
+// animated 0.861. Swinging inward-only from the authored pose means the
+// envelope is set by the REST pose — the number the cast table actually
+// publishes — so the gesture can be almost twice as large for free.
+const BG_WAVE_FREQ = 3.1;
+const BG_WAVE_AMP = 0.24;
+
+interface BurgerParts {
+  legs: THREE.Object3D[]; // [left, right] hip pivots
+  swingArm: THREE.Object3D; // the FIST arm — counter-swings the stride
+  waveArm: THREE.Object3D; // the V arm — holds its raise and waves
+  stack: THREE.Object3D; // the banded body, for the idle weight shift
+}
+
+function burgerBehaviour(parts: BurgerParts): EnemyBehaviour {
+  const { legs, swingArm, waveArm, stack } = parts;
+  const swingRest = swingArm.rotation.x;
+  const waveRestZ = waveArm.rotation.z;
+  return {
+    animate: (t, idleT, moveBlend) => {
+      const step = Math.sin(t * BG_STEP_FREQ) * BG_STEP_SWING * moveBlend;
+      legs[0].rotation.x = step;
+      legs[1].rotation.x = -step;
+      // Only ONE arm counter-swings, because only one arm is free. The rest
+      // angle is the shoulder's own hang and has to be added back, or setting
+      // rotation.x here would swing the arm up into the patty.
+      const idleArm = Math.sin(idleT * BG_IDLE_FREQ) * BG_IDLE_ARM * (1 - moveBlend);
+      swingArm.rotation.x = swingRest - step * (BG_ARM_SWING / BG_STEP_SWING) + idleArm;
+      // The wave. It runs whether the burger is walking or standing — that is
+      // what makes the raised arm read as held on purpose rather than as an
+      // arm that failed to come down.
+      // (1 - sin) / 2 runs 0..1, so this only ever rotates the arm INWARD from
+      // its authored raise and never past it. See BG_WAVE_AMP.
+      waveArm.rotation.z =
+        waveRestZ + (1 - Math.sin(idleT * BG_WAVE_FREQ)) * 0.5 * BG_WAVE_AMP;
+      // A wide body on two short legs needs a weight shift or it reads as a
+      // prop being slid along. Roll about the travel axis, which syncToEntity's
+      // own waddle then rides on top of.
+      // rotation.z ONLY. The stack's rotation.x carries the authored BG_PITCH
+      // and nothing here may touch it.
+      stack.rotation.z = Math.sin(idleT * BG_IDLE_FREQ * 0.5) * BG_IDLE_LEAN * (1 - moveBlend * 0.6);
+    },
+  };
+}
+
+/**
+ * Builds the hamburger mascot enemy skin (IDEA-059).
+ *
+ * Satisfies the same `GhostUserData` contract as every other skin, so game.ts
+ * never learns which one is equipped.
+ */
+export function makeBurger(color: number): THREE.Group {
+  const g = new THREE.Group();
+  g.name = "root";
+
+  // --- proportions, all in BH multiples measured off the reference ----------
+  const BH = 0.62; // proportion base: the stack height
+  const Y0 = 0.185; // the bottom bun's lowest point
+  // The boot's own origin, chosen so the toe's UNDERSIDE lands on y = 0. It is
+  // derived rather than guessed because it was wrong first: authored from a
+  // nominal boot height the model floated 0.0186 above the floor, which no
+  // render shows (the enemy just sits a little high in its own shadow) and
+  // which `_scratch-exact-cast.ts` reports as `floor 0.018`. Toe centre sits
+  // 0.074 below the origin and its scaled radius is 0.0394, so the origin has
+  // to be exactly their sum.
+  const BOOT_SOLE = 0.080 + 0.083 * 0.55; // 0.1257
+  const HIP_Y = 0.236;
+  const CROWN = Y0 + BH; // 0.805
+
+  // The reference figure is LEGGIER than this cast allows. Taken literally at a
+  // readable stack width it stands 1.10 world units, against a cast whose
+  // tallest crown is the pizza's 0.873. Height had to come off, and it comes
+  // off the legs rather than off the stack because the stack is the identity.
+  // Recorded in .img2threejs/burger/measurements.md as departure 2 so it is
+  // never mistaken later for something that was measured.
+
+  // THE GARNISH IS WIDER THAN BOTH BUNS, and that is the single most important
+  // number on this model. The play camera sits at 59 degrees ELEVATION, so a
+  // vertical extent projects at cos(59) = 0.515 while a horizontal one does
+  // not: the six bands are stacked along the ONE axis the camera foreshortens,
+  // and the first build proved it — 0.136 of band under 0.392 of bun came back
+  // as a hairline on a ball. Radial protrusion is what survives that view, so
+  // the filling squeezes out past the bread by 0.061 (17% of the bun's own
+  // radius) and the frill's scalloped edge and the cheese's corners are read
+  // from any elevation at all. It is also what the reference draws.
+  // THE BAND IS BUILT BIGGER THAN IT MEASURES AND THE BREAD SMALLER, and this
+  // is the largest deliberate departure on the model. Measured, the reference
+  // divides its stack 0.632 bun / 0.218 garnish / 0.149 base. Built to those
+  // numbers this model came back as a red EGG with a stripe round it, from
+  // every angle, and the reason is not proportion — it is that the reference
+  // has two things this renderer does not. Its bun is ORANGE against a green,
+  // red, yellow and brown band, and every one of its bands carries a hard ink
+  // KEYLINE. Here both bun masses take the same team hue (bodyMat is the
+  // bread) and there is no outline pass in the project at all, so two same-
+  // coloured domes 0.22 apart simply close up into one form. The separation
+  // has to be bought with SHAPE instead: 0.53 / 0.30 / 0.17.
+  const BUN_H = 0.329; // 0.530 BH — MEASURED 0.632
+  // 0.330, narrowed from 0.352 for the play camera and not for the reference.
+  // From 59 degrees up the top bun is both the highest and the widest thing on
+  // the model, so it OCCLUDES the five bands under it and all a player sees is
+  // whatever sticks out past its own rim. Every millimetre off this radius is a
+  // millimetre of garnish ring that becomes visible, and the ring is 34% wider
+  // at 0.330 than it was at 0.352.
+  const BUN_R = 0.330; // aspect 0.499: a shallow CAP, not a dome
+  const BUN_Y = CROWN - BUN_H; // 0.476, the cap's base
+  const BOT_H = 0.105; // 0.170 BH — MEASURED 0.149
+  // 0.833 of the top bun against a MEASURED 0.917 — the same argument as the
+  // band heights above, and the other half of what breaks the egg.
+  const BOT_R = 0.275;
+  // The patty is now the second-largest mass on the model and the darkest, at
+  // 0.17 BH against a MEASURED 0.123. It is the stack's value anchor and it is
+  // what a player reads as "there is something between the two bits of bread"
+  // from a camera 59 degrees up.
+  const PATTY_H = 0.105; // 0.170 BH — MEASURED 0.123
+  // 0.372 — WIDER THAN THE TOP BUN (0.330), WIDER THAN THE BOTTOM BUN (0.275)
+  // AND WIDER THAN THE FRILL'S OWN TROUGHS (0.368). That last comparison is the
+  // one that matters, and it is what the CLAY RENDER (`?flat=1`) was needed to
+  // find. In colour the model looked finished; map-stripped it was a ball with
+  // a ruffled skirt, because the entire six-band stack was being carried by
+  // COLOUR and the only geometric events on the whole body were the frill and
+  // the boots. The two bun masses merged into one sphere in clay exactly the
+  // way they had merged into one egg in colour two passes earlier — the same
+  // defect, found twice by two different instruments, because it was never
+  // fixed in the geometry.
+  //
+  // A band has to be a LEDGE in the silhouette, not a stripe on it. The patty
+  // protruding 0.042 past the bun is what turns the profile into a real step
+  // sequence: narrow cap, ruffled waist, wide dark ledge, narrow base.
+  const PATTY_R = 0.372;
+  const PATTY_TOP = Y0 + BOT_H + PATTY_H; // 0.395
+  const CHEESE_Y = PATTY_TOP + 0.004;
+  const FRILL_Y = 0.450;
+
+  // --- materials ------------------------------------------------------------
+  // bodyMat is the BREAD, and both buns share it — see rule 1. There is no
+  // BG_BUN constant on purpose: the reference's bun samples #ea9b3c, but that
+  // colour is never on screen, because this material is ALWAYS one of the five
+  // team hues (or the frightened blue). Keeping the sampled value as a named
+  // constant would put a colour in the palette that nothing can ever show.
+  const bodyMat = toon({ color, emissive: color, emissiveIntensity: 0.15 });
+  // Pushed to olive off the sampled #839f3c on purpose. The LEAF team hue is
+  // #6fb84a and the buns take it, so on exactly one team of five a green frill
+  // would sit against a green bun; darkening and de-saturating it keeps a value
+  // step there even when the hue step is gone. The same class of decision as
+  // the pizza's brown-orange crust, and bounded the same way: the tomato, the
+  // cheese and the patty carry the band on their own if this one loses.
+  const lettuceMat = toon({ color: BG_LETTUCE });
+  lettuceMat.userData.baseColor = BG_LETTUCE;
+  const lettuceDkMat = toon({ color: BG_LETTUCE_DK });
+  lettuceDkMat.userData.baseColor = BG_LETTUCE_DK;
+  const tomatoMat = toon({ color: BG_TOMATO });
+  tomatoMat.userData.baseColor = BG_TOMATO;
+  const onionMat = toon({ color: BG_ONION });
+  onionMat.userData.baseColor = BG_ONION;
+  const cheeseMat = toon({ color: BG_CHEESE });
+  cheeseMat.userData.baseColor = BG_CHEESE;
+  const pattyMat = toon({ color: BG_PATTY });
+  pattyMat.userData.baseColor = BG_PATTY;
+  const charMat = toon({ color: BG_PATTY_DK });
+  charMat.userData.baseColor = BG_PATTY_DK;
+  const inkMat = toon({ color: BG_INK });
+  inkMat.userData.baseColor = BG_INK;
+  const gloveMat = toon({ color: BG_GLOVE });
+  gloveMat.userData.baseColor = BG_GLOVE;
+  // A VERMILION rather than the reference's #ff4239. The rose team hue is
+  // #e0577a and the buns take it; a pink-red boot under a pink-red bun is one
+  // mass on that team and nowhere else — the kind of bug that ships. This one
+  // leans orange and stays a different hue family.
+  const bootMat = toon({ color: BG_BOOT });
+  bootMat.userData.baseColor = BG_BOOT;
+  const bootDkMat = toon({ color: BG_BOOT_DK });
+  bootDkMat.userData.baseColor = BG_BOOT_DK;
+  const sesameMat = toon({ color: BG_SESAME });
+  sesameMat.userData.baseColor = BG_SESAME;
+  // Its own material rather than a share of the glove: it belongs to eyeMats,
+  // the list kept SOLID while the enemy is eaten, and sharing would leave the
+  // gloves solid too — a spirit coming home still wearing them.
+  const scleraMat = toon({ color: 0xffffff });
+  const pupM = toon({ color: BG_PUPIL });
+  const glintMat = toon({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.5 });
+  const burgerEyeMats = [scleraMat, pupM, glintMat];
+
+  // --- the stack ------------------------------------------------------------
+  // An INNER group. applyGhostState assigns rotation.x on the ROOT every time
+  // the state changes, so anything authored on the root is erased the first
+  // time the beagle eats a bone (IDEA-056 rule 3) — and the idle weight shift
+  // lives here for the same reason.
+  const stack = new THREE.Group();
+  stack.name = "stack";
+  stack.rotation.x = BG_PITCH;
+  // Pushed forward on Z because a 15-degree lean carries the crown 0.16
+  // backwards; without it the mass sits behind the feet and the mascot reads as
+  // toppling rather than as leaning.
+  stack.position.z = 0.052;
+  g.add(stack);
+
+  const bottomBun = new THREE.Mesh(
+    latheFromProfile(bandProfile(BOTTOM_BUN_STATIONS, false, true), 36, BOT_R * 2, BOT_H, BOT_R * 2),
+    bodyMat,
+  );
+  bottomBun.name = "bottomBun";
+  bottomBun.position.y = Y0 + BOT_H / 2;
+  bottomBun.castShadow = true;
+  stack.add(bottomBun);
+
+  const patty = new THREE.Mesh(
+    latheFromProfile(bandProfile(PATTY_STATIONS, true, true), 36, PATTY_R * 2, PATTY_H, PATTY_R * 2),
+    pattyMat,
+  );
+  patty.name = "patty";
+  patty.position.y = PATTY_TOP - PATTY_H / 2;
+  patty.castShadow = true;
+  stack.add(patty);
+
+  // Char dimples, and they go on the RIM rather than on the face. The play
+  // camera sits at 59 degrees ELEVATION and looks down: the patty's top face is
+  // under the cheese and its bottom face is under the bun, so the rim is the
+  // only part of it a player ever sees. Marks on the face would be correct,
+  // invisible, and 300 triangles.
+  const charRand = rng(0x8a3c);
+  for (let i = 0; i < 14; i++) {
+    const a = (i / 14) * Math.PI * 2 + charRand() * 0.3;
+    const yy = PATTY_TOP - PATTY_H * (0.28 + charRand() * 0.44);
+    const dimple = new THREE.Mesh(new THREE.SphereGeometry(0.011, 6, 4), charMat);
+    dimple.name = `pattyChar${i}`;
+    dimple.scale.set(1.6, 0.62, 0.62);
+    dimple.position.set(PATTY_R * 0.985 * Math.sin(a), yy, PATTY_R * 0.985 * Math.cos(a));
+    dimple.rotation.y = a;
+    stack.add(dimple);
+  }
+
+  // The cheese. `supportRadius` is the patty's own radius, so the drips are
+  // exactly the overhang and nothing else — change the patty and they follow.
+  const cheese = new THREE.Mesh(
+    squircleSlab({
+      // 0.322 puts the corners at 0.406, PAST the frill's own troughs at 0.368
+      // AND past the patty's rim at 0.372 — which they have to clear too, since
+      // widening the patty into a ledge (see PATTY_R) put a new thing in front
+      // of the drips. Two systems, one number; the COMPARISON SHEET is what
+      // showed the cheese had quietly gone back to a sliver
+      // — so two of the four punch through the green ring as a yellow flash
+      // when the model is seen from above, which is the one angle at which the
+      // cheese otherwise contributes nothing at all.
+      halfWidth: 0.322,
+      // 6.0, not the 2.4 the first build used. A squircle's DIAGONAL radius is
+      // halfWidth * 2^(0.5 - 1/n), which at n = 2.4 is 1.059 — a 6% bulge, i.e.
+      // very nearly a circle. Measured, the slab came out 0.300 across its
+      // axes and 0.318 across its corners and there were no corners to hang:
+      // the whole four-drips-for-free mechanism was there and producing
+      // nothing. At n = 6 the factor is 1.260 and the corners reach 0.372
+      // against a 0.318 patty, so they overhang by 0.054 and droop.
+      exponent: 6.0,
+      thickness: 0.018,
+      supportRadius: PATTY_R * 0.78,
+      // Far enough that the corners clear the patty's own bottom edge. A drip
+      // that stops short of the mass it is dripping off is a bevel.
+      droop: 0.098,
+      droopJitter: 0.45,
+      seed: 0x5c1e,
+      segments: 64,
+      rings: 5,
+    }),
+    cheeseMat,
+  );
+  cheese.name = "cheese";
+  cheese.position.y = CHEESE_Y;
+  cheese.rotation.y = Math.PI / 4; // corners to the diagonals: two hang toward the camera
+  cheese.castShadow = true;
+  stack.add(cheese);
+
+  // Tomato and onion: OFF-CENTRE discs, each peeking out on one side only.
+  // That asymmetry is measured — the reference's tomato is dominant on the
+  // viewer-right and its onion on the left — and it is what stops the garnish
+  // band reading as a stripe. Two full concentric rings would average it away.
+  // The garnish is its own subassembly: two off-centre discs that only make
+  // sense together, and the thing a person means when they say "the salad".
+  const garnish = new THREE.Group();
+  garnish.name = "garnish";
+  stack.add(garnish);
+
+  const tomato = new THREE.Mesh(new THREE.CylinderGeometry(0.348, 0.348, 0.026, 30), tomatoMat);
+  tomato.name = "tomato";
+  tomato.position.set(0.056, 0.424, 0.014);
+  garnish.add(tomato);
+
+  const onion = new THREE.Mesh(new THREE.CylinderGeometry(0.330, 0.330, 0.015, 26), onionMat);
+  onion.name = "onion";
+  onion.position.set(-0.064, 0.438, -0.006);
+  garnish.add(onion);
+
+  // The lettuce frill. Its inner edge is a clean circle and only the OUTER
+  // edge scallops — a frill that waved at its inner edge too would open gaps
+  // into the stack at every trough, and a gap into a stack shows the inside of
+  // the band above it.
+  const frill = new THREE.Mesh(
+    frillRing({
+      rInner: 0.298,
+      rOuter: 0.386,
+      thickness: 0.044,
+      lobes: 9,
+      lobeAmp: 0.24, // outer tip reaches 0.407 — the widest thing on the model
+      dropAmp: 0.046,
+      seed: 0x1b7f,
+      segments: 76,
+    }),
+    lettuceMat,
+  );
+  frill.name = "lettuce";
+  frill.position.y = FRILL_Y;
+  frill.castShadow = true;
+  stack.add(frill);
+
+  // A second, smaller frill tucked under the first and darker. Two rings is
+  // what turns a scalloped edge into a LEAFY one: a single ring reads as a
+  // pie-crust crimp, and the reference draws lettuce two or three leaves deep.
+  const frill2 = new THREE.Mesh(
+    frillRing({
+      rInner: 0.288,
+      rOuter: 0.372,
+      thickness: 0.036,
+      lobes: 7,
+      lobeAmp: 0.28,
+      dropAmp: 0.042,
+      seed: 0x64d2,
+      segments: 64,
+    }),
+    lettuceDkMat,
+  );
+  frill2.name = "lettuceUnder";
+  frill2.position.y = FRILL_Y - 0.036;
+  frill2.rotation.y = 0.4;
+  stack.add(frill2);
+
+  const topBun = new THREE.Mesh(
+    latheFromProfile(bandProfile(TOP_BUN_STATIONS, true, false), 44, BUN_R * 2, BUN_H, BUN_R * 2),
+    bodyMat,
+  );
+  topBun.name = "topBun";
+  topBun.position.y = BUN_Y + BUN_H / 2;
+  topBun.castShadow = true;
+  stack.add(topBun);
+
+  // --- sesame -------------------------------------------------------------
+  // THE SESAME IS DOING MORE WORK HERE THAN IN THE REFERENCE, and it is sized
+  // for that rather than measured. The reference's bun is ORANGE, so it reads
+  // as bread on its colour alone and the seeds are a garnish. This one's bun is
+  // whichever of five team hues the slot fields - on the rose team it is a big
+  // pink dome - so the seeds are the only mark on the largest mass of the model
+  // that says "bread" on EVERY hue and on the frightened blue as well. Built at
+  // the measured 0.023 BH they came back as specks; 38 of them at half again
+  // that size is a deliberate departure, recorded as one.
+  //
+  // Laid FLAT against the dome and pushed out along its own normal, which is
+  // what `scatterOnBand` returns the normal for: a seed oriented to the radius
+  // instead lies flat near the equator and stands on end near the crown. They
+  // are also raised rather than painted, so they survive the team recolour of
+  // the bun underneath them — the one mark on the model that is guaranteed to
+  // read on all five hues and on the frightened blue.
+  const up = new THREE.Vector3(0, 1, 0);
+  const seeds = scatterOnBand(
+    TOP_BUN_STATIONS, 38, 0x2f91, BUN_R, BUN_H, CROWN,
+    [0.05, 0.80], 1.7,
+    // Carve out the face. The reference has no seed below the brow line and
+    // none between the eyes, and a sesame seed sitting on an eyeball is the
+    // kind of thing that only shows up once everything else is finished.
+    { phi: 0.72, t: [0.30, 0.78] },
+  );
+  seeds.forEach((s, i) => {
+    const seedMesh = new THREE.Mesh(new THREE.SphereGeometry(0.0205, 7, 5), sesameMat);
+    seedMesh.name = `sesame${i}`;
+    seedMesh.scale.set(0.60, 0.34, 1);
+    seedMesh.position.copy(s.position).addScaledVector(s.normal, 0.005);
+    seedMesh.quaternion.setFromUnitVectors(up, s.normal);
+    seedMesh.rotateY(s.spin);
+    stack.add(seedMesh);
+  });
+
+  // --- the face -------------------------------------------------------------
+  // Everything here is placed by `onBand`, i.e. in (azimuth, height-fraction)
+  // on the dome's own measured profile rather than in absolute coordinates.
+  // The face therefore FOLLOWS the dome — which is the separator from the
+  // pizza, whose face is a flat plate — and retuning the bun moves the face
+  // with it instead of sinking it in or floating it off.
+  const face = new THREE.Group();
+  face.name = "face";
+  stack.add(face);
+
+  const EYE_T = 0.530; // 0.335 BH below the crown — MEASURED
+  const EYE_X = 0.1091; // half of a MEASURED 0.352 BH separation
+  const eyeR = stationRadius(TOP_BUN_STATIONS, EYE_T) * BUN_R;
+  const EYE_PHI = Math.asin(Math.min(0.99, EYE_X / eyeR));
+
+  const eyes: THREE.Object3D[] = [];
+  const pupPivots: THREE.Object3D[] = [];
+  for (const s of [1, -1] as const) {
+    const p = onBand(TOP_BUN_STATIONS, EYE_T, s * EYE_PHI, BUN_R, BUN_H, CROWN);
+    const outward = new THREE.Vector3(p.x, 0, p.z).normalize();
+
+    const pivot = new THREE.Group();
+    pivot.name = s > 0 ? "pupilPivotL" : "pupilPivotR";
+    pivot.position.copy(p);
+    // Turn the whole eye to face out along the dome's own surface, so the
+    // sclera sits flush instead of cutting a lens out of the bun.
+    pivot.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), outward);
+    face.add(pivot);
+
+    // MEASURED 0.115 x 0.153 BH, centres 0.352 BH apart — so the two nearly
+    // touch, with a third of an eye's width of bun between them. That
+    // closeness is the strongest cartoon signal the face carries; spaced at
+    // human proportions the whole read goes.
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.050, 16, 12), scleraMat);
+    eye.name = s > 0 ? "eyeL" : "eyeR";
+    eye.scale.set(0.72, 0.95, 0.42);
+    eye.position.z = 0.004;
+    pivot.add(eye);
+
+    const pup = new THREE.Mesh(new THREE.SphereGeometry(0.036, 14, 10), pupM);
+    pup.name = s > 0 ? "pupilL" : "pupilR";
+    pup.scale.set(0.76, 0.88, 0.36);
+    pup.position.set(s * 0.006, -0.004, 0.014);
+    pivot.add(pup);
+
+    // The catchlight is a WEDGE, not a dot. It is the reference's one
+    // un-generic face mark and it costs four triangles to keep.
+    const glint = new THREE.Mesh(new THREE.ConeGeometry(0.013, 0.020, 4), glintMat);
+    glint.name = s > 0 ? "glintL" : "glintR";
+    glint.scale.set(1, 1, 0.5);
+    glint.rotation.set(Math.PI / 2, 0, s * 0.5);
+    glint.position.set(s * -0.010, 0.012, 0.026);
+    pivot.add(glint);
+
+    eyes.push(pivot, eye, pup, glint);
+    pupPivots.push(pivot);
+  }
+
+  // The brows: detached ink arcs above and OUTBOARD of each eye, built as
+  // tubes whose points lie on the dome so they hug it. Detached is the point —
+  // a brow drawn on the lid is an eyelid, a brow floating above it is an
+  // expression, and at 25 px it is most of the expression there is.
+  //
+  // Built as a swept curve rather than as a torus arc for a reason worth
+  // keeping: a torus ARC is not symmetric, so its mirror is a REFLECTION
+  // (pi - a0 - A) and not a rotation by pi, which is how the pizza's first
+  // build ended up with one brow and one stray tick. Sampling phi symmetrically
+  // and negating it for the other side makes that mistake unrepresentable.
+  for (const s of [1, -1] as const) {
+    const pts: THREE.Vector3[] = [];
+    // MEASURED: the reference's brow is 58 px across against a 30 px sclera,
+    // i.e. 1.93x the eye's own width. The eye spans 0.232 rad here, so the brow
+    // wants 0.448 — a half-width of 0.224, rounded up a touch.
+    const HALF = 0.24;
+    for (let i = 0; i <= 10; i++) {
+      const u = i / 10;
+      const phi = s * (EYE_PHI + (u - 0.5) * 2 * HALF);
+      // The arch: highest in the middle, and the OUTER end drops further than
+      // the inner one. The sign of that asymmetry is the whole difference
+      // between friendly and a scowl — two inner ends dropped is the universal
+      // cartoon glare.
+      const e = (u - 0.5) * 2;
+      // The ARCH term has to dominate the TILT term or this is not a brow, it is
+      // a slanted bar. The reference measures 32 px of curvature across 58 px
+      // of brow — a pronounced arc — and the first two builds had 0.028 and
+      // 0.034 of arch against 0.018 and then 0.042 of tilt, so the tilt swamped
+      // it and both ends came out on the same side of the middle. What renders
+      // from that is a straight line over a big pupil, which reads DEADPAN at
+      // best and stern at worst, and neither is the reference's expression.
+      //
+      // Base 0.352 puts the crown of the arc above the sclera's own top edge
+      // (t 0.386); the ends drop to 0.433 and 0.461, which is bun on both sides
+      // because the brow is nearly twice the eye's width. The tilt is small but
+      // it stays, and its SIGN is the difference between friendly and a scowl:
+      // outer end LOWER (larger t). Two inner ends dropped is the universal
+      // cartoon glare, and IDEA-058 shipped it once already.
+      const t = 0.352 + 0.095 * e * e + 0.014 * e;
+      pts.push(onBand(TOP_BUN_STATIONS, t, phi, BUN_R * 1.012, BUN_H, CROWN));
+    }
+    const brow = new THREE.Mesh(hoseGeometry(pts, 0.0068, 12, 6).geometry, inkMat);
+    brow.name = s > 0 ? "browL" : "browR";
+    face.add(brow);
+  }
+
+  // The smile. A LINE, not an aperture: no teeth, no tongue, no cavity. That
+  // is deliberate and it is a separator — the pizza's open mouth with a tongue
+  // in it is one of ITS identity features, and two food mascots with the same
+  // mouth would be two of the same thing.
+  const smilePts: THREE.Vector3[] = [];
+  const SMILE_HALF = 0.46;
+  for (let i = 0; i <= 18; i++) {
+    const u = i / 18;
+    const e = (u - 0.5) * 2;
+    const phi = e * SMILE_HALF;
+    // Lowest at the centre, rising at both ends: t is the fraction DOWN the
+    // dome, so the ends want a SMALLER t. Getting that sign backwards draws a
+    // frown, and a frown on a burger reads as a bug rather than as a mood.
+    const t = 0.891 - 0.150 * e * e;
+    smilePts.push(onBand(TOP_BUN_STATIONS, t, phi, BUN_R * 1.012, BUN_H, CROWN));
+  }
+  const smile = new THREE.Mesh(hoseGeometry(smilePts, 0.0105, 22, 6).geometry, inkMat);
+  smile.name = "smile";
+  face.add(smile);
+
+  // The two ticks that turn up at the corners of the mouth. They are four
+  // hundred triangles of nothing at play size and they are what makes the
+  // smile read as drawn rather than as a groove.
+  for (const s of [1, -1] as const) {
+    const tick: THREE.Vector3[] = [];
+    for (let i = 0; i <= 5; i++) {
+      const u = i / 5;
+      const phi = s * (SMILE_HALF + u * 0.055);
+      tick.push(onBand(TOP_BUN_STATIONS, 0.741 - u * 0.052, phi, BUN_R * 1.012, BUN_H, CROWN));
+    }
+    const t = new THREE.Mesh(hoseGeometry(tick, 0.0085, 6, 5).geometry, inkMat);
+    t.name = s > 0 ? "smileTickL" : "smileTickR";
+    face.add(t);
+  }
+
+  // The nose: a small ball sitting ON the smile's crest and overlapping it,
+  // which is what the reference draws. Bread-coloured, so it reads as part of
+  // the bun pushed forward rather than as a separate object stuck to it — and
+  // it therefore follows the team recolour with the rest of the bread.
+  // t = 0.700, which is the MEASURED value (115 px below the crown of a 165 px
+  // bun). The first build had it at 0.762 — a transcription slip, not a
+  // decision — and 0.06 of bun height was the whole difference between a nose
+  // and a TONGUE: at 0.762 the ball sat down on the smile's own crest, and a
+  // warm bun-coloured bump inside a dark mouth curve is a tongue however it
+  // was labelled. The ink arc went the same way and now sits UNDER the ball
+  // rather than around it. The drawing gets away with a nose on the mouth line
+  // because it carries a full ink circle that closes the nose off as its own
+  // object; a toon mesh has no outline to close with, so the separation has to
+  // be geometric instead.
+  const noseP = onBand(TOP_BUN_STATIONS, 0.700, 0, BUN_R, BUN_H, CROWN);
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.0295, 12, 9), bodyMat);
+  nose.name = "nose";
+  nose.scale.set(1, 0.92, 0.78);
+  nose.position.copy(noseP);
+  nose.position.z += 0.006;
+  face.add(nose);
+
+  const noseInk = new THREE.Mesh(
+    new THREE.TorusGeometry(0.0250, 0.0050, 5, 14, Math.PI * 0.72),
+    inkMat,
+  );
+  noseInk.name = "noseCrease";
+  noseInk.scale.set(1.1, 0.85, 0.5);
+  noseInk.rotation.z = Math.PI + 0.62; // the arc UNDER the ball, opening upward
+  noseInk.position.copy(nose.position);
+  noseInk.position.y -= 0.004;
+  noseInk.position.z -= 0.003;
+  face.add(noseInk);
+
+  // --- arms -----------------------------------------------------------------
+  // Both shoulders sit at the garnish line, on the stack's own widest band —
+  // there is no torso to hang them from and no shoulder to speak of, which is
+  // the same thing the maki and the nigiri had to solve. Positive rotation.z
+  // swings a part hanging at -y toward +x.
+  const SHOULDER_Y = 0.408;
+  // INSIDE the patty's own radius (0.362) on purpose. There is no shoulder to
+  // hang an arm off, so the pivot is buried in the filling and the hose emerges
+  // from the side of the stack the way the reference draws it. It is also where
+  // the width budget came from: the raised hand's reach is measured from here,
+  // and moving the pivot in by 0.03 buys 0.03 of envelope for nothing visible.
+  const SHOULDER_R = 0.285;
+
+  // The FIST arm. Hangs, and counter-swings the stride.
+  const arms = new THREE.Group();
+  arms.name = "arms";
+  stack.add(arms);
+
+  const swingArm = new THREE.Group();
+  swingArm.name = "armPivotR";
+  swingArm.position.set(-SHOULDER_R, SHOULDER_Y, 0.02);
+  swingArm.rotation.z = -0.235;
+  arms.add(swingArm);
+
+  const fistHose = new THREE.Mesh(
+    hoseGeometry(
+      [
+        new THREE.Vector3(0, 0, 0),
+        new THREE.Vector3(-0.014, -0.050, 0.030),
+        new THREE.Vector3(-0.024, -0.098, 0.048),
+        new THREE.Vector3(-0.026, -0.142, 0.048),
+      ],
+      0.0195,
+      18,
+      9,
+    ).geometry,
+    inkMat,
+  );
+  fistHose.name = "armR";
+  fistHose.castShadow = true;
+  swingArm.add(fistHose);
+
+  // The CUFF. The pizza's mitts have no cuff and this one does: it is what
+  // makes the hand read as a worn glove rather than as a white blob on the end
+  // of a stick, and it is a measured 0.218 BH across — wider than the mitt.
+  const gloveFist = new THREE.Group();
+  gloveFist.name = "gloveFist";
+  swingArm.add(gloveFist);
+
+  const fistCuff = new THREE.Mesh(new THREE.CylinderGeometry(0.052, 0.044, 0.026, 14), gloveMat);
+  fistCuff.name = "cuffR";
+  fistCuff.position.set(-0.026, -0.152, 0.048);
+  gloveFist.add(fistCuff);
+
+  const fist = new THREE.Mesh(new THREE.SphereGeometry(0.050, 14, 11), gloveMat);
+  fist.name = "gloveR";
+  fist.scale.set(1, 0.94, 0.86);
+  fist.position.set(-0.028, -0.190, 0.048);
+  fist.castShadow = true;
+  gloveFist.add(fist);
+
+  const fistThumb = new THREE.Mesh(new THREE.CapsuleGeometry(0.013, 0.020, 3, 7), gloveMat);
+  fistThumb.name = "gloveThumbR";
+  fistThumb.rotation.set(0.3, 0, 0.9);
+  fistThumb.position.set(-0.064, -0.182, 0.058);
+  gloveFist.add(fistThumb);
+
+  // The V ARM. Raised, and it does NOT swing with the stride — it holds the
+  // gesture and waves. Its hand tops out AT the bun's crown rather than the
+  // measured 0.134 BH above it: measured, this model's crown would pass the
+  // pizza's 0.873, and being the tallest in the cast is the pizza's own
+  // recorded identity claim. A hand at crown height still reads as a wave.
+  const waveArm = new THREE.Group();
+  waveArm.name = "armPivotL";
+  waveArm.position.set(SHOULDER_R, SHOULDER_Y, 0.02);
+  // NEGATIVE, and the sign is the whole difference between a raised arm and no
+  // arm at all. rotation.z positive swings a part toward +x when it hangs at
+  // -y — but this one points UP, so the same positive angle folds it across
+  // the body instead. The first build had +0.46 and the entire arm, hand,
+  // fingers and cuff rendered INSIDE the bun: not a subtle defect, an invisible
+  // one, because a limb buried in a solid looks exactly like a limb that was
+  // never built. The maki lost both of its arms the same way.
+  waveArm.rotation.z = -0.195;
+  arms.add(waveArm);
+
+  const waveHose = new THREE.Mesh(
+    hoseGeometry(
+      [
+        new THREE.Vector3(0, 0, 0),
+        new THREE.Vector3(0.026, 0.078, 0.020),
+        new THREE.Vector3(0.030, 0.166, 0.040),
+        new THREE.Vector3(0.018, 0.254, 0.050),
+      ],
+      0.0195,
+      18,
+      9,
+    ).geometry,
+    inkMat,
+  );
+  waveHose.name = "armL";
+  waveHose.castShadow = true;
+  waveArm.add(waveHose);
+
+  const waveCuff = new THREE.Mesh(new THREE.CylinderGeometry(0.046, 0.052, 0.026, 14), gloveMat);
+  waveCuff.name = "cuffL";
+  waveCuff.position.set(0.018, 0.264, 0.050);
+  waveArm.add(waveCuff);
+
+  // THE HAND. It is the only one in the cast with fingers, so it is built as a
+  // hand: a palm, two fingers up in a V, two knuckles folded down and a thumb
+  // across them. At the 25 px play size this is a white nub above the body and
+  // the RAISED ARM is what reads; the V is a shop-and-showcase feature and the
+  // spec's review target tiers it 'important' rather than 'critical' for
+  // exactly that reason.
+  const hand = new THREE.Group();
+  hand.name = "gloveV";
+  hand.position.set(0.018, 0.300, 0.052);
+  hand.rotation.z = -0.12;
+  waveArm.add(hand);
+
+  const palm = new THREE.Mesh(new THREE.SphereGeometry(0.042, 13, 10), gloveMat);
+  palm.name = "palmL";
+  palm.scale.set(0.94, 1, 0.82);
+  palm.castShadow = true;
+  hand.add(palm);
+
+  // The two raised fingers. They have to CLEAR each other and clear the bun's
+  // outline, or the V closes up into the silhouette and the hand is a lump —
+  // which is the whole reason for building a hand at all. Splayed 34 degrees,
+  // measured off the reference's two finger runs (12x46 and 15x40 px).
+  const FINGERS: readonly (readonly [number, number, number])[] = [
+    [-0.30, 0.070, 0.0155], // the taller, more upright one
+    [0.30, 0.060, 0.0150],
+  ];
+  FINGERS.forEach(([tilt, len, rad], i) => {
+    const f = new THREE.Mesh(new THREE.CapsuleGeometry(rad, len, 4, 9), gloveMat);
+    f.name = `fingerL${i}`;
+    f.rotation.z = tilt;
+    f.position.set(Math.sin(tilt) * -(len / 2 + 0.030), Math.cos(tilt) * (len / 2 + 0.030), 0.004);
+    f.castShadow = true;
+    hand.add(f);
+  });
+
+  // The folded fingers and the thumb — drawn, in the reference, as a stack of
+  // knuckle bumps rather than as fingers. At this size a modelled curled
+  // finger is a smear; three bumps read.
+  for (let i = 0; i < 3; i++) {
+    const k = new THREE.Mesh(new THREE.SphereGeometry(0.0165, 8, 6), gloveMat);
+    k.name = `knuckleL${i}`;
+    k.scale.set(1, 0.86, 1.1);
+    k.position.set(0.030, 0.016 - i * 0.021, 0.014);
+    hand.add(k);
+  }
+  const thumb = new THREE.Mesh(new THREE.CapsuleGeometry(0.0135, 0.022, 3, 7), gloveMat);
+  thumb.name = "thumbL";
+  thumb.rotation.set(0.2, 0, -1.15);
+  thumb.position.set(0.006, -0.026, 0.030);
+  hand.add(thumb);
+
+  // --- legs and boots -------------------------------------------------------
+  // Children of the ROOT, not of the stack: the body leans and sways, the
+  // stance does not.
+  const legRig = new THREE.Group();
+  legRig.name = "legs";
+  g.add(legRig);
+
+  const legs: THREE.Object3D[] = [];
+  for (const s of [1, -1] as const) {
+    const pivot = new THREE.Group();
+    pivot.name = s > 0 ? "legPivotL" : "legPivotR";
+    pivot.position.set(s * 0.1105, HIP_Y, -0.010);
+    pivot.rotation.z = s * 0.06;
+    legRig.add(pivot);
+
+    const hose = new THREE.Mesh(
+      hoseGeometry(
+        [
+          new THREE.Vector3(0, 0, 0),
+          new THREE.Vector3(0, -0.034, 0.010),
+          new THREE.Vector3(s * 0.002, -0.078, 0.026),
+          new THREE.Vector3(0, BOOT_SOLE - HIP_Y, 0.034),
+        ],
+        0.030,
+        16,
+        9,
+      ).geometry,
+      inkMat,
+    );
+    hose.name = s > 0 ? "legL" : "legR";
+    hose.castShadow = true;
+    pivot.add(hose);
+
+    const boot = new THREE.Group();
+    boot.name = s > 0 ? "bootL" : "bootR";
+    boot.position.set(0, BOOT_SOLE - HIP_Y, 0.034);
+    pivot.add(boot);
+
+    // THE COLLAR IS A FUNNEL, and that is measured: 0.287 BH across against a
+    // 0.096 BH leg — nearly three times the tube it swallows. The pizza's boot
+    // takes a thin torus for a collar and it is right for a boot that is
+    // mostly foot; this reference draws a bowl the leg drops into, and at play
+    // size the flare is most of what says "boot" rather than "dark blob".
+    const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.054, 0.044, 0.028, 16), bootMat);
+    collar.name = s > 0 ? "bootCollarL" : "bootCollarR";
+    collar.position.y = -0.012;
+    collar.castShadow = true;
+    boot.add(collar);
+
+    const collarLip = new THREE.Mesh(new THREE.TorusGeometry(0.052, 0.0066, 6, 18), bootDkMat);
+    collarLip.name = s > 0 ? "bootLipL" : "bootLipR";
+    collarLip.rotation.x = Math.PI / 2;
+    collarLip.position.y = 0.002;
+    boot.add(collarLip);
+
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.064, 0.036, 14), bootMat);
+    shaft.name = s > 0 ? "bootShaftL" : "bootShaftR";
+    shaft.position.set(0, -0.046, -0.004);
+    shaft.castShadow = true;
+    boot.add(shaft);
+
+    // MEASURED 1.32x the collar's width (99 px of foot against 75 of collar).
+    // The first build had it at 0.87x, which makes a boot that is all cuff - a
+    // red egg-cup with a dot of foot under it.
+    // Narrow in X and long in Z. The comparison sheet caught this: from a
+    // near-FRONT view a boot whose whole shape is DEPTH reads as a POT — a
+    // flared cup with a ball under it — because none of the projection a player
+    // sees from 59 degrees up is available head-on. Taking width out of the
+    // foot and putting it into the toe's length costs nothing at the play
+    // camera and buys back the head-on read the shop showcase uses.
+    const foot = new THREE.Mesh(new THREE.SphereGeometry(0.083, 14, 11), bootMat);
+    foot.name = s > 0 ? "bootFootL" : "bootFootR";
+    foot.scale.set(0.86, 0.58, 1.12);
+    foot.position.set(0, -0.070, 0.004);
+    foot.castShadow = true;
+    boot.add(foot);
+
+    // The toe has to PROJECT past the ankle mass or the two spheres read as
+    // one ball: no front, no back, and a walk cycle that looks like sliding.
+    // The toe has to PROJECT past the ankle mass or the two spheres read as one
+    // ball: no front, no back, and a walk cycle that looks like sliding. The
+    // first build had it at z 0.052 inside a 0.083 foot and the pair read as an
+    // urn — a flared cup with a bulb under it, which is what a boot becomes the
+    // moment nothing about it points forward.
+    const toe = new THREE.Mesh(new THREE.SphereGeometry(0.076, 14, 11), bootMat);
+    toe.name = s > 0 ? "bootToeL" : "bootToeR";
+    toe.scale.set(0.80, 0.55, 1.62);
+    toe.position.set(0, -0.080, 0.082);
+    toe.castShadow = true;
+    boot.add(toe);
+
+    // The toe seam. The reference draws an ink arc separating a rounded toe
+    // cap from the shaft; a boot without it is a red bean.
+    const seam = new THREE.Mesh(new THREE.TorusGeometry(0.052, 0.0055, 5, 16, Math.PI * 1.15), bootDkMat);
+    seam.name = s > 0 ? "bootSeamL" : "bootSeamR";
+    seam.rotation.set(-0.5, 0, Math.PI * 0.92);
+    seam.scale.set(1.25, 1, 0.7);
+    seam.position.set(0, -0.062, 0.038);
+    boot.add(seam);
+
+    // The reference also draws a pale SOLE strip (MEASURED 0.368 x 0.023 BH).
+    // It is not built, and that is IDEA-058's cut applied up front rather than
+    // rediscovered: the game camera sits at 59 degrees ELEVATION and looks
+    // DOWN, so a strip at the very bottom of a boot is occluded by the boot's
+    // own bulge, and all it did on the pizza was put a bright rim between the
+    // foot and its own ground shadow — a halo that made the foot read as
+    // hovering rather than as planted.
+
+    legs.push(pivot);
+  }
+
+  const userData: GhostUserData = {
+    bodyMat,
+    eyes,
+    pupPivots,
+    pupM,
+    pupBaseColor: pupM.color.getHex(),
+    baseColor: color,
+    // No hem and no skirt: this one WALKS, so it opts out of the shared ghost
+    // breathe entirely and supplies its own stride, wave and idle sway.
+    hem: [],
+    pupOffset: { x: 0, z: 0 },
+    // EMPTY ON PURPOSE, and it is the most load-bearing empty list in this
+    // file. bodyMat is already the bread — two disjoint masses at the top and
+    // the bottom of the body — so the frightened blue lands in both of the
+    // places that matter. The obvious addition is the patty, which is the
+    // largest fixed mass on the model; adding it would turn bread AND meat
+    // blue together and collapse the six-band stack into one blue lump
+    // exactly while the player is chasing it. The banding is the identity and
+    // it has to survive the recolour, so the entire garnish stays warm:
+    // IDEA-053 rule 2, applied here to the biggest accent rather than to six
+    // hairlines. The nigiri's accentMats is empty for the same shape of
+    // reason (its block and cap collapse together), which is the precedent.
+    accentMats: [],
+    behaviour: burgerBehaviour({ legs, swingArm, waveArm, stack }),
+    eyeMats: burgerEyeMats,
+    spiritMats: collectSpiritMats(g, burgerEyeMats),
+  };
+  g.userData = userData;
+  return g;
+}
+
 /**
  * Builds an enemy mesh for `skinId`, dispatching between the classic ghost
  * and the garden beetle/bee/ladybug/flea/crab/mosquito (IDEA-009, IDEA-053,
@@ -5350,6 +7325,8 @@ export function makeEnemy(skinId: string, color: number): THREE.Group {
   if (skinId === "mosquito") return makeMosquito(color);
   if (skinId === "maki") return makeSushiMaki(color);
   if (skinId === "nigiri") return makeNigiri(color);
+  if (skinId === "pizza") return makePizza(color);
+  if (skinId === "burger") return makeBurger(color);
   return makeGhost(color);
 }
 
