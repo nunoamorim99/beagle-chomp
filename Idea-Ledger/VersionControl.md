@@ -16,6 +16,18 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
 > lines here roll up into the numbered version below and this section is cleared (hold a line back
 > only if you explicitly choose to).
 
+- **[[IDEA-056]] v1 + [[IDEA-057]] v1** (2026-09-10) — **the sushi pair**. Two enemy skins that
+  break the cast's one rule: every other enemy is a bug, and these are FOOD, and they STAND UP. The
+  **maki** is a nori drum on two booted legs whose cut face is a three-zone bullseye — dark rim,
+  62 countable rice grains, a salmon plug carrying big open eyes and a real hole for a mouth; at
+  0.837 crown it is the tallest thing in the maze. The **nigiri** is a rice pillow belted in nori
+  under a seven-lobed prawn with a tail fan, half-lidded eyes and blush; at 0.481 deep it is the
+  shallowest. They ship together because each is built against the other as its main risk: both
+  take the team colour and both are recoloured again when frightened, so colour cannot separate
+  them and seven measured silhouette separators do — plus an eighth that is not a shape, since the
+  **two recolour in opposite places** (the maki repaints its wrapper, the nigiri its topping).
+  Priced 25 with their siblings; nothing about them is premium.
+
 - **[[IDEA-049]] v1** (2026-09-05) — **the thumbstick**. A third touch scheme beside
   swipe and the D-pad, and the one that removes the LIFT: the thumb stays on the
   control between turns, so a change of direction is a roll rather than a whole new

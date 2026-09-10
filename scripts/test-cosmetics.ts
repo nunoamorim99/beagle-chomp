@@ -222,10 +222,10 @@ console.log("\n=== cosmetics.ts (IDEA-012 shop prices) ===");
 
 console.log("\n=== cosmetics.ts (IDEA-009 enemy skins) ===");
 
-check("exactly 7 enemy skins", ENEMY_SKINS.length === 7);
+check("exactly 9 enemy skins", ENEMY_SKINS.length === 9);
 check(
-  "enemy skin ids are beetle, bee, ladybug, flea, crab, mosquito, ghost in order",
-  ENEMY_SKINS.map((s) => s.id).join(",") === "beetle,bee,ladybug,flea,crab,mosquito,ghost",
+  "enemy skin ids are beetle, bee, ladybug, flea, crab, mosquito, maki, nigiri, ghost in order",
+  ENEMY_SKINS.map((s) => s.id).join(",") === "beetle,bee,ladybug,flea,crab,mosquito,maki,nigiri,ghost",
 );
 check("beetle is ENEMY_SKINS[0]", ENEMY_SKINS[0].id === "beetle");
 check("DEFAULT_ENEMY_SKIN_ID is beetle", DEFAULT_ENEMY_SKIN_ID === "beetle");
@@ -258,16 +258,16 @@ check("DEFAULT_ENEMY_SKIN_ID is beetle", DEFAULT_ENEMY_SKIN_ID === "beetle");
   const owns = (id: string): boolean => id === "ghost";
 
   check(
-    "a fresh player is shown 6 enemy skins, and not the ghost",
-    visibleEnemySkins(false, none).map((s) => s.id).join(",") === "beetle,bee,ladybug,flea,crab,mosquito",
+    "a fresh player is shown 8 enemy skins, and not the ghost",
+    visibleEnemySkins(false, none).map((s) => s.id).join(",") === "beetle,bee,ladybug,flea,crab,mosquito,maki,nigiri",
   );
   check(
     "owning the tribute coat reveals the ghost",
-    visibleEnemySkins(true, none).map((s) => s.id).join(",") === "beetle,bee,ladybug,flea,crab,mosquito,ghost",
+    visibleEnemySkins(true, none).map((s) => s.id).join(",") === "beetle,bee,ladybug,flea,crab,mosquito,maki,nigiri,ghost",
   );
   check(
     "a legacy account that already owns the ghost still sees it without the coat",
-    visibleEnemySkins(false, owns).map((s) => s.id).join(",") === "beetle,bee,ladybug,flea,crab,mosquito,ghost",
+    visibleEnemySkins(false, owns).map((s) => s.id).join(",") === "beetle,bee,ladybug,flea,crab,mosquito,maki,nigiri,ghost",
   );
   check(
     "revealing never reorders or drops the ordinary skins",
@@ -289,8 +289,8 @@ check("getEnemySkin(unknown) falls back to default (beetle)", unknownEnemy.id ==
     seen.push(id);
   }
   check(
-    `enemy cycle visits all 7 skins then wraps to ${DEFAULT_ENEMY_SKIN_ID}`,
-    seen.join(",") === "beetle,bee,ladybug,flea,crab,mosquito,ghost,beetle",
+    `enemy cycle visits all 9 skins then wraps to ${DEFAULT_ENEMY_SKIN_ID}`,
+    seen.join(",") === "beetle,bee,ladybug,flea,crab,mosquito,maki,nigiri,ghost,beetle",
   );
   check("cycleEnemySkinId(unknown) returns the first skin's id", cycleEnemySkinId("nope") === ENEMY_SKINS[0].id);
 }

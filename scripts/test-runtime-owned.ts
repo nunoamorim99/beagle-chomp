@@ -176,11 +176,12 @@ console.log("\n--- the registry agrees with the REAL animation code ---");
     !/addPaintedEyes/.test(SRC),
   );
   // One site per enemy now: addPaintedEyes for the ghost, and one each in the
-  // beetle, bee, ladybug, flea, crab and mosquito. The count grows by one with
-  // every new enemy skin — that is the point of the check, not an accident of it.
+  // beetle, bee, ladybug, flea, crab, mosquito, maki and nigiri. The count grows
+  // by one with every new enemy skin — that is the point of the check, not an
+  // accident of it.
   check(
     "every enemy still names its dart pivot pupilPivotL/R",
-    (SRC.match(/"pupilPivotL" : "pupilPivotR"/g) ?? []).length === 7,
+    (SRC.match(/"pupilPivotL" : "pupilPivotR"/g) ?? []).length === 9,
   );
   check("PUPIL_SWEEP still exists", /const PUPIL_SWEEP\s*=/.test(SRC));
   check(

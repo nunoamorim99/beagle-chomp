@@ -26,6 +26,13 @@ const state = process.env.STATE ? `&state=${process.env.STATE}` : "";
 const dist = process.env.DIST ? `&dist=${process.env.DIST}` : "";
 const elev = process.env.EL ? `&el=${process.env.EL}` : "";
 const fov = process.env.FOV ? `&fov=${process.env.FOV}` : "";
+// BG/SHADOW re-shoot for the segmentation gate. turntable_gate.py decides what
+// is background by COLOUR, so a subject with near-white surfaces (rice, gloves,
+// boots) and a pale ground shadow gets both counted as background and flood
+// filled into "interior holes". BG=0x120a3a SHADOW=0 removes both ambiguities
+// at once, which is what tells a real hole from a segmentation artefact.
+const bg = process.env.BG ? `&bg=${process.env.BG}` : "";
+const shadow = process.env.SHADOW === "0" ? "&shadow=0" : "";
 // MODEL picks which generated rework factory the viewer builds (beagle|flea).
 // Renders land under that subject's own workspace so two runs never overwrite
 // each other's evidence.
@@ -60,12 +67,20 @@ for (const [name, qs] of Object.entries(VIEWS)) {
   // warm-up); a blank full-page PNG is ~5KB vs ~50KB+ for a real frame, so
   // retry on suspiciously small screenshots.
   for (let attempt = 0; attempt < 3; attempt++) {
-    await page.goto(`${baseUrl}/preview-rework/?${qs}&model=${model}&grid=0&hud=0${toon}${flat}${state}${dist}${elev}${fov}`, {
+    await page.goto(`${baseUrl}/preview-rework/?${qs}&model=${model}&grid=0&hud=0${toon}${flat}${state}${dist}${elev}${fov}${bg}${shadow}`, {
       waitUntil: "networkidle",
     });
     await page.waitForFunction(() => document.title.includes("ready"), null, { timeout: 20_000 });
     await page.waitForTimeout(400);
-    const buf = await page.screenshot({ path: `${OUT}/${name}.png` });
+    // omitBackground is half of what BG=none needs: without it Playwright
+    // composites the page over opaque white and the alpha never reaches the
+    // PNG, so the gate falls back to guessing at colour again — which looked
+    // exactly like a pass on a transparent render and was not one. The other
+    // half is the page's own CSS background, cleared in the viewer.
+    const buf = await page.screenshot({
+      path: `${OUT}/${name}.png`,
+      omitBackground: process.env.BG === "none",
+    });
     if (buf.length > 20_000) break;
   }
   if (name === "34") hud = (await page.textContent("#hud")) ?? "";

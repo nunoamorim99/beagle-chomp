@@ -283,6 +283,13 @@ export const ENEMY_SKINS: readonly EnemySkin[] = [
   // around: it is the one thing no other enemy in the cast has, and the only
   // reliable separator from the bee once both are wearing the same team colour.
   { id: "mosquito", name: "Mosquito", blurb: "All needle and wings · the garden's whine", price: 25 },
+  // THE SUSHI PAIR (IDEA-056, IDEA-057). The first enemies in the game that are
+  // not bugs, and the first that stand upright — a beagle chasing its dinner
+  // rather than a garden pest. They ship together on purpose: each is built
+  // against the other as its main risk, and the pair reads as one idea. Priced
+  // with their siblings; nothing about them is premium.
+  { id: "maki", name: "Maki Roll", blurb: "Nori, rice and a salmon face · stands on two boots", price: 25 },
+  { id: "nigiri", name: "Nigiri", blurb: "A prawn on a rice pillow · belted in nori", price: 25 },
   // THE EASTER EGG. Free, but not listed until it is revealed, and revealed by
   // owning the Pac-Beagle coat: the two tributes to the arcade game this one
   // descends from unlock each other, which needs no UI copy to explain. Price 0

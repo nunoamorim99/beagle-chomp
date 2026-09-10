@@ -22,6 +22,20 @@ import {
   type SweepStation,
   type CoatRegion,
 } from "./beagleSculpt";
+import {
+  squirclePillow,
+  squirclePoints,
+  squircleRadius,
+  clipPolygonToBand,
+  shapeFromPoints,
+  pathFromPoints,
+  smileHolePoints,
+  latheAlongZ,
+  bandedTubeAlongZ,
+  squircleFrontZ,
+  type BandedRing,
+} from "./sushiSculpt";
+import { rng } from "./paint";
 
 /**
  * Animatable sub-parts of the beagle model, stashed on the group's userData
@@ -4124,6 +4138,1201 @@ export function makeMosquito(color: number): THREE.Group {
   return g;
 }
 
+// ---------------------------------------------------------------------------
+// THE MAKI ROLL — the fourth img2threejs rebuild (IDEA-056), after the beagle
+// (IDEA-047), the flea (IDEA-053), the crab (IDEA-054) and the mosquito
+// (IDEA-055). Same split as all four: the pipeline's generated factory sits
+// unused in src/render/rework/createMakiModel.ts and the SHIPPED mesh below is
+// hand-authored from the numbers that run locked. The evidence trail is
+// .img2threejs/maki/ — a per-subject workspace, so a new run never overwrites
+// another subject's.
+//
+// WHY IT EXISTS: every other enemy is a bug. This one is FOOD, and it STANDS
+// UP. Those are the two things the shipped cast cannot say, and they are what
+// the skin is for — a beagle chasing (and being chased by) its dinner.
+//
+// PROPORTION BASE: ND = THE NORI DISC DIAMETER, the roll's cut face, measured
+// at 1600 px on the reference. Not a head diameter, because this subject has no
+// head: the body carries the face directly, there is no neck and no jaw, and a
+// "head height" would be an invented boundary every ratio then inherited. Same
+// reasoning as the crab's carapace width (IDEA-054). ND = 0.62 here.
+//
+// Measured against the shipped cast (scripts/_scratch-enemy-cast.ts):
+//   the maki is the TALLEST thing in the maze, past the bee's 0.803 crown,
+//   while staying well under the crab's 0.896 width — being the widest is the
+//   crab's whole identity and this skin must not take it.
+const MAKI_SEAM = 0x3a3228; // nori lap laminations — FIXED, deliberately not in accentMats
+const MAKI_RICE = 0xf6f1e4; // cooked rice — never team-coloured, on either sushi
+const MAKI_SALMON = 0xf26a26; // the face plate
+const MAKI_FAT = 0xffd9bd; // pale marbling in the salmon
+const MAKI_GLOVE = 0xf4f4f2; // mitten + boot
+const MAKI_LIMB = 0x211d1a; // the four limb tubes — IN accentMats
+const MAKI_MOUTH = 0x2b0f12; // the cavity's interior
+const MAKI_TONGUE = 0xef7d86;
+const MAKI_IRIS = 0x3fc4de;
+const MAKI_PUPIL = 0x12161c;
+
+// Walk. Slower and heavier than the bugs' scuttle: this thing has two legs and
+// big boots, and a 15 rad/s flea-style patter on two limbs reads as a shiver.
+const MK_STEP_FREQ = 9; // rad/s
+const MK_STEP_SWING = 0.5; // radians at the hip
+const MK_ARM_SWING = 0.34; // counter-phase to the legs
+const MK_IDLE_FREQ = 1.25 * Math.PI * 2;
+const MK_IDLE_ARM = 0.11; // a small hang-and-sway when standing still
+const MK_IDLE_LEAN = 0.035; // body roll, so a stopped maki is not a statue
+
+/**
+ * The pitch, in radians, that leans the drum BACK.
+ *
+ * This is a PLAY-CAMERA decision and not a measurement, which is why it is a
+ * named constant rather than a number buried in a rotation call. The game
+ * camera sits at 59 degrees elevation (scene.ts BASE_POS). A cut face standing
+ * vertically projects at cos(59) = 0.515 of its area from there, and the
+ * three-zone bullseye on that face is this character's identity rank 1 — half
+ * of it is not enough. Leaning back 18 degrees puts the face normal 43 degrees
+ * off the view direction (cos 0.73), a 42% larger projected face, at a cost of
+ * about 0.06 in crown height.
+ *
+ * It MUST live on an inner group. applyGhostState assigns `mesh.rotation.x` on
+ * the ROOT every time the state changes — 0 when normal, a shiver while
+ * frightened — so a pitch authored on the root is erased the first time the
+ * beagle eats a bone.
+ */
+const MK_PITCH = -18 * (Math.PI / 180);
+
+interface MakiParts {
+  legs: THREE.Object3D[]; // [left, right] hip pivots
+  arms: THREE.Object3D[]; // [left, right] shoulder pivots
+  body: THREE.Object3D; // the pitched group, for the idle lean
+}
+
+function makiBehaviour(parts: MakiParts): EnemyBehaviour {
+  const { legs, arms, body } = parts;
+  return {
+    animate: (t, idleT, moveBlend) => {
+      const step = Math.sin(t * MK_STEP_FREQ) * MK_STEP_SWING * moveBlend;
+      legs[0].rotation.x = step;
+      legs[1].rotation.x = -step;
+      // Arms counter-phase to the legs while walking, and a slow hang-sway
+      // while standing. Blended rather than switched, so a stop eases out of
+      // the stride instead of snapping to attention.
+      const idleArm = Math.sin(idleT * MK_IDLE_FREQ) * MK_IDLE_ARM * (1 - moveBlend);
+      arms[0].rotation.x = -step * (MK_ARM_SWING / MK_STEP_SWING) + idleArm;
+      arms[1].rotation.x = step * (MK_ARM_SWING / MK_STEP_SWING) - idleArm;
+      // A drum on two sticks needs SOME weight shift or it reads as a prop
+      // being slid along. This is a roll about the travel axis, added to the
+      // fixed pitch, which syncToEntity's own waddle then rides on top of.
+      body.rotation.z = Math.sin(idleT * MK_IDLE_FREQ * 0.5) * MK_IDLE_LEAN * (1 - moveBlend * 0.6);
+    },
+  };
+}
+
+/**
+ * Builds the maki-roll enemy skin (IDEA-056).
+ *
+ * Satisfies the same `GhostUserData` contract as every other skin, so game.ts
+ * never learns which one is equipped.
+ *
+ * WHAT TAKES THE TEAM COLOUR: the NORI SLEEVE. That is a real loss — the nori
+ * is what says "maki" in the reference — but the alternative is worse. bodyMat
+ * has to be the dominant mass or four enemies in four colours stop being
+ * distinguishable and the frightened state stops reading, and the sleeve IS the
+ * dominant mass. The species survives the repaint the way the beetle and
+ * ladybug survive theirs: SHAPE carries it. What keeps a hint of seaweed at
+ * every hue is `seamMat`, the lap hairlines, which are their own fixed
+ * near-black and are deliberately OUT of accentMats (IDEA-053 rule 2 applied up
+ * front rather than rediscovered).
+ *
+ * WHAT NEVER CHANGES: the RICE. Both sushi skins keep it off the recolour
+ * entirely — the maki repaints its WRAPPER, the nigiri repaints its TOPPING,
+ * and the off-white rice is the one thing they share at every team colour. It
+ * is also, with the gloves and boots, what stops the frightened silhouette
+ * collapsing into a single blue mass.
+ */
+export function makeSushiMaki(color: number): THREE.Group {
+  const g = new THREE.Group();
+
+  const ND = 0.62;
+  const R = ND / 2; // 0.310  barrel radius
+  const L = 0.8 * ND; // 0.496  barrel length, along its own axis
+  const RIM = 0.075 * ND; // 0.0465 nori rim thickness, on the radius
+  const RR = R - RIM; // 0.2635 rice-bed radius
+  const PHW = 0.2555 * ND; // 0.1584 salmon plate half-width
+  const PHH = 0.24 * ND; // 0.1488 salmon plate half-height
+  const SQ_N = 4; // squircle exponent — the measured corner radius, 0.069 ND
+  const GR = 0.029 * ND; // 0.018  rice grain radius
+  const GL = 0.089 * ND; // 0.055  rice grain length, tip to tip
+  const EYE_R = 0.112 * ND; // 0.0694 eye white radius
+  // The mouth is the one dimension SCALED UP from the measurement, and the
+  // reason is the same one that sized the crab's pincer gap (IDEA-054 rule 2):
+  // scaled honestly from the measured 0.183 x 0.088 ND it closed into a pale
+  // sliver at review size, with the tongue and the lip strip fighting over
+  // about nine pixels. A cavity has to be legible as an OPENING or it is not
+  // doing the job a cavity exists to do.
+  const MW = 0.225 * ND; // 0.1395 mouth aperture width  (measured 0.183)
+  const MH = 0.125 * ND; // 0.0775 mouth aperture height (measured 0.088)
+
+  // The nori rim stands PROUD of the rice bed, and that step is what makes the
+  // roll read as cut rather than printed — it is the shadow line the reference
+  // shows all the way round the annulus. Everything on the face is measured
+  // back from the rim's front plane at z = L/2.
+  const RICE_Z = L / 2 - 0.02;
+  /** Mouth centre on the plate — landmark mouthLine 0.724, measured. */
+  const MOUTH_Y = -0.0667;
+
+  const bodyMat = toon({ color, emissive: color, emissiveIntensity: 0.15 });
+  const seamMat = toon({ color: MAKI_SEAM });
+  seamMat.userData.baseColor = MAKI_SEAM;
+  const riceMat = toon({ color: MAKI_RICE });
+  riceMat.userData.baseColor = MAKI_RICE;
+  const salmonMat = toon({ color: MAKI_SALMON });
+  salmonMat.userData.baseColor = MAKI_SALMON;
+  const fatMat = toon({ color: MAKI_FAT });
+  fatMat.userData.baseColor = MAKI_FAT;
+  const gloveMat = toon({ color: MAKI_GLOVE });
+  gloveMat.userData.baseColor = MAKI_GLOVE;
+  // The limbs DO follow the frightened recolour. Four tubes plus their pivots
+  // are a real share of the silhouette, which is the large-accent case in
+  // GhostUserData's rule — the same call the beetle makes for its legs.
+  const limbMat = toon({ color: MAKI_LIMB });
+  limbMat.userData.baseColor = MAKI_LIMB;
+  // BackSide: this is the INSIDE of the mouth, seen through a real hole in the
+  // face plate. Rendering its front faces would put a dark bulge in the hole,
+  // which is exactly the defect a cavity is supposed to avoid.
+  const mouthMat = toon({ color: MAKI_MOUTH, side: THREE.BackSide });
+  mouthMat.userData.baseColor = MAKI_MOUTH;
+  const tongueMat = toon({ color: MAKI_TONGUE });
+  tongueMat.userData.baseColor = MAKI_TONGUE;
+
+  const scleraMat = toon({ color: 0xffffff });
+  const irisMat = toon({ color: MAKI_IRIS });
+  const pupM = toon({ color: MAKI_PUPIL });
+  // The catchlight. The beagle gets a true MeshBasicMaterial; an enemy cannot,
+  // because GhostUserData.eyeMats is typed MeshToonMaterial and those are the
+  // materials kept SOLID through the eaten state. A fully emissive toon is the
+  // enemy cast's standing answer and reads the same at this size.
+  const glintMat = toon({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.5 });
+  const makiEyeMats = [scleraMat, irisMat, pupM, glintMat];
+
+  // The pitched group. Everything ABOVE the hips hangs off it; the legs do not,
+  // so the lean never tips the stance.
+  const body = new THREE.Group();
+  body.name = "body";
+  body.position.y = 0.4658;
+  body.rotation.set(-0.071, 0, 0);
+  g.add(body);
+
+  // --- the nori sleeve: barrel and both rims as ONE revolved surface --------
+  // Not a cylinder plus two rings. Building the rim as its own primitive puts a
+  // shading seam exactly on the circle that identifies the subject, and any
+  // mismatch between the two radii opens a crack there. The profile runs from
+  // the rear rim's inner edge, out to the barrel, along it, and back in at the
+  // front — low end to high end, or every normal points inward.
+  const sleeve = new THREE.Mesh(
+    latheAlongZ(
+      [
+        [RR, -L / 2],
+        [R, -L / 2],
+        [R, L / 2],
+        [RR, L / 2],
+      ],
+      44,
+    ),
+    bodyMat,
+  );
+  sleeve.name = "noriSleeve";
+  sleeve.castShadow = true;
+  sleeve.receiveShadow = true;
+  body.add(sleeve);
+
+  // Lap laminations around the barrel. A torus already lies in the XY plane
+  // with its axis on Z, which is exactly the barrel's axis — no rotation needed.
+  //
+  // THREE, THIN AND LOW-CONTRAST, and every one of those three words is a fix.
+  // The first pass had four near-black rings at 0.005, and on a red drum they
+  // read as TREAD: a dark cylinder on two legs with concentric rings and a pale
+  // ring on its face is a tyre, which is this model's recorded rank-1 risk. The
+  // laminations still have to be their OWN fixed colour rather than joining
+  // accentMats — that is what keeps a hint of seaweed at every team hue — but
+  // they only need to be darker than the sleeve, not black.
+  for (let i = 0; i < 3; i++) {
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(R + 0.001, 0.0022, 4, 24), seamMat);
+    ring.name = `noriSeam${i}`;
+    ring.position.z = -L / 2 + (L * (i + 0.5)) / 3;
+    body.add(ring);
+  }
+
+  // One seed, one draw order: the scatter is decided HERE, at build time, and
+  // never re-rolled. A grain ring that changed between two calls would make the
+  // four enemies of one skin visibly different objects.
+  const rand = rng(0x5a5b1);
+
+  /**
+   * One cut face: rice bed, grain annulus, salmon plug. `front` gets the face.
+   *
+   * BOTH faces are built in the SAME local coordinates, at +z, and the rear one
+   * is then turned round by rotating its whole GROUP. The first pass instead
+   * carried a `sign` through every part's position, and the salmon plug's
+   * expression got it backwards: the rear plate landed at z = +0.202, buried
+   * inside the FRONT plate, leaving the rear of the roll as an open grey bowl
+   * with the mouth cavity's lit back wall floating in it. One rotation on the
+   * parent cannot be got wrong the way eight sign expressions can.
+   */
+  const buildFace = (front: boolean): THREE.Group => {
+    const face = new THREE.Group();
+    // Every part gets the face's suffix. Both cut faces come out of this one
+    // function, so without it the model carries two meshes called "riceBed" and
+    // two called "salmonPlate" — which the editor's part tree, its picking and
+    // its save-in-place all key off by NAME, and a duplicate there silently
+    // targets whichever one the traversal reaches first.
+    const sfx = front ? "Front" : "Rear";
+    face.name = "face" + sfx;
+    if (!front) face.rotation.y = Math.PI;
+    const z = RICE_Z;
+
+    // The bed. Its job is to be the surface the grains sit ON and to stop the
+    // annulus being see-through; the grains do the actual reading.
+    //
+    // It is an ANNULUS, not a disc, and that is what makes the mouth possible.
+    // As a full disc it sat directly behind the salmon plate and therefore
+    // directly behind the plate's mouth HOLE — so what showed through the
+    // opening was cream rice, and the cavity, correctly built and correctly
+    // back-faced, was simply occluded by a part nobody thought of as being in
+    // the way. Its inner radius is under the plate everywhere (the plate's
+    // closest approach to the centre is PHH = 0.149), so nothing is lost.
+    const bed = new THREE.Mesh(
+      latheAlongZ(
+        [
+          [0.125, -0.012],
+          [RR, -0.012],
+          [RR, 0.012],
+          [0.125, 0.012],
+        ],
+        30,
+      ),
+      riceMat,
+    );
+    bed.name = "riceBed" + sfx;
+    bed.position.z = z - 0.008;
+    bed.receiveShadow = true;
+    face.add(bed);
+
+    // The grain annulus. Two rows FOLLOWING THE PLATE'S OWN CONTOUR rather than
+    // a circle: scattered on a circle the ring leaves four fat gaps at the
+    // plate's flat sides and pinches against its corners. Deterministically
+    // seeded, and decided once here — nothing about the scatter is re-rolled at
+    // runtime.
+    // The inner row follows the PLATE's contour offset outward; the outer row
+    // follows the nori rim. Two different guides, because the annulus is
+    // bounded by two different curves.
+    type GrainRow = { count: number; contour: number | null; ring: number };
+    // THREE rows on the front, and the third one is not padding. The reference's
+    // rice ring is a thick crowded mass three grains deep; at two rows the
+    // annulus read as a thin braid with the nori showing through behind it,
+    // which is the same "reads as a wheel" risk the seam rings carry. The rear
+    // pays for it — one row there, because that face is only ever seen while
+    // the enemy is running away, and at that moment it is a plain cut roll.
+    const rows: GrainRow[] = front
+      ? [
+          { count: 20, contour: 0.024, ring: 0 },
+          { count: 24, contour: 0.056, ring: 0 },
+          { count: 26, contour: null, ring: RR - 0.02 },
+        ]
+      : [{ count: 18, contour: null, ring: RR - 0.023 }];
+    // The grains live under ONE named group per face, not loose on the face.
+    // The spec calls the annulus a single component and the part-coverage gate
+    // reads it that way; it is also what makes the ring explodable and
+    // selectable as the one thing it actually is.
+    const grains = new THREE.Group();
+    grains.name = "riceGrains" + sfx;
+    face.add(grains);
+    let gi = 0;
+    for (const row of rows) {
+      for (let i = 0; i < row.count; i++) {
+        const theta = ((i + rand() * 0.5) / row.count) * Math.PI * 2;
+        const base =
+          row.contour !== null
+            ? squircleRadius(theta, PHW, PHH, SQ_N) + row.contour
+            : row.ring;
+        const r = Math.min(base + (rand() - 0.5) * 0.012, RR - GR * 0.55);
+        const grain = new THREE.Mesh(
+          new THREE.CapsuleGeometry(GR, Math.max(0.004, GL - GR * 2), 2, 6),
+          riceMat,
+        );
+        grain.name = `riceGrains${sfx}${gi++}`;
+        // A capsule's axis is +Y, so a Z rotation lays it in the face plane.
+        // Grains run roughly TANGENTIALLY around the ring, which is what the
+        // reference shows, with enough jitter that no two neighbours line up.
+        grain.rotation.z = theta + (rand() - 0.5) * 1.1;
+        grain.rotation.y = (rand() - 0.5) * 0.5;
+        grain.position.set(r * Math.cos(theta), r * Math.sin(theta), z + 0.006);
+        grain.castShadow = false;
+        grains.add(grain);
+      }
+    }
+
+    // The salmon plug. On the FRONT it carries the mouth as a real HOLE in its
+    // own outline — the plate genuinely has no material where the mouth is —
+    // rather than a dark shape laid on top of it. Shape.holes is exact boolean
+    // subtraction on a flat plate and costs nothing.
+    const outline = squirclePoints(PHW, PHH, SQ_N, 44);
+    const plateShape = shapeFromPoints(outline);
+    if (front) {
+      const hole = smileHolePoints(MW / 2, MH, 14);
+      const holePath = pathFromPoints(hole.map((p) => new THREE.Vector2(p.x, p.y + MOUTH_Y)));
+      plateShape.holes.push(holePath);
+    }
+    const plate = new THREE.Mesh(
+      new THREE.ExtrudeGeometry(plateShape, {
+        depth: 0.026,
+        bevelEnabled: true,
+        bevelThickness: 0.008,
+        bevelSize: 0.008,
+        bevelSegments: 1,
+        curveSegments: 1,
+      }),
+      salmonMat,
+    );
+    plate.name = "salmonPlate" + sfx;
+    // ExtrudeGeometry builds forward along +Z from the shape plane, so the
+    // plate is pushed back by its own depth to land its FRONT face just inside
+    // the nori rim (rim front z = L/2 = 0.248; plate front lands at 0.236).
+    plate.position.z = z - 0.026;
+    plate.scale.setScalar(front ? 1 : 0.9);
+    plate.castShadow = false;
+    face.add(plate);
+
+    if (!front) return face;
+
+    // Fat striations. Each is the INTERSECTION of a band with the plate's own
+    // outline, so both ends of every stripe land on the plate's curve. A stripe
+    // drawn as its own little rounded rectangle would stop short of the edge and
+    // read as a floating dash — IDEA-054's sticker rule in two dimensions.
+    // [angle from +X, offset along the band normal, width].
+    //
+    // Every offset is chosen to CLEAR THE MOUTH. The stripes lie on the plate's
+    // front face, and the mouth is a real hole in that face, so a stripe
+    // crossing it would bridge the opening — which is precisely what the first
+    // pass did: the stripes sat BEHIND the plate, invisible except through the
+    // hole, where one showed up as a tan bar across the mouth. Along this
+    // band's normal the mouth occupies -0.127..+0.017 and the plate reaches
+    // +/-0.212, so the four upper stripes start at +0.05 and the single lower
+    // one sits past -0.15. The reference spreads its marbling over the whole
+    // plate; here the middle belongs to the mouth, and a stripe cut off at the
+    // mouth's edge would put the same straight ruler line across every one.
+    const bands: [number, number, number][] = [
+      [0.6, -0.168, 0.017],
+      [0.6, 0.052, 0.02],
+      [0.55, 0.098, 0.014],
+      [0.64, 0.146, 0.017],
+      [0.58, 0.19, 0.011],
+    ];
+    let si = 0;
+    for (const [angle, offset, width] of bands) {
+      const clipped = clipPolygonToBand(outline, angle, offset, width);
+      if (clipped.length < 3) continue; // the band missed the plate entirely
+      const stripe = new THREE.Mesh(
+        new THREE.ExtrudeGeometry(shapeFromPoints(clipped), {
+          depth: 0.004,
+          bevelEnabled: false,
+          curveSegments: 1,
+        }),
+        fatMat,
+      );
+      stripe.name = `fatStriations${si++}`;
+      // In FRONT of the plate's front face (which the bevel carries out to
+      // z + 0.008), not inside it.
+      stripe.position.z = z + 0.0095;
+      stripe.castShadow = false;
+      face.add(stripe);
+    }
+    return face;
+  };
+
+  const faceFront = buildFace(true);
+  const faceRear = buildFace(false);
+  body.add(faceFront, faceRear);
+
+  // --- the mouth's interior ------------------------------------------------
+  // A sphere sitting BEHIND the hole, rendered back-side, so what shows through
+  // the opening is the inside of its far wall: genuinely concave, genuinely
+  // darkest-on-the-model. Squashed on Z so the cavity is shallow rather than a
+  // tunnel into the roll.
+  // Its front pole must sit BEHIND the plate's front face, or the sphere pushes
+  // out through its own hole and the cavity becomes a bulge — the exact defect
+  // it exists to avoid. The plate spans z 0.200..0.234; this lands the pole at
+  // 0.218, inside that thickness, so what shows through the opening is the
+  // inside of the far wall.
+  const cavity = new THREE.Mesh(new THREE.SphereGeometry(MW * 0.62, 16, 10), mouthMat);
+  cavity.name = "mouthCavity";
+  cavity.scale.set(1, 0.9, 0.42);
+  cavity.position.set(0, MOUTH_Y, RICE_Z - 0.024);
+  faceFront.add(cavity);
+
+  const tongue = new THREE.Mesh(new THREE.SphereGeometry(0.03, 12, 9), tongueMat);
+  tongue.name = "tongue";
+  tongue.scale.set(1.05, 0.55, 0.5);
+  tongue.position.set(0, MOUTH_Y - MH * 0.3, RICE_Z - 0.018);
+  faceFront.add(tongue);
+
+  // NO separate lip strip. The first pass had one, a thin cream bar across the
+  // aperture's top edge, and it read as a bandage laid over the mouth rather
+  // than as an upper lip — at review size it was wider than the opening was
+  // tall. The extrusion's own BEVEL already turns the hole's edge into a lit
+  // chamfer, which is the same read for no extra mesh.
+
+  // --- eyes ----------------------------------------------------------------
+  // The measured pair spans 0.58 ND against a plate 0.511 ND wide, so the eye
+  // whites reach the plate's edge and touch the rice. That overhang is observed,
+  // not a modelling error, and the build reproduces it.
+  const eyeCap = (
+    factor: number,
+    thetaStart: number,
+    thetaLen: number,
+    mat: THREE.MeshToonMaterial,
+  ): THREE.Mesh => {
+    const geo = new THREE.SphereGeometry(
+      EYE_R * factor,
+      16,
+      10,
+      0,
+      Math.PI * 2,
+      thetaStart,
+      thetaLen,
+    );
+    geo.rotateX(Math.PI / 2); // pole from +Y to +Z — the gaze direction
+    return new THREE.Mesh(geo, mat);
+  };
+
+  const eyes: THREE.Object3D[] = [];
+  const pupPivots: THREE.Object3D[] = [];
+  for (const s of [1, -1]) {
+    // A GROUP carries the flattening, not the ball. Scaling the ball alone
+    // would leave the pupil and glint caps floating off a surface that had
+    // moved underneath them; scaling their shared parent moves caps and ball
+    // together, so they stay exactly flush however flat the eye is.
+    const eye = new THREE.Group();
+    eye.name = s > 0 ? "eyeL" : "eyeR";
+    eye.position.set(s * 0.0905, 0.0441, RICE_Z + 0.012);
+    eye.scale.set(1, 1, 0.55);
+    faceFront.add(eye);
+
+    const ball = new THREE.Mesh(new THREE.SphereGeometry(EYE_R, 18, 12), scleraMat);
+    ball.name = s > 0 ? "eyeBallL" : "eyeBallR";
+    eye.add(ball);
+
+    // The dart pivot. A decal cap must stay centred on its form to hug it, so
+    // it is never TRANSLATED — applyGhostState rotates this pivot instead and
+    // the caps sweep across the surface while staying flush.
+    const pivot = new THREE.Group();
+    pivot.name = s > 0 ? "pupilPivotL" : "pupilPivotR";
+    eye.add(pivot);
+
+    const pupil = eyeCap(1.02, 0, 0.77, pupM);
+    pupil.name = s > 0 ? "pupilL" : "pupilR";
+    pivot.add(pupil);
+    // The cyan is an ANNULUS around the pupil's rim, not an iris disc behind a
+    // pupil — the pupil mass is in front of it. At 0.012 world units it is a
+    // shape claim, well below the size at which any colour gate can read it.
+    const iris = eyeCap(1.035, 0.6, 0.19, irisMat);
+    iris.name = s > 0 ? "irisL" : "irisR";
+    pivot.add(iris);
+    const glint = eyeCap(1.05, 0, 0.235, glintMat);
+    glint.name = s > 0 ? "glintL" : "glintR";
+    glint.rotation.set(-0.5, s * 0.5, 0);
+    pivot.add(glint);
+
+    eyes.push(eye, ball, pupil, iris, glint);
+    pupPivots.push(pivot);
+
+    // Brows. The tilt IS the expression: level bars read as surprise, and these
+    // are the only part of this face that can carry a mood at all.
+    const brow = new THREE.Mesh(new THREE.CapsuleGeometry(0.013, 0.038, 3, 8), pupM);
+    brow.name = s > 0 ? "browL" : "browR";
+    brow.rotation.set(0, 0, Math.PI / 2 - s * 0.24);
+    brow.position.set(s * 0.0905, 0.1366, RICE_Z + 0.018);
+    faceFront.add(brow);
+    eyes.push(brow);
+  }
+
+  // --- arms ----------------------------------------------------------------
+  const arms: THREE.Object3D[] = [];
+  for (const s of [1, -1]) {
+    const pivot = new THREE.Group();
+    pivot.name = s > 0 ? "armPivotL" : "armPivotR";
+    // The shoulder sits on the barrel's WIDEST ring — x = +/-R at y = 0 — and
+    // is nudged forward so the arm hangs in front of the flank rather than
+    // along it. The first pass put it at R - 0.03 and swung it only 12 degrees
+    // out, which tucked the whole arm INSIDE a barrel of radius R: the model
+    // rendered with no arms at all and a single white blob where one mitt
+    // clipped through the sleeve. A limb on a cylinder has to clear the
+    // cylinder, which is a different sum from a limb on a torso.
+    // z = 0.14 puts the shoulder toward the FRONT of a 0.496-long barrel. At
+    // the barrel's mid-length the arm reads as a nub growing out of a wall,
+    // because there is a quarter of a roll behind it in every three-quarter
+    // view; forward, it has the front rim to be silhouetted against.
+    pivot.position.set(s * (R - 0.012), -0.01, 0.14);
+    // 23 degrees out, the reference's own angle. Still under the crab's 0.896,
+    // and being the widest thing in the maze is the crab's identity, not this
+    // one's.
+    //
+    // THE SIGN IS THE WHOLE FIX. A child hanging at (0, -h, 0) under a pivot
+    // rotated by `rotation.z` lands at x = h * sin(z) — so a POSITIVE z swings
+    // it toward +x. Both earlier passes used `s * -0.21` and then `s * -0.4`,
+    // which swung each arm toward the median plane and buried it in a barrel of
+    // radius R. The model rendered with no arms and one white blob where a mitt
+    // clipped out through the sleeve, and widening the angle only buried them
+    // deeper — the measurement never moved off 0.65, which is what said the
+    // problem was direction and not distance.
+    pivot.rotation.z = s * 0.4;
+    body.add(pivot);
+
+    const tube = new THREE.Mesh(new THREE.CapsuleGeometry(0.024, 0.086, 3, 9), limbMat);
+    tube.name = s > 0 ? "armL" : "armR";
+    tube.position.y = -0.068;
+    tube.castShadow = true;
+    pivot.add(tube);
+
+    const mitt = new THREE.Mesh(new THREE.SphereGeometry(0.05, 14, 10), gloveMat);
+    mitt.name = s > 0 ? "mittL" : "mittR";
+    mitt.scale.set(1, 0.94, 0.82);
+    mitt.position.y = -0.138;
+    mitt.castShadow = true;
+    pivot.add(mitt);
+
+    const thumb = new THREE.Mesh(new THREE.CapsuleGeometry(0.014, 0.024, 3, 7), gloveMat);
+    thumb.name = s > 0 ? "mittThumbL" : "mittThumbR";
+    thumb.rotation.set(0.4, 0, s * -0.8);
+    thumb.position.set(s * 0.036, -0.124, 0.02);
+    pivot.add(thumb);
+
+    arms.push(pivot);
+  }
+
+  // --- legs ----------------------------------------------------------------
+  // Children of the ROOT, not of the pitched body: the drum leans, the stance
+  // does not. The hip sits where the barrel's underside ends up AFTER the
+  // pitch — the body-local (+/-0.1178, -0.2868, 0) attachment carried through
+  // MK_PITCH, which moves it up to -0.2728 and forward to +0.0886.
+  const legs: THREE.Object3D[] = [];
+  for (const s of [1, -1]) {
+    const pivot = new THREE.Group();
+    pivot.name = s > 0 ? "legPivotL" : "legPivotR";
+    pivot.position.set(s * 0.1178, 0.193, 0.0886);
+    g.add(pivot);
+
+    const tube = new THREE.Mesh(new THREE.CapsuleGeometry(0.03, 0.07, 3, 9), limbMat);
+    tube.name = s > 0 ? "legL" : "legR";
+    tube.position.y = -0.062;
+    tube.castShadow = true;
+    pivot.add(tube);
+
+    // The ankle mass. Kept SHORTER than the toe on Z so the boot has a heel to
+    // sit over the leg and a snout to point where it is going.
+    const boot = new THREE.Mesh(new THREE.SphereGeometry(0.048, 14, 10), gloveMat);
+    boot.name = s > 0 ? "bootL" : "bootR";
+    boot.scale.set(0.95, 0.86, 1.15);
+    boot.position.set(0, -0.152, -0.004);
+    boot.castShadow = true;
+    pivot.add(boot);
+
+    // The toe. The first pass had it at 0.9 on Z, tucked INSIDE a boot already
+    // 1.35 long, so the two spheres read as one ball: no front, no back, and a
+    // walk cycle that looked like sliding. It has to project past the ankle
+    // mass to be a toe at all.
+    const toe = new THREE.Mesh(new THREE.SphereGeometry(0.04, 14, 10), gloveMat);
+    toe.name = s > 0 ? "bootToeL" : "bootToeR";
+    toe.scale.set(0.98, 0.66, 1.5);
+    toe.position.set(0, -0.163, 0.058);
+    pivot.add(toe);
+
+    legs.push(pivot);
+  }
+
+  const userData: GhostUserData = {
+    bodyMat,
+    eyes,
+    pupPivots,
+    pupM,
+    pupBaseColor: pupM.color.getHex(),
+    baseColor: color,
+    // No hem and no skirt: this one walks, so it opts out of the shared ghost
+    // breathe and supplies its own stride and idle sway instead.
+    hem: [],
+    pupOffset: { x: 0, z: 0 },
+    accentMats: [limbMat],
+    behaviour: makiBehaviour({ legs, arms, body }),
+    eyeMats: makiEyeMats,
+    spiritMats: collectSpiritMats(g, makiEyeMats),
+  };
+  g.userData = userData;
+  return g;
+}
+
+// ---------------------------------------------------------------------------
+// THE EBI NIGIRI — the fifth img2threejs rebuild (IDEA-057), and the maki's
+// sibling. Same split as every rebuild before it: the generated factory sits
+// unused in src/render/rework/createNigiriModel.ts and the SHIPPED mesh below
+// is hand-authored from the numbers the run locked. Evidence in
+// .img2threejs/nigiri/.
+//
+// THE TOPPING IS PRAWN (ebi), NOT SALMON. Seven transverse lobes with pale
+// bands between them, and a three-blade tail fan standing up at the rear. A
+// salmon slice has neither — it is one smooth mass with irregular marbling.
+// Reading the reference as salmon would have produced a smooth orange pillow
+// with stripes painted on it and lost the feature that carries the topping.
+//
+// PROPORTION BASE: RW = THE RICE BLOCK WIDTH. No head again, and here the block
+// is not even square, so a "head height" would have been a choice every ratio
+// then inherited. RW = 0.56.
+//
+// THIS MODEL IS BUILT AGAINST ONE RISK: THE MAKI. The two ship together, both
+// take the team colour, and both are recoloured AGAIN when frightened — so
+// colour cannot separate them, exactly as it could not separate the mosquito
+// from the bee (IDEA-055). Seven measured separators do it instead: a square
+// block against a round drum; a pale dominant mass against a dark one; a face
+// on a smooth panel against a face on a saturated plug; half-lidded eyes
+// against wide-open ones with brows; a closed mouth curve against an open
+// cavity with a tongue; bare feet against oversized boots; and a tail fan where
+// the maki has nothing above its crown.
+//
+// The eighth separator is the one that matters most and it is not a shape: THE
+// TWO RECOLOUR IN OPPOSITE PLACES. The maki's bodyMat is its WRAPPER, so its
+// pale centre stays pale while its outside changes. This one's bodyMat is its
+// TOPPING, so its pale block stays pale while its top changes. They never
+// converge on the same picture at any team colour.
+const NG_RICE = 0xf7f2e6; // the block and every grain — never team-coloured
+const NG_BAND = 0xffe9d6; // the pale banding between prawn lobes — FIXED
+const NG_NORI = 0x242a30; // the belt — FIXED, and deliberately not in accentMats
+const NG_BLUSH = 0xf2938c;
+const NG_EYE = 0x2b1d16;
+const NG_LID = 0xc98b3f;
+const NG_MOUTH = 0x8a4a33;
+
+// Walk. A shade slower than the maki's 9 rad/s: this one is a heavier, squatter
+// block on stubby feet, and a quick patter on those reads as a shiver.
+const NG_STEP_FREQ = 8;
+const NG_STEP_SWING = 0.34; // small — the feet barely clear the block
+const NG_ARM_SWING = 0.26;
+const NG_IDLE_FREQ = 1.15 * Math.PI * 2;
+const NG_CAP_LAG = 0.055; // the cap is DRAPED, so it trails the body's bob
+const NG_IDLE_ARM = 0.1;
+
+interface NigiriParts {
+  feet: THREE.Object3D[];
+  arms: THREE.Object3D[];
+  cap: THREE.Object3D;
+}
+
+function nigiriBehaviour(parts: NigiriParts): EnemyBehaviour {
+  const { feet, arms, cap } = parts;
+  const capRest = cap.rotation.x;
+  return {
+    animate: (t, idleT, moveBlend) => {
+      const step = Math.sin(t * NG_STEP_FREQ) * NG_STEP_SWING * moveBlend;
+      feet[0].rotation.x = step;
+      feet[1].rotation.x = -step;
+      const idleArm = Math.sin(idleT * NG_IDLE_FREQ) * NG_IDLE_ARM * (1 - moveBlend);
+      arms[0].rotation.x = -step * (NG_ARM_SWING / NG_STEP_SWING) + idleArm;
+      arms[1].rotation.x = step * (NG_ARM_SWING / NG_STEP_SWING) - idleArm;
+      // The prawn is LAID on the rice, not glued to it, so it lags the body.
+      // Half the walk frequency and a quarter turn behind, which reads as
+      // weight settling rather than as a second animation.
+      cap.rotation.x =
+        capRest +
+        Math.sin(t * NG_STEP_FREQ * 0.5 - Math.PI / 2) * NG_CAP_LAG * moveBlend;
+    },
+  };
+}
+
+/**
+ * Builds the ebi-nigiri enemy skin (IDEA-057).
+ *
+ * WHAT TAKES THE TEAM COLOUR: the PRAWN — the cap, the arms and the feet, which
+ * share one material because the reference shares one colour across them. That
+ * is the opposite choice from the maki, and it is deliberate. It also means the
+ * RICE BLOCK is fixed cream and stays OUT of accentMats: the block is the
+ * neutral all four team colours are read against, and if it followed the
+ * frightened recolour the block and the cap would go blue together and the
+ * two-mass stack — this subject's identity rank 1 — would collapse into one
+ * shape exactly while the player is chasing it. Same reasoning keeps the nori
+ * belt fixed (IDEA-053 rule 2).
+ */
+export function makeNigiri(color: number): THREE.Group {
+  const g = new THREE.Group();
+
+  const RW = 0.56; // proportion base: the rice block width
+  const HW = RW / 2; // 0.280  block half-width
+  const BH = 0.812 * RW; // 0.4547 block height
+  const HD = (0.72 * RW) / 2; // 0.2016 block half-depth — INFERRED, the lowest-confidence number here
+  const SQ_N = 3.4; // block footprint squircle exponent — flat-ish front, soft corners
+  const CW = 1.079 * RW; // 0.6042 cap width (WIDER than the block: it drapes)
+  const BELT_H = 0.218 * RW; // 0.1221
+  const PANEL_H = 0.366 * RW; // 0.2050
+  // Bigger and prouder than the maki's, and for a reason the maki does not
+  // have: those grains sit in an annulus between a dark rim and a saturated
+  // plate, so their edges are always against contrast. These sit on a cream
+  // block in the same cream, where a flat toon band gives them almost nothing
+  // to read against — at the maki's size the whole skirt disappeared and the
+  // block rendered as a bar of soap.
+  const GR = 0.027 * RW; // rice grain radius
+  const GL = 0.082 * RW; // rice grain length
+
+  const FLOOR = 0.03; // the block's underside; the feet poke out below it
+  const TOP = FLOOR + BH; // 0.4847 block top
+  const BELT_TOP = TOP - 0.451 * BH; // 0.2796 — measured: 0.451 down the block
+  const PANEL_TOP = TOP;
+
+  const bodyMat = toon({ color, emissive: color, emissiveIntensity: 0.15 });
+  const bandMat = toon({ color: NG_BAND });
+  bandMat.userData.baseColor = NG_BAND;
+  const riceMat = toon({ color: NG_RICE });
+  riceMat.userData.baseColor = NG_RICE;
+  const noriMat = toon({ color: NG_NORI });
+  noriMat.userData.baseColor = NG_NORI;
+  const blushMat = toon({ color: NG_BLUSH });
+  blushMat.userData.baseColor = NG_BLUSH;
+  const lidMat = toon({ color: NG_LID });
+  const mouthMat = toon({ color: NG_MOUTH });
+  mouthMat.userData.baseColor = NG_MOUTH;
+  const pupM = toon({ color: NG_EYE });
+  const glintMat = toon({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.5 });
+  const nigiriEyeMats = [pupM, lidMat, glintMat];
+
+  /** The block's OUTER surface — where the belt, the grains and the face marks
+   *  all have to sit. */
+  const footprint = squirclePoints(HW, HD, SQ_N, 44);
+
+  // --- the rice block: a smooth squircle PILLOW -----------------------------
+  // Not an ExtrudeGeometry with a bevel, and both reasons are recorded in
+  // squirclePillow's own doc comment. The short version: the bevel grows
+  // OUTWARD, so the first build came out 0.650 x 0.493 against an intended
+  // 0.560 x 0.403 and swallowed the belt, the whole grain skirt and every mark
+  // on the face — three systems invisible, one cause, and MEASURING the parts is
+  // what found it, because what renders is a perfectly plausible plain block.
+  // And an extrusion is non-indexed, so its bevel steps cannot be smoothed and
+  // the toon ramp turns them into rectangular patches across the model's
+  // largest surface.
+  const block = new THREE.Mesh(squirclePillow(HW, HD, BH, SQ_N, 4, 34, 18), riceMat);
+  block.name = "riceBlock";
+  block.position.y = FLOOR;
+  block.castShadow = true;
+  block.receiveShadow = true;
+  g.add(block);
+
+  // --- the rice grain skirt -------------------------------------------------
+  // Grains cover the sides and the underside and STOP at the face panel. That
+  // mask is what makes the face possible: grains across the front would bury
+  // every feature on it, and grains nowhere would make the block a bar of soap.
+  const rand = rng(0x1691a1);
+  const skirt = new THREE.Group();
+  skirt.name = "riceGrainSkirt";
+  g.add(skirt);
+  let gi = 0;
+  const BANDS = 6;
+  for (let b = 0; b < BANDS; b++) {
+    // Kept clear of the top and bottom bevels, where the block pulls in and a
+    // grain placed at full radius would float off it.
+    const y = FLOOR + 0.062 + (b / (BANDS - 1)) * (BH - 0.13);
+    const inPanelBand = y > BELT_TOP + 0.012;
+    const count = 13;
+    for (let i = 0; i < count; i++) {
+      const theta = ((i + (b % 2) * 0.5 + rand() * 0.35) / count) * Math.PI * 2;
+      // The panel is the block's FRONT, so skip the forward arc — but only in
+      // the height band the panel actually occupies. Below the belt the grains
+      // wrap all the way round, which is what the reference shows.
+      const front = Math.abs(Math.atan2(Math.sin(theta), Math.cos(theta)) - Math.PI / 2);
+      if (inPanelBand && front < 0.95) continue;
+      // Pushed OUT by half a grain radius: centred exactly on the surface, half
+      // of every grain is inside the block and the skirt reads as a texture
+      // rather than as beads.
+      // Proud by a QUARTER of a radius, not a half. At half the skirt read as a
+      // ring of studs bolted to the block rather than as grains pressed into
+      // it — the grains have to sit IN the surface, with their shoulders
+      // showing, which is what the reference's pressed rice looks like.
+      const r = squircleRadius(theta, HW, HD, SQ_N) + GR * 0.22 + (rand() - 0.5) * 0.006;
+      const grain = new THREE.Mesh(
+        new THREE.CapsuleGeometry(GR, Math.max(0.004, GL - GR * 2), 1, 5),
+        riceMat,
+      );
+      grain.name = `riceGrainSkirt${gi++}`;
+      grain.position.set(r * Math.cos(theta), y, r * Math.sin(theta));
+      // A capsule's axis is +Y, which is ALREADY tangent to a vertical-sided
+      // block — so an unrotated grain lies flat against it. The variation has to
+      // be a spin about the surface NORMAL, which keeps it flat; the first pass
+      // used three loose Euler angles instead and tipped every grain outward, so
+      // the skirt read as a ring of rivets bolted to the block.
+      grain.quaternion.setFromAxisAngle(
+        new THREE.Vector3(Math.cos(theta), 0, Math.sin(theta)),
+        rand() * Math.PI,
+      );
+      grain.rotateX((rand() - 0.5) * 0.3);
+      skirt.add(grain);
+    }
+  }
+  // The underside ring, so the block never reads as a machined solid from below.
+  for (let i = 0; i < 12; i++) {
+    const theta = ((i + rand() * 0.4) / 12) * Math.PI * 2;
+    const r = squircleRadius(theta, HW, HD, SQ_N) * 0.62;
+    const grain = new THREE.Mesh(
+      new THREE.CapsuleGeometry(GR, Math.max(0.004, GL - GR * 2), 1, 5),
+      riceMat,
+    );
+    grain.name = `riceGrainSkirt${gi++}`;
+    grain.position.set(r * Math.cos(theta), FLOOR + 0.022, r * Math.sin(theta));
+    // The underside's own normal is -Y, so here the flat-lying orientation is
+    // the one with the capsule laid horizontal.
+    grain.rotation.set(Math.PI / 2, theta + (rand() - 0.5) * 1.2, 0);
+    skirt.add(grain);
+  }
+
+  // --- the nori belt --------------------------------------------------------
+  // The block's own footprint scaled out, with the unscaled footprint as a
+  // HOLE: a closed wall that follows the block exactly. A scaled box would
+  // float off the flanks wherever the squircle is not a box.
+  const beltShape = shapeFromPoints(footprint.map((p) => p.clone().multiplyScalar(1.035)));
+  beltShape.holes.push(pathFromPoints(footprint.map((p) => p.clone().multiplyScalar(0.99))));
+  const beltGeo = new THREE.ExtrudeGeometry(beltShape, {
+    depth: BELT_H,
+    bevelEnabled: false,
+    curveSegments: 1,
+  });
+  beltGeo.rotateX(-Math.PI / 2);
+  const belt = new THREE.Mesh(beltGeo, noriMat);
+  belt.name = "noriBelt";
+  // ExtrudeGeometry runs from the position UPWARD once the geometry is stood
+  // up, so the belt has to start a full belt-height below its measured TOP.
+  // Placed at BELT_TOP it sat over the face panel instead of under it.
+  belt.position.y = BELT_TOP - BELT_H;
+  belt.castShadow = true;
+  g.add(belt);
+
+  // The belt carries the strongest specular in the whole reference — a broad
+  // bright sweep along its upper half. A toon ramp cannot produce that from
+  // lighting: it quantises the highlight into the same band as everything else
+  // facing the light. So the sheen is GEOMETRY in a lighter tone, which is the
+  // same call the project already makes for the eye glint.
+  const sheenShape = shapeFromPoints(footprint.map((p) => p.clone().multiplyScalar(1.042)));
+  sheenShape.holes.push(pathFromPoints(footprint.map((p) => p.clone().multiplyScalar(1.03))));
+  const sheenGeo = new THREE.ExtrudeGeometry(sheenShape, {
+    depth: BELT_H * 0.17,
+    bevelEnabled: false,
+    curveSegments: 1,
+  });
+  sheenGeo.rotateX(-Math.PI / 2);
+  const sheen = new THREE.Mesh(sheenGeo, bandMat);
+  sheen.name = "beltSheen";
+  sheen.position.y = BELT_TOP - BELT_H * 0.34;
+  g.add(sheen);
+
+  // --- the prawn cap --------------------------------------------------------
+  // A tube swept along Z whose radius OSCILLATES seven times, so the lobes are
+  // in the SILHOUETTE and not only in the paint — a smooth pillow with stripes
+  // on it is salmon, and this is a prawn. The pale bands are per-triangle
+  // material groups at the radius minima, assigned by RING index.
+  const CAP_R = CW / 2;
+  // 0.94, not 1.1. At 1.1 the cap reached PAST the block's own front face, and
+  // from the game camera at 59 degrees elevation that overhang put the entire
+  // face panel in shadow behind it — the model rendered from the one framing
+  // the game actually uses with no eyes visible at all. Pulled back to just
+  // inside the block, the block's top-front edge stays clear and the face is
+  // read at a grazing angle instead of not at all.
+  const CAP_HALF_L = HD * 0.94;
+  const RINGS = 85;
+  const capRings: BandedRing[] = [];
+  for (let i = 0; i < RINGS; i++) {
+    const t = i / (RINGS - 1);
+    // Ends closed, fat through the middle. Without the closure the cap is an
+    // open tube and you see straight down inside it from the front.
+    const envelope = Math.pow(Math.max(0, 1 - Math.pow((t - 0.5) * 2, 6)), 0.34);
+    const lobe = 1 + 0.06 * Math.cos(7 * Math.PI * 2 * t + Math.PI);
+    // A band ring is one near a lobe VALLEY, and the valleys are at
+    // (2n-1)/14 — NOT at k/7, which is where the PEAKS are. The first pass
+    // tested `(t*7) % 1` against a window instead, which is a test for the
+    // peaks, and with the ring spacing at 0.014 it happened to catch exactly
+    // one of them: the cap shipped with a single pale swoosh instead of six
+    // bands, and it read as a smooth pillow with a stripe on it, which is
+    // salmon. Naming the valleys directly makes the count exact.
+    let band = false;
+    for (let n = 1; n <= 7; n++) {
+      if (Math.abs(t - (2 * n - 1) / 14) < 0.0125) band = true;
+    }
+    if (t < 0.05 || t > 0.95) band = false;
+    capRings.push({
+      r: Math.max(0.0015, CAP_R * envelope * lobe),
+      z: (t - 0.5) * 2 * CAP_HALF_L,
+      band,
+    });
+  }
+  // A HALF tube (theta 0..PI), and that is the fix for the worst defect this
+  // model had. As a FULL tube centred on the block's top plane, half its volume
+  // was inside the block — which is fine at the flanks, where it reads as
+  // draping — but at the front, where the sweep has not yet tapered, that lower
+  // half hung down over the block's FRONT FACE and swallowed the entire face
+  // panel. The model rendered with no eyes, no blush and no mouth, and no
+  // amount of moving it up fixed that without lifting it off the rice
+  // altogether. An arc seated just under the top plane drapes at the flanks and
+  // never descends past it at the front.
+  // The arc runs PAST horizontal at both ends (-0.38 to PI+0.38), and that is
+  // what closes the gap between the prawn and the rice. A clean half tube ends
+  // in a flat, horizontally-cut open rim — and because the cap is deliberately
+  // WIDER than the block (0.302 against 0.280 on the half-width; it drapes),
+  // that rim overhangs with nothing underneath it. The result is a hard
+  // straight seam all the way round and daylight under the shoulder at any low
+  // angle. Lowering the cap cannot fix it: the block is a pillow, so it is
+  // narrower still at every height above its own mid-point, and there is no
+  // height at which it is as wide as the cap. Carrying the arc below the
+  // horizontal curls the rim DOWN onto the block's flank instead, which is
+  // both what closes the gap and what the reference actually shows.
+  //
+  // 0.2 rad, and the value is bounded on BOTH sides. Too little and the flat
+  // rim comes back; at 0.38 the cap draped all the way to the nori belt, buried
+  // the rice skirt on both flanks and cost the two-mass stack — this subject's
+  // identity rank 1 — from every side view. The prawn IS wider than the rice
+  // and a shadowed underside is correct; what is not correct is a machined
+  // straight edge, or daylight through it at the angles the game actually uses.
+  const CAP_WRAP = 0.2;
+  const cap = new THREE.Mesh(
+    bandedTubeAlongZ(capRings, 24, -CAP_WRAP, Math.PI + CAP_WRAP * 2),
+    [bodyMat, bandMat],
+  );
+  cap.name = "prawnCap";
+  // scale.y sets the dome's height directly, now that the axis IS the base:
+  // 0.86 * CAP_R gives the measured 0.465 RW cap height.
+  cap.scale.set(1, 0.86, 1);
+  cap.position.set(0, TOP - 0.05, -0.02);
+  // A small lift at the front, so the cap's leading edge rises off the block
+  // instead of sitting flush against it. It also reads as the prawn being LAID
+  // on rather than moulded to it. nigiriBehaviour reads this as its rest pose
+  // and adds the walk lag on top, so the two never fight.
+  cap.rotation.x = -0.055;
+  cap.castShadow = true;
+  g.add(cap);
+
+  // The prawn's front end, curving DOWN over the block's front edge. From
+  // directly in front this is the only part of the cap that reads at all — the
+  // transverse lobes are edge-on there and carry nothing.
+  // SMALL. The first pass used CAP_R * 0.9 scaled to 0.54 wide, which is most
+  // of the model's own width: it swallowed the lobes, the front of the cap and
+  // the top of the face in one sphere. It only has to round off the sweep's
+  // front end and lap the block's top-front corner.
+  // Smaller AGAIN. At 0.42 it still spanned 0.317 across and 0.223 deep, which
+  // covered the front half of the dome and left the cap smooth exactly where
+  // the lobes are meant to read. It is a LIP over the block's top-front corner,
+  // not a head: it must not reach back into the dome.
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(CAP_R * 0.3, 14, 10), bodyMat);
+  nose.name = "capNose";
+  nose.scale.set(1.18, 0.52, 0.66);
+  nose.position.set(0, TOP + 0.012, HD * 0.64);
+  nose.castShadow = true;
+  g.add(nose);
+
+  // The thickened rear the tail fan springs from; without it the blades grow
+  // out of a taper and read as twigs stuck in a point.
+  const tailRoot = new THREE.Mesh(new THREE.SphereGeometry(CAP_R * 0.38, 12, 9), bodyMat);
+  tailRoot.name = "capTailRoot";
+  tailRoot.scale.set(1.2, 0.7, 0.85);
+  tailRoot.position.set(0, TOP + 0.035, -HD * 0.68);
+  g.add(tailRoot);
+
+  // --- the tail fan ---------------------------------------------------------
+  // Three blades rising and splaying from the cap's rear. The only thing on
+  // either sushi that rises above the crown, which is what makes the nigiri
+  // unmistakable from directly above — the one framing the game uses most.
+  const fan = new THREE.Group();
+  fan.name = "tailFan";
+  // ABOVE the dome's crown, not inside it. The cap now reaches y = 0.737, and a
+  // fan rooted at 0.60 was simply swallowed: the blades have to start where the
+  // silhouette already ends or they add nothing to it, and adding to the
+  // silhouette is the entire job of this part.
+  fan.position.set(0, TOP + 0.145, -HD * 0.84);
+  fan.rotation.x = 0.42;
+  g.add(fan);
+  for (let i = 0; i < 3; i++) {
+    const blade = new THREE.Mesh(new THREE.CapsuleGeometry(0.027, 0.125, 3, 8), bodyMat);
+    blade.name = `tailFan${i}`;
+    blade.scale.set(1, 1, 0.55);
+    const lean = (i - 1) * 1.02;
+    blade.rotation.z = lean;
+    // Splayed in DEPTH as well as across. Leaning them only in the plane of the
+    // screen let all three overlap into a single horn from the front, which is
+    // the one silhouette this part exists to avoid.
+    blade.rotation.x = Math.abs(i - 1) * -0.42;
+    blade.position.set(Math.sin(lean) * 0.104, Math.cos(lean) * 0.088, Math.abs(i - 1) * -0.03);
+    blade.castShadow = true;
+    fan.add(blade);
+  }
+
+  // --- the face -------------------------------------------------------------
+  // The panel is the block's front between the cap and the belt — the one part
+  // the grain scatter is masked out of. Every mark sits on the block's actual
+  // surface, whose Z falls away by about 2 mm across the eye region: put them
+  // all at one fixed Z and the outer ones sink into the rice.
+  const face = new THREE.Group();
+  face.name = "facePanel";
+  g.add(face);
+  const EYE_Y = PANEL_TOP - 0.44 * PANEL_H;
+  const MOUTH_Y = PANEL_TOP - 0.62 * PANEL_H;
+  const BLUSH_Y = PANEL_TOP - 0.73 * PANEL_H;
+  const EYE_X = 0.19 * RW;
+  const BLUSH_X = 0.3 * RW;
+
+  const eyes: THREE.Object3D[] = [];
+  const pupPivots: THREE.Object3D[] = [];
+  for (const s of [1, -1]) {
+    const z = squircleFrontZ(s * EYE_X, HW, HD, SQ_N);
+    const pivot = new THREE.Group();
+    pivot.name = s > 0 ? "pupilPivotL" : "pupilPivotR";
+    pivot.position.set(s * EYE_X, EYE_Y, 0);
+    face.add(pivot);
+
+    // The eye is a flush cap on the block's front, not a ball in front of it —
+    // this face is INSET, where the maki's bulges. Half-lidded: the mass is
+    // scaled down on Y and a gold lid line sits over its top third.
+    const eye = new THREE.Mesh(
+      new THREE.SphereGeometry(0.0455, 14, 10, 0, Math.PI * 2, 0, 0.95),
+      pupM,
+    );
+    eye.name = s > 0 ? "eyeL" : "eyeR";
+    eye.geometry.rotateX(Math.PI / 2);
+    eye.scale.set(1, 0.56, 0.3);
+    eye.position.z = z - 0.004;
+    pivot.add(eye);
+
+    const lid = new THREE.Mesh(new THREE.TorusGeometry(0.043, 0.008, 5, 14, Math.PI * 0.9), lidMat);
+    lid.name = s > 0 ? "lidL" : "lidR";
+    lid.scale.set(1, 0.62, 0.5);
+    lid.position.set(0, 0.006, z + 0.004);
+    pivot.add(lid);
+
+    const glint = new THREE.Mesh(new THREE.SphereGeometry(0.013, 10, 8), glintMat);
+    glint.name = s > 0 ? "glintL" : "glintR";
+    glint.scale.set(1, 0.9, 0.4);
+    glint.position.set(s * 0.012, 0.008, z + 0.004);
+    pivot.add(glint);
+
+    eyes.push(pivot, eye, lid, glint);
+    pupPivots.push(pivot);
+
+    // The blush. Completely FLAT — the reference gives it no highlight at any
+    // angle, which is why it is a matte disc rather than a dome. It is the one
+    // face feature the maki has no counterpart for, so it carries a
+    // disproportionate share of the separation between the two faces.
+    const bz = squircleFrontZ(s * BLUSH_X, HW, HD, SQ_N);
+    const blush = new THREE.Mesh(
+      new THREE.SphereGeometry(0.0345, 12, 8, 0, Math.PI * 2, 0, 0.8),
+      blushMat,
+    );
+    blush.name = s > 0 ? "blushL" : "blushR";
+    blush.geometry.rotateX(Math.PI / 2);
+    blush.scale.set(1, 0.78, 0.16);
+    blush.position.set(s * BLUSH_X, BLUSH_Y, bz - 0.001);
+    face.add(blush);
+    eyes.push(blush);
+  }
+
+  // A CLOSED curve, not an aperture. The maki's mouth is an open cavity with a
+  // tongue; two sushi with the same mouth would be one character in two hats.
+  const mouth = new THREE.Mesh(
+    new THREE.TorusGeometry(0.042, 0.0075, 5, 16, Math.PI * 0.82),
+    mouthMat,
+  );
+  mouth.name = "mouth";
+  mouth.rotation.z = Math.PI;
+  mouth.scale.set(1, 0.72, 0.4);
+  mouth.position.set(0, MOUTH_Y + 0.012, squircleFrontZ(0, HW, HD, SQ_N) + 0.002);
+  face.add(mouth);
+
+  // --- arms -----------------------------------------------------------------
+  // Stubby on purpose: the reference's arms protrude only about 0.1 RW past the
+  // block. Most of their length is INSIDE it, which is why a longer-looking arm
+  // in the reference still measures a 1.198 RW span across the pair.
+  const arms: THREE.Object3D[] = [];
+  for (const s of [1, -1]) {
+    const pivot = new THREE.Group();
+    pivot.name = s > 0 ? "armPivotL" : "armPivotR";
+    pivot.position.set(s * HW * 0.86, BELT_TOP + BELT_H * 0.16, 0.03);
+    // Positive z swings a part hanging at -y toward +x; the maki's first two
+    // passes got this backwards and buried both arms in its own body.
+    pivot.rotation.z = s * 1.02;
+    g.add(pivot);
+
+    const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.027, 0.115, 3, 8), bodyMat);
+    arm.name = s > 0 ? "armL" : "armR";
+    arm.position.y = -0.082;
+    arm.castShadow = true;
+    pivot.add(arm);
+
+    // The arm FLARES at its end rather than tapering to a point — the
+    // reference's arms are paddles, not spikes, and a short cone with a point
+    // on it reads as a thorn.
+    const tip = new THREE.Mesh(new THREE.SphereGeometry(0.031, 12, 9), bodyMat);
+    tip.name = s > 0 ? "armTipL" : "armTipR";
+    tip.scale.set(1, 0.86, 0.78);
+    tip.position.y = -0.148;
+    tip.castShadow = true;
+    pivot.add(tip);
+
+    arms.push(pivot);
+  }
+
+  // --- feet -----------------------------------------------------------------
+  // Bare, in the prawn's own colour, and short. No boot: the maki has those,
+  // and a shared foot would cost one of the seven separators.
+  const feet: THREE.Object3D[] = [];
+  for (const s of [1, -1]) {
+    const pivot = new THREE.Group();
+    pivot.name = s > 0 ? "footPivotL" : "footPivotR";
+    // Lifted so the SOLE lands on y = 0. Measured first: at FLOOR + 0.028 the
+    // toes reached -0.016, and an enemy standing 16 mm through the maze floor
+    // is a thing you notice only from a low angle, which is not an angle this
+    // game ever uses — so it has to be measured rather than looked for.
+    pivot.position.set(s * 0.15 * RW, FLOOR + 0.046, HD * 0.2);
+    g.add(pivot);
+
+    const foot = new THREE.Mesh(new THREE.CapsuleGeometry(0.031, 0.03, 3, 9), bodyMat);
+    foot.name = s > 0 ? "footL" : "footR";
+    foot.rotation.x = 0.95;
+    foot.scale.set(1, 1, 0.85);
+    foot.position.set(0, -0.026, 0.026);
+    foot.castShadow = true;
+    pivot.add(foot);
+
+    for (let t = 0; t < 2; t++) {
+      const toe = new THREE.Mesh(new THREE.CapsuleGeometry(0.013, 0.022, 2, 6), bodyMat);
+      toe.name = `toe${s > 0 ? "L" : "R"}${t}`;
+      toe.rotation.set(1.35, 0, (t - 0.5) * 0.6);
+      toe.position.set((t - 0.5) * 0.03, -0.042, 0.052);
+      pivot.add(toe);
+    }
+    feet.push(pivot);
+  }
+
+  const userData: GhostUserData = {
+    bodyMat,
+    eyes,
+    pupPivots,
+    pupM,
+    pupBaseColor: pupM.color.getHex(),
+    baseColor: color,
+    hem: [],
+    pupOffset: { x: 0, z: 0 },
+    // DELIBERATELY EMPTY. The obvious candidate is the rice block, which is the
+    // largest mass — but the block and the cap going blue together is exactly
+    // the collapse this skin cannot afford: the two-mass stack IS the identity,
+    // and losing it while frightened means losing it while the player is
+    // chasing the thing. The belt is out for the same reason (IDEA-053 rule 2).
+    // The cap, arms and feet already share bodyMat, which is a large enough
+    // coloured area to carry the recolour on its own.
+    accentMats: [],
+    behaviour: nigiriBehaviour({ feet, arms, cap }),
+    eyeMats: nigiriEyeMats,
+    spiritMats: collectSpiritMats(g, nigiriEyeMats),
+  };
+  g.userData = userData;
+  return g;
+}
+
 /**
  * Builds an enemy mesh for `skinId`, dispatching between the classic ghost
  * and the garden beetle/bee/ladybug/flea/crab/mosquito (IDEA-009, IDEA-053,
@@ -4139,6 +5348,8 @@ export function makeEnemy(skinId: string, color: number): THREE.Group {
   if (skinId === "flea") return makeFlea(color);
   if (skinId === "crab") return makeCrab(color);
   if (skinId === "mosquito") return makeMosquito(color);
+  if (skinId === "maki") return makeSushiMaki(color);
+  if (skinId === "nigiri") return makeNigiri(color);
   return makeGhost(color);
 }
 

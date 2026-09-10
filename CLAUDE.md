@@ -234,19 +234,91 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v7.
      abdomen droop points almost straight down that view axis and foreshortens to
      a stub; 44° trails it visibly. The map-stripped clay render is what showed
      this — in colour it looked finished.
+- **THE SUSHI PAIR IS THE FIFTH AND SIXTH img2threejs REBUILD** (IDEA-056 maki,
+  IDEA-057 nigiri): an eighth and ninth enemy skin, `makeSushiMaki()` and
+  `makeNigiri()` in `characters.ts`, over shared geometry machinery in
+  **`src/render/sushiSculpt.ts`** (squircles, band clipping, banded tubes, the
+  smooth `squirclePillow`). Same split as every rebuild before them — the
+  generated factories sit unused in `src/render/rework/` and the shipped meshes
+  are hand-authored from the numbers the runs locked. Evidence in
+  `.img2threejs/maki/` and `.img2threejs/nigiri/`.
+  **They exist because every other enemy is a BUG. These are FOOD, and they
+  STAND UP** — the two things the cast could not say. Six rules are load-bearing:
+  1. **They ship as a PAIR and each is built against the other as its main
+     risk.** Both take the team colour and both are recoloured again when
+     frightened, so colour cannot separate them (IDEA-055's bee rule). Seven
+     measured silhouette separators do — round drum vs squared block, dark
+     dominant mass vs pale, a saturated plug face vs a smooth panel, wide-open
+     eyes with brows vs half-lidded, an open mouth cavity vs a closed curve,
+     boots vs bare feet, and a tail fan where the maki has nothing above its
+     crown. Plus an eighth that is not a shape: **they recolour in OPPOSITE
+     places** — the maki's `bodyMat` is its WRAPPER, the nigiri's is its
+     TOPPING, so one keeps a pale centre and the other a pale body. **Verify by
+     rendering BOTH at the same team colour and the same play-camera angle**
+     (`scripts/_scratch-sushi-pair.ts`), never by assertion.
+  2. **Neither has a head, so neither uses one.** ND = the nori disc diameter
+     (0.62); RW = the rice block WIDTH (0.56). The crab's carapace-width
+     reasoning: an invented boundary is inherited by every ratio under it.
+  3. **The maki's −18° pitch is a PLAY-CAMERA decision and it must live on an
+     INNER group.** `applyGhostState` assigns `mesh.rotation.x` on the ROOT
+     every time the state changes, so a pitch authored there is erased the first
+     time the beagle eats a bone. It exists because a vertical cut face projects
+     at cos(59) = 0.515 from the game camera, and that face is identity rank 1.
+  4. **`ExtrudeGeometry`'s `bevelSize` grows OUTWARD.** A block extruded from a
+     0.560 × 0.403 footprint with `bevelSize: 0.045` measures 0.650 × 0.493, and
+     everything positioned against that footprint ends up INSIDE it — the nigiri
+     lost its nori belt, its whole grain skirt and its entire face at once, three
+     systems, one cause, none of them wrong in itself. **Measuring the parts is
+     what finds this**; the render shows a perfectly plausible plain block. An
+     extrusion is also non-indexed, so its bevel steps cannot be smoothed and the
+     toon ramp quantises them into rectangular patches. Use `squirclePillow()`.
+  5. **A surface band is cut by RING index, never by a triangle's own mean**
+     (IDEA-055 rule 3), and **the valleys of a k-lobe oscillation are at
+     (2n−1)/2k, not k/n** — testing for the peaks gave the prawn one pale stripe
+     instead of six, which reads as SALMON, the one thing the topping must not be.
+  6. **A cap that DRAPES cannot end in a flat rim.** The nigiri's prawn is wider
+     than its rice block on purpose, so a clean half-tube's horizontally-cut
+     open edge overhangs with nothing under it — a hard seam all round and
+     daylight at the shoulder. Lowering it cannot help: the block is a pillow,
+     narrower at every height above its mid-point, so it is never as wide as the
+     cap. `CAP_WRAP` carries the arc past the horizontal so the rim curls DOWN
+     onto the flank, and it is bounded at BOTH ends — too little brings the
+     machined edge back, too much (0.38) drapes to the belt and buries the rice
+     skirt, costing the two-mass stack from every side view.
+  7. **Small fixed accents stay out of `accentMats`** — the maki's nori lap
+     laminations, the nigiri's belt and pale bands. The nigiri's `accentMats` is
+     EMPTY on purpose: the rice block is the largest mass and the obvious
+     candidate, but block and cap going blue together collapses the two-mass
+     stack exactly while the player is chasing it.
+- **A REVIEW-HARNESS MISMATCH REPORTS AS A MODEL DEFECT — AGAIN.** After
+  `?fov=` (IDEA-054), `/preview-rework/` now also takes **`?bg=none`** and
+  **`?shadow=0`**. `turntable_gate.py` separates model from background BY
+  COLOUR and flood-fills any enclosed region as an interior HOLE; on the default
+  warm stone it reported a 378 × 374 px hole in the dead centre of a solid maki
+  — its own cream rice and its ground shadow. A dark backdrop and a saturated
+  one both made the gate report `segmentationReliable: false` rather than guess,
+  which is it behaving correctly and still telling you nothing. Rendering on
+  TRANSPARENT and reading the mask from ALPHA is the answer, and **it needs both
+  halves**: `scene.background = null` + `setClearAlpha(0)` + the PAGE's own CSS
+  background cleared, AND `page.screenshot({ omitBackground: true })` in
+  `shoot-rework.ts`. Missing the shooter half looks exactly like a pass.
 - **`preview-rework/index.html`** grew a **`?model=`** switch (`beagle` ·
-  `flea-gen`/`crab-gen`/`mosquito-gen` = the generated factories ·
-  `flea`/`crab`/`mosquito`/`beetle`/`bee`/`ladybug`/`ghost` = the REAL shipped
-  builders),
-  plus **`?state=frightened|eaten`**, **`?flat=1`** and **`?fov=`**.
+  `flea-gen`/`crab-gen`/`mosquito-gen`/`maki-gen` = the generated factories ·
+  `flea`/`crab`/`mosquito`/`maki`/`nigiri`/`beetle`/`bee`/`ladybug`/`ghost` =
+  the REAL shipped builders),
+  plus **`?state=frightened|eaten`**, **`?flat=1`**, **`?fov=`**, **`?bg=`**
+  (a hex, or `none` for transparent) and **`?shadow=0`**.
   `scripts/shoot-rework.ts` takes `MODEL=<id>` and writes a non-beagle subject's
   turntable under `.img2threejs/<id>/renders/`; `TOON`, `FLAT`, `STATE`, `FOV`,
-  `DIST` and `EL` set the rest. `scripts/_scratch-enemy-cast.ts` measures the
-  whole cast in one line — use it before guessing a size or triangle budget for
-  a new skin. The real numbers: ghost 8 256 tris / crown 0.660 / w 0.610,
-  flea 12 828 / 0.600 / 0.531, **mosquito 13 648 / 0.780 / 0.812**,
-  bee 16 868 / 0.803 / 0.568, **crab 16 676 /
-  0.728 / 0.896**, beetle 18 088 / 0.765 / 0.672, ladybug 20 624 / 0.656 / 0.849.
+  `DIST`, `EL`, `BG` and `SHADOW` set the rest. `scripts/_scratch-enemy-cast.ts`
+  measures the whole cast in one line — use it before guessing a size or
+  triangle budget for a new skin, and `scripts/_scratch-sushi-probe.ts` measures
+  NAMED PARTS when something renders as nothing. The real numbers:
+  ghost 8 256 tris / crown 0.660 / w 0.610, flea 12 828 / 0.600 / 0.531,
+  **mosquito 13 648 / 0.780 / 0.812**, **nigiri 14 372 / 0.823 / 0.811**,
+  bee 16 868 / 0.803 / 0.568, **crab 16 676 / 0.728 / 0.896**,
+  **maki 18 072 / 0.837 / 0.832**, beetle 18 088 / 0.765 / 0.672,
+  ladybug 20 624 / 0.656 / 0.849.
 - **A limb capsule must be sized from its JOINT SPAN, never from a fraction of
   it.** `CapsuleGeometry`'s length argument is the CYLINDER only — the caps add
   `radius` on top. The flea's legs first passed 0.72/0.82/0.80 of each segment
@@ -550,6 +622,11 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v7.
   off the def rather than assuming one file. Adding a mesh tab means adding a
   registry entry — not a parallel copy of the editor.
 - **Tests**: `scripts/validate-maze.ts`, `scripts/sim-logic.ts` — import the real modules.
+  `scripts/test-cosmetics.ts` pins the enemy-skin REGISTRY — its count, its order and the ghost's
+  secret/free pair. Adding a skin means editing it, and that is the point: the list is a contract
+  the server's `catalog.generated.ts` mirrors, so a silent addition is a client/server drift.
+  `scripts/test-runtime-owned.ts` counts one `pupilPivotL/R` naming site per enemy for the same
+  reason.
   `scripts/test-powerups.ts` covers the power-up state machine — most of it is the
   shielded-hit rule, in the exact combination Nuno described (holding 1, 2 and 5, caught,
   keeps 1 and 2). `scripts/test-fruits.ts` covers the fruit ladder: the weighted roll's exact boundaries

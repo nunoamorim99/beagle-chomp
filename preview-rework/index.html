@@ -31,6 +31,7 @@
       import { createBeaglePuppyToonCharacterModel } from "/src/render/rework/createBeagleModel.ts";
       import { createCartoonFleaModel } from "/src/render/rework/createFleaModel.ts";
       import { createCartoonMosquitoModel } from "/src/render/rework/createMosquitoModel.ts";
+      import { createMakiRollMascotModel } from "/src/render/rework/createMakiModel.ts";
       import { makeEnemy, applyGhostState } from "/src/render/characters.ts";
       import { toon } from "/src/render/toon.ts";
 
@@ -41,7 +42,7 @@
       const el = q.get("el") !== null ? Number(q.get("el")) : (view === "top" ? 80 : 12);
       const showHud = q.get("hud") !== "0";
 
-      const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+      const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, alpha: true });
       renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
       renderer.setSize(innerWidth, innerHeight);
       renderer.shadowMap.enabled = true;
@@ -52,7 +53,37 @@
       document.body.appendChild(renderer.domElement);
 
       const scene = new THREE.Scene();
-      scene.background = new THREE.Color(0xeae6df);
+      // ?bg=<hex> ?shadow=0 — the SEGMENTATION instrument, and like ?fov= it is a
+      // review tool rather than a preference.
+      //
+      // turntable_gate.py separates model from background by colour and then
+      // flood-fills any enclosed background region as an interior HOLE. Against
+      // the default warm stone (0xeae6df) that verdict cannot be trusted for a
+      // subject carrying near-white surfaces: the maki's cream rice and its own
+      // ground shadow both segment AS background, and the gate reported a
+      // 378x374 "hole" in the exact centre of a solid model. Re-shooting on a
+      // colour no material comes near, with the shadow catcher off, is what
+      // separates a real hole from a segmentation artefact.
+      // bg=none renders on TRANSPARENT, which is the only unambiguous answer:
+      // the mask then comes from alpha instead of from a colour guess, so
+      // neither a near-white surface nor a saturated backdrop can fool it. A
+      // coloured backdrop cannot do this job — tried and recorded: on warm
+      // stone the segmenter counted the rice as background, and on navy and on
+      // magenta it gave up and reported segmentationReliable=false rather than
+      // guessing, which is the gate behaving correctly and still telling you
+      // nothing about the model.
+      const bgParam = q.get("bg");
+      if (bgParam === "none") {
+        scene.background = null;
+        renderer.setClearAlpha(0);
+        // The PAGE has its own opaque background in the stylesheet; leaving it
+        // there composites the transparent canvas over stone and the render is
+        // opaque again.
+        document.documentElement.style.background = "transparent";
+        document.body.style.background = "transparent";
+      } else {
+        scene.background = new THREE.Color(bgParam !== null ? Number(bgParam) : 0xeae6df);
+      }
 
       const key = new THREE.DirectionalLight(0xfff4e2, 2.1);
       key.position.set(2.6, 4.2, 3.0);
@@ -72,13 +103,13 @@
       );
       ground.rotation.x = -Math.PI / 2;
       ground.receiveShadow = true;
-      scene.add(ground);
+      if (q.get("shadow") !== "0") scene.add(ground);
 
       const grid = new THREE.GridHelper(4, 40, 0xb9ad9b, 0xd2c9ba);
       grid.visible = q.get("grid") !== "0";
       scene.add(grid);
 
-      // ?model=beagle|flea|crab|mosquito — one harness, one subject at a time. The rework
+      // ?model=beagle|flea|crab|mosquito|maki|nigiri — one harness, one subject at a time. The rework
       // folder holds a generated factory per img2threejs run, and each needs the
       // same turntable/gate treatment, so the viewer switches rather than forking.
       // "flea-gen" is the img2threejs GENERATED factory; "flea" is the REAL
@@ -89,12 +120,15 @@
         beagle: createBeaglePuppyToonCharacterModel,
         "flea-gen": createCartoonFleaModel,
         "mosquito-gen": createCartoonMosquitoModel,
+        "maki-gen": createMakiRollMascotModel,
         flea: () => makeEnemy("flea", Number(q.get("color") ?? 0xe8615f)),
         beetle: () => makeEnemy("beetle", Number(q.get("color") ?? 0xe8615f)),
         ladybug: () => makeEnemy("ladybug", Number(q.get("color") ?? 0xe8615f)),
         bee: () => makeEnemy("bee", Number(q.get("color") ?? 0xe8615f)),
         crab: () => makeEnemy("crab", Number(q.get("color") ?? 0xe8615f)),
         mosquito: () => makeEnemy("mosquito", Number(q.get("color") ?? 0xe8615f)),
+        maki: () => makeEnemy("maki", Number(q.get("color") ?? 0xe8615f)),
+        nigiri: () => makeEnemy("nigiri", Number(q.get("color") ?? 0xe8615f)),
         ghost: () => makeEnemy("ghost", Number(q.get("color") ?? 0xe8615f)),
       };
       const modelName = q.get("model") ?? "beagle";

@@ -19,9 +19,10 @@ Living backlog of ideas. Two purposes:
 _(empty — nothing to triage)_
 
 ## Backlog (open ideas)
-> New registered ideas go here. Next free ID: IDEA-056
+> New registered ideas go here. Next free ID: IDEA-058
 > (054 went to the crab and 055 to the mosquito — built in parallel by two sessions, which is
-> why the ids were split up front rather than both taking the next free one.)
+> why the ids were split up front rather than both taking the next free one. 056 and 057 are the
+> sushi pair, registered together because neither is buildable without the other as its foil.)
 
 ### IDEA-028 — Challenge twist: moving walls / maze changes mid-level 💡
 - **Priority:** 🟢
@@ -525,6 +526,147 @@ _(empty — nothing to triage)_
 
 ## Delivered ✅
 > Already in production. Do NOT delete. Each keeps its version history.
+
+### IDEA-056 — The maki roll: the first enemy that isn't a bug ✅
+- **Priority:** 🟡
+- **Area:** skins
+- **Registered:** 2026-09-10
+- **Delivered:** 2026-09-10
+- **Description:** (Nuno) the most revolutionary enemy yet — a humanised sushi piece, built from a
+  reference image through the img2threejs pipeline and sold in the shop like the rest. Two of them,
+  from two different reference images, so the game gains two sushi types rather than one.
+- **Notes:** an eighth `EnemySkin`, so it costs no new machinery — `makeEnemy` dispatches, the
+  registry gains a row, `GhostUserData` is satisfied exactly as the other seven satisfy it. Priced
+  25 with its siblings. Own workspace (`.img2threejs/maki/`), so no earlier subject's evidence was
+  touched. The generated factory stays in `src/render/rework/` (never imported) and the SHIPPED
+  mesh is hand-authored in `characters.ts` from the numbers the pipeline locked.
+- **Dependencies:** [[IDEA-009]], [[IDEA-012]], [[IDEA-047]], [[IDEA-053]], [[IDEA-057]]
+- **History:**
+  - **v1** (2026-09-10) — `makeSushiMaki()`: a nori drum leaning back on two booted legs, its cut
+    face a three-zone bullseye — dark rim, an annulus of 62 countable rice capsules, a
+    rounded-square salmon plug carrying the whole face. Proportion base **ND = 0.62, the nori disc
+    diameter**; there is no head, and a "head height" would be an invented boundary every ratio then
+    inherited (the crab's carapace-width reasoning). Measured w 0.832 / h 0.838 / l 0.663 /
+    crown 0.837, 18 072 triangles, 124 meshes — **the tallest thing in the maze**, past the bee's
+    0.803, and still well inside the crab's 0.896 width, because being the widest is the crab's
+    identity. Registry + dispatch + editor tab + shop card + `catalog.generated.ts` (server
+    `npm run sync`, now 9 enemy skins). Build, full suite and editor suite green.
+
+    **WHY IT EXISTS: every other enemy is a bug, and this one is FOOD, and it STANDS UP.** Those are
+    the two things the shipped cast could not say, and they are the whole reason for the skin — a
+    beagle chasing its dinner rather than a garden pest.
+
+    **The nori takes the team colour, and that is a real loss taken deliberately.** `bodyMat` has to
+    be the dominant mass or four enemies in four colours stop being distinguishable and the
+    frightened state stops reading; the sleeve IS the dominant mass. What keeps the seaweed at every
+    hue is `seamMat`, three lap laminations in their own fixed near-black, kept OUT of `accentMats`
+    — IDEA-053's rule applied up front. They also had to be **thin and low-contrast**: four
+    near-black rings at 0.005 on a red drum read as TREAD, and a dark cylinder on two legs with
+    concentric rings and a pale ring on its face is a TYRE, which is this model's recorded rank-1 risk.
+
+    **Four defects, each caught by an instrument rather than by looking.** *The arms were buried
+    inside the barrel by a rotation SIGN* — a child hanging at (0, −h, 0) under a pivot lands at
+    x = h·sin(z), so a negative angle swings it toward the median plane. Two passes widened the angle
+    and only buried them deeper; what said "direction, not distance" was the measured width never
+    moving off 0.65. *The rear cut face was placed at the FRONT* by a sign expression carried through
+    eight part positions — the rear face is now the same builder mirrored by one rotation on its
+    parent GROUP, which cannot be got wrong the way eight expressions can. *The fat striations sat
+    behind the plate* and showed through the mouth hole as a tan bar. *And the rice bed, a full disc,
+    occluded the mouth cavity* — it is an annulus now, which is what makes the mouth possible at all.
+
+    **The mouth is a real HOLE in the plate**, cut with `Shape.holes` and backed by a back-side
+    liner, not a dark shape laid on top: on a flat plate that is exact boolean subtraction for
+    nothing. It is also the one dimension **scaled up from the measurement** (0.225 × 0.125 ND
+    against 0.183 × 0.088) for the same reason the crab's pincer gap was — at the measured size it
+    closed into a pale sliver at review size.
+
+    **The −18° body pitch is a PLAY-CAMERA decision, not a measurement**, and it is a named constant
+    saying so. The game camera sits at 59° elevation, where a vertical cut face projects at
+    cos(59) = 0.515 of its area — half of the model's rank-1 feature. At −18° that becomes 0.73. It
+    must live on an INNER group: `applyGhostState` assigns `mesh.rotation.x` on the root every time
+    the state changes, so a pitch authored there is erased the first time the beagle eats a bone.
+
+    **The review harness gained `?bg=none`**, and the reason is worth keeping. `turntable_gate.py`
+    decides what is background BY COLOUR, then flood-fills any enclosed region and calls it an
+    interior HOLE. On the default warm-stone backdrop it reported a 378 × 374 px hole in the dead
+    centre of a solid model — the cream rice and the ground shadow, both segmenting as background.
+    A dark backdrop and a saturated one both made the gate give up honestly
+    (`segmentationReliable: false`) rather than lie. Rendering on TRANSPARENT and reading the mask
+    from ALPHA is the answer, and it needs both halves — `setClearAlpha(0)` plus the page's own CSS
+    background cleared, AND `page.screenshot({ omitBackground: true })`. Missing the shooter half
+    looks exactly like a pass and is not one. On true alpha: PASS, no holes, all four azimuths.
+    This is IDEA-054's `?fov=` finding in a new place — **a review-harness mismatch reports as a
+    model defect**.
+
+### IDEA-057 — The nigiri: a prawn on a rice pillow ✅
+- **Priority:** 🟡
+- **Area:** skins
+- **Registered:** 2026-09-10
+- **Delivered:** 2026-09-10
+- **Description:** (Nuno) the second sushi, from the second reference — a different type, so the
+  pair reads as a cuisine rather than as one idea rendered twice.
+- **Notes:** ninth `EnemySkin`. Own workspace (`.img2threejs/nigiri/`). Same split as every rebuild
+  before it. Registered alongside [[IDEA-056]] rather than after it, because each is built against
+  the other as its main risk and neither's numbers make sense alone.
+- **Dependencies:** [[IDEA-009]], [[IDEA-012]], [[IDEA-047]], [[IDEA-053]], [[IDEA-056]]
+- **History:**
+  - **v1** (2026-09-10) — `makeNigiri()`: a smooth rice pillow belted in nori, a seven-lobed prawn
+    laid over the top with a tail fan standing up behind it, and a face of half-lidded eyes, blush
+    and a closed smile on the one smooth panel the grain skirt leaves bare. Proportion base
+    **RW = 0.56, the rice block WIDTH** — the block is not square, so a "head height" would already
+    have been a choice. Measured w 0.811 / h 0.839 / l 0.481 / crown 0.823, 14 372 triangles,
+    110 meshes; at 0.481 deep it is **the shallowest thing in the cast**. Build, full suite and
+    editor suite green.
+
+    **THE TOPPING IS PRAWN (ebi), NOT SALMON**, and that reading changed the build: seven transverse
+    lobes with pale bands between them, and a three-blade tail fan. A salmon slice has neither. Read
+    as salmon it would have been a smooth orange pillow with stripes painted on it.
+
+    **The whole model is built against ONE risk: the maki.** Two sushi in one release, both
+    team-coloured, both recoloured again when frightened — colour cannot separate them, exactly as
+    it could not separate the mosquito from the bee. Seven measured silhouette separators do it, and
+    an eighth that is not a shape: **the two recolour in OPPOSITE places.** The maki's `bodyMat` is
+    its WRAPPER, so its pale centre stays pale while its outside changes; this one's is its TOPPING,
+    so its pale block stays pale while its top changes. They never converge at any team colour.
+    Verified by rendering both at the same colour and the same play-camera angle
+    (`scripts/_scratch-sushi-pair.ts`), never asserted.
+
+    **THE DEFECT WORTH KNOWING: three systems invisible, one cause.** The nori belt, the entire
+    rice-grain skirt and every mark on the face all rendered as nothing. Each was correctly built.
+    Each was placed against the block's own squircle footprint — and **`ExtrudeGeometry`'s
+    `bevelSize` grows OUTWARD**, so a block extruded from a 0.560 × 0.403 footprint measured
+    0.650 × 0.493 and swallowed all three. What found it was MEASURING the parts, not looking at the
+    render: what renders is a perfectly plausible plain rice block, with nothing to see. Three
+    separate hunts would have ended in three different places; one bounding-box dump ended all
+    three. The block is a smooth indexed `squirclePillow()` now, which also fixes the second problem
+    an extrusion had — it is non-indexed, so its bevel steps cannot be smoothed, and the toon ramp
+    quantised them into rectangular patches across the model's largest surface.
+
+    **Four more, each caught by its own instrument.** *The cap swallowed the face*: built as a full
+    tube centred on the block's top plane, its lower half hung down over the FRONT at the ends and
+    covered the whole face panel — it is a HALF tube seated just under the top plane now. *The
+    pillow rendered inside-out* from backwards winding in all three cases (body quad, both pole
+    fans), which looks like a material bug and is not one. *The lobe bands tested for the PEAKS* —
+    the valleys are at (2n−1)/14, not k/7 — and with the ring spacing at 0.014 the wrong test caught
+    exactly one, so the cap shipped with a single pale swoosh, i.e. it read as SALMON, the one thing
+    the topping must not be. *And the grains read as rivets* until their variation became a spin
+    about the surface NORMAL rather than three loose Euler angles.
+
+    **`accentMats` is deliberately EMPTY.** The obvious candidate is the rice block, being the
+    largest mass — but block and cap going blue together is the exact collapse this skin cannot
+    afford: the two-mass stack IS the identity, and losing it while frightened means losing it while
+    the player is chasing the thing. The belt is out for the same reason.
+
+    **Nuno's fix, same day: the cap's rim curls BELOW horizontal (`CAP_WRAP = 0.2`).** He spotted a
+    visible gap between the prawn and the rice and pushed the cap down in the editor. Lowering it
+    alone cannot close that gap: a clean half tube ends in a flat, horizontally-cut open rim, and
+    the cap is deliberately WIDER than the block (0.302 against 0.280 on the half-width — it
+    drapes), so the rim overhangs with nothing underneath. The block is a pillow, narrower still at
+    every height above its own mid-point, so there is no height at which it is as wide as the cap.
+    Carrying the arc past the horizontal curls the rim down onto the flank instead. The value is
+    bounded on BOTH sides: too little and the machined straight edge comes back; at 0.38 the cap
+    draped to the nori belt, buried the rice skirt on both flanks and cost the two-mass stack from
+    every side view.
 
 ### IDEA-049 — Thumbstick: a third touch control, and the retro one ✅
 - **Priority:** 🟡
