@@ -4338,7 +4338,7 @@ export function makeSushiMaki(color: number): THREE.Group {
   const body = new THREE.Group();
   body.name = "body";
   body.position.y = 0.4658;
-  body.rotation.set(MK_PITCH, 0, 0);
+  body.rotation.set(-0.03, 0, 0);
   g.add(body);
 
   // --- the nori sleeve: barrel and both rims as ONE revolved surface --------
@@ -6646,7 +6646,7 @@ export function makeBurger(color: number): THREE.Group {
   // lives here for the same reason.
   const stack = new THREE.Group();
   stack.name = "stack";
-  stack.rotation.x = BG_PITCH;
+  stack.rotation.set(-0.037, 0.018, -0.01);
   // Pushed forward on Z because a 15-degree lean carries the crown 0.16
   // backwards; without it the mass sits behind the feet and the mascot reads as
   // toppling rather than as leaning.
