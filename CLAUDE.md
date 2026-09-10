@@ -161,15 +161,56 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v7.
      It is what found rule 2 — in normal colour the model looked finished.
   4. **The reference is a watermarked stock image.** No pixel of it is used as
      colour or PBR evidence, and projection was rejected partly for that reason.
+- **THE CRAB IS THE THIRD img2threejs REBUILD** (IDEA-054): a sixth enemy skin,
+  `makeCrab()` in `characters.ts`. Same split as IDEA-047 and IDEA-053 — the
+  generated factory sits unused in `src/render/rework/createCrabModel.ts` and the
+  SHIPPED mesh is hand-authored from the numbers the pipeline locked. Evidence in
+  `.img2threejs/crab/`. **The proportion base is CW = 0.56, the CARAPACE WIDTH,
+  not a head diameter**: a crab's head is fused into its carapace, so a "head
+  height" would be an invented boundary and every ratio would inherit it. Four
+  rules are load-bearing:
+  1. **BEING THE WIDEST IS THE IDENTITY.** 0.896 wide × 0.726 tall — the only
+     enemy wider than it is tall, past the ladybug's 0.849. Every other skin is
+     a bug of roughly one silhouette; a tall crab joins that cluster and the skin
+     has no reason to exist.
+  2. **The pincer gap is rank 1, and it is sized from READABILITY, not from the
+     reference.** Scaled honestly from the measured ~32° it closed into a solid
+     gold wedge at review size. It also failed twice on AIM: pointed forward the
+     upper finger hid the lower one and the gap vanished into its own
+     foreshortening; swung purely inward each claw read as a flat flipper.
+     Down-and-inward from a chunky palm is what opens it to the camera.
+  3. **A surface patch aimed straight at the viewer reads as a STICKER.** The
+     gold face only stopped looking stuck on when its pole was tilted
+     down-and-forward AND the patch was cut wide enough to reach the silhouette,
+     so its boundary is a LINE across the shell rather than a closed oval inside
+     it. Same construction as the ladybug's shell decals and the flea's bands:
+     share the shell's own centre, scale and position, vary only `factor`.
+  4. **`creaseDark`, `browDark` and `apronCream` are OUT of `accentMats`** —
+     IDEA-053's rule applied up front rather than rediscovered.
+- **A REVIEW CAMERA MISMATCH REPORTS AS A MODEL DEFECT.** `/preview-rework/` now
+  takes **`?fov=`** because of it. img2threejs's Tier 1 compares the render
+  against the reference image, and these references are product renders on a long
+  lens; capturing at the viewer's comfortable 32° default inflates the
+  near-camera limbs. Measured on the crab: at 32° the gate reported a 0.584
+  scale error and a 0.068 aspect error, and the model measured 1.126 wide:tall
+  against the reference's 1.231 — i.e. it read as TALLER. Near-orthographic the
+  same model measures **1.403**, wider than the reference, the opposite of what
+  the gate said. At `fov=12` with a matched distance both deltas pass (0.0083 /
+  0.0199). `shoot-rework.ts` takes `FOV`, `DIST` and `EL` for exactly this.
+  Silhouette IoU still fails (0.599) and is deliberately NOT chased — that is
+  the skill's own documented photo-vs-procedural miscalibration, and the Divine
+  Eye's objectness signal (0.648) downgrades its own reject to `probe`.
 - **`preview-rework/index.html`** grew a **`?model=`** switch (`beagle` ·
-  `flea-gen` = the generated factory · `flea`/`beetle`/`bee`/`ladybug`/`ghost` =
-  the REAL shipped builders), plus **`?state=frightened|eaten`** and
-  **`?flat=1`**. `scripts/shoot-rework.ts` takes `MODEL=<id>` and writes a
-  non-beagle subject's turntable under `.img2threejs/<id>/renders/`.
-  `scripts/_scratch-enemy-cast.ts` measures the whole cast in one line — use it
-  before guessing a size or triangle budget for a new skin. The real numbers:
-  ghost 8 256 tris / crown 0.660, flea 12 828 / 0.600, bee 16 868 / 0.803,
-  beetle 18 088 / 0.765, ladybug 20 624 / 0.656.
+  `flea-gen` = the generated factory ·
+  `flea`/`crab`/`beetle`/`bee`/`ladybug`/`ghost` = the REAL shipped builders),
+  plus **`?state=frightened|eaten`**, **`?flat=1`** and **`?fov=`**.
+  `scripts/shoot-rework.ts` takes `MODEL=<id>` and writes a non-beagle subject's
+  turntable under `.img2threejs/<id>/renders/`; `TOON`, `FLAT`, `STATE`, `FOV`,
+  `DIST` and `EL` set the rest. `scripts/_scratch-enemy-cast.ts` measures the
+  whole cast in one line — use it before guessing a size or triangle budget for
+  a new skin. The real numbers: ghost 8 256 tris / crown 0.660 / w 0.610,
+  flea 12 828 / 0.600 / 0.531, bee 16 868 / 0.803 / 0.568, **crab 16 796 /
+  0.728 / 0.896**, beetle 18 088 / 0.765 / 0.672, ladybug 20 624 / 0.656 / 0.849.
 - **A limb capsule must be sized from its JOINT SPAN, never from a fraction of
   it.** `CapsuleGeometry`'s length argument is the CYLINDER only — the caps add
   `radius` on top. The flea's legs first passed 0.72/0.82/0.80 of each segment
@@ -184,6 +225,20 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v7.
   `scripts/_scratch-flea-gaps.ts` proves all 12 joints are CONTAINED in a solid;
   it is a containment test on purpose, since a distance-to-nearest-vertex check
   cannot tell inside from outside and reports a joint ball's own radius as a gap.
+  **The crab makes the defect unrepresentable instead of merely absent**: every
+  segment is a CYLINDER spanning its joint exactly, with a knuckle ball AT each
+  joint, so no radius/length arithmetic can reintroduce a gap.
+  `scripts/_scratch-crab-gaps.ts` proves all **34** joints contained — and it
+  was wrong twice first, in ways worth knowing because both produced CONFIDENT
+  FALSE ALARMS on a sound model. (a) A cylinder's end cap is COPLANAR with its
+  own joint, so a look-at-the-first-face-hit method reads 25 of 26 directions as
+  escaping from a point sitting dead centre in a ball. (b) First-face cannot
+  handle a UNION at all: a neighbouring solid's outer surface lying between the
+  joint and its own ball's far side reads as "outside". Use a PARITY count over
+  the union (+1 back face, −1 front face; inside when the total is positive).
+  (c) And tilt the ray directions off-axis — a ray fired exactly along ±Y from a
+  sphere's centre exits through the degenerate pole fan, where a ray-triangle
+  test can be missed by every adjacent triangle at once.
 - **THE 2D LAYER HAS A DESIGN SYSTEM** (IDEA-048, "Toon boards, not glass panels"):
   the tokens live in **`src/ui/tokens.css`** and every component in
   `src/style.css` is built from them. Read tokens.css before touching any

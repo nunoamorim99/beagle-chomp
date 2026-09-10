@@ -222,10 +222,10 @@ console.log("\n=== cosmetics.ts (IDEA-012 shop prices) ===");
 
 console.log("\n=== cosmetics.ts (IDEA-009 enemy skins) ===");
 
-check("exactly 5 enemy skins", ENEMY_SKINS.length === 5);
+check("exactly 6 enemy skins", ENEMY_SKINS.length === 6);
 check(
-  "enemy skin ids are beetle, bee, ladybug, flea, ghost in order",
-  ENEMY_SKINS.map((s) => s.id).join(",") === "beetle,bee,ladybug,flea,ghost",
+  "enemy skin ids are beetle, bee, ladybug, flea, crab, ghost in order",
+  ENEMY_SKINS.map((s) => s.id).join(",") === "beetle,bee,ladybug,flea,crab,ghost",
 );
 check("beetle is ENEMY_SKINS[0]", ENEMY_SKINS[0].id === "beetle");
 check("DEFAULT_ENEMY_SKIN_ID is beetle", DEFAULT_ENEMY_SKIN_ID === "beetle");
@@ -259,15 +259,15 @@ check("DEFAULT_ENEMY_SKIN_ID is beetle", DEFAULT_ENEMY_SKIN_ID === "beetle");
 
   check(
     "a fresh player is shown 4 enemy skins, and not the ghost",
-    visibleEnemySkins(false, none).map((s) => s.id).join(",") === "beetle,bee,ladybug,flea",
+    visibleEnemySkins(false, none).map((s) => s.id).join(",") === "beetle,bee,ladybug,flea,crab",
   );
   check(
     "owning the tribute coat reveals the ghost",
-    visibleEnemySkins(true, none).map((s) => s.id).join(",") === "beetle,bee,ladybug,flea,ghost",
+    visibleEnemySkins(true, none).map((s) => s.id).join(",") === "beetle,bee,ladybug,flea,crab,ghost",
   );
   check(
     "a legacy account that already owns the ghost still sees it without the coat",
-    visibleEnemySkins(false, owns).map((s) => s.id).join(",") === "beetle,bee,ladybug,flea,ghost",
+    visibleEnemySkins(false, owns).map((s) => s.id).join(",") === "beetle,bee,ladybug,flea,crab,ghost",
   );
   check(
     "revealing never reorders or drops the ordinary skins",
@@ -290,7 +290,7 @@ check("getEnemySkin(unknown) falls back to default (beetle)", unknownEnemy.id ==
   }
   check(
     `enemy cycle visits all 5 skins then wraps to ${DEFAULT_ENEMY_SKIN_ID}`,
-    seen.join(",") === "beetle,bee,ladybug,flea,ghost,beetle",
+    seen.join(",") === "beetle,bee,ladybug,flea,crab,ghost,beetle",
   );
   check("cycleEnemySkinId(unknown) returns the first skin's id", cycleEnemySkinId("nope") === ENEMY_SKINS[0].id);
 }

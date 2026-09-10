@@ -19,7 +19,8 @@ Living backlog of ideas. Two purposes:
 _(empty — nothing to triage)_
 
 ## Backlog (open ideas)
-> New registered ideas go here. Next free ID: IDEA-054
+> New registered ideas go here. Next free ID: IDEA-056
+> (IDEA-055 is taken by the mosquito, built in parallel in the `feat/IDEA-055-mosquito` worktree.)
 
 ### IDEA-028 — Challenge twist: moving walls / maze changes mid-level 💡
 - **Priority:** 🟢
@@ -157,6 +158,101 @@ _(empty — nothing to triage)_
   from [[IDEA-039]], which is STACK.md §6's own Redis threshold.
 - **Dependencies:** [[IDEA-019]], [[IDEA-020]], [[IDEA-039]]
 
+
+### IDEA-054 — The crab: the widest thing in the maze 🔨
+- **Priority:** 🟡
+- **Area:** skins
+- **Registered:** 2026-09-10
+- **Description:** Nuno: "lets continue to add a new enemies to the game, so now this time lets
+  add the crab" — a reference image dropped into `.img2threejs/reference/crab/`, built through the
+  img2threejs pipeline like the flea before it. It is the sixth enemy skin and the third rebuild
+  through that pipeline.
+- **Notes:** the argument for THIS animal, beyond "another one": every enemy the game ships is a
+  bug of roughly one silhouette — beetle, bee, ladybug, flea, and a ghost that predates the
+  garden. Measured, four of the five are taller than they are wide or square, and the widest is
+  the ladybug at 0.849. A crab is the first enemy whose shape argues with the others: **wider than
+  it is tall, and the only one with pincers.** Those two facts are identity ranks 2 and 1 in the
+  spec, and everything else in the build was subordinated to them.
+  Priced 25 with its siblings. Built in its own workspace (`.img2threejs/crab/`) so the beagle's
+  and the flea's evidence trails were left untouched — the per-subject convention IDEA-053
+  introduced. Pipeline ran to `status=complete`: all eight build passes recorded, strict-quality
+  clean with zero warnings, part coverage 0 errors, and **0 of the 6 available corrections used**.
+  Following IDEA-047's precedent the generated factory stays unimported in
+  `src/render/rework/createCrabModel.ts` and the SHIPPED mesh is hand-authored in `characters.ts`
+  from the numbers the pipeline locked.
+- **Dependencies:** [[IDEA-009]], [[IDEA-012]], [[IDEA-047]], [[IDEA-053]]
+- **History:**
+  - **v1** (2026-09-10) — `makeCrab()`: a laterally stretched carapace with a red crown grading
+    to a gold face over a cream chin, two stalked eyes with dark brow lozenges breaking the
+    shell's top outline, two open pincers held forward and low, and four
+    walking-leg pairs fanned per side. **Proportion base CW = 0.56** (carapace width, not a head
+    diameter — a crab's head is fused into its carapace, so a "head height" would be an invented
+    boundary and every ratio would inherit the invention). Lands at **0.896 wide × 0.726 tall**,
+    16 796 triangles across 116 meshes — the widest model in the game, and between the bee and
+    the beetle on cost. Registry + dispatch + editor tab + shop card + `catalog.generated.ts`
+    (server `npm run sync`, now 6 enemy skins). `characters.ts`, `cosmetics.ts`,
+    `editor/registry.ts`, `ui/shop.ts`, `render/shopScene.ts`, `preview-rework/`,
+    `scripts/shoot-rework.ts`, `test-cosmetics.ts`, `test-runtime-owned.ts`. Build + full suite
+    green.
+
+    **The pincer gap failed on the first render, and it is rank 1.** Scaled honestly from the
+    reference's measured ~32°, both claws closed into solid gold wedges at review size. The gap
+    is now sized from READABILITY at the game camera — 0.072 of clear daylight — and that is a
+    recorded deviation, not a slip. It then failed twice more on AIM rather than size: pointed
+    forward, the upper finger sat directly in front of the lower one and the gap vanished into its
+    own foreshortening (two mittens); swung purely inward, each claw read as a flat flipper laid
+    across the body. Down-and-inward from a chunky palm is what finally opened it to the camera.
+
+    **The gold face read as a STICKER twice before it read as the shell.** Aimed straight ahead it
+    rendered as an oval patch stuck on the front; tilted down-and-forward but cut short, it was a
+    closed oval floating inside the shell's own outline. It only became the shell's colour when the
+    patch's pole was tilted 0.75 rad AND cut wide enough to reach the silhouette, so the boundary
+    is a LINE across the shell rather than a shape on it.
+
+    **A gate reported a 0.584 scale error and a 0.068 aspect error on a model that had neither.**
+    Tier 1 compares the render against the reference image, and the review camera was the preview's
+    comfortable 32° default while the reference is a product render on a long lens. At 32° the
+    near-camera claws inflate and the model measures 1.126 wide:tall against the reference's 1.231
+    — it reads as TALLER. Near-orthographic the same model measures **1.403**, i.e. wider than the
+    reference, which is the opposite of what the gate said. Fixed by giving the preview a `?fov=`
+    knob and reviewing at fov 12 with a matched distance: scale delta 0.0083, aspect delta 0.0199.
+    The lesson is the general one — a framing mismatch reports as a model defect.
+
+    **Silhouette IoU still fails at 0.599 and is deliberately not chased.** That is the skill's own
+    documented photo-vs-procedural miscalibration; the Divine Eye's objectness signal reads 0.648,
+    above the same-object threshold, and downgraded its own reject to `probe`. Optimising toward
+    IoU here would distort the model trying to pixel-match an image it cannot match.
+
+    **The flea's two hard-won rules were designed in rather than rediscovered.** Every limb segment
+    is a cylinder spanning its joint EXACTLY with a knuckle ball AT each joint, so the flea's
+    disconnected-hind-leg defect is unrepresentable rather than merely absent — and
+    `scripts/_scratch-crab-gaps.ts` proves all **34 joints contained**. And `creaseDark`,
+    `browDark` and `apronCream` are all deliberately OUT of `accentMats`, so the crease ink, the
+    brows and the cream chin survive the frightened recolour; the clay render
+    (`/preview-rework/?model=crab&flat=1`) confirms it, which is the render that caught the
+    equivalent defect on the flea.
+
+    **That containment test was wrong twice before it was right, and both were instrument bugs
+    producing confident false alarms.** A cylinder's end cap is COPLANAR with its own joint, so a
+    first-face-hit method read 25 of 26 directions as escaping at a joint sitting dead centre in a
+    ball; and a first-face method cannot handle a UNION at all — a neighbouring solid's outer
+    surface between the joint and its own ball's far side reads as "outside". A parity count over
+    the union fixes both. Then a ray fired exactly along an axis exits a sphere at its degenerate
+    pole fan, where a ray-triangle test can be missed by every adjacent triangle at once; the
+    directions are tilted off-axis for that.
+
+    **Cut after review:** the mouth. It was built to the measurement — an upturned groove
+    0.208 wide with a 0.0436 corner rise, against a measured 0.212 / 0.0437 — and Nuno removed
+    it on sight: the crab reads better without one. Recorded in the spec's `deviationRecord`
+    with the numbers rather than deleted quietly, because the detail inventory and a build-pass
+    review both describe it. The face read was never resting on it: the eyes and brows were
+    ranked ahead of it, and the gold/cream boundary the groove sat on is the apron's own edge.
+
+    **Not done:** no dedicated shop glyph — a sixth icon means re-cutting the Material Symbols
+    subset, and an unlisted name renders as that word on the card, so the crab uses the documented
+    fallback like the flea. And the walking-leg segments are tapered tubes where the reference
+    draws overlapping plate shells; that is the largest remaining form gap and it is recorded in
+    the pass review rather than glossed.
 
 ### IDEA-053 — The flea: the one enemy that belongs on a beagle 🔨
 - **Priority:** 🟡

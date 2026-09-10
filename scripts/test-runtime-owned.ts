@@ -176,10 +176,10 @@ console.log("\n--- the registry agrees with the REAL animation code ---");
     !/addPaintedEyes/.test(SRC),
   );
   // One site per enemy now: addPaintedEyes for the ghost, and one each in the
-  // beetle, bee, ladybug and flea.
+  // beetle, bee, ladybug, flea and crab.
   check(
     "every enemy still names its dart pivot pupilPivotL/R",
-    (SRC.match(/"pupilPivotL" : "pupilPivotR"/g) ?? []).length === 5,
+    (SRC.match(/"pupilPivotL" : "pupilPivotR"/g) ?? []).length === 6,
   );
   check("PUPIL_SWEEP still exists", /const PUPIL_SWEEP\s*=/.test(SRC));
   check(

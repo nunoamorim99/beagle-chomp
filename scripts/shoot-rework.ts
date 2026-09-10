@@ -12,6 +12,20 @@ import { mkdirSync } from "node:fs";
 const label = process.argv[2] ?? "now";
 const baseUrl = process.argv[3] ?? "http://localhost:5173";
 const toon = process.env.TOON === "1" ? "&toon=1" : "";
+// FLAT=1 captures the map-stripped CLAY turntable, which is a required review
+// artefact rather than a nicety: the flea's frightened-recolour defect was
+// invisible in colour and only the clay render showed it. STATE=frightened|eaten
+// captures the two recolours an enemy skin has to survive.
+const flat = process.env.FLAT === "1" ? "&flat=1" : "";
+const state = process.env.STATE ? `&state=${process.env.STATE}` : "";
+// DIST/EL match the REVIEW framing to the reference's. Tier 1 diagnostics
+// compare silhouette IoU and scale against the reference image, so a render
+// framed at the viewer's comfortable default fails on FRAMING and reports it
+// as a model defect — measured: IoU 0.332 and a 0.584 scale delta on a model
+// the turntable gate passes.
+const dist = process.env.DIST ? `&dist=${process.env.DIST}` : "";
+const elev = process.env.EL ? `&el=${process.env.EL}` : "";
+const fov = process.env.FOV ? `&fov=${process.env.FOV}` : "";
 // MODEL picks which generated rework factory the viewer builds (beagle|flea).
 // Renders land under that subject's own workspace so two runs never overwrite
 // each other's evidence.
@@ -46,7 +60,7 @@ for (const [name, qs] of Object.entries(VIEWS)) {
   // warm-up); a blank full-page PNG is ~5KB vs ~50KB+ for a real frame, so
   // retry on suspiciously small screenshots.
   for (let attempt = 0; attempt < 3; attempt++) {
-    await page.goto(`${baseUrl}/preview-rework/?${qs}&model=${model}&grid=0&hud=0${toon}`, {
+    await page.goto(`${baseUrl}/preview-rework/?${qs}&model=${model}&grid=0&hud=0${toon}${flat}${state}${dist}${elev}${fov}`, {
       waitUntil: "networkidle",
     });
     await page.waitForFunction(() => document.title.includes("ready"), null, { timeout: 20_000 });

@@ -2818,10 +2818,723 @@ export function makeFlea(color: number): THREE.Group {
   return g;
 }
 
+// ---------------------------------------------------------------------------
+// THE CRAB (IDEA-054) — the third img2threejs rebuild.
+//
+// Built from the numbers `.img2threejs/crab/object-sculpt-spec.json` locked off
+// the reference, following IDEA-047's split exactly: the pipeline's generated
+// factory sits unused in `src/render/rework/createCrabModel.ts` and the SHIPPED
+// mesh is hand-authored here, because only a hand-authored mesh can satisfy the
+// `GhostUserData` contract — team-coloured bodyMat, accentMats following the
+// frightened recolour, eyes surviving the eaten state, rotated pupil pivots.
+//
+// The fixed accents. The team colour goes on the carapace DOME; everything
+// below keeps its own hue, and which of them follow the frightened recolour is
+// a decision recorded per material in makeCrab and in
+// `.img2threejs/crab/evidence/material-evidence.md`.
+const CRAB_FACE = 0xffb347; // golden lower face — the measured #FFC756/#FF9444 read
+const CRAB_APRON = 0xf7d9ac; // pale ventral apron, the only large LIGHT area
+const CRAB_LIMB = 0xe8492e; // limb cuticle, more saturated and redder than the shell
+const CRAB_CLAW = 0xf7be55; // chela horn, a full value step lighter than the arm
+// Mouth groove and inter-plate limb creases. Separate from every other accent
+// because it must NOT follow the frightened recolour — see makeCrab.
+const CRAB_CREASE = 0x7e2a14;
+const CRAB_BROW = 0x3a1410; // near-black with a red-maroon cast, never neutral
+
+const CB_SCUTTLE_FREQ = 14; // rad/s — between the ladybug's 16 and the flea's 15
+const CB_SCUTTLE_SWING = 0.24;
+const CB_SCUTTLE_LAG = 0.7; // radians each pair lags the one in front of it
+/** Lateral roll while moving. A crab walks sideways; the model still FACES its
+ *  travel direction like every other enemy (syncToEntity owns that), so the
+ *  sideways read has to come from the idle rather than from the facing. */
+const CB_SWAY_FREQ = 7;
+const CB_SWAY_ROLL = 0.055; // radians
+const CB_SWAY_SHIFT = 0.012; // world units
+const CB_ARM_SWING = 0.12;
+const CB_CLAW_FREQ = 2.3; // pincer snap — slow, so it reads as a threat, not a flutter
+const CB_CLAW_OPEN = 0.34;
+const CB_STALK_FREQ = 1.6;
+const CB_STALK_WAG = 0.15;
+
+/**
+ * The crab's own motion: an eight-leg scuttle wave, a lateral body sway, an arm
+ * swing, a pincer snap and an eyestalk waggle.
+ *
+ * `sway` is an INNER group, never the model root. applyGhostState adds a
+ * frightened shiver to the root's position every frame and syncToEntity writes
+ * that position from entityWorld — a sway written there would be overwritten by
+ * one and would fight the other.
+ *
+ * The legs need no per-side sign. Rotating a hip about +Y swings a leg that
+ * points -X toward +Z and a leg that points +X toward -Z, so ONE wave already
+ * moves the left side forward while the right side goes back. Adding a side
+ * sign would cancel exactly the alternation it looks like it is creating.
+ */
+function crabBehaviour(
+  legs: THREE.Object3D[],
+  arms: THREE.Object3D[],
+  dactyls: THREE.Object3D[],
+  stalks: THREE.Object3D[],
+  sway: THREE.Object3D,
+): EnemyBehaviour {
+  const legRest = legs.map((l) => l.rotation.y);
+  const armRest = arms.map((a) => a.rotation.y);
+  const dactylRest = dactyls.map((d) => d.rotation.x);
+  const stalkRest = stalks.map((s) => s.rotation.x);
+  return {
+    animate: (t, idleT, moveBlend) => {
+      // Legs arrive in build order (1L, 1R, 2L, 2R, …). `i >> 1` is the PAIR
+      // index, so each side's fan ripples front to back: a fan of four reads as
+      // a wave, which two alternating tripods would flatten into a shuffle.
+      for (let i = 0; i < legs.length; i++) {
+        const wave = Math.sin(t * CB_SCUTTLE_FREQ - (i >> 1) * CB_SCUTTLE_LAG);
+        legs[i].rotation.y = legRest[i] + wave * CB_SCUTTLE_SWING * moveBlend;
+      }
+      // The sideways sway: a roll about the ground contact plus a small lateral
+      // shift, driven by ONE cycle so the two can never drift apart. It rides
+      // the walk clock, so a crab standing in the pen stands still.
+      const s = Math.sin(t * CB_SWAY_FREQ) * moveBlend;
+      sway.rotation.z = s * CB_SWAY_ROLL;
+      sway.position.x = s * CB_SWAY_SHIFT;
+      for (let i = 0; i < arms.length; i++) {
+        arms[i].rotation.y = armRest[i] - s * CB_ARM_SWING;
+      }
+      // The pincers work off the FREE-RUNNING clock, so a crab that is not
+      // moving is still visibly a crab.
+      const open = (Math.sin(idleT * CB_CLAW_FREQ) * 0.5 + 0.5) * CB_CLAW_OPEN;
+      for (let i = 0; i < dactyls.length; i++) dactyls[i].rotation.x = dactylRest[i] - open;
+      for (let i = 0; i < stalks.length; i++) {
+        stalks[i].rotation.x = stalkRest[i] + Math.sin(idleT * CB_STALK_FREQ + i * 1.9) * CB_STALK_WAG;
+      }
+    },
+  };
+}
+
+/**
+ * THE CRAB — a sixth enemy skin, and the third img2threejs rebuild.
+ *
+ * PROPORTION BASE: CW = CARAPACE WIDTH, not a head diameter. A crab's head is
+ * fused into its carapace, so a "head height" would be an invented boundary and
+ * every ratio derived from it would inherit the invention. CW = 0.56 is chosen
+ * against the measured cast (scripts/_scratch-enemy-cast.ts): it puts the model
+ * at ~0.86 wide — just past the ladybug's 0.849, so the crab is the WIDEST
+ * enemy in the game — while the crown stays ~0.70, mid-band between the ghost's
+ * 0.66 and the bee's 0.80.
+ *
+ * BEING THE WIDEST IS THE IDENTITY. The game already ships a beetle, a bee, a
+ * ladybug and a flea, every one of them taller than it is wide or roughly
+ * square. A tall crab joins that cluster and the skin has no reason to exist —
+ * the risk the flea's spec recorded first and then hit twice.
+ *
+ * Two features carry the read at gameplay size, in order:
+ *   1. THE OPEN PINCER GAPS. Two of them, and they are the largest pieces of
+ *      negative space in the model. A claw that closes into a blob is a generic
+ *      red arthropod.
+ *   2. THE WIDE, LOW CARAPACE, with the eyes breaking its top outline.
+ * Everything else — tubercles, crease lines, the cyan iris ring — is texture at
+ * that size and is the first thing to trade if the budget ever bites.
+ */
+export function makeCrab(color: number): THREE.Group {
+  const g = new THREE.Group();
+  // Everything hangs off an inner group so the lateral sway is LOCAL. See
+  // crabBehaviour: the root's position belongs to syncToEntity and
+  // applyGhostState, and a sway written there is overwritten or fought.
+  const body = new THREE.Group();
+  body.name = "crabBody";
+  g.add(body);
+
+  const CW = 0.56;
+
+  // --- materials -----------------------------------------------------------
+  // The carapace DOME carries the team colour: it is the single largest surface,
+  // and the three team colours are how a player tells four enemies apart.
+  const bodyMat = toon({ color, emissive: color, emissiveIntensity: 0.12 });
+  const faceMat = toon({ color: CRAB_FACE });
+  faceMat.userData.baseColor = CRAB_FACE;
+  const limbMat = toon({ color: CRAB_LIMB });
+  limbMat.userData.baseColor = CRAB_LIMB;
+  const clawMat = toon({ color: CRAB_CLAW });
+  clawMat.userData.baseColor = CRAB_CLAW;
+  // The apron is deliberately NOT an accent. It is the only large light area in
+  // the model, and it is what keeps the face legible once the body turns
+  // frightened blue — a cream chin under a blue shell still reads as a face; an
+  // all-blue front does not.
+  const apronMat = toon({ color: CRAB_APRON });
+  apronMat.userData.baseColor = CRAB_APRON;
+  // The crease ink gets its OWN material, kept OUT of accentMats. This is the
+  // flea's band-crease defect written down: a crease colour that follows the
+  // frightened recolour paints detail and body the same blue, and the feature it
+  // exists to draw vanishes in the one state where the player is chasing the
+  // enemy. It was invisible in normal colour — only the map-stripped clay render
+  // (/preview-rework/?model=crab&flat=1) showed it.
+  //
+  // It draws the leg-plate creases and nothing else now that the mouth is gone.
+  // Still its own material rather than folded into limbMat, for exactly the
+  // reason above — limbMat IS in accentMats.
+  const creaseMat = toon({ color: CRAB_CREASE });
+  creaseMat.userData.baseColor = CRAB_CREASE;
+  // Two small dark lozenges that carry the whole face read. Same rule as the
+  // creases: a small fixed accent keeps its own colour.
+  const browMat = toon({ color: CRAB_BROW });
+  browMat.userData.baseColor = CRAB_BROW;
+
+  // --- carapace ------------------------------------------------------------
+  // A LATERALLY STRETCHED oblate ellipsoid: 0.560 wide, 0.320 tall, 0.404 deep.
+  // The measured width:height is 1.00:0.57 — never a sphere.
+  //
+  // Built as a unit sphere and SCALED, so every panel below can share the exact
+  // same scale and position and therefore sit flush on the curve at any radius
+  // factor instead of having to be fitted. The ladybug's shell-decal
+  // construction, and the flea's segment bands.
+  const CAR_POS = new THREE.Vector3(0, CW * 0.5911, -CW * 0.0179);
+  const CAR_SCALE = new THREE.Vector3(CW * 0.5, CW * 0.2857, CW * 0.3607);
+  const shell = new THREE.Mesh(new THREE.SphereGeometry(1, 30, 18), bodyMat);
+  shell.name = "carapace";
+  shell.scale.copy(CAR_SCALE);
+  shell.position.copy(CAR_POS);
+  body.add(shell);
+
+  /**
+   * A surface-conformal patch on the carapace.
+   *
+   * The geometry is rotated so its pole points along +Z (the model's forward),
+   * which makes `theta` an angle out from the FACE CENTRE and `phi` the sweep
+   * around it: phi 0..PI is the LOWER half of the face, phi 0 is toward -X and
+   * phi PI/2 is straight down.
+   *
+   * A constant-theta ring maps to an ELLIPSE on the scaled ellipsoid, which is
+   * why every band here is guaranteed flush at every point where a flat torus
+   * arc laid on the same face would sink into it in the middle and stand off it
+   * at the ends — the surface falls 0.0157 across the width of the face alone.
+   */
+  const shellPatch = (
+    factor: number,
+    phiStart: number,
+    phiLen: number,
+    thetaStart: number,
+    thetaLen: number,
+    mat: THREE.MeshToonMaterial,
+    wSeg: number,
+    hSeg: number,
+    poleTilt = 0,
+  ): THREE.Mesh => {
+    const geo = new THREE.SphereGeometry(factor, wSeg, hSeg, phiStart, phiLen, thetaStart, thetaLen);
+    geo.rotateX(Math.PI / 2 + poleTilt);
+    const m = new THREE.Mesh(geo, mat);
+    m.scale.copy(CAR_SCALE);
+    m.position.copy(CAR_POS);
+    return m;
+  };
+
+  // THE GOLD FACE. The reference's crown-to-face gradient runs #FA5444 ->
+  // #FFC756 and is measured, but a MeshToonMaterial quantises a gradient into
+  // the shared 3-step ramp anyway — so it bands regardless, and an authored
+  // surface puts the band where it belongs rather than wherever the ramp lands it.
+  //
+  // The patch's POLE IS TILTED DOWN-AND-FORWARD (0.75 rad) rather than aimed
+  // straight ahead, and it is cut WIDE ENOUGH TO REACH THE SILHOUETTE (theta
+  // 1.35 puts its lateral edge at x 0.273 of a 0.280 half-width). Both matter,
+  // and each fixed a different version of the same defect: aimed ahead the cap
+  // rendered as an oval PATCH stuck on the front, and cut short it rendered as a
+  // closed oval floating inside the shell's outline. Neither read as the shell's
+  // own colour. Tilted and cut to the edge, the boundary is a LINE across the
+  // shell — from y 0.421 at the face centre down to y 0.307 at the flanks —
+  // which is what the reference shows.
+  const face = shellPatch(1.006, 0, Math.PI * 2, 0, 1.34, faceMat, 30, 14, 0.75);
+  face.name = "facePanel";
+  body.add(face);
+
+  // THE ROLLED FRONT LIP. A narrow band standing 0.02 proud, straddling the
+  // gold/red boundary at the shell's outer margin. It is shell-coloured, not
+  // gold: the reference's rim is the carapace's own edge turning under, and a
+  // gold rim would read as a second colour zone instead of as thickness.
+  // Without it the dome is shrink-wrapped — the shell has no edge, and at the
+  // review camera the boundary between crown and face reads as paint rather
+  // than as the lip of a shell.
+  const lip = shellPatch(1.02, 0, Math.PI * 2, 1.3, 0.09, bodyMat, 30, 2, 0.75);
+  lip.name = "carapaceLip";
+  body.add(lip);
+
+  // The ventral apron: the same construction, tilted further down and cut
+  // shorter. Its lower edge lands at y 0.1715 against a measured chin bottom of
+  // 0.171 — that falls out of the tilt rather than being placed by hand. Its top
+  // edge is now the only thing dividing the gold face from the cream chin, since
+  // the mouth groove that used to sit on that boundary is gone.
+  const apron = shellPatch(1.012, 0, Math.PI * 2, 0, 0.66, apronMat, 26, 10, 1.06);
+  apron.name = "chinApron";
+  body.add(apron);
+
+  // NO MOUTH. The reference draws a smiling groove and the first build had one
+  // — a narrow constant-theta ring at theta 0.40, phi 0.304..2.838, which
+  // reproduced the measurement almost exactly (0.208 wide against a measured
+  // 0.212, with a 0.0436 corner rise against a measured 0.0437). Nuno cut it:
+  // the crab reads better without one. Recorded here rather than deleted
+  // silently, because it is a DECISION and not an oversight, and because the
+  // measurement is what a future build would need to put it back.
+  //
+  // The face still reads: the eyes and the brow lozenges carry it, which is what
+  // they were ranked on in the first place. The gold/cream boundary the mouth
+  // used to sit on is still there — it is the apron's own edge.
+  //
+  // And it turns out to be the CONSISTENT choice rather than only a taste one:
+  // no other enemy in this game has a mouth mesh. The ghost, beetle, bee,
+  // ladybug and flea all put their whole expression in the eyes (makeGhost says
+  // so in as many words: "no mouth at all. Everything expressive lives in the
+  // eyes"). The crab was the only one that broke that, and now it does not.
+
+  // --- carapace tubercles --------------------------------------------------
+  // Fifteen raised bosses: seven mirrored pairs plus one on the dorsal midline,
+  // hand-placed rather than seeded. A random scatter clumps, and this model is
+  // bilaterally symmetric everywhere else.
+  //
+  // Placed in spherical coordinates about the shell's own +Y, then pushed onto
+  // the SCALED surface, so each shares the dome's tangent — a boss raised out of
+  // the shell rather than a bead resting on it. Lowest-ranked identity feature
+  // in the spec, and the first thing to drop if the budget bites.
+  const TUBERCLES: [number, number][] = [
+    [0.32, 0.35],
+    [0.5, -0.4],
+    [0.55, 0.9],
+    [0.78, 0.12],
+    [0.86, -0.85],
+    [1.05, 0.58],
+    [0.42, -1.2],
+    [0.68, 1.25],
+    [1.12, -0.35],
+  ];
+  const TUB_R = CW * 0.027;
+  const tubercle = (el: number, az: number, i: number): void => {
+    const n = new THREE.Vector3(
+      Math.sin(el) * Math.cos(az),
+      Math.cos(el),
+      Math.sin(el) * Math.sin(az),
+    );
+    const m = new THREE.Mesh(new THREE.SphereGeometry(TUB_R, 9, 7), bodyMat);
+    m.name = `tubercle${i}`;
+    m.position.copy(n).multiply(CAR_SCALE).multiplyScalar(0.985).add(CAR_POS);
+    body.add(m);
+  };
+  for (let i = 0; i < TUBERCLES.length; i++) {
+    const [el, az] = TUBERCLES[i];
+    tubercle(el, az, i * 2);
+    tubercle(el, Math.PI - az, i * 2 + 1);
+  }
+  tubercle(0.5, -Math.PI / 2, 18);
+
+  // --- eyes ----------------------------------------------------------------
+  // Diameter 0.326 of the body width — an eye nearly a third as wide as the
+  // whole animal, which is the measured read and not a stylistic choice. They
+  // sit 0.097 ABOVE the shell top so they BREAK its outline: that is the
+  // stalked-eye read, and it is identity rank 3.
+  const EYE_R = CW * 0.1634;
+  const EYE_X = CW * 0.2286;
+  const EYE_Y = CW * 1.02;
+  const EYE_Z = CW * 0.134;
+  const STALK_Y = CW * 0.78;
+  const scleraMat = toon({ color: 0xf7f1ea });
+  const irisMat = toon({ color: 0x22c6ee });
+  const pupM = toon({ color: 0x1b2450 });
+  // The catchlight. The beagle gets a true MeshBasicMaterial for this; an enemy
+  // cannot, because GhostUserData.eyeMats is typed MeshToonMaterial and those
+  // are the materials kept SOLID through the eaten state. A fully emissive toon
+  // is the enemy cast's standing answer and it reads the same at this size.
+  const glintMat = toon({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.5 });
+  const crabEyeMats = [scleraMat, irisMat, pupM, glintMat];
+
+  const eyeCap = (
+    factor: number,
+    rx: number,
+    ry: number,
+    thetaLen: number,
+    mat: THREE.MeshToonMaterial,
+    wSeg: number,
+  ): THREE.Mesh => {
+    const geo = new THREE.SphereGeometry(EYE_R * factor, wSeg, 10, 0, Math.PI * 2, 0, thetaLen);
+    geo.rotateX(rx);
+    geo.rotateY(ry);
+    return new THREE.Mesh(geo, mat);
+  };
+
+  const eyes: THREE.Object3D[] = [];
+  const pupPivots: THREE.Object3D[] = [];
+
+  /**
+   * One eye on its stalk. `s` is -1 for the model's LEFT.
+   *
+   * NOTE ON SIDES: the spec's anatomical rule puts the character's own left at
+   * POSITIVE x, but every enemy skin already in this file labels its NEGATIVE-x
+   * side "L". The subject is symmetric, so nothing renders differently either
+   * way; this follows the file, so the editor and the tests see one convention.
+   *
+   * The iris is set MEDIALLY off-centre — measured: a ball centre at x 205
+   * against an iris centre at x 212 — so both eyes converge slightly on the
+   * viewer. It is a small thing, and it is the difference between a face that
+   * looks at you and two beads pointing outward.
+   */
+  const MEDIAL = 0.14;
+  const makeEye = (s: number): THREE.Group => {
+    const side = s < 0 ? "L" : "R";
+    // The stalk pivot sits at the SOCKET, sunk into the shell. Pivoting at the
+    // centre would swing the stalk through the carapace; starting it above the
+    // surface would open a gap at the join the moment it waggles.
+    const stalk = new THREE.Group();
+    stalk.name = "eyestalk" + side;
+    stalk.position.set(EYE_X * s, STALK_Y, EYE_Z * 0.83);
+    body.add(stalk);
+
+    // Short and NARROW. The first build gave it EYE_R * 0.5..0.62 of radius over
+    // CW * 0.16 of length, and against the reference — where the collar swallows
+    // the join and the ball sits almost directly on the shell — it read as a red
+    // NECK holding the eye up rather than as a stalk.
+    const column = new THREE.Mesh(
+      new THREE.CylinderGeometry(EYE_R * 0.38, EYE_R * 0.5, CW * 0.13, 12),
+      limbMat,
+    );
+    column.name = "eyestalkColumn" + side;
+    column.position.y = CW * 0.055;
+    stalk.add(column);
+
+    // The ball is positioned in the STALK's frame, so the waggle carries the
+    // whole eye — collar, iris, catchlight and brow — with it.
+    const centre = new THREE.Vector3(0, EYE_Y - STALK_Y, EYE_Z - EYE_Z * 0.83);
+    const ball = new THREE.Mesh(new THREE.SphereGeometry(EYE_R, 20, 14), scleraMat);
+    ball.name = "eye" + side;
+    ball.position.copy(centre);
+    stalk.add(ball);
+
+    // THE COLLAR: a sheath hood over the ball's rear, top and OUTER side. It is
+    // measured asymmetric — 24 px of sclera arc laterally against 10 px medially
+    // — so its axis is tilted outward rather than sitting square. A symmetric
+    // collar loses the hooded-outer-lid read entirely.
+    const collarGeo = new THREE.SphereGeometry(EYE_R * 1.07, 20, 12, 0, Math.PI * 2, 0, 1.62);
+    collarGeo.rotateX(Math.PI / 2);
+    const collar = new THREE.Mesh(collarGeo, limbMat);
+    collar.name = "eyeCollar" + side;
+    collar.position.copy(centre);
+    collar.quaternion.setFromUnitVectors(
+      new THREE.Vector3(0, 0, 1),
+      new THREE.Vector3(0.45 * s, 0.25, -0.86).normalize(),
+    );
+    stalk.add(collar);
+
+    const pivot = new THREE.Group();
+    pivot.name = s < 0 ? "pupilPivotL" : "pupilPivotR";
+    pivot.position.copy(centre);
+    stalk.add(pivot);
+
+    const iris = eyeCap(1.012, Math.PI / 2, -MEDIAL * s, 0.54, irisMat, 20);
+    iris.name = "iris" + side;
+    pivot.add(iris);
+
+    // The pupil covers most of the iris disc: measured at y=130 the reference's
+    // whole 56 px disc reads dark, and the cyan only appears as a lower crescent.
+    // A thick cyan ring round a small pupil (the first build) is a different eye.
+    const pupil = eyeCap(1.03, Math.PI / 2, -MEDIAL * s, 0.42, pupM, 18);
+    pupil.name = "pupil" + side;
+    pivot.add(pupil);
+
+    // Upper-OUTER quadrant: this one yaws AWAY from the midline, unlike the iris.
+    const glint = eyeCap(1.05, Math.PI / 2 - 0.3, (MEDIAL + 0.3) * s, 0.13, glintMat, 12);
+    glint.name = "glint" + side;
+    pivot.add(glint);
+
+    // THE BROW. Geometry, not a marking: 49x20 px measured, aspect 2.45, and it
+    // carries its own silhouette against the sky above the eye. Without them the
+    // eyes read as two beads and the face stops being a face.
+    const brow = new THREE.Mesh(new THREE.CapsuleGeometry(CW * 0.0268, CW * 0.0884, 4, 10), browMat);
+    brow.name = "brow" + side;
+    brow.rotation.z = Math.PI / 2 + 0.16 * s;
+    brow.rotation.x = -0.2;
+    brow.scale.set(1, 1, 1.15);
+    brow.position.set(0, centre.y + EYE_R * 1.01, centre.z - EYE_R * 0.19);
+    stalk.add(brow);
+
+    eyes.push(ball, iris, pupil, glint);
+    pupPivots.push(pivot);
+    return stalk;
+  };
+
+  // Named per side rather than built in a mirrored loop — one loop statement
+  // owning both sides makes them un-editable in the character editor.
+  const eyestalkL = makeEye(-1);
+  const eyestalkR = makeEye(1);
+
+  // --- limb construction ---------------------------------------------------
+  const V = (x: number, y: number, z: number): THREE.Vector3 => new THREE.Vector3(x, y, z);
+  const UP = new THREE.Vector3(0, 1, 0);
+
+  /**
+   * A tapered limb segment spanning EXACTLY from `a` to `b`, with a knuckle ball
+   * dropped at every joint.
+   *
+   * This is the flea's hind-leg defect made unrepresentable rather than merely
+   * absent. `CapsuleGeometry`'s length argument is the CYLINDER only — the two
+   * round caps add `radius` on top — so a segment sized as a FRACTION of its
+   * joint distance leaves daylight the moment the radius stops being large
+   * relative to the segment. A cylinder of the exact span plus a ball AT the
+   * joint cannot: the ball covers the joint from every angle, including ACROSS a
+   * fold, where two tangent solids leave an open wedge that overlap alone never
+   * fills. This crab folds at twenty joints, so it is built this way from the
+   * start instead of being measured and patched afterwards.
+   */
+  const bone = (
+    name: string,
+    parent: THREE.Object3D,
+    a: THREE.Vector3,
+    b: THREE.Vector3,
+    r0: number,
+    r1: number,
+    mat: THREE.MeshToonMaterial,
+    seg = 10,
+  ): void => {
+    const len = a.distanceTo(b);
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(r1, r0, len, seg, 1), mat);
+    m.name = name;
+    m.position.copy(a).add(b).multiplyScalar(0.5);
+    m.quaternion.setFromUnitVectors(UP, b.clone().sub(a).normalize());
+    parent.add(m);
+  };
+
+  const knuckle = (
+    name: string,
+    parent: THREE.Object3D,
+    at: THREE.Vector3,
+    r: number,
+    mat: THREE.MeshToonMaterial,
+  ): void => {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(r, 10, 8), mat);
+    m.name = name;
+    m.position.copy(at);
+    parent.add(m);
+  };
+
+  // --- walking legs: four pairs, fanned ------------------------------------
+  // FOUR pairs, not three: three a side is an insect, and this game already has
+  // three of those. The fan runs lateral-high to medial-low — the frontmost leg
+  // reaches furthest out, the rearmost least — which is what makes the count
+  // readable as a fan rather than a skirt.
+  //
+  // All four reach the FLOOR. In the reference the tips descend medially because
+  // the animal is drawn hanging in frame with nothing under it; this one stands.
+  const LEG_Z = [0.1, 0.0, -0.1, -0.19];
+  const LEG_F = [1.0, 0.96, 0.87, 0.75];
+  const legs: THREE.Group[] = [];
+
+  const makeLeg = (n: number, s: number): THREE.Group => {
+    const side = s < 0 ? "L" : "R";
+    const zi = LEG_Z[n];
+    const f = LEG_F[n];
+    const hip = V(CW * 0.4464 * s, CW * 0.4857, zi);
+    const knee = V(CW * 0.6464 * f * s, CW * 0.2821, zi * 1.15);
+    const ankle = V(CW * 0.7232 * f * s, CW * 0.1036, zi * 1.25);
+    const tip = V(CW * 0.7357 * f * s, CW * 0.0179, zi * 1.32);
+
+    const root = new THREE.Group();
+    root.name = `leg${n + 1}${side}`;
+    root.position.copy(hip);
+    body.add(root);
+
+    const kneeL = knee.clone().sub(hip);
+    const ankleL = ankle.clone().sub(knee);
+    const tipL = tip.clone().sub(ankle);
+
+    const rMerus = CW * 0.0821;
+    const rProp = CW * 0.0643;
+    const rDact = CW * 0.0411;
+
+    knuckle(`legHip${n + 1}${side}`, root, V(0, 0, 0), rMerus * 1.02, limbMat);
+    bone(`legMerus${n + 1}${side}`, root, V(0, 0, 0), kneeL, rMerus, rProp, limbMat);
+
+    // A dark band where each plate meets the next. At gameplay size the step
+    // itself is too shallow to shade; the line is what keeps the leg COUNT
+    // legible, and the count is the part of the fan that carries identity.
+    const creaseRing = new THREE.Mesh(
+      new THREE.CylinderGeometry(rMerus * 0.96, rMerus * 0.96, CW * 0.012, 10, 1),
+      creaseMat,
+    );
+    creaseRing.name = `legCrease${n + 1}${side}`;
+    creaseRing.position.copy(kneeL.clone().multiplyScalar(0.34));
+    creaseRing.quaternion.setFromUnitVectors(UP, kneeL.clone().normalize());
+    root.add(creaseRing);
+
+    const kneeJoint = new THREE.Group();
+    kneeJoint.name = `legKnee${n + 1}${side}`;
+    kneeJoint.position.copy(kneeL);
+    root.add(kneeJoint);
+    knuckle(`legKneeBall${n + 1}${side}`, kneeJoint, V(0, 0, 0), rProp * 1.15, limbMat);
+    bone(`legPropodus${n + 1}${side}`, kneeJoint, V(0, 0, 0), ankleL, rProp, rDact, limbMat, 9);
+
+    const ankleJoint = new THREE.Group();
+    ankleJoint.name = `legAnkle${n + 1}${side}`;
+    ankleJoint.position.copy(ankleL);
+    kneeJoint.add(ankleJoint);
+    knuckle(`legAnkleBall${n + 1}${side}`, ankleJoint, V(0, 0, 0), rDact * 1.1, limbMat);
+    // POINTED, and no ball at the tip — deliberately in contrast to the blunt,
+    // rounded pincer fingers. Reading the claw AS a claw depends partly on the
+    // walking legs not ending the same way.
+    bone(`legDactyl${n + 1}${side}`, ankleJoint, V(0, 0, 0), tipL, rDact, CW * 0.009, limbMat, 8);
+
+    return root;
+  };
+
+  for (let n = 0; n < 4; n++) {
+    legs.push(makeLeg(n, -1));
+    legs.push(makeLeg(n, 1));
+  }
+
+  // --- chelipeds: the claws ------------------------------------------------
+  // IDENTITY RANK 1, and it is the GAP that matters, not the claw mass. The
+  // fingers are sized from readability at the game camera — where the whole
+  // enemy is a few dozen pixels — rather than scaled from the reference, and
+  // they are held forward and slightly RAISED instead of at the reference's
+  // ground level, so the raised 3/4 chase camera looks INTO the gap rather than
+  // at the claw's own back.
+  //
+  // The two fingers are deliberately UNEQUAL: the fixed lower finger (pollex) is
+  // longer than the movable upper one (dactyl). Two equal fingers read as a
+  // clothes peg.
+  const dactyls: THREE.Group[] = [];
+
+  const makeCheliped = (s: number): THREE.Group => {
+    const side = s < 0 ? "L" : "R";
+    const socket = V(CW * 0.4268 * s, CW * 0.6429, CW * 0.0536);
+    const elbow = V(CW * 0.5714 * s, CW * 0.5893, CW * 0.2054);
+    const wrist = V(CW * 0.5089 * s, CW * 0.5179, CW * 0.3304);
+    const palmC = V(CW * 0.4821 * s, CW * 0.3839, CW * 0.4375);
+    // THE PINCER, and it is aimed as much as it is sized. The fingers sweep DOWN
+    // AND INWARD from a chunky palm, so the gap between them opens ACROSS the
+    // viewer's line of sight. Aiming them forward instead (the second build) put
+    // the upper finger directly in front of the lower one at the review camera
+    // and the gap vanished into its own foreshortening — the claws read as two
+    // mittens.
+    //
+    // The gap is 0.1097 tip to tip against radii summing 0.038, so 0.072 of clear
+    // daylight. That is WIDER than the reference's measured ~32deg on purpose:
+    // it is sized from readability at the game camera, where the whole enemy is
+    // a few dozen pixels, and the first build — which did scale the reference
+    // angle honestly — closed into a solid gold wedge at exactly that size.
+    //
+    // They also hang DOWN as well as inward. Swung purely inward (the third
+    // build) each claw read as a flat flipper laid across the body; the
+    // reference's claws are chunky masses held low, with the fingers dropping
+    // away from a palm that stays the biggest part of the shape.
+    //
+    // And they are held CLOSE to the body plane — the palm sits 0.155 in front
+    // of the shell, not 0.4. Thrown further forward they sat much nearer the
+    // review camera than the shell did, and perspective inflated them into two
+    // enormous mitts that dominated the frame: the reference-matched Tier 1
+    // capture measured a silhouette aspect of 1.126 against the reference's
+    // 1.231, i.e. the model read as TALLER than the reference for a reason that
+    // was entirely about claw depth.
+    const pollexA = V(CW * 0.4732 * s, CW * 0.2946, CW * 0.5268);
+    const pollexB = V(CW * 0.3304 * s, CW * 0.1071, CW * 0.5893);
+    const dactA = V(CW * 0.4196 * s, CW * 0.3571, CW * 0.5357);
+    const dactB = V(CW * 0.25 * s, CW * 0.2857, CW * 0.5893);
+
+    const root = new THREE.Group();
+    root.name = "cheliped" + side;
+    root.position.copy(socket);
+    body.add(root);
+
+    const rMerus = CW * 0.1036;
+    const rElbow = CW * 0.0857;
+    const rWrist = CW * 0.0929;
+
+    knuckle("chelipedShoulder" + side, root, V(0, 0, 0), rMerus * 1.02, limbMat);
+    bone("chelipedMerus" + side, root, V(0, 0, 0), elbow.clone().sub(socket), rMerus, rElbow, limbMat, 12);
+
+    const elbowJoint = new THREE.Group();
+    elbowJoint.name = "chelipedElbow" + side;
+    elbowJoint.position.copy(elbow.clone().sub(socket));
+    root.add(elbowJoint);
+    knuckle("chelipedElbowBall" + side, elbowJoint, V(0, 0, 0), rElbow * 1.08, limbMat);
+    bone("chelipedCarpus" + side, elbowJoint, V(0, 0, 0), wrist.clone().sub(elbow), rElbow, rWrist, limbMat, 12);
+
+    const wristJoint = new THREE.Group();
+    wristJoint.name = "chelipedWrist" + side;
+    wristJoint.position.copy(wrist.clone().sub(elbow));
+    elbowJoint.add(wristJoint);
+    knuckle("chelipedWristBall" + side, wristJoint, V(0, 0, 0), rWrist * 1.06, limbMat);
+
+    // The palm — a full value step lighter than the red arm carrying it. The
+    // gold-against-red is what makes the claw read as a different substance.
+    const palm = new THREE.Mesh(new THREE.SphereGeometry(1, 18, 14), clawMat);
+    palm.name = "chelaPalm" + side;
+    palm.scale.set(CW * 0.1607, CW * 0.1696, CW * 0.1964);
+    palm.position.copy(palmC.clone().sub(wrist));
+    // Yawed hard INWARD so the palm's long axis runs along the fingers rather
+    // than down the model's +Z. Pointed forward, the two claws read as a pair of
+    // beaks aimed at the camera; swept inward they read as pincers held across
+    // the front of the body, which is both the reference's pose and the one that
+    // keeps the gap visible.
+    palm.rotation.y = -0.5 * s;
+    palm.rotation.x = -0.25;
+    wristJoint.add(palm);
+
+    // The FIXED finger: lower, and the longer of the two. Rounded tip.
+    const pA = pollexA.clone().sub(wrist);
+    const pB = pollexB.clone().sub(wrist);
+    bone("chelaPollex" + side, wristJoint, pA, pB, CW * 0.0893, CW * 0.0304, clawMat, 12);
+    knuckle("chelaPollexTip" + side, wristJoint, pB, CW * 0.0304, clawMat);
+
+    // The MOVABLE finger, on a real hinge at the palm. It is the one joint that
+    // visibly articulates in the reference, and it is what opens the gap.
+    const hinge = new THREE.Group();
+    hinge.name = "chelaDactyl" + side;
+    hinge.position.copy(dactA.clone().sub(wrist));
+    wristJoint.add(hinge);
+    knuckle("chelaHinge" + side, hinge, V(0, 0, 0), CW * 0.0804, clawMat);
+    const dEnd = dactB.clone().sub(dactA);
+    bone("chelaDactylTip" + side, hinge, V(0, 0, 0), dEnd, CW * 0.0804, CW * 0.0268, clawMat, 12);
+    knuckle("chelaDactylCap" + side, hinge, dEnd, CW * 0.0268, clawMat);
+    dactyls.push(hinge);
+
+    return root;
+  };
+
+  const chelipedL = makeCheliped(-1);
+  const chelipedR = makeCheliped(1);
+
+  g.traverse((o) => {
+    if (o instanceof THREE.Mesh) o.castShadow = true;
+  });
+
+  const userData: GhostUserData = {
+    bodyMat,
+    // The limbs, the gold face and the claws ARE the silhouette — ten limbs plus
+    // the whole lower face. Leaving them un-recoloured would blunt the "edible
+    // now" read, which is the documented large-accent rule. The apron, the crease
+    // ink and the brows keep their own colour: they are what holds the face and
+    // the leg count legible while everything else is one flat blue.
+    accentMats: [limbMat, faceMat, clawMat],
+    eyes,
+    pupPivots,
+    pupM,
+    pupBaseColor: pupM.color.getHex(),
+    baseColor: color,
+    // No hem and no `skirt`, so this character opts out of the shared breathe.
+    // Its idle is the scuttle, the sway, the pincer snap and the eyestalk
+    // waggle below.
+    hem: [],
+    pupOffset: { x: 0, z: 0 },
+    behaviour: crabBehaviour(
+      legs,
+      [chelipedL, chelipedR],
+      dactyls,
+      [eyestalkL, eyestalkR],
+      body,
+    ),
+    eyeMats: crabEyeMats,
+    spiritMats: collectSpiritMats(g, crabEyeMats),
+  };
+  g.userData = userData;
+  return g;
+}
+
 /**
  * Builds an enemy mesh for `skinId`, dispatching between the classic ghost
- * and the garden beetle/bee/ladybug/flea (IDEA-009, IDEA-053) â€” all five
- * satisfy the
+ * and the garden beetle/bee/ladybug/flea/crab (IDEA-009, IDEA-053, IDEA-054)
+ * â€” all six satisfy the
  * identical `GhostUserData` contract, so callers (game.ts) can treat the
  * result uniformly regardless of which skin is equipped. Falls back to the
  * ghost for any unrecognised id, mirroring cosmetics.ts's getEnemySkin
@@ -2832,6 +3545,7 @@ export function makeEnemy(skinId: string, color: number): THREE.Group {
   if (skinId === "bee") return makeBee(color);
   if (skinId === "ladybug") return makeLadybug(color);
   if (skinId === "flea") return makeFlea(color);
+  if (skinId === "crab") return makeCrab(color);
   return makeGhost(color);
 }
 

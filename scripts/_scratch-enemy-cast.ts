@@ -3,7 +3,7 @@
 import * as THREE from "three";
 import { makeEnemy } from "../src/render/characters";
 
-for (const id of ["ghost", "beetle", "bee", "ladybug", "flea"]) {
+for (const id of ["ghost", "beetle", "bee", "ladybug", "flea", "crab"]) {
   const g = makeEnemy(id, 0xe8615f);
   g.updateMatrixWorld(true);
   const b = new THREE.Box3().setFromObject(g);

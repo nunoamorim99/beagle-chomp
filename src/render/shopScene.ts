@@ -641,7 +641,7 @@ export interface ShopScene {
    *  every time — see the doc comment below). */
   showBeagle(skin: BeagleSkin): void;
   /** Swaps the hero to the enemy form for `skinId` (ghost/beetle/bee/ladybug/
-   *  flea), in the canonical preview color. Disposes the previous hero and
+   *  flea/crab), in the canonical preview color. Disposes the previous hero and
    *  resets the turntable angle. Dispatches through `makeEnemy`, so a new skin
    *  needs nothing here. */
   showEnemy(skinId: string): void;
@@ -679,7 +679,7 @@ export interface ShopScene {
 
 // The team color used for every enemy preview (per the task brief: rose, the
 // chaser) — the shop shows FORM, not team-color assignment, so one fixed
-// color across all four enemy skins keeps the comparison apples-to-apples.
+// color across all six enemy skins keeps the comparison apples-to-apples.
 const ENEMY_PREVIEW_COLOR = 0xe0577a;
 
 /**
