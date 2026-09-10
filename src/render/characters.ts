@@ -5697,7 +5697,7 @@ export function makePizza(color: number): THREE.Group {
   // feet and the mascot reads as falling over rather than as leaning back.
   const body = new THREE.Group();
   body.name = "body";
-  body.position.set(0, TIPY, 0.055);
+  body.position.set(0, 0.145, 0.017);
   body.rotation.x = PZ_PITCH;
   g.add(body);
 
