@@ -274,11 +274,14 @@ export const ENEMY_SKINS: readonly EnemySkin[] = [
   // The one enemy that actually belongs on a beagle. Priced with the bee and
   // the ladybug — it is a sibling skin, not a premium one.
   { id: "flea", name: "Flea", blurb: "The beagle's own pest · banded shell, spring-loaded legs", price: 25 },
-  // Priced with the bee, the ladybug and the flea — another sibling skin, not a
-  // premium one. The blurb leads with the proboscis because that is the feature
-  // the model is built around: it is the one thing no other enemy in the cast
-  // has, and the only reliable separator from the bee once both are wearing the
-  // same team colour.
+  // The widest enemy in the game, and the only one that is wider than it is
+  // tall — which is the whole point of it: the other four are bugs of roughly
+  // one silhouette. Priced with its siblings.
+  { id: "crab", name: "Crab", blurb: "Sideways and armed · wide shell, open pincers", price: 25 },
+  // Priced with the rest — another sibling skin, not a premium one. The blurb
+  // leads with the proboscis because that is the feature the model is built
+  // around: it is the one thing no other enemy in the cast has, and the only
+  // reliable separator from the bee once both are wearing the same team colour.
   { id: "mosquito", name: "Mosquito", blurb: "All needle and wings · the garden's whine", price: 25 },
   // THE EASTER EGG. Free, but not listed until it is revealed, and revealed by
   // owning the Pac-Beagle coat: the two tributes to the arcade game this one

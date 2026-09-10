@@ -132,13 +132,16 @@ const ENEMY_ICONS: Record<string, string> = {
   beetle: "pest_control",
   bee: "hive",
   ladybug: "bug_report",
-  // NO ENTRY FOR THE FLEA OR THE MOSQUITO, deliberately. A fifth or sixth glyph
-  // means re-cutting the Material Symbols subset (tokens.css) — the font holds
-  // only the names it was cut with, and an unlisted name renders as that word in
-  // plain text on the card. The documented fallback below is the safe behaviour
-  // until the subset is re-cut; `pest_control` was the obvious candidate for
-  // both, but the beetle already wears it, and skins sharing one picture reads
-  // worse than the generic face does.
+  // NO ENTRY FOR THE FLEA, THE CRAB OR THE MOSQUITO, deliberately. Each new
+  // glyph means re-cutting the Material Symbols subset (tokens.css) — the font
+  // holds only the names it was cut with, and an unlisted name renders as that
+  // word in plain text on the card. The documented fallback below is the safe
+  // behaviour until the subset is re-cut; `pest_control` was the obvious
+  // candidate for the flea but the beetle already wears it, and two skins
+  // sharing one picture reads worse than the generic face does. Neither the crab
+  // nor the mosquito has a near-miss candidate at all in the 46 names the subset
+  // holds. Three skins now wait on one subset re-cut — worth doing as its own
+  // small job rather than as a rider on the next enemy.
 };
 
 function enemyIcon(id: string): string {

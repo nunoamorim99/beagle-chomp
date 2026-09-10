@@ -78,7 +78,7 @@
       grid.visible = q.get("grid") !== "0";
       scene.add(grid);
 
-      // ?model=beagle|flea|mosquito — one harness, one subject at a time. The rework
+      // ?model=beagle|flea|crab|mosquito — one harness, one subject at a time. The rework
       // folder holds a generated factory per img2threejs run, and each needs the
       // same turntable/gate treatment, so the viewer switches rather than forking.
       // "flea-gen" is the img2threejs GENERATED factory; "flea" is the REAL
@@ -93,6 +93,7 @@
         beetle: () => makeEnemy("beetle", Number(q.get("color") ?? 0xe8615f)),
         ladybug: () => makeEnemy("ladybug", Number(q.get("color") ?? 0xe8615f)),
         bee: () => makeEnemy("bee", Number(q.get("color") ?? 0xe8615f)),
+        crab: () => makeEnemy("crab", Number(q.get("color") ?? 0xe8615f)),
         mosquito: () => makeEnemy("mosquito", Number(q.get("color") ?? 0xe8615f)),
         ghost: () => makeEnemy("ghost", Number(q.get("color") ?? 0xe8615f)),
       };
@@ -139,7 +140,15 @@
       const box = new THREE.Box3().setFromObject(model);
       const size = box.getSize(new THREE.Vector3());
       const centre = box.getCenter(new THREE.Vector3());
-      const camera = new THREE.PerspectiveCamera(32, innerWidth / innerHeight, 0.1, 100);
+      // ?fov= is the REVIEW instrument, not a preference. The reference images this
+      // pipeline compares against are product-style renders shot on a long lens, so
+      // a Tier 1 capture taken at the viewer's default 32deg fills the frame only by
+      // standing very close — and the near-camera limbs then inflate. Measured on the
+      // crab: a near-orthographic front silhouette is 1.403 wide:tall while the same
+      // model at 32deg filling the frame measures 1.126, against a reference of 1.231.
+      // A narrow fov plus a matched distance gives correct framing AND mild perspective.
+      const fov = q.get("fov") !== null ? Number(q.get("fov")) : 32;
+      const camera = new THREE.PerspectiveCamera(fov, innerWidth / innerHeight, 0.1, 100);
       const target = new THREE.Vector3(0, centre.y, 0);
       let dist = Math.max(size.x, size.y, size.z) * (q.get("dist") !== null ? Number(q.get("dist")) : 3.2);
       if (view === "face") {
