@@ -52,6 +52,27 @@ interface MigrationFile {
   name: string;
   sql: string;
   checksum: string;
+  /** The pre-2026-09-09 checksum: sha256 over the file's RAW bytes. Kept only
+   *  so an existing ledger row can be recognised and healed — see below. */
+  legacyChecksum: string;
+}
+
+/**
+ * Checksum a migration by its CONTENT, not its encoding.
+ *
+ * Line endings are normalised first, and that is a fix rather than a nicety.
+ * The checksum used to hash the raw file, so the SAME migration hashed
+ * differently on a Windows checkout (CRLF, via core.autocrlf) than in the Docker
+ * build (LF) — and the guard would then refuse to run with "contents have
+ * changed" on a file nobody had touched. That is the worst kind of false alarm:
+ * it fires on the honest case, teaches you to distrust the guard, and the guard
+ * is the only thing standing between an edited migration and silent drift.
+ *
+ * Measured: 006 and 007 were applied from LF files, then a branch checkout
+ * rewrote them as CRLF and the runner refused to start.
+ */
+function checksumOf(sql: string): string {
+  return createHash("sha256").update(sql.replace(/\r\n?/g, "\n")).digest("hex");
 }
 
 function loadMigrations(): MigrationFile[] {
@@ -63,7 +84,8 @@ function loadMigrations(): MigrationFile[] {
       return {
         name,
         sql,
-        checksum: createHash("sha256").update(sql).digest("hex"),
+        checksum: checksumOf(sql),
+        legacyChecksum: createHash("sha256").update(sql).digest("hex"),
       };
     });
 }
@@ -106,6 +128,22 @@ async function main(): Promise<void> {
         // Already applied. Guard against someone editing a shipped migration:
         // the DB would silently no longer match the file, which is the kind of
         // drift that only surfaces months later on a fresh environment.
+        // A ledger row written before checksums were normalised holds the raw
+        // hash. If THAT matches, the file is unchanged and only the hashing
+        // rule moved — heal the row rather than crying wolf. This is what keeps
+        // the fix from turning every existing environment into a false alarm.
+        if (
+          previousChecksum !== migration.checksum &&
+          previousChecksum === migration.legacyChecksum
+        ) {
+          await pool.query("UPDATE schema_migrations SET checksum = $2 WHERE name = $1", [
+            migration.name,
+            migration.checksum,
+          ]);
+          console.log(`[migrate] ${migration.name} checksum normalised (content unchanged)`);
+          continue;
+        }
+
         if (previousChecksum !== migration.checksum) {
           console.error(
             `[migrate] ${migration.name} has already been applied but its ` +

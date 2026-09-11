@@ -202,7 +202,15 @@ html,body{height:100%;overflow:hidden;background:var(--bc-ink);color:var(--bc-te
    Round buttons at 38px were both too small for a thumb and the one place
    the interface still used a circle; everything else in the system is a
    squircle or a pill. */
-.mute-btn,.pause-btn,.home-btn{
+/* IDEA-052: `.chrome-btn` is the BOX. `.mute-btn` is a BEHAVIOUR.
+   attachMuteButton (src/ui/sound.ts) queries EVERY `.mute-btn` on the page and
+   keeps them in sync — which includes rewriting the inner <i>, since an icon
+   element carries its ligature as its text. The News bell first reused
+   `.mute-btn` for its styling and rendered as a SPEAKER: two identical volume
+   icons side by side in the menu bar. Nothing failed and no test caught it; a
+   screenshot did. Anything that wants the 44px chrome square takes
+   `.chrome-btn`, and `.mute-btn` means "this toggles sound" and nothing else. */
+.mute-btn,.pause-btn,.home-btn,.chrome-btn{
   position:static;pointer-events:auto;
   /* 44px, the standard touch minimum: three of them have to sit under the
      map/lives row without making the right column wider than it. */
@@ -217,10 +225,10 @@ html,body{height:100%;overflow:hidden;background:var(--bc-ink);color:var(--bc-te
   transition:transform var(--bc-d-press) var(--bc-ease),
              border-bottom-width var(--bc-d-press) var(--bc-ease);
 }
-.mute-btn:hover,.pause-btn:hover,.home-btn:hover{transform:translateY(-2px)}
-.mute-btn:active,.pause-btn:active,.home-btn:active{
+.mute-btn:hover,.pause-btn:hover,.home-btn:hover,.chrome-btn:hover{transform:translateY(-2px)}
+.mute-btn:active,.pause-btn:active,.home-btn:active,.chrome-btn:active{
   transform:translateY(var(--bc-sink-card));border-bottom-width:var(--bc-line)}
-.mute-btn:focus-visible,.pause-btn:focus-visible,.home-btn:focus-visible{
+.mute-btn:focus-visible,.pause-btn:focus-visible,.home-btn:focus-visible,.chrome-btn:focus-visible{
   outline:var(--bc-line) solid var(--bc-cream);outline-offset:2px}
 
 /* ---------------------------------------------------------------------- */
@@ -425,7 +433,7 @@ body.install-open .menu-top{margin-top:clamp(84px,15vh,132px)}
 .menu-bar .coin-line .bc-plate{width:30px;height:30px;font-size:19px;border-radius:9px}
 /* Square, and exactly as tall as the wallet chip opposite it (see .menu-bar).
    Comfortably past the 44px touch minimum. */
-.menu-bar .mute-btn{width:auto;height:auto;aspect-ratio:1;min-width:var(--bc-touch);
+.menu-bar .mute-btn,.menu-bar .chrome-btn{width:auto;height:auto;aspect-ratio:1;min-width:var(--bc-touch);
   font-size:26px}
 
 .menu-bottom{display:flex;flex-direction:column;gap:var(--bc-s3);width:100%;
@@ -536,7 +544,7 @@ body.install-open .menu-top{margin-top:clamp(84px,15vh,132px)}
   .menu-top{margin-top:var(--bc-s2)}
   .menu-top h1{font-size:clamp(28px,4.5vw,36px);-webkit-text-stroke-width:4px}
   .menu-top h1 br{display:none}
-  .menu-bar .mute-btn{font-size:22px}
+  .menu-bar .mute-btn,.menu-bar .chrome-btn{font-size:22px}
   .menu-bottom{gap:var(--bc-s2)}
   .menu-play{font-size:22px;padding:11px;border-bottom-width:8px}
   .menu-play .bc-i{font-size:26px}
@@ -561,6 +569,7 @@ body.menu-open .hud-buttons{display:none}
 body.shop-open .hud,
 body.shop-open .hud-buttons,
 body.shop-open .mute-btn,
+body.shop-open .chrome-btn,
 body.shop-open .pause-btn,
 body.shop-open .home-btn,
 body.shop-open #mainMenu{display:none}
@@ -573,6 +582,7 @@ body.shop-open #mainMenu{display:none}
 body.map-open .hud,
 body.map-open .hud-buttons,
 body.map-open .mute-btn,
+body.map-open .chrome-btn,
 body.map-open .pause-btn,
 body.map-open .home-btn,
 body.map-open #mainMenu{display:none}
@@ -1083,6 +1093,7 @@ body.map-open #mainMenu{display:none}
 
 body.auth-open .hud,     body.auth-open .hud-buttons,
 body.auth-open .mute-btn,
+body.auth-open .chrome-btn,
 body.auth-open .pause-btn, body.auth-open .home-btn,
 body.auth-open #mainMenu,
 body.recovery-open .hud, body.recovery-open .hud-buttons,
@@ -1723,7 +1734,7 @@ body.paused .dpad{display:none}
 @media (max-width:359px){
   .stat .v{font-size:22px}
   .hud-buttons{gap:6px}
-  .mute-btn,.pause-btn,.home-btn{width:40px;height:40px;font-size:20px}
+  .mute-btn,.pause-btn,.home-btn,.chrome-btn{width:40px;height:40px;font-size:20px}
 }
 
 /* Landscape phones are short: shrink the pad so it can't crowd the maze.
@@ -2307,3 +2318,137 @@ body.map-open .powerups{display:none}
   .map-node-glow{animation:none;opacity:0}
   .tut-swipe-dot{animation:none}
 }
+
+/* ---------------------------------------------------------------------- */
+/* IDEA-052 — News: release notes and notices                              */
+/*                                                                          */
+/* The bell sits in the menu bar beside mute and shares .mute-btn's box, so */
+/* the two read as one pair of chrome controls rather than two designs. Only */
+/* the unread dot is new.                                                   */
+
+.menu-bar-actions{display:flex;align-items:stretch;gap:var(--bc-s2)}
+
+/* position:relative so the dot can hang off the corner. .mute-btn sets
+   position:static, so this has to come after it to win. */
+.news-btn{position:relative}
+
+/* The unread dot. Amber because §04 reserves amber for "the single next
+   action on a screen" — on the menu, a note you have not read is exactly
+   that, and nothing else in the bar is competing for it. */
+.news-dot{
+  position:absolute;top:-4px;right:-4px;min-width:20px;height:20px;padding:0 5px;
+  display:flex;align-items:center;justify-content:center;
+  border-radius:999px;
+  background:var(--bc-amber);color:var(--bc-amber-ink);
+  border:var(--bc-line) solid var(--bc-outline);
+  font-family:var(--bc-font-mono);font-size:11px;font-weight:700;line-height:1;
+  pointer-events:none}
+
+#news{position:fixed;inset:0;z-index:60;
+  display:flex;flex-direction:column;
+  padding:calc(var(--bc-s4) + env(safe-area-inset-top)) calc(var(--bc-gutter) + env(safe-area-inset-right))
+    calc(var(--bc-s4) + env(safe-area-inset-bottom)) calc(var(--bc-gutter) + env(safe-area-inset-left));
+  background:#1E2A1B;
+  background-image:radial-gradient(600px 400px at 50% 0%,#2C3D26 0%,#17130E 70%);
+  overflow:hidden;overscroll-behavior:contain}
+
+/* The sheet sizes to its content and scrolls its LIST, not the page — the
+   §"two rendering traps" rule: max-height:100% on a sheet inside a scrolling
+   page caps the board at the viewport while the page keeps going, and the
+   surface stops mid-content. */
+.news-sheet{flex:1 1 auto;min-height:0;width:min(560px,100%);margin:0 auto;
+  display:flex;flex-direction:column;gap:var(--bc-s3)}
+.news-head{flex:0 0 auto;text-align:center}
+.news-head h1{font-family:var(--bc-font-display);font-size:clamp(26px,7vw,34px);
+  margin:0;color:var(--bc-cream);
+  -webkit-text-stroke:4px var(--bc-outline);paint-order:stroke fill}
+.news-lead{margin:2px 0 0;color:var(--bc-amber);font-size:13px;font-weight:700}
+
+.news-list{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;
+  display:flex;flex-direction:column;gap:var(--bc-s3);padding-right:2px}
+
+.news-card{
+  background:var(--bc-card);
+  border:var(--bc-line) solid var(--bc-outline);
+  border-bottom-width:var(--bc-edge-card);
+  border-radius:var(--bc-r-card);
+  padding:var(--bc-s3);
+  display:flex;flex-direction:column;gap:var(--bc-s2)}
+/* Unread is marked by an amber EDGE, not a tint: §"dim by paint" runs both
+   ways — a translucent highlight over this board would pick up the backdrop. */
+.news-card--new{border-left:4px solid var(--bc-amber)}
+
+.news-card-head{display:flex;align-items:flex-start;gap:var(--bc-s2)}
+.news-mark{flex:0 0 auto;width:34px;height:34px;border-radius:var(--bc-r-plate);
+  display:flex;align-items:center;justify-content:center;font-size:20px;
+  border:var(--bc-line) solid var(--bc-outline);
+  background:var(--bc-wood);color:var(--bc-cream)}
+.news-mark--release{background:var(--bc-amber);color:var(--bc-amber-ink)}
+
+.news-titles{flex:1 1 auto;min-width:0}
+.news-titles h2{margin:0;font-family:var(--bc-font-display);font-size:17px;
+  line-height:1.2;color:var(--bc-cream);
+  /* A 120-char title on a 390px screen: wrap it rather than clipping, since a
+     release name that ends in an ellipsis tells the player nothing. */
+  overflow-wrap:anywhere}
+.news-sub{margin:2px 0 0;font-family:var(--bc-font-mono);font-size:12px;
+  color:var(--bc-text-soft)}
+
+.news-new{flex:0 0 auto;align-self:flex-start;
+  padding:2px 8px;border-radius:999px;
+  background:var(--bc-amber);color:var(--bc-amber-ink);
+  border:var(--bc-line) solid var(--bc-outline);
+  font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+
+.news-body{margin:0;color:var(--bc-cream);font-size:14px;line-height:1.55;
+  /* A note can carry a long unbroken string (a URL someone pasted). Break it
+     rather than pushing the card wider than the screen. */
+  overflow-wrap:anywhere}
+
+.news-empty{margin:var(--bc-s5) 0;text-align:center;color:var(--bc-text-soft);
+  font-size:14px}
+
+.news-sheet > .btn-primary{flex:0 0 auto;align-self:center;min-width:180px}
+
+/* IDEA-052b: the notification kind switches on the account screen. They only
+   appear once THIS DEVICE is subscribed — the device switch is browser
+   permission, these are per-account and follow the player everywhere. */
+.notify-kinds{display:flex;flex-direction:column;gap:var(--bc-s2);margin-top:var(--bc-s3)}
+.notify-kind{display:flex;align-items:center;gap:var(--bc-s2);
+  color:var(--bc-cream);font-size:14px;cursor:pointer}
+.notify-kind input{width:20px;height:20px;accent-color:var(--bc-amber);cursor:pointer}
+
+/* IDEA-052b: the News list is for SCANNING — a card shows a few lines and the
+   whole note opens in a sheet. A 4,000-character release note rendered inline
+   would push every other card off the screen. */
+.news-card{cursor:pointer}
+.news-card:hover{border-color:var(--bc-amber-edge)}
+.news-card:focus-visible{outline:var(--bc-line) solid var(--bc-amber);outline-offset:2px}
+/* line-clamp rather than a character truncation: it cuts at whatever the box
+   actually fits, so it stays right at 320px and at 430px without a second
+   number to tune. */
+.news-body--clamp{
+  display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;
+  overflow:hidden}
+.news-more{color:var(--bc-amber);font-size:13px;font-weight:700}
+
+/* The detail sheet. Inside #news, so closing it returns to the list with the
+   scroll position intact — going "into" a note and back must not lose the
+   player's place. */
+.news-detail{position:absolute;inset:0;z-index:5;
+  display:flex;align-items:center;justify-content:center;
+  padding:var(--bc-s4);
+  /* PAINT, never opacity — §"dim by paint": a translucent layer over the board
+     picks up what is behind it and turns the whole sheet blue-grey. */
+  background:rgba(10,8,6,.82)}
+.news-detail-sheet{
+  width:min(560px,100%);max-height:100%;
+  display:flex;flex-direction:column;gap:var(--bc-s3);
+  background:var(--bc-card);
+  border:var(--bc-line) solid var(--bc-outline);
+  border-bottom-width:var(--bc-edge-card);
+  border-radius:var(--bc-r-card);
+  padding:var(--bc-s4)}
+.news-detail-body{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;
+  display:flex;flex-direction:column;gap:var(--bc-s2)}
+.news-detail-sheet > .btn-primary{flex:0 0 auto;align-self:center;min-width:160px}

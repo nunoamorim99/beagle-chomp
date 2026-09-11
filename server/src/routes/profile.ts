@@ -52,6 +52,13 @@ profileRoutes.patch("/profile/settings", async (c) => {
   if (body.tutorialDone !== undefined) {
     profile = await profileService.setTutorialDone(userId, body.tutorialDone);
   }
+  if (body.notifyAnnouncements !== undefined || body.notifyRank !== undefined) {
+    profile = await profileService.setNotifyPrefs(
+      userId,
+      body.notifyAnnouncements,
+      body.notifyRank,
+    );
+  }
   if (profile === null) {
     throw new ApiError(400, "VALIDATION_FAILED", "No settings supplied.");
   }

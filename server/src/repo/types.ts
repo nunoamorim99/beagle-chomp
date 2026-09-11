@@ -32,9 +32,16 @@ export interface UserRow {
    *  follows the account rather than the device. */
   control_scheme: string;
   tutorial_done: boolean;
+  notify_announcements: boolean;
+  notify_rank: boolean;
+  last_rank_alert_at: Date | null;
   /** IDEA-051: may read the metrics portal. Set ONLY by a hand-written UPDATE
    *  — there is deliberately no endpoint that writes it. */
   is_admin: boolean;
+  /** IDEA-052: when this player last opened the News screen. NULL means never,
+   *  which counts everything published as unread — a player who has not seen
+   *  the screen has genuinely not seen any of it. */
+  announcements_seen_at: Date | null;
   created_at: Date;
 }
 
@@ -60,6 +67,11 @@ export interface PublicProfile {
   controlScheme: string;
   /** IDEA-040: false until the player finishes (or skips) the first-run coach. */
   tutorialDone: boolean;
+  /** IDEA-052b: what a SUBSCRIBED device receives — not whether the player is
+   *  asked. Nothing can be sent without browser permission plus a subscription,
+   *  which is a separate, explicit, per-device act. */
+  notifyAnnouncements: boolean;
+  notifyRank: boolean;
 }
 
 export interface PublicUser {
@@ -86,6 +98,8 @@ export function toPublicProfile(row: UserRow): PublicProfile {
     recoveryCodeVersion: row.recovery_code_version,
     controlScheme: row.control_scheme,
     tutorialDone: row.tutorial_done,
+    notifyAnnouncements: row.notify_announcements,
+    notifyRank: row.notify_rank,
   };
 }
 
@@ -142,6 +156,10 @@ export function userColumns(alias?: string): string {
     "control_scheme",
     "tutorial_done",
     "is_admin",
+    "notify_announcements",
+    "notify_rank",
+    "last_rank_alert_at",
+    "announcements_seen_at",
     "created_at",
   ]
     .map((c) => p + c)

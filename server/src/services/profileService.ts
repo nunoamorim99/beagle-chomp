@@ -173,6 +173,27 @@ export async function setTutorialDone(
   return toPublicProfile(updated);
 }
 
+/** IDEA-052b: what a subscribed device receives. Each is optional so the
+ *  account screen can flip one switch without resending the other. */
+export async function setNotifyPrefs(
+  userId: string,
+  announcementsInput: unknown,
+  rankInput: unknown,
+): Promise<PublicProfile> {
+  const check = (v: unknown, name: string): boolean | undefined => {
+    if (v === undefined) return undefined;
+    if (typeof v !== "boolean") {
+      throw new ApiError(400, "VALIDATION_FAILED", `${name} must be true or false.`);
+    }
+    return v;
+  };
+  const updated = await usersRepo.updateNotifyPrefs(userId, {
+    announcements: check(announcementsInput, "notifyAnnouncements"),
+    rank: check(rankInput, "notifyRank"),
+  });
+  return toPublicProfile(updated);
+}
+
 // --- account deletion -------------------------------------------------------
 
 /** Hard-delete the account. Requires the username as typed confirmation, since

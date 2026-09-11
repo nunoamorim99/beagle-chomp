@@ -116,6 +116,61 @@ _(nothing planned yet — v4.0 "New Territory" was fulfilled and cut on 2026-07-
 
 ## Version history
 
+### v8.0 — Paying Attention (2026-09-10)
+The release where the game started noticing things, and started saying them out
+loud. Two halves of one idea: for seven versions Beagle Chomp had no memory of
+what happened inside a run and no way to tell anyone what had changed. Both are
+fixed here.
+
+**The run stopped being forgotten.** Every game already reported what happened
+in it — biscuits, bones, which fruit, which power-ups, how long — the server
+checked that report against what was possible, and then threw it away, keeping
+only the score. It is kept now, along with two things it never knew: **which
+enemy caught you** and **which fruit you went for**. The second earns its place
+twice over, because knowing the kinds lets the server price a run's fruit
+exactly instead of allowing anything between 100 and 500 apiece — a narrower
+honest bound is better anti-cheat than a wide one. All of it is written *after*
+the run is banked, so a bug in the bookkeeping can never cost anyone a score.
+
+**There is a portal now**, on its own address behind two locks, where all of
+that can actually be read — next to the request timings the API has been
+measuring into a log nobody read since v6.0, and the anti-cheat rejection board
+that has never once been looked at. Retention works backwards over the whole
+history, because the runs were always dated even when their contents were not.
+
+**And the game can talk to you.** Release notes and notices are written in the
+portal and land behind a bell in the menu; if you let it, your phone will tell
+you — including when somebody takes your place on the leaderboard. That last one
+needed no new machinery: the board ranks by personal best, so the only moment
+anyone's position can move is the moment somebody beats their own. It is
+deliberately quiet about it — a player tied with you got there first and has not
+passed you, only the top ten are told, and nobody hears about it twice in six
+hours.
+
+- **IDEA-050 v1** — run statistics: what actually happened in a run, kept and
+  measurable, with the nemesis enemy and the favourite fruit as new signals.
+- **IDEA-051 v1** — the metrics portal: one operator, every number, behind
+  Cloudflare Access and a flag that 404s for everyone else.
+- **IDEA-052 v1** — News, release notes and Web Push, plus the "someone beat
+  your score" alert.
+- **IDEA-049 v1** — the thumbstick: a third touch control, and the one that
+  removes the lift between turns.
+
+**Note on privacy.** This release changes what is stored, so it changes what the
+privacy screen says. It used to promise "no analytics", and that is no longer
+true: per-run gameplay statistics are kept against the account. Everything else
+holds and is now tested rather than asserted — no email, no name, no IP address,
+no third party, no ads, nothing following anyone to another site, and "delete my
+account" is still a single DELETE that takes the statistics and any push
+subscription with it. The one genuinely new personal datum is a push endpoint,
+which identifies a browser install; it is deleted the moment the push service
+says it is gone.
+
+**Note on what did not ship.** A fifth enemy skin was ready and was deliberately
+held back onto its own branch, so this release could go out as infrastructure
+rather than as a mixed bag.
+
+
 ### v7.0 — Worth the Detour (2026-08-28)
 The release where the maze filled up with reasons to leave the biscuit trail. Three changes that
 look separate and are really one argument: **the fruit became a ladder** (apple 100 up to mango

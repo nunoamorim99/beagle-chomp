@@ -187,7 +187,26 @@
         <!-- The menu's own mute control. attachMuteButton wires EVERY
              .mute-btn on the page and keeps them in sync, so this and the
              in-run one are one switch with two placements. -->
-        <button type="button" class="mute-btn" id="menuMuteBtn" aria-label="Mute sound" aria-pressed="false"><i class="bc-i" aria-hidden="true">volume_up</i></button>
+        <!-- IDEA-052: the two chrome controls are grouped so the bar stays a
+             two-part layout (wallet | actions) under space-between. A third
+             loose child would have spread coin/bell/mute evenly across the
+             width, putting the bell in the middle of nothing. -->
+        <div class="menu-bar-actions">
+          <!-- The NEWS bell. It lives here rather than in the destination row
+               because that row is a hard-coded 4-up grid whose labels are
+               already at the 12.5px display-font floor on a 390px screen — a
+               fifth tile would break test-menu-ui.ts's geometry assertions and
+               there is no spare --bc-enemy hue for it. A bell is also the
+               natural home for an unread count. -->
+          <button type="button" class="chrome-btn news-btn" id="menuNewsBtn" aria-label="News">
+            <i class="bc-i" aria-hidden="true">notifications</i>
+            <span class="news-dot hidden" id="menuNewsDot" aria-hidden="true"></span>
+          </button>
+          <!-- The menu's own mute control. attachMuteButton wires EVERY
+               .mute-btn on the page and keeps them in sync, so this and the
+               in-run one are one switch with two placements. -->
+          <button type="button" class="mute-btn" id="menuMuteBtn" aria-label="Mute sound" aria-pressed="false"><i class="bc-i" aria-hidden="true">volume_up</i></button>
+        </div>
       </div>
 
       <!-- IDEA-036: the "three.js · maze chase" eyebrow was removed — a v2.0
@@ -283,6 +302,11 @@
          OTHER players, so injection is structurally impossible rather than
          escaped-and-hopefully-correct. -->
     <div class="hidden" id="leaderboard"></div>
+
+    <!-- IDEA-052: release notes and notices, opened from the bell in the menu
+         bar. A separate container like every other full screen, so opening it
+         never clobbers #center or #mainMenu. -->
+    <div class="hidden" id="news"></div>
 
     <!-- IDEA-040 tutorial v2: the how-to-play carousel. Same "full-screen page
          rendered entirely by its own src/ui module" pattern as #shop and

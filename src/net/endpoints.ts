@@ -24,6 +24,9 @@ export interface ServerProfile {
   controlScheme: string;
   /** IDEA-040: false until the first-run tutorial is finished or skipped. */
   tutorialDone: boolean;
+  /** IDEA-052b: which kinds of notification a subscribed device receives. */
+  notifyAnnouncements: boolean;
+  notifyRank: boolean;
 }
 
 export interface ServerUser {
@@ -282,4 +285,75 @@ export function finishSession(
     // queue (net/runSubmit.ts) is the guarantee; this is the fast path.
     { method: "POST", body: payload, keepalive: true },
   );
+}
+
+// --- announcements (IDEA-052) -----------------------------------------------
+
+export interface Announcement {
+  id: string;
+  kind: "release" | "notice";
+  /** "v8.0" on a release note, null on a notice. */
+  version: string | null;
+  title: string;
+  /** PLAIN TEXT, and it must stay that way on the way to the DOM. Blank lines
+   *  separate paragraphs; there is no markup vocabulary. The News screen renders
+   *  it with createElement + textContent, the same rule leaderboard.ts follows
+   *  for usernames — this is a server-controlled free-form string, which is a
+   *  first for this client. */
+  body: string;
+  /** Date only (YYYY-MM-DD): a note is a thing that happened on a day. */
+  publishedAt: string | null;
+  /** New to THIS player since they last opened the screen. */
+  isNew: boolean;
+}
+
+export interface AnnouncementFeed {
+  /** Drives the bell's unread dot. */
+  unread: number;
+  items: Announcement[];
+}
+
+export function fetchAnnouncements(): Promise<AnnouncementFeed> {
+  return apiRequest<AnnouncementFeed>("/api/v1/announcements");
+}
+
+/** Mark the feed seen. The server stamps its own clock — nothing is sent. */
+export function markAnnouncementsSeen(): Promise<void> {
+  return apiRequest<void>("/api/v1/announcements/seen", { method: "POST" });
+}
+
+// --- web push (IDEA-052b) ---------------------------------------------------
+
+/** The server's public VAPID key. Served rather than baked in at build time, so
+ *  rotating the keypair is a Dokploy change rather than a Pages rebuild.
+ *  Unauthenticated — it is public by definition, in every subscribe request the
+ *  browser makes. */
+export function fetchVapidKey(): Promise<{ key: string }> {
+  return apiRequest<{ key: string }>("/api/v1/push/vapid-key", { auth: false });
+}
+
+export interface PushSubscriptionPayload {
+  endpoint: string;
+  keys: { p256dh: string; auth: string };
+}
+
+export function subscribePush(sub: PushSubscriptionPayload): Promise<void> {
+  return apiRequest<void>("/api/v1/push/subscribe", { method: "POST", body: sub });
+}
+
+export function unsubscribePush(endpoint: string): Promise<void> {
+  return apiRequest<void>("/api/v1/push/unsubscribe", { method: "POST", body: { endpoint } });
+}
+
+/** IDEA-052b: which KINDS a subscribed device receives. Separate from whether
+ *  the browser has granted permission — that is per-device and lives in the
+ *  browser, this is per-account and follows the player everywhere. */
+export function setNotifyPrefsRemote(prefs: {
+  notifyAnnouncements?: boolean;
+  notifyRank?: boolean;
+}): Promise<{ profile: ServerProfile }> {
+  return apiRequest<{ profile: ServerProfile }>("/api/v1/profile/settings", {
+    method: "PATCH",
+    body: prefs,
+  });
 }

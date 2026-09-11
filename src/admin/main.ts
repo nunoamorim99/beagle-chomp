@@ -13,6 +13,7 @@
 
 import "./admin.css";
 import * as api from "./api.js";
+import { renderNewsTab } from "./news.js";
 import {
   ENEMY_HUES,
   barChart,
@@ -36,7 +37,15 @@ const esc = (s: unknown): string =>
 
 const app = document.getElementById("app") as HTMLDivElement;
 
-type TabId = "overview" | "retention" | "difficulty" | "content" | "health" | "players";
+type TabId =
+  | "overview"
+  | "retention"
+  | "difficulty"
+  | "content"
+  | "health"
+  | "players"
+  | "reach"
+  | "news";
 
 const TABS: { id: TabId; label: string }[] = [
   { id: "overview", label: "Overview" },
@@ -45,6 +54,9 @@ const TABS: { id: TabId; label: string }[] = [
   { id: "content", label: "Content" },
   { id: "health", label: "Health" },
   { id: "players", label: "Players" },
+  { id: "reach", label: "Reach" },
+  // The only tab that WRITES anything.
+  { id: "news", label: "News" },
 ];
 
 let currentTab: TabId = "overview";
@@ -160,6 +172,15 @@ async function loadTab(): Promise<void> {
         return view(renderHealth(await api.fetchHealth()));
       case "players":
         return renderPlayers();
+      case "reach":
+        return view(renderReach(await api.fetchNotifications()));
+      case "news": {
+        // Owns its own host: the composer re-renders itself on every save,
+        // publish and delete, so it needs the element rather than a string.
+        const el = document.getElementById("view");
+        if (el) await renderNewsTab(el);
+        return;
+      }
     }
   } catch (err: unknown) {
     if (err instanceof api.AdminApiError && err.status === 401) {
@@ -540,3 +561,76 @@ if (api.getToken()) {
 // Unused import guard: CRITICAL is part of the exported status palette and is
 // referenced by admin.css's banner styling rather than inline. Kept exported.
 void CRITICAL;
+
+function renderReach(d: api.NotificationsReport): string {
+  const r = d.reach;
+  const e = d.engagement;
+
+  const offBanner = d.pushEnabled
+    ? ""
+    : `<div class="banner bad"><strong>Push is switched off.</strong> VAPID keys
+        aren't set on the API, so no player can subscribe and no notification can
+        be sent. The numbers below will stay at zero until they are — that is
+        configuration, not disinterest.</div>`;
+
+  const noteRows = d.notes.map((n) => [
+    n.publishedAt,
+    n.version ? `${n.kind} ${n.version}` : n.kind,
+    n.title,
+    `${n.seenBy} / ${n.audience}`,
+    n.share === null ? "—" : fmtPct(n.share),
+  ]);
+
+  return `
+    <section class="panel">
+      <h2>Who can be reached</h2>
+      <p class="sub">
+        Counted in PLAYERS, not devices — one person with a phone and a laptop is
+        one person you can tell. Devices are shown separately.
+      </p>
+      ${offBanner}
+      <div class="stats" style="margin-top:12px">
+        ${statTile("Subscribed", fmt(r.players_subscribed), `of ${fmt(r.players_total)} players`)}
+        ${statTile(
+          "Reach",
+          r.players_total > 0 ? fmtPct(r.players_subscribed / r.players_total) : "—",
+          "opted in on a device",
+        )}
+        ${statTile("Devices", fmt(r.devices))}
+        ${statTile("Want updates", fmt(r.wants_announcements))}
+        ${statTile("Want rank alerts", fmt(r.wants_rank))}
+        ${statTile("Devices reached", fmt(r.devices_healthy), "had a push accepted")}
+        ${statTile("Devices failing", fmt(r.devices_failing), "soft failures")}
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Is anyone opening the News screen?</h2>
+      <p class="sub">
+        This is the honest measure of whether notes are being read — notification
+        CLICKS are not tracked anywhere, so nothing here pretends to know them.
+      </p>
+      <div class="stats">
+        ${statTile("Opened it ever", fmt(e.opened_ever))}
+        ${statTile("Opened in 7d", fmt(e.opened_7d))}
+        ${statTile("Never opened", fmt(e.never_opened))}
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Each note</h2>
+      <p class="sub">
+        "Seen" means a player opened the News screen AFTER this went live, so the
+        card was on their screen. It does not mean they read it. The audience is
+        players who already existed when it was published — counting everyone
+        would make an old note look less read every time someone new signs up.
+      </p>
+      <div class="scroll">
+        ${table(
+          ["Published", "Kind", "Title", "Seen by", "Share"],
+          noteRows,
+          "Nothing published yet.",
+        )}
+      </div>
+    </section>`;
+}

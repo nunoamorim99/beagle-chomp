@@ -88,6 +88,11 @@ export interface StoredProfile {
   controlScheme: ControlScheme;
   /** IDEA-040: false until the first-run tutorial is finished or skipped. */
   tutorialDone: boolean;
+  /** IDEA-052b: which kinds of notification a subscribed device receives.
+   *  Per-ACCOUNT, so it follows the player to every device — unlike browser
+   *  permission, which is per-device and lives in the browser. */
+  notifyAnnouncements: boolean;
+  notifyRank: boolean;
 }
 
 export type ControlScheme = "swipe" | "dpad" | "stick";
@@ -146,6 +151,8 @@ export function defaultProfile(): StoredProfile {
     ownedMazeThemeIds: [DEFAULT_MAZE_THEME_ID],
     controlScheme: "swipe",
     tutorialDone: false,
+    notifyAnnouncements: true,
+    notifyRank: true,
   };
 }
 

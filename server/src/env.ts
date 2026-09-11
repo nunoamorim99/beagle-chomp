@@ -77,6 +77,36 @@ const EnvSchema = z.object({
    *  (MAX_RUN_HOURS), which is the point: at today's volume this deletes
    *  nothing, and it starts working on its own if volume ever arrives. */
   SESSION_RETENTION_DAYS: z.coerce.number().int().min(0).default(90),
+
+  // --- IDEA-052b: Web Push --------------------------------------------------
+
+  /** VAPID keypair. ALL THREE OPTIONAL, following the METRICS_TOKEN precedent
+   *  (above): unset means the push routes are never registered and the whole
+   *  feature does not exist, rather than the container refusing to start. That
+   *  is what keeps local dev working with no keys and makes push something you
+   *  can turn off in Dokploy without a code change.
+   *
+   *  Generate with `npx web-push generate-vapid-keys`. The PUBLIC key is served
+   *  from GET /api/v1/push/vapid-key rather than baked into the client bundle,
+   *  so rotating it does not require a Cloudflare Pages rebuild. */
+  VAPID_PUBLIC_KEY: z.string().min(1).optional(),
+  VAPID_PRIVATE_KEY: z.string().min(1).optional(),
+  /** Apple in particular rejects a malformed one with an opaque 400, so this is
+   *  validated as a real mailto:/https: rather than any string. */
+  VAPID_SUBJECT: z
+    .string()
+    .regex(/^(mailto:|https:\/\/)/, "VAPID_SUBJECT must be a mailto: or https: URL")
+    .optional(),
+
+  /** Only players who were within this many places of the top are told their
+   *  score was beaten. Caps the fan-out per run AND keeps the message honest —
+   *  being pushed from #340 to #341 is not news, and saying so is how a player
+   *  learns to mute you. */
+  RANK_ALERT_TOP_N: z.coerce.number().int().positive().max(100).default(10),
+
+  /** Hours before the same player can be told again, so one good evening from
+   *  one player cannot fire ten alerts at the same victim. */
+  RANK_ALERT_COOLDOWN_HOURS: z.coerce.number().int().min(0).default(6),
 });
 
 function parseEnv() {
@@ -127,7 +157,22 @@ function parseEnv() {
     process.exit(1);
   }
 
-  return { ...env, CORS_ORIGINS: corsOrigins, isProd } as const;
+  // Push needs ALL THREE keys or none of it works. Deriving the flag once here
+  // means no route has to re-check, and a HALF-configured deploy (two of three
+  // set, which is exactly what a hurried copy-paste into Dokploy produces)
+  // fails loudly at boot instead of throwing on the first send.
+  const vapidParts = [env.VAPID_PUBLIC_KEY, env.VAPID_PRIVATE_KEY, env.VAPID_SUBJECT];
+  const setCount = vapidParts.filter(Boolean).length;
+  if (setCount > 0 && setCount < 3) {
+    console.error(
+      "VAPID is half-configured: set VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY and " +
+        "VAPID_SUBJECT together, or none of them. Push is disabled without all three.",
+    );
+    process.exit(1);
+  }
+  const pushEnabled = setCount === 3;
+
+  return { ...env, CORS_ORIGINS: corsOrigins, isProd, pushEnabled } as const;
 }
 
 export const env = parseEnv();

@@ -28,6 +28,8 @@ import { validateRun, MAX_RUN_HOURS } from "../validation/plausibility.js";
 // sends went unread for a whole release without anything noticing.
 import { readSubmission } from "../validation/wire.js";
 import { insertRunStats, type RunStatsInsert } from "../repo/runStats.js";
+import { whoWasOvertaken, rankAlertBody, RANK_ALERT_TITLE, type BoardEntry } from "../notifications/rankAlert.js";
+import { notifyRankAlerts } from "./pushService.js";
 import { invalidateBoardCache } from "./boardCache.js";
 import { CHALLENGE_LEVELS, CHALLENGE_LEVEL_COUNT } from "../catalog.generated.js";
 
@@ -216,6 +218,12 @@ export async function finishSession(
   // statistics are a by-product and must never be able to roll back a score.
   let statsRow: RunStatsInsert | null = null;
 
+  // IDEA-052b: who this run overtook. SELECTED inside the transaction (where
+  // the board is consistent with the score about to be written) and SENT after
+  // the commit — network I/O must never happen while holding a row lock, and a
+  // push that fails must not roll back a banked score.
+  let rankTargets: { userId: string; title: string; body: string }[] = [];
+
   const result = await withTransaction(async (client) => {
     const session = await sessionsRepo.findSessionForUpdate(sessionId, user.id, client);
 
@@ -299,10 +307,61 @@ export async function finishSession(
     // CLASSIC ONLY. A challenge run never touches high_score — see the note at
     // the top of this file for why the two aren't comparable.
     if (isNewHighScore) {
+      // IDEA-052b: read the board BEFORE the update, so it is the standing this
+      // run is about to change. The Players board ranks by personal best, one
+      // row per player, so this is the only moment anyone's rank can move —
+      // which is why there is nothing to poll.
+      //
+      // Bounded by RANK_ALERT_TOP_N: only players near the top are ever told,
+      // so this reads a handful of rows rather than the whole table.
+      const { rows: boardRows } = await client.query<{
+        id: string;
+        username: string;
+        high_score: number;
+        high_score_at: Date;
+        notify_rank: boolean;
+        last_rank_alert_at: Date | null;
+      }>(
+        `SELECT id, username, high_score, high_score_at, notify_rank, last_rank_alert_at
+           FROM users
+          WHERE high_score > 0
+          ORDER BY high_score DESC, high_score_at ASC
+          LIMIT $1`,
+        [env.RANK_ALERT_TOP_N],
+      );
+
       await client.query(
         `UPDATE users SET high_score = $2, high_score_at = now() WHERE id = $1`,
         [user.id, submission.score],
       );
+
+      const board: BoardEntry[] = boardRows.map((r) => ({
+        userId: r.id,
+        username: r.username,
+        highScore: r.high_score,
+        highScoreAt: r.high_score_at,
+        notifyRank: r.notify_rank,
+        lastAlertAt: r.last_rank_alert_at,
+      }));
+
+      rankTargets = whoWasOvertaken(
+        {
+          userId: user.id,
+          username: user.username,
+          previousBest: user.high_score,
+          newBest: submission.score,
+        },
+        board,
+        {
+          topN: env.RANK_ALERT_TOP_N,
+          cooldownHours: env.RANK_ALERT_COOLDOWN_HOURS,
+          now: new Date(),
+        },
+      ).map((r) => ({
+        userId: r.userId,
+        title: RANK_ALERT_TITLE,
+        body: rankAlertBody(r),
+      }));
     }
 
     // A challenge clear advances progress — max-write, so replaying an earlier
@@ -357,6 +416,16 @@ export async function finishSession(
     } catch (err) {
       console.error(`[run-stats] failed to record session ${sessionId}:`, err);
     }
+  }
+
+  // IDEA-052b. Also after the commit, also best-effort, and fire-and-forget:
+  // the player who just finished is waiting on this response, and their rival's
+  // phone buzzing is not something they should wait for. pushService swallows
+  // its own errors and no-ops entirely when VAPID is unconfigured.
+  if (rankTargets.length > 0) {
+    void notifyRankAlerts(rankTargets).catch((err: unknown) => {
+      console.error("[push] rank alerts failed:", err);
+    });
   }
 
   return result;

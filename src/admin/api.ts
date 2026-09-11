@@ -313,3 +313,86 @@ export const fetchPlayers = (q: string): Promise<{ players: PlayerSummary[] }> =
   request(`/api/v1/admin/players${q ? `?q=${encodeURIComponent(q)}` : ""}`);
 export const fetchRewind = (username: string): Promise<Rewind> =>
   request(`/api/v1/admin/players/${encodeURIComponent(username)}/rewind`);
+
+// --- announcements (IDEA-052) -----------------------------------------------
+
+export interface AdminAnnouncement {
+  id: string;
+  kind: "release" | "notice";
+  version: string | null;
+  title: string;
+  body: string;
+  publishedAt: string | null;
+  isDraft: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AnnouncementDraft {
+  kind: "release" | "notice";
+  version: string | null;
+  title: string;
+  body: string;
+}
+
+export const listAnnouncements = (): Promise<{ items: AdminAnnouncement[] }> =>
+  request("/api/v1/admin/announcements");
+
+export const createAnnouncement = (
+  draft: AnnouncementDraft,
+): Promise<{ announcement: AdminAnnouncement }> =>
+  request("/api/v1/admin/announcements", { method: "POST", body: draft });
+
+export const updateAnnouncement = (
+  id: string,
+  draft: AnnouncementDraft,
+): Promise<{ announcement: AdminAnnouncement }> =>
+  request(`/api/v1/admin/announcements/${id}`, { method: "PATCH", body: draft });
+
+/** Go live, or pull it back to draft. Separate from saving on purpose — the
+ *  composer's Save must never be one mis-click from every player's screen. */
+export const publishAnnouncement = (
+  id: string,
+  published: boolean,
+): Promise<{ announcement: AdminAnnouncement }> =>
+  request(`/api/v1/admin/announcements/${id}/publish`, {
+    method: "POST",
+    body: { published },
+  });
+
+export const deleteAnnouncement = (id: string): Promise<void> =>
+  request(`/api/v1/admin/announcements/${id}`, { method: "DELETE" });
+
+/** Mirrors the server's limits (validation/announcement.ts) so the composer can
+ *  show a live counter instead of discovering them on submit. The SERVER is
+ *  still the authority — these are for the operator's benefit, not a check. */
+export const LIMITS = { title: 120, body: 4000, version: 20 } as const;
+
+export interface NotificationsReport {
+  /** False when VAPID is unconfigured — then nobody CAN subscribe, and a zero
+   *  reach means "off", not "nobody wanted it". */
+  pushEnabled: boolean;
+  reach: {
+    players_total: number;
+    players_subscribed: number;
+    devices: number;
+    wants_announcements: number;
+    wants_rank: number;
+    devices_healthy: number;
+    devices_failing: number;
+  };
+  engagement: { opened_ever: number; opened_7d: number; never_opened: number };
+  notes: {
+    id: string;
+    kind: string;
+    version: string | null;
+    title: string;
+    publishedAt: string;
+    seenBy: number;
+    audience: number;
+    share: number | null;
+  }[];
+}
+
+export const fetchNotifications = (): Promise<NotificationsReport> =>
+  request("/api/v1/admin/notifications");

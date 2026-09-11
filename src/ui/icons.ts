@@ -66,6 +66,16 @@ export const ICON = {
   install: "download",
 
   // ---- destinations ----
+  /** IDEA-052. The BELL is the news entry point — it lives in the menu's top
+   *  bar beside mute, not in the destination row, because that row is a
+   *  hard-coded 4-up grid whose tiles are already at the 12px label floor on a
+   *  390px screen. A bell also gives the unread dot its natural home. */
+  news: "notifications",
+  /** IDEA-052. The megaphone, for a release-note card inside the News screen —
+   *  distinct from the bell so "there is something new" and "this is what
+   *  changed" do not wear the same mark. */
+  announcement: "campaign",
+
   challenge: "trophy",
   shop: "storefront",
   board: "leaderboard",
@@ -77,10 +87,11 @@ export const ICON = {
   // ---- input ----
   swipe: "swipe",
   dpad: "stadia_controller",
-  /** IDEA-049. A real Material Symbols name, verified the only way that
-   *  actually proves it: the 47-name subset came back 272 bytes heavier than
-   *  the 46-name one, where a name the family does not have adds 24 bytes of
-   *  ligature string and no outline at all. */
+  /** IDEA-049. A real Material Symbols name. It was verified at the time by
+   *  file size (the 47-name subset came back 272 bytes heavier than the
+   *  46-name one) — that test no longer works and `npm run test:icon-font`
+   *  replaced it; see the recipe in tokens.css. The glyph is genuinely there,
+   *  which that suite now proves by rendering it. */
   stick: "joystick",
   up: "keyboard_arrow_up",
   down: "keyboard_arrow_down",

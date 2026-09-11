@@ -52,8 +52,8 @@
      - latin only (usernames are [A-Za-z0-9_-] and every string is English);
      - Baloo 2 and Quicksand are variable, so ONE file covers each family's
        whole weight range — the CDN served the same bytes for every weight;
-     - Material Symbols is cut to the 47 icons `src/ui/icons.ts` actually
-       names, which is 8.8 KiB against ~3 MB for the full family.
+     - Material Symbols is cut to the 49 icons `src/ui/icons.ts` actually
+       names, which is 8.9 KiB against ~3 MB for the full family.
 
    ADDING AN ICON MEANS RE-CUTTING THE SUBSET. A name that is not in the file
    renders as that name in plain text, exactly as above. Refetch with:
@@ -64,13 +64,23 @@
    (src/ui/icons.ts) — which is ALSO the complete list, because nothing
    addresses this font any other way.
 
-   AND CHECK THE GLYPH ACTUALLY ARRIVED. An icon_name the family does not have
-   is not rejected — the CSS endpoint answers 200 either way — so the only
-   honest check is the file SIZE against the same request without the new name:
-   a real glyph adds a couple of hundred bytes, a name that does not exist adds
-   about two dozen (its ligature string, pointing at nothing). Re-fetching the
-   current 46 reproduced the shipped file byte for byte, which is what makes
-   that comparison meaningful.
+   AND CHECK THE GLYPH ACTUALLY ARRIVED — WITH `npm run test:icon-font`.
+   An icon_name the family does not have is not rejected; the CSS endpoint
+   answers 200 either way.
+
+   That check used to be a file-SIZE comparison ("a real glyph adds a couple of
+   hundred bytes, a nonexistent name about two dozen"). DO NOT USE IT — measured
+   2026-09-09 it no longer holds in either direction: a bogus name now adds
+   EXACTLY ZERO bytes (Google drops it silently), while `campaign` and
+   `notifications` together added only 68, which the old rule would have read as
+   two missing glyphs. Re-fetching the current list also no longer reproduces
+   the shipped file byte for byte — the upstream family has been rebuilt since.
+
+   scripts/test-icon-font.ts checks the thing itself instead of a proxy: it
+   renders every name in ICON at 24px and measures it. A present glyph is one
+   square icon (~24px); a missing one prints its own word and runs to 300px.
+   No threshold to tune, and it carries a control so a pass cannot be vacuous.
+   It needs a browser, so it is not in `npm test` — run it after any re-cut.
 
    ALWAYS ADDRESS A GLYPH BY LIGATURE NAME, NEVER BY CODEPOINT. The subsetter
    does not preserve Material Symbols' original private-use codepoints: cutting
