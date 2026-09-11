@@ -1,0 +1,20 @@
+# Line endings.
+#
+# This machine has `core.autocrlf = true`, so without a rule here git writes
+# CRLF into the working tree — and docker-compose BIND-MOUNTS ./server/migrations
+# straight into the api container. That combination breaks the migration runner:
+# scripts/migrate.ts fingerprints each .sql with a sha256 of its BYTES and
+# refuses to start when an already-applied migration's contents have changed.
+# A CRLF checkout of an LF-committed file is a different byte string, so the
+# guard fires on a file nobody edited, and the API crash-loops with
+# "006_run_stats.sql has already been applied but its contents have changed".
+#
+# It stayed hidden because the running container predated the bind mount and
+# read LF copies baked into the image; it surfaced the moment that container was
+# recreated. Forcing LF makes the working tree match the blob, so the checksum
+# is the same on Windows, in the container, in CI and on the server.
+*.sql text eol=lf
+
+# The same fingerprint-the-bytes reasoning applies to anything else whose
+# content is hashed or byte-compared rather than merely parsed.
+*.sh   text eol=lf
