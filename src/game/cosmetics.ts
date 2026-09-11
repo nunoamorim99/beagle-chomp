@@ -51,6 +51,41 @@ export interface BeagleCoat {
   iris?: number;
 }
 
+/**
+ * IDEA-064: what a coat DOES, beyond what it looks like.
+ *
+ * Every beagle carries exactly one perk, and the perk is part of the coat's
+ * identity rather than a separate purchase — which is the whole reason the shop
+ * calls these "Beagles" and not "skins". A later cosmetic layer (pirate hat,
+ * football kit) dresses a beagle; it does not replace one, and it carries no
+ * perk of its own.
+ *
+ * Only the ID lives here. The MAGNITUDES are balance numbers and live in
+ * config.ts's BEAGLE_PERKS, and the rules for reading either — including that
+ * perks are CLASSIC ONLY — live in perks.ts. Nothing else may map an id to a
+ * number.
+ *
+ * "unlocksTribute" is the odd one and is written down rather than left as an
+ * absence: the Pac-Beagle's perk is that owning it reveals the Ghost enemy and
+ * the Arcade Night board. That happens at PURCHASE time in profileStore, so
+ * there is nothing for perks.ts to compute during a run — but a coat with no
+ * `perk` field at all would read as an oversight, and the shop needs a line to
+ * print for it like it does for the other four.
+ */
+export type BeaglePerkId =
+  | "startShield"
+  | "extraLifePerMap"
+  | "doubleCoins"
+  | "fruitBonus"
+  | "unlocksTribute";
+
+export interface BeaglePerk {
+  id: BeaglePerkId;
+  /** One line for the shop card, in the player's language. Says what the perk
+   *  DOES, never what it is called internally. */
+  label: string;
+}
+
 export interface BeagleSkin {
   id: string;
   name: string;
@@ -63,9 +98,23 @@ export interface BeagleSkin {
    * on. Moving the price into the action button freed the line, and this is
    * what goes in it. Required, not optional: a card with no description is a
    * card with a hole in it.
+   *
+   * IDEA-064: it describes what the coat IS — its colours and markings — and
+   * never what its perk DOES. The perk has its own line directly underneath
+   * (`.shop-hero-perk`), and a blurb that repeated it would put the same fact
+   * in two adjacent rows, which is the exact duplication that moving the price
+   * onto the action button removed from this panel in the first place.
    */
   blurb: string;
   coat: BeagleCoat;
+  /**
+   * IDEA-064: the one thing this beagle does that the others don't.
+   *
+   * Required, not optional. A coat with no perk would be strictly worse than
+   * every other coat for the same price, and "which beagle do I take in" is
+   * meant to be a real decision rather than a colour preference.
+   */
+  perk: BeaglePerk;
   /** Shop price in coins (IDEA-012). 0 means "owned from the start, never
    *  purchasable" — currently true only for the default skin. */
   price: number;
@@ -87,6 +136,11 @@ export const BEAGLE_SKINS: readonly BeagleSkin[] = [
     // `tan` and `black`, not just as an ear colour — and it carries more of
     // that job now that `black` is a real black rather than a dark brown.
     coat: { tan: 0xd6934f, white: 0xf0efec, black: 0x1b1815, ear: 0xb87438, nose: 0x141210 },
+    // The free coat has a real perk on purpose. It is the one every player
+    // starts on, so a blank slot there would make "beagles have powers" a thing
+    // you only discover after spending 25 coins — and a shield is the perk that
+    // teaches the shield power-up's own rules for free.
+    perk: { id: "startShield", label: "Starts every run with a shield" },
     // Default skin: free and always owned (see profileStore.ts's
     // defaultProfile()).
     price: 0,
@@ -102,6 +156,11 @@ export const BEAGLE_SKINS: readonly BeagleSkin[] = [
     // it doesn't flatten into a silhouette), and an ear a shade darker
     // than the body for a tonal, all-brown liver look.
     coat: { tan: 0x8a5a2b, white: 0xe8dcc8, black: 0x3a2416, ear: 0x5c3a1e, nose: 0x141210, iris: 0x4f3215 },
+    // The endurance coat: a life at the start of every map, the first included,
+    // so a run opens on four. LIVES.max is what keeps it honest — the grant is
+    // wasted at the cap, so Cookie buys depth on a long run rather than
+    // immortality on a short one.
+    perk: { id: "extraLifePerMap", label: "An extra life at the start of every map" },
     price: 25,
   },
   {
@@ -114,13 +173,45 @@ export const BEAGLE_SKINS: readonly BeagleSkin[] = [
     // saddle/markings so it reads as a lemon beagle rather than a
     // tricolor; ear a gentle tan-brown that stays close to the body tone.
     coat: { tan: 0xe4c58a, white: 0xfaf6ee, black: 0x9c7248, ear: 0xb6864f, nose: 0x141210, iris: 0x6f522e },
+    // The money maker. Coins are the whole shop economy and there are only five
+    // in a map (IDEA-016 v2 removed every other source), so doubling them is
+    // the strongest long-game perk here — and the only one that pays out after
+    // the run is over rather than during it.
+    perk: { id: "doubleCoins", label: "Every coin you grab is worth double" },
     price: 25,
   },
+  {
+    id: "pepper",
+    name: "Pepper",
+
+    blurb: "Cool blue-tick grey · near-black saddle",
+    // Cool blue-tick grey-black coat: a slate/blue-grey body, white
+    // belly/snout, near-black saddle/nose/eyes for strong markings, and a
+    // dark cool grey ear — deliberately cool-toned to contrast the three
+    // warm coats above.
+    coat: { tan: 0x7d8794, white: 0xf2f3f5, black: 0x1c1f24, ear: 0x4a4f57, nose: 0x141210, iris: 0x5c6266 },
+    // The scoring coat: every fruit pays BEAGLE_PERKS.fruitBonusPoints on top
+    // of the ladder, so a mango is 600 and — more to the point — an apple is
+    // 200, which doubles the worth of the fruit you were going to walk past.
+    perk: { id: "fruitBonus", label: "Every fruit you eat pays 100 more" },
+    price: 25,
+  },
+  // LAST IN THE LIST, and the position is deliberate (Nuno's call). This is the
+  // only coat that is not just another dog: it costs twice what its siblings
+  // do, it is the only one that changes the model's silhouette, and its perk
+  // buys two OTHER items rather than changing how a run plays. The rail reads
+  // as four comparable coats and then the special one, instead of the special
+  // one interrupting the four — which is also the order the rail scrolls in, so
+  // a player meets the ordinary choice before the upsell.
+  //
+  // Nothing is indexed by position here (getBeagleSkin looks up by id, and
+  // DEFAULT_BEAGLE_SKIN_ID is resolved by id too), so order is purely what the
+  // shop shows. cycleBeagleSkinId walks it, which is the only other reader.
   {
     id: "pacbeagle",
     name: "Pac-Beagle",
 
-    blurb: "Yellow coat, red boots · unlocks the Ghost",
+    blurb: "Yellow coat, red boots · angry arcade brows",
     // A tip of the collar to the game this one is descended from. The mapping
     // of the reference onto the beagle's own material groups is deliberate
     // rather than a flat repaint:
@@ -132,7 +223,10 @@ export const BEAGLE_SKINS: readonly BeagleSkin[] = [
     //   paw   -> the red boots
     //   brow  -> the angry black brows, the one thing that makes it read as a
     //            tribute rather than as a yellow dog
-    // Buying this also unlocks the Ghost — see TRIBUTE_ENEMY_SKIN_ID.
+    // Buying this also unlocks the Ghost AND the Arcade Night board — see
+    // TRIBUTE_ENEMY_SKIN_ID and themes.ts's TRIBUTE_MAZE_THEME_ID. That IS its
+    // perk (IDEA-064): it is the only coat whose power is paid out once, at the
+    // till, instead of every run.
     // Brighter than the first pass across the board. The cel ramp quantises a
     // lit surface into three bands, and its middle band pulled a 0xf7c600 body
     // down to a mustard/olive — the one colour a Pac-Man tribute cannot be. The
@@ -148,21 +242,15 @@ export const BEAGLE_SKINS: readonly BeagleSkin[] = [
       nose: 0xed8207,
       iris: 0xed8207,
     },
-    // Dearer than the plain coats: it is the only skin that unlocks another
-    // one, and the only one that changes the model's silhouette (brows).
+    // The tribute coat's perk is the unlock itself. No run-time effect, which
+    // is why perks.ts computes nothing for it — the whole payout happens in
+    // profileStore.buyBeagleSkin the moment it is bought.
+    perk: { id: "unlocksTribute", label: "Unlocks the Ghost enemy and the Arcade Night board" },
+    // Dearer than the plain coats: it is the only skin that unlocks two OTHER
+    // items, and the only one that changes the model's silhouette (brows). At
+    // 50 it buys three things, which is what keeps it worth twice a plain coat
+    // now that every coat carries a perk of its own.
     price: 50,
-  },
-  {
-    id: "pepper",
-    name: "Pepper",
-
-    blurb: "Cool blue-tick grey · near-black saddle",
-    // Cool blue-tick grey-black coat: a slate/blue-grey body, white
-    // belly/snout, near-black saddle/nose/eyes for strong markings, and a
-    // dark cool grey ear — deliberately cool-toned to contrast the three
-    // warm coats above.
-    coat: { tan: 0x7d8794, white: 0xf2f3f5, black: 0x1c1f24, ear: 0x4a4f57, nose: 0x141210, iris: 0x5c6266 },
-    price: 25,
   },
 ] as const;
 
@@ -265,12 +353,55 @@ export interface EnemySkin {
 }
 
 export const ENEMY_SKINS: readonly EnemySkin[] = [
-  // Default skin: free and always owned (see profileStore.ts's
-  // defaultProfile()). The beetle took this over from the ghost — the game is
-  // a garden, and a beetle belongs in it in a way a ghost never did.
-  { id: "beetle", name: "Beetle", blurb: "The garden's own · shell and six legs", price: 0 },
+  // THE DEFAULT (IDEA-064). Free and always owned (see profileStore.ts's
+  // defaultProfile()).
+  //
+  // It took this over from the beetle, which had taken it from the ghost. The
+  // argument each time has been the same one and the flea finally wins it
+  // outright: the enemy a player meets before they have bought anything should
+  // say what THIS game is, and this game is a beagle. A beetle is a garden
+  // creature and belongs in the garden; a flea belongs on the dog, which is one
+  // step more specific and the only skin in the cast that could not exist in
+  // any other game.
+  //
+  // Every account created before this owns the beetle and not the flea.
+  // initProfileFromCache grants the current default for free on the next boot,
+  // exactly as it did when the beetle replaced the ghost — so nobody loses the
+  // beetle they already have and everybody gains the flea.
+  { id: "flea", name: "Flea", blurb: "The beagle's own pest · banded shell, spring-loaded legs", price: 0 },
+  // Priced with its siblings now that it is no longer the free one. Existing
+  // accounts already OWN it, so this is only a price for somebody arriving
+  // after this change.
+  { id: "beetle", name: "Beetle", blurb: "The garden's own · shell and six legs", price: 25 },
   { id: "bee", name: "Bee", blurb: "Striped and buzzing · wings that blur", price: 25 },
   { id: "ladybug", name: "Ladybug", blurb: "Red shell, black spots · small and quick", price: 25 },
+  // The widest enemy in the game, and the only one that is wider than it is
+  // tall — which is the whole point of it: the other four are bugs of roughly
+  // one silhouette. Priced with its siblings.
+  { id: "crab", name: "Crab", blurb: "Sideways and armed · wide shell, open pincers", price: 25 },
+  // Priced with the rest — another sibling skin, not a premium one. The blurb
+  // leads with the proboscis because that is the feature the model is built
+  // around: it is the one thing no other enemy in the cast has, and the only
+  // reliable separator from the bee once both are wearing the same team colour.
+  { id: "mosquito", name: "Mosquito", blurb: "All needle and wings · the garden's whine", price: 25 },
+  // THE SUSHI PAIR (IDEA-056, IDEA-057). The first enemies in the game that are
+  // not bugs, and the first that stand upright — a beagle chasing its dinner
+  // rather than a garden pest. They ship together on purpose: each is built
+  // against the other as its main risk, and the pair reads as one idea. Priced
+  // with their siblings; nothing about them is premium.
+  { id: "maki", name: "Maki Roll", blurb: "Nori, rice and a salmon face · stands on two boots", price: 25 },
+  { id: "nigiri", name: "Nigiri", blurb: "A prawn on a rice pillow · belted in nori", price: 25 },
+  // THE PIZZA (IDEA-058). The first enemy that is a PERSON rather than an
+  // animate object: it has hair, it wears gloves and boots, and it walks. Also
+  // the tallest and most vertical thing in the cast, and the only triangle.
+  // Priced with its siblings — the cast has no premium tier and this is not
+  // where one starts.
+  { id: "pizza", name: "Pizza Slice", blurb: "Crust for hair, gloves and boots · the one that walks", price: 25 },
+  // THE BURGER (IDEA-059). Ten enemies have a body that is ONE mass wearing
+  // marks; this one's body is a STACK of six contrasting bands, and it is the
+  // only enemy in the game with FINGERS — it walks around holding a V up at
+  // the beagle. Priced with its siblings, like every skin since IDEA-009.
+  { id: "burger", name: "Burger", blurb: "Six stacked bands and a peace sign · sesame and red boots", price: 25 },
   // THE EASTER EGG. Free, but not listed until it is revealed, and revealed by
   // owning the Pac-Beagle coat: the two tributes to the arcade game this one
   // descends from unlock each other, which needs no UI copy to explain. Price 0
@@ -280,7 +411,7 @@ export const ENEMY_SKINS: readonly EnemySkin[] = [
   { id: "ghost", name: "Ghost", blurb: "The arcade original · unlocked by Pac-Beagle", price: 0, secret: true },
 ] as const;
 
-export const DEFAULT_ENEMY_SKIN_ID = "beetle";
+export const DEFAULT_ENEMY_SKIN_ID = "flea";
 
 /**
  * The pair that unlocks each other.
@@ -298,9 +429,21 @@ export const TRIBUTE_ENEMY_SKIN_ID = "ghost";
  *
  * A secret skin is listed once it has been earned — either because the tribute
  * coat that unlocks it is owned, or because the skin itself already is. That
- * second clause is not redundant: every account created before the ghost became
+ * second clause is not redundant: an account created before the ghost became
  * secret already owns it, and hiding a skin somebody owns (and may have
  * equipped) would read as it being taken away.
+ *
+ * IDEA-064, AND THIS IS WORTH KNOWING BEFORE TRUSTING THAT CLAUSE: for two
+ * releases it matched EVERY account, so the ghost was listed for everyone and
+ * "buy the Pac-Beagle to unlock the Ghost" was copy nobody could ever reach.
+ * Nothing here was wrong. `001_init.sql` defaulted `owned_enemy_skin_ids` to
+ * ARRAY['ghost'] — written when the ghost WAS the default — and never moved
+ * when the beetle replaced it or when the flea did, so Postgres handed the
+ * ghost to every account it created. `012_default_enemy_skin_flea.sql` moves
+ * the defaults and takes the ghost back from anyone who did not earn it.
+ * The lesson generalises past the ghost: **a rule expressed as "unless they
+ * already own it" is only as good as what grants ownership**, and the grant may
+ * not be in this codebase at all.
  *
  * Lives here rather than in ui/shop.ts because it is a rule about the
  * REGISTRY, not about markup — which also lets it be tested without a browser.

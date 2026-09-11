@@ -49,7 +49,13 @@ import type { MazeTheme, ThemePalette } from "../game/themes";
 // entry in themes.ts) — a full regeneration would silently discard every
 // theme's own descriptive comments except the one being edited, which
 // generateFullThemesFile must not do.
-import themesSource from "../game/themes.ts?raw";
+//
+// IDEA-062: read through sourceStore rather than holding the `?raw` string
+// directly. A `?raw` import is frozen at PAGE LOAD, which was harmless only
+// while every save reloaded the page — now that it does not, splicing into
+// the page-load text would make a second save revert the first. sourceStore
+// advances on every successful write; see its header.
+import { sourceTextFor } from "./sourceStore";
 
 /** Same shape as ThemePalette, but `bloomColors` is a genuinely mutable
  *  array — a deep-copied WORKING palette the inspector's add/remove-bloom-
@@ -253,6 +259,15 @@ export function formatThemeEntry(theme: WorkingTheme, indent = 2): string {
     `${i2}wallTexture: ${JSON.stringify(p.wallTexture)},`,
     `${i2}wallEmissive: ${hex(p.wallEmissive)},`,
     `${i2}wallEmissiveIntensity: ${p.wallEmissiveIntensity},`,
+    // IDEA-060. Same reason as wallTexture above, and this writer is exactly
+    // the trap test-board-surfaces.ts exists to catch: a ThemePalette field
+    // the writer does not know about is silently dropped from every theme
+    // saved in the editor, so a garden saved from the Board tab would come
+    // back with no fence at all and no error anywhere.
+    `${i2}fence: ${JSON.stringify(p.fence)},`,
+    `${i2}fenceColor: ${hex(p.fenceColor)},`,
+    `${i2}groundDetail: ${JSON.stringify(p.groundDetail)},`,
+    `${i2}groundDetailColor: ${hex(p.groundDetailColor)},`,
     `${i2}floor: ${hex(p.floor)},`,
     `${i2}floorTexture: ${JSON.stringify(p.floorTexture)},`,
     `${i2}floorEmissive: ${hex(p.floorEmissive)},`,
@@ -502,7 +517,7 @@ function findSpanForId(src: string, spans: readonly EntrySpan[], id: string): En
  * null-on-failure contract in fileExport.ts.
  */
 export function generateFullThemesFile(theme: WorkingTheme, baseThemeId: string): string | null {
-  const src = themesSource;
+  const src = sourceTextFor("src/game/themes.ts");
   const spans = findThemeEntrySpans(src);
   if (!spans) return null;
 

@@ -19,6 +19,16 @@
         <button id="modePickupsBtn" class="mode-btn" data-mode="pickups">Pickups</button>
         <button id="modeBoardBtn" class="mode-btn" data-mode="board">Board &amp; Themes</button>
         <button id="modePropsBtn" class="mode-btn" data-mode="props">Props</button>
+        <!-- IDEA-062 v4: the game's tunable NUMBERS (src/game/config.ts).
+             No viewport of its own — these are values whose effect is only
+             visible by playing, and a 3D pane beside a "ghost speed" slider
+             would imply a feedback loop that does not exist. -->
+        <button id="modeBalanceBtn" class="mode-btn" data-mode="balance">Balance</button>
+        <!-- IDEA-062 v5: the IDEA-060 garden machinery no theme palette can
+             reach — the picket fence's geometry and the ground dressing's
+             scatter. Reuses board mode's own stage, because every number in
+             here is judged by looking at the board. -->
+        <button id="modeWorldBtn" class="mode-btn" data-mode="world">World</button>
       </div>
       <aside id="treePane">
         <h2 class="pane-title" id="treePaneTitle">Parts</h2>
@@ -39,8 +49,11 @@
              than joining the right-hand GUI pane: it drives a thing you are
              looking AT, and the reference editor (three.js editor's
              Viewport.Controls) puts it in the same place for the same reason.
-             Character/Pickups modes only — main.ts hides it elsewhere, since
-             board and props modes have no gizmo of their own yet. -->
+             IDEA-062: live in EVERY mode that has something to transform —
+             character parts, prop components and board placements alike.
+             main.ts's syncGizmo decides from the active mode's own selection,
+             and cuts the axis handles down to what a board placement's data
+             can actually hold. -->
         <div id="gizmoBar">
           <button id="gizmoTranslateBtn" class="gizmo-btn active" data-gizmo="translate" title="Move — W">✥</button>
           <button id="gizmoRotateBtn" class="gizmo-btn" data-gizmo="rotate" title="Rotate — E">⟳</button>
@@ -71,6 +84,18 @@
         <!-- Scene readout (objects/verts/tris/draw calls). Top-RIGHT: the
              orientation cube owns the bottom-right corner at r169 (ViewHelper
              hard-codes that offset), and the gizmo bar owns the top-left. -->
+        <!-- IDEA-062: the stale-module chip. Editor saves no longer reload
+             the page (vite.config.ts's handleHotUpdate), which is what stops
+             a save in one tab destroying unsaved work in the others — but it
+             leaves the IMPORTED module behind the file on disk for the mesh
+             tabs, so switching characters after a save would rebuild from
+             pre-save source and look like the save was lost. Saying so is
+             better than letting it be discovered. Hidden until a write
+             actually happens. -->
+        <div id="staleChip" hidden>
+          <span id="staleChipText"></span>
+          <button id="staleChipReload" type="button">Reload</button>
+        </div>
         <div id="viewportInfo"></div>
         <div id="viewportHint">
           drag to orbit · scroll to zoom · click a part to select ·
@@ -83,6 +108,8 @@
         <div id="charGuiHost"></div>
         <div id="boardGuiHost" hidden></div>
         <div id="propsGuiHost" hidden></div>
+        <div id="balanceGuiHost" hidden></div>
+        <div id="worldGuiHost" hidden></div>
       </aside>
       <section id="codePane">
         <div id="codeTabs">

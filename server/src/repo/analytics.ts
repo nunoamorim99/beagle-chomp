@@ -276,17 +276,38 @@ const SHARE_COLUMNS: readonly ShareColumn[] = [
   "control_scheme",
 ];
 
-export async function equippedShare(column: ShareColumn): Promise<ShareRow[]> {
+/**
+ * Optionally restrict to one mode.
+ *
+ * Added for the maze theme, and it is a correctness fix rather than a filter
+ * for convenience. IDEA-063 made every one of the forty challenge levels FORCE
+ * a theme, owned or not — that is the whole point of the Grand Tour, which
+ * shows a player the five themes they did not buy. But `run_stats.maze_theme_id`
+ * records what the player had EQUIPPED, so on a challenge run it names a theme
+ * that was not on screen. Counting those into "which theme do they play in"
+ * answers neither question: not what they chose (the tour overrode it) and not
+ * what they saw (the tour picked it).
+ *
+ * Classic runs are the only ones where equipped and played are the same thing,
+ * so that is where the theme question is asked. The coat, the enemy set and the
+ * control scheme are NOT forced by any mode, so they stay across all runs.
+ */
+export async function equippedShare(
+  column: ShareColumn,
+  mode?: "classic" | "challenge",
+): Promise<ShareRow[]> {
   if (!SHARE_COLUMNS.includes(column)) {
     throw new Error(`equippedShare: refusing unknown column ${column}`);
   }
+  const params = mode ? [mode] : [];
   const { rows } = await query<ShareRow>(
     `SELECT ${column} AS value, count(*)::int AS runs,
             count(DISTINCT user_id)::int AS players
        FROM run_stats
-      WHERE ${column} IS NOT NULL
+      WHERE ${column} IS NOT NULL${mode ? " AND mode = $1" : ""}
       GROUP BY 1
       ORDER BY 2 DESC`,
+    params,
   );
   return rows;
 }

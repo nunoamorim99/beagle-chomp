@@ -45,6 +45,16 @@ export interface PropSelectionContext {
   onVisibleCommitted(node: PartNode, before: boolean, after: boolean): void;
   onMaterialCommitted(node: PartNode, channel: "color" | "emissive", before: number, after: number): void;
   onParamCommitted(record: LiveAddedPropPart, key: string, before: number, after: number): void;
+  /** IDEA-062: "reset to factory" — drop this path's SAVED edit entirely and
+   *  rebuild the preview.
+   *
+   *  Needed because the save path now MERGES onto the def's saved layer
+   *  instead of replacing it (the fix for edits deleting each other). That
+   *  makes a saved edit sticky, which is the point — but it also means
+   *  dragging a part back to where it looks untouched only returns it to its
+   *  SAVED pose, since the baseline IS the saved value. Without this there
+   *  is no way to undo a saved edit from inside the editor at all. */
+  onResetToFactory(node: PartNode): void;
 }
 
 export interface PropsPartInspectorCallbacks {
@@ -250,6 +260,21 @@ export function createPropsPartInspector(container: HTMLElement, cb: PropsPartIn
     // "delete" for a part the factory always rebuilds), an added part is
     // truly removed from the scene. Same confirm-free "+N inside" warning
     // label as inspector.ts's own delete button.
+    // IDEA-062: "reset to factory" — only offered when this path actually
+    // HAS a saved edit to drop (IDEA-041's rule: never show a control wired
+    // to nothing). An added part has no saved EDIT to clear — its whole
+    // record is its transform, and "delete part" is already how you remove
+    // it — so it never gets one either.
+    if (!ctx.addedRecord && ctx.log.hasSavedEdit(node.path)) {
+      f.add({ reset: () => ctx.onResetToFactory(node) }, "reset")
+        .name("reset to factory ↺")
+        .domElement.setAttribute(
+          "title",
+          "Discard this part's SAVED edit and rebuild it from the factory shape. " +
+            "Dragging it back by hand only returns it to the saved pose — the saved value is the baseline.",
+        );
+    }
+
     if (node.path !== "") {
       const subtreeCount = countDescendants(o);
       const label = subtreeCount > 0 ? `delete part + ${subtreeCount} inside 🗑` : "delete part 🗑";

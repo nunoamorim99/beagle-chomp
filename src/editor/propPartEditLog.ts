@@ -18,7 +18,12 @@
 // the inspector enters the log.
 import * as THREE from "three";
 import { type PartNode } from "./partTree";
-import { type PropPartEdit, type AddedPropPart, type PropPrimKind } from "../game/props";
+import {
+  type PropPartEdit,
+  type AddedPropPart,
+  type PropPartLayer,
+  type PropPrimKind,
+} from "../game/props";
 import { hasEmissive, isEditableMaterial } from "../render/toon";
 
 export type Vec3Tuple = [number, number, number];
@@ -54,7 +59,19 @@ export interface LiveAddedPropPart {
   parentPath: string;
   kind: PropPrimKind;
   object: THREE.Mesh;
-  material: THREE.MeshStandardMaterial;
+  /** IDEA-062: a MeshToonMaterial, not MeshStandardMaterial.
+   *
+   *  board.ts's addPropPart builds every added prop part with `toon()`, so
+   *  an ADOPTED part (one a previous session saved, rebuilt by
+   *  makePropFromDef) always arrives carrying one — and the editor used to
+   *  build FRESH ones with `new THREE.MeshStandardMaterial(...)`, which meant
+   *  the preview and the shipped game shaded the same part differently and
+   *  quietly broke the project's one-material-model cel-shading rule. Both
+   *  paths are toon now, so this is the honest type. It also keeps the
+   *  `emissiveIntensity` read in toPropPartLayer sound — `EditableMaterial`
+   *  would have widened this to include MeshBasicMaterial, which has no
+   *  emissive channel at all. */
+  material: THREE.MeshToonMaterial;
   params: Record<string, number>;
 }
 
@@ -64,6 +81,53 @@ function tuple(v: { x: number; y: number; z: number }): Vec3Tuple {
 
 function near(a: Vec3Tuple, b: Vec3Tuple): boolean {
   return Math.abs(a[0] - b[0]) < EPS && Math.abs(a[1] - b[1]) < EPS && Math.abs(a[2] - b[2]) < EPS;
+}
+
+/** IDEA-062: the CHANNELS a PropPartEdit can carry, besides its `path` key.
+ *  Written out rather than derived with a `keyof` filter so the merge below
+ *  is a plain loop over a literal list — a new optional field on
+ *  PropPartEdit that is not added here is silently not merged, which is the
+ *  same hand-written-field trap propsCodegen.ts's PARAM_FIELD_ORDER has.
+ *  scripts/test-prop-part-merge.ts pins every entry. */
+const EDIT_CHANNELS = ["position", "rotation", "scale", "color", "emissive", "visible"] as const;
+
+/** Copies every channel `next` actually carries onto `base`, leaving the rest
+ *  of `base` alone — the per-channel half of IDEA-062's merge. Written as an
+ *  explicit switch rather than an index-signature cast so `strict` checks
+ *  every assignment: a new optional field on PropPartEdit that is added to
+ *  EDIT_CHANNELS but not here is a COMPILE error rather than a silent drop,
+ *  which is the opposite of how propsCodegen's hand-written field list
+ *  behaves and the reason this one is safe to hand-write. */
+function mergeEdit(base: PropPartEdit, next: PropPartEdit): PropPartEdit {
+  const out: PropPartEdit = { ...base };
+  for (const channel of EDIT_CHANNELS) {
+    if (next[channel] === undefined) continue;
+    switch (channel) {
+      case "position": out.position = next.position; break;
+      case "rotation": out.rotation = next.rotation; break;
+      case "scale": out.scale = next.scale; break;
+      case "color": out.color = next.color; break;
+      case "emissive": out.emissive = next.emissive; break;
+      case "visible": out.visible = next.visible; break;
+    }
+  }
+  return out;
+}
+
+/** Deep-copies a PropPartLayer so the log can hold the def's saved layer
+ *  without aliasing the working library's arrays (same contract as
+ *  propsWorking.ts's clonePropPartLayer, duplicated here rather than
+ *  imported because that module is the WORKING-COPY shape's owner and this
+ *  one must not depend on it — propPartEditLog is used by the pure merge
+ *  test with no working library in sight). Tuple fields are never mutated in
+ *  place (every edit REPLACES the whole tuple), so a per-entry spread is a
+ *  genuine deep copy. */
+function cloneLayer(layer: PropPartLayer | undefined): PropPartLayer | undefined {
+  if (!layer) return undefined;
+  return {
+    edits: layer.edits.map((e) => ({ ...e })),
+    added: layer.added.map((a) => ({ ...a, params: { ...a.params } })),
+  };
 }
 
 let addedPartCounter = 0;
@@ -111,18 +175,42 @@ export class PropPartEditLog {
    *  untouched def were silently deleting its own already-saved parts). */
   private dirty = false;
 
+  /** IDEA-062: the def's ALREADY-SAVED layer, as it stood when this log was
+   *  snapshotted. Deep-copied on the way in so nothing here can alias — let
+   *  alone mutate — the working library's own arrays.
+   *
+   *  This exists because of the single worst bug the editor has had. The
+   *  baselines above are captured from the preview mesh, which
+   *  makePropFromDef has ALREADY run applyPropParts over — so a saved edit is
+   *  part of the baseline, and `toPropPartLayer()` can only ever describe
+   *  THIS SESSION's deltas on top of it. main.ts used to assign that straight
+   *  onto `def.parts`, which meant every previously-saved edit was deleted the
+   *  moment you touched one part in a later session (the treehouse went from
+   *  seven edits to one that way). `mergeIntoSaved()` below is the fix: the
+   *  session layer is merged ONTO this, per path and per CHANNEL. */
+  private savedLayer: PropPartLayer | undefined;
+
   /** Snapshot the as-built pose + material of every part. Call once per
    *  preview (re)build. `materialFor` resolves a mesh to its ONE owned
    *  material (props never share materials across parts — see this file's
    *  header) so the baseline can be captured without a separate "collect
    *  materials" pass the way editLog.ts's collectMaterials needs for
-   *  characters.ts's shared coat/body materials. */
-  snapshot(nodes: PartNode[]): void {
+   *  characters.ts's shared coat/body materials.
+   *
+   *  IDEA-062: `saved` is the def's own `parts` field — the layer
+   *  makePropFromDef already baked into the very mesh these baselines are
+   *  read from. Pass it EVERY time, or the merge has nothing to merge onto
+   *  and the destructive-replace bug comes straight back.
+   *
+   *  Note this clears `added`, so main.ts's adoption of previously-saved
+   *  added parts (adoptSaved below) must run AFTER this, never before. */
+  snapshot(nodes: PartNode[], saved?: PropPartLayer): void {
     this.baselines.clear();
     this.materialBaselines.clear();
     this.edits.clear();
     this.added.length = 0;
     this.dirty = false;
+    this.savedLayer = cloneLayer(saved);
     for (const node of nodes) {
       this.baselines.set(node.path, {
         position: tuple(node.object.position),
@@ -232,6 +320,107 @@ export class PropPartEditLog {
   addPart(record: LiveAddedPropPart): void {
     this.dirty = true;
     this.added.push(record);
+  }
+
+  /** IDEA-062: re-adopt a part that a PREVIOUS session added and saved.
+   *
+   *  makePropFromDef rebuilds every `parts.added` entry as an ordinary mesh
+   *  (board.ts's addPropPart), so without this the log's `added` array comes
+   *  back EMPTY on the next load and `mergeIntoSaved` would write
+   *  `added: []` — every previously-added part deleted, in exactly the way
+   *  the treehouse lost six edits. Adoption gives the rebuilt mesh its
+   *  identity back, so the part is carried forward, and so editing it
+   *  updates its own AddedPropPart record rather than emitting a path edit
+   *  against a node applyPropParts will overwrite anyway.
+   *
+   *  Deliberately does NOT set `dirty`: adopting is bookkeeping that runs on
+   *  every preview build, not a user gesture. Setting it here would make
+   *  every prop selection look edited and defeat the `isDirty` guard
+   *  main.ts's merge relies on. */
+  adoptSaved(record: LiveAddedPropPart): void {
+    this.added.push(record);
+  }
+
+  /** IDEA-062: drop a SAVED edit for `path` entirely — "reset this part to
+   *  factory".
+   *
+   *  The merge made every saved edit sticky, which is right, but it also
+   *  means dragging a part back to where it looks unedited only returns it
+   *  to its SAVED pose: the baseline IS the saved value, so `touchTransform`
+   *  prunes the session edit and the saved one survives. Without this there
+   *  would be no way to undo a saved edit from inside the editor at all.
+   *  The caller rebuilds the preview afterwards so the mesh actually returns
+   *  to its factory pose. */
+  clearSavedEdit(path: string): void {
+    if (!this.savedLayer) return;
+    const edits = this.savedLayer.edits.filter((e) => e.path !== path);
+    if (edits.length === this.savedLayer.edits.length) return;
+    this.savedLayer = { edits, added: this.savedLayer.added };
+    this.dirty = true;
+  }
+
+  /** IDEA-062: whether `path` carries a saved edit — drives whether
+   *  propsPartInspector.ts offers a "reset to factory" button at all
+   *  (IDEA-041's rule: no control wired to nothing). */
+  hasSavedEdit(path: string): boolean {
+    return this.savedLayer?.edits.some((e) => e.path === path) ?? false;
+  }
+
+  /**
+   * IDEA-062: the def's saved layer with this session's edits merged ON TOP
+   * — the value main.ts writes back to `def.parts`, replacing the straight
+   * `def.parts = toPropPartLayer()` that was deleting saved work.
+   *
+   * Merge rules, and each one is load-bearing:
+   *
+   *  - **Per CHANNEL, not per path.** A saved `{ path:"6", rotation, scale }`
+   *    where this session only moved position must come out carrying all
+   *    three. Replacing the whole entry is the bug one level down.
+   *  - **`added` comes wholesale from the log**, never from the saved layer:
+   *    adoptSaved has already put every previously-saved added part back
+   *    into it, so the log is the complete picture and a union would double
+   *    every one of them. A part deleted this session is correctly absent.
+   *  - **A saved edit whose path belongs to an adopted added part is
+   *    dropped**, with a warning. applyPropParts runs `edits` BEFORE `added`
+   *    and then rebuilds the added part from its own record, so such an edit
+   *    never had any effect — it is residue from the pre-fix editor, which
+   *    could not tell an added part from a base one.
+   *
+   * Returns `undefined` when the result is empty in both arrays, so the
+   * caller can `delete def.parts` and a never-edited def stays byte-identical
+   * to its hand-authored form.
+   */
+  mergeIntoSaved(): PropPartLayer | undefined {
+    const session = this.toPropPartLayer();
+
+    const merged = new Map<string, PropPartEdit>();
+    for (const saved of this.savedLayer?.edits ?? []) merged.set(saved.path, { ...saved });
+    for (const edit of session.edits) {
+      // `undefined` on a channel means "this session did not touch it",
+      // which must leave the saved value alone. Only a value the session
+      // actually recorded overwrites — and touchTransform has already pruned
+      // any channel wiggled back to baseline. Spreading `edit` wholesale
+      // would NOT do: an absent optional field is still absent from the
+      // spread, but `{ ...saved, ...edit }` is only correct because of that
+      // — and it silently stops being correct the day a channel is ever set
+      // to an explicit undefined. Assigning per channel says what is meant.
+      merged.set(edit.path, mergeEdit(merged.get(edit.path) ?? { path: edit.path }, edit));
+    }
+
+    const addedPaths = new Set<string>();
+    for (const node of this.added) addedPaths.add(node.id);
+    for (const path of merged.keys()) {
+      if (!addedPaths.has(path)) continue;
+      console.warn(
+        `propPartEditLog: dropping a saved edit for "${path}", which is an ADDED part's id — ` +
+          "applyPropParts rebuilds added parts from their own record, so this edit never applied.",
+      );
+      merged.delete(path);
+    }
+
+    const edits = [...merged.values()];
+    if (edits.length === 0 && session.added.length === 0) return undefined;
+    return { edits, added: session.added };
   }
 
   removePart(object: THREE.Object3D): LiveAddedPropPart | undefined {

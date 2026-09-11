@@ -33,6 +33,11 @@ server/.env.*
 .img2threejs/renders/sweep/
 .img2threejs/renders/diag.png
 .img2threejs/detail-zones/
+*.ts.bak
+
+# IDEA-062: the editor writes a one-generation backup beside every file it
+# overwrites (vite.config.ts, dev-only). Never committed.
+*.editorbak
 
 # IDEA-052b: VAPID keypairs are secrets — they belong in Dokploy env vars,
 # never in the repo. Generated with: npx web-push generate-vapid-keys

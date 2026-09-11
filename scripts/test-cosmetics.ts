@@ -76,15 +76,23 @@ import {
   getEquippedMazeThemeId,
   getEquippedMazeTheme,
   setEquippedMazeThemeId,
+  visibleMazeThemes,
+  TRIBUTE_MAZE_THEME_ID,
 } from "../src/game/themes";
 import { coinsDueFromScore } from "../src/game/coins";
 import { shouldFireThreshold } from "../src/game/pickups";
 import {
   CLASSIC_MODIFIERS,
+  CHALLENGE_CHAPTERS,
   CHALLENGE_LEVELS,
   CHALLENGE_LEVEL_COUNT,
+  MAZE_NAMES,
+  THEME_CYCLE,
+  TOUR_LEVEL_COUNT,
+  chapterForLevel,
   getChallengeLevel,
 } from "../src/game/challenges";
+import { BONUS_MAZE_START, MAPS_PER_STAGE } from "../src/game/progression";
 import { MAZE_COUNT, MAZES } from "../src/game/mazes";
 import { Grid, COLS } from "../src/game/grid";
 import { makeEntity, stepEntity, entityWorld, reverseEntity } from "../src/game/movement";
@@ -111,8 +119,8 @@ check("bagel.coat.ear === 0xb87438 (the coat's mid-brown)", bagel.coat.ear === 0
 check("bagel is BEAGLE_SKINS[0]", BEAGLE_SKINS[0].id === "bagel");
 check("exactly 5 skins", BEAGLE_SKINS.length === 5);
 check(
-  "skin ids are bagel, cookie, muffin, pacbeagle, pepper in order",
-  BEAGLE_SKINS.map((s) => s.id).join(",") === "bagel,cookie,muffin,pacbeagle,pepper",
+  "skin ids are bagel, cookie, muffin, pepper, pacbeagle in order (the tribute coat LAST)",
+  BEAGLE_SKINS.map((s) => s.id).join(",") === "bagel,cookie,muffin,pepper,pacbeagle",
 );
 
 // getBeagleSkin(unknown) -> default, never throws.
@@ -182,7 +190,7 @@ BEAGLE_SKINS.forEach((s) => {
   }
   check(
     `cycle visits all 5 skins then wraps to ${DEFAULT_BEAGLE_SKIN_ID}`,
-    seen.join(",") === "bagel,cookie,muffin,pacbeagle,pepper,bagel",
+    seen.join(",") === "bagel,cookie,muffin,pepper,pacbeagle,bagel",
   );
   check("cycleBeagleSkinId(unknown) returns the first skin's id", cycleBeagleSkinId("nope") === BEAGLE_SKINS[0].id);
 }
@@ -211,7 +219,11 @@ console.log("\n=== cosmetics.ts (IDEA-012 shop prices) ===");
   check("getBeagleSkinPrice('cookie') === 25", getBeagleSkinPrice("cookie") === 25);
   check("getBeagleSkinPrice(unknown) === 0 (falls back to default's price)", getBeagleSkinPrice("nope") === 0);
 
-  check("beetle.price === 0 (default, free)", getEnemySkin("beetle").price === 0);
+  // IDEA-064: the flea took the free-default slot from the beetle, so the
+  // beetle now carries a sibling's price. Both are pinned: the pair swapping
+  // is exactly the kind of change that must fail here rather than in the shop.
+  check("flea.price === 0 (default, free)", getEnemySkin("flea").price === 0);
+  check("beetle.price === 25 (no longer the free one)", getEnemySkin("beetle").price === 25);
   check("ghost.price === 0 (the free easter-egg unlock)", getEnemySkin("ghost").price === 0);
   check("bee.price === 25", getEnemySkin("bee").price === 25);
   check("ladybug.price === 25", getEnemySkin("ladybug").price === 25);
@@ -222,13 +234,13 @@ console.log("\n=== cosmetics.ts (IDEA-012 shop prices) ===");
 
 console.log("\n=== cosmetics.ts (IDEA-009 enemy skins) ===");
 
-check("exactly 4 enemy skins", ENEMY_SKINS.length === 4);
+check("exactly 11 enemy skins", ENEMY_SKINS.length === 11);
 check(
-  "enemy skin ids are beetle, bee, ladybug, ghost in order",
-  ENEMY_SKINS.map((s) => s.id).join(",") === "beetle,bee,ladybug,ghost",
+  "enemy skin ids are flea, beetle, bee, ladybug, crab, mosquito, maki, nigiri, pizza, burger, ghost in order",
+  ENEMY_SKINS.map((s) => s.id).join(",") === "flea,beetle,bee,ladybug,crab,mosquito,maki,nigiri,pizza,burger,ghost",
 );
-check("beetle is ENEMY_SKINS[0]", ENEMY_SKINS[0].id === "beetle");
-check("DEFAULT_ENEMY_SKIN_ID is beetle", DEFAULT_ENEMY_SKIN_ID === "beetle");
+check("flea is ENEMY_SKINS[0]", ENEMY_SKINS[0].id === "flea");
+check("DEFAULT_ENEMY_SKIN_ID is flea", DEFAULT_ENEMY_SKIN_ID === "flea");
 
 // The easter egg. The ghost is FREE but SECRET: free is what lets the unlock
 // go through the ordinary purchase path (buyCosmetic refuses on
@@ -258,16 +270,16 @@ check("DEFAULT_ENEMY_SKIN_ID is beetle", DEFAULT_ENEMY_SKIN_ID === "beetle");
   const owns = (id: string): boolean => id === "ghost";
 
   check(
-    "a fresh player is shown 3 enemy skins, and not the ghost",
-    visibleEnemySkins(false, none).map((s) => s.id).join(",") === "beetle,bee,ladybug",
+    "a fresh player is shown 10 enemy skins, and not the ghost",
+    visibleEnemySkins(false, none).map((s) => s.id).join(",") === "flea,beetle,bee,ladybug,crab,mosquito,maki,nigiri,pizza,burger",
   );
   check(
     "owning the tribute coat reveals the ghost",
-    visibleEnemySkins(true, none).map((s) => s.id).join(",") === "beetle,bee,ladybug,ghost",
+    visibleEnemySkins(true, none).map((s) => s.id).join(",") === "flea,beetle,bee,ladybug,crab,mosquito,maki,nigiri,pizza,burger,ghost",
   );
   check(
     "a legacy account that already owns the ghost still sees it without the coat",
-    visibleEnemySkins(false, owns).map((s) => s.id).join(",") === "beetle,bee,ladybug,ghost",
+    visibleEnemySkins(false, owns).map((s) => s.id).join(",") === "flea,beetle,bee,ladybug,crab,mosquito,maki,nigiri,pizza,burger,ghost",
   );
   check(
     "revealing never reorders or drops the ordinary skins",
@@ -278,7 +290,7 @@ check("DEFAULT_ENEMY_SKIN_ID is beetle", DEFAULT_ENEMY_SKIN_ID === "beetle");
 
 // getEnemySkin(unknown) -> default, never throws.
 const unknownEnemy = getEnemySkin("does-not-exist");
-check("getEnemySkin(unknown) falls back to default (beetle)", unknownEnemy.id === DEFAULT_ENEMY_SKIN_ID);
+check("getEnemySkin(unknown) falls back to default (flea)", unknownEnemy.id === DEFAULT_ENEMY_SKIN_ID);
 
 // cycleEnemySkinId wraps around through both skins and back to ghost.
 {
@@ -289,8 +301,8 @@ check("getEnemySkin(unknown) falls back to default (beetle)", unknownEnemy.id ==
     seen.push(id);
   }
   check(
-    `enemy cycle visits all 4 skins then wraps to ${DEFAULT_ENEMY_SKIN_ID}`,
-    seen.join(",") === "beetle,bee,ladybug,ghost,beetle",
+    `enemy cycle visits all 11 skins then wraps to ${DEFAULT_ENEMY_SKIN_ID}`,
+    seen.join(",") === "flea,beetle,bee,ladybug,crab,mosquito,maki,nigiri,pizza,burger,ghost,flea",
   );
   check("cycleEnemySkinId(unknown) returns the first skin's id", cycleEnemySkinId("nope") === ENEMY_SKINS[0].id);
 }
@@ -298,15 +310,87 @@ check("getEnemySkin(unknown) falls back to default (beetle)", unknownEnemy.id ==
 // setEquippedEnemySkinId ignores unknown ids (clamps to default) and a known
 // id round-trips through getEquippedEnemySkinId/getEquippedEnemySkin.
 {
-  setEquippedEnemySkinId("beetle");
-  check("equip known enemy id -> getEquippedEnemySkinId reflects it", getEquippedEnemySkinId() === "beetle");
-  check("equip known enemy id -> getEquippedEnemySkin reflects it", getEquippedEnemySkin().id === "beetle");
+  setEquippedEnemySkinId("bee");
+  check("equip known enemy id -> getEquippedEnemySkinId reflects it", getEquippedEnemySkinId() === "bee");
+  check("equip known enemy id -> getEquippedEnemySkin reflects it", getEquippedEnemySkin().id === "bee");
 
   setEquippedEnemySkinId("totally-bogus");
   check("equip unknown enemy id clamps to default", getEquippedEnemySkinId() === DEFAULT_ENEMY_SKIN_ID);
 
   // restore default state for any later test that might run in this process
   setEquippedEnemySkinId(DEFAULT_ENEMY_SKIN_ID);
+}
+
+// IDEA-064: every coat carries a perk, and the registry is a CONTRACT — the
+// server mirrors the id->perk mapping in catalog.generated.ts and prices three
+// of the four, so a perk added, removed or re-pointed here without `npm run
+// sync` in server/ starts rejecting honest runs with SCORE_ITEM_MISMATCH. This
+// is the check that makes that a failing build rather than a live incident.
+console.log("\n=== cosmetics.ts (IDEA-064 beagle perks) ===");
+{
+  check(
+    "every beagle skin carries a perk",
+    BEAGLE_SKINS.every((s) => typeof s.perk?.id === "string" && s.perk.id.length > 0),
+  );
+  check(
+    "every perk carries a player-facing label",
+    BEAGLE_SKINS.every((s) => typeof s.perk?.label === "string" && s.perk.label.length > 0),
+  );
+  check(
+    "the five perks are distinct — no two coats do the same thing",
+    new Set(BEAGLE_SKINS.map((s) => s.perk.id)).size === BEAGLE_SKINS.length,
+  );
+  check("bagel -> startShield", getBeagleSkin("bagel").perk.id === "startShield");
+  check("cookie -> extraLifePerMap", getBeagleSkin("cookie").perk.id === "extraLifePerMap");
+  check("muffin -> doubleCoins", getBeagleSkin("muffin").perk.id === "doubleCoins");
+  check("pepper -> fruitBonus", getBeagleSkin("pepper").perk.id === "fruitBonus");
+  check("pacbeagle -> unlocksTribute", getBeagleSkin("pacbeagle").perk.id === "unlocksTribute");
+  // The FREE coat having a real perk is the point, not an accident: it is the
+  // one every player starts on, and a blank slot there would make "beagles have
+  // powers" something you only find out after spending 25 coins.
+  check(
+    "the default coat's perk is not a placeholder",
+    getBeagleSkin(DEFAULT_BEAGLE_SKIN_ID).perk.id === "startShield",
+  );
+}
+
+// IDEA-064: the arcade board is hidden by exactly the rule the ghost is, and
+// revealed by exactly the same purchase. Checked here rather than in the shop
+// so it needs no browser — same reasoning as visibleEnemySkins above.
+console.log("\n=== themes.ts (IDEA-064 the arcade board is a tribute unlock) ===");
+{
+  const noneOwned = (): boolean => false;
+  const ownsArcade = (id: string): boolean => id === TRIBUTE_MAZE_THEME_ID;
+  const visibleIds = (coat: boolean, owned: (id: string) => boolean): string =>
+    visibleMazeThemes(coat, owned).map((t) => t.id).join(",");
+
+  check(
+    "TRIBUTE_MAZE_THEME_ID names a real theme",
+    MAZE_THEMES.some((t) => t.id === TRIBUTE_MAZE_THEME_ID),
+  );
+  check("the arcade theme is secret", getMazeTheme(TRIBUTE_MAZE_THEME_ID).secret === true);
+  check(
+    "it is the ONLY secret theme",
+    MAZE_THEMES.filter((t) => t.secret).map((t) => t.id).join(",") === TRIBUTE_MAZE_THEME_ID,
+  );
+  check("the default theme is not secret", getMazeTheme(DEFAULT_MAZE_THEME_ID).secret !== true);
+  check(
+    "a fresh player is shown 5 themes, and not the arcade",
+    visibleIds(false, noneOwned) === "garden,forest,beach,park,city",
+  );
+  check(
+    "owning the tribute coat reveals the arcade board",
+    visibleIds(true, noneOwned) === "garden,classic,forest,beach,park,city",
+  );
+  check(
+    "a legacy account that already bought it still sees it without the coat",
+    visibleIds(false, ownsArcade) === "garden,classic,forest,beach,park,city",
+  );
+  check(
+    "revealing never reorders or drops the ordinary themes",
+    visibleMazeThemes(true, noneOwned).filter((t) => !t.secret).map((t) => t.id).join(",") ===
+      MAZE_THEMES.filter((t) => !t.secret).map((t) => t.id).join(","),
+  );
 }
 
 console.log("\n=== themes.ts (IDEA-026 maze themes registry) ===");
@@ -323,17 +407,21 @@ console.log("\n=== themes.ts (IDEA-026 maze themes registry) ===");
   check("garden is MAZE_THEMES[0]", MAZE_THEMES[0].id === "garden");
   check("DEFAULT_MAZE_THEME_ID is garden", DEFAULT_MAZE_THEME_ID === "garden");
   check("garden.price === 0 (default, free)", getMazeTheme("garden").price === 0);
+  // IDEA-064: Arcade Night is no longer for sale. It is the Pac-Beagle's other
+  // half, granted free by the coat exactly as the Ghost is — and the grant only
+  // works because the price is 0 (buyCosmetic refuses on `coins < price`).
+  check("classic.price === 0 (granted by the tribute coat, never bought)", getMazeTheme("classic").price === 0);
   check(
     "every non-garden theme is priced > 0 (never free/default)",
-    MAZE_THEMES.filter((t) => t.id !== "garden").every((t) => t.price > 0),
+    MAZE_THEMES.filter((t) => t.id !== "garden" && !t.secret).every((t) => t.price > 0),
   );
-  check("classic.price === 50", getMazeTheme("classic").price === 50);
   check("forest.price === 50", getMazeTheme("forest").price === 50);
   check("beach.price === 50", getMazeTheme("beach").price === 50);
   check("park.price === 50", getMazeTheme("park").price === 50);
   check("city.price === 50", getMazeTheme("city").price === 50);
   check("getMazeThemePrice('garden') === 0", getMazeThemePrice("garden") === 0);
-  check("getMazeThemePrice('classic') === 50", getMazeThemePrice("classic") === 50);
+  check("getMazeThemePrice('classic') === 0", getMazeThemePrice("classic") === 0);
+  check("getMazeThemePrice('forest') === 50", getMazeThemePrice("forest") === 50);
   check("getMazeThemePrice(unknown) === 0 (falls back to default's price)", getMazeThemePrice("nope") === 0);
 
   // Every theme's every palette color slot is a valid 24-bit hex number
@@ -693,8 +781,8 @@ console.log("\n=== profileStore.ts ownership defaults (Node, no window/localStor
     profile.ownedBeagleSkinIds.length === 1 && profile.ownedBeagleSkinIds[0] === "bagel",
   );
   check(
-    "fresh profile owns exactly ['beetle'] (the default, which is no longer the ghost)",
-    profile.ownedEnemySkinIds.length === 1 && profile.ownedEnemySkinIds[0] === "beetle",
+    "fresh profile owns exactly ['flea'] (the default, which is no longer the beetle)",
+    profile.ownedEnemySkinIds.length === 1 && profile.ownedEnemySkinIds[0] === "flea",
   );
   check(
     "a fresh profile does NOT own the secret ghost",
@@ -711,15 +799,15 @@ console.log("\n=== profileStore.ts ownership defaults (Node, no window/localStor
   );
 
   check("getOwnedBeagleSkinIds() matches loadProfile()", getOwnedBeagleSkinIds().join(",") === "bagel");
-  check("getOwnedEnemySkinIds() matches loadProfile()", getOwnedEnemySkinIds().join(",") === "beetle");
+  check("getOwnedEnemySkinIds() matches loadProfile()", getOwnedEnemySkinIds().join(",") === "flea");
   check("getOwnedMazeThemeIds() matches loadProfile()", getOwnedMazeThemeIds().join(",") === "garden");
 
   check("isBeagleSkinOwned('bagel') === true (default always owned)", isBeagleSkinOwned("bagel") === true);
   check("isBeagleSkinOwned('cookie') === false initially", isBeagleSkinOwned("cookie") === false);
-  check("isEnemySkinOwned('beetle') === true (default always owned)", isEnemySkinOwned("beetle") === true);
+  check("isEnemySkinOwned('flea') === true (default always owned)", isEnemySkinOwned("flea") === true);
   check("isEnemySkinOwned('ghost') === false initially (it is the easter egg)", isEnemySkinOwned("ghost") === false);
   check("isMazeThemeOwned('garden') === true (default always owned)", isMazeThemeOwned("garden") === true);
-  check("isMazeThemeOwned('classic') === false initially", isMazeThemeOwned("classic") === false);
+  check("isMazeThemeOwned('forest') === false initially", isMazeThemeOwned("forest") === false);
 }
 
 console.log("\n=== profileStore.ts loadProfile defensive ownership sanitizing ===");
@@ -829,16 +917,18 @@ console.log("\n=== profileStore.ts buy operations (fresh hydrated cache) ===");
   check("buyEnemySkin('bee') with 0 coins -> insufficient-coins", enemyResult.ok === false && enemyResult.reason === "insufficient-coins");
   check("failed enemy buy leaves ownership unchanged", isEnemySkinOwned("bee") === false);
 
-  const themeResult = buyMazeTheme("classic");
-  check("buyMazeTheme('classic') with 0 coins -> insufficient-coins", themeResult.ok === false && themeResult.reason === "insufficient-coins");
-  check("failed theme buy leaves ownership unchanged", isMazeThemeOwned("classic") === false);
+  // 'forest' rather than 'classic' since IDEA-064: the arcade theme is free
+  // now, and a free item can never produce insufficient-coins.
+  const themeResult = buyMazeTheme("forest");
+  check("buyMazeTheme('forest') with 0 coins -> insufficient-coins", themeResult.ok === false && themeResult.reason === "insufficient-coins");
+  check("failed theme buy leaves ownership unchanged", isMazeThemeOwned("forest") === false);
 
   // Buying the already-owned default is refused (never double-charges),
   // regardless of wallet balance.
   const alreadyOwned = buyBeagleSkin("bagel");
   check("buyBeagleSkin('bagel') (already owned) -> already-owned, no charge", alreadyOwned.ok === false && alreadyOwned.reason === "already-owned");
-  const alreadyOwnedEnemy = buyEnemySkin("beetle");
-  check("buyEnemySkin('beetle') (already owned) -> already-owned, no charge", alreadyOwnedEnemy.ok === false && alreadyOwnedEnemy.reason === "already-owned");
+  const alreadyOwnedEnemy = buyEnemySkin("flea");
+  check("buyEnemySkin('flea') (already owned) -> already-owned, no charge", alreadyOwnedEnemy.ok === false && alreadyOwnedEnemy.reason === "already-owned");
 
   // THE EASTER EGG, end to end. The ghost is free but not owned, so buying it
   // outright would work — that is fine, it is the grant path; what must hold is
@@ -879,7 +969,7 @@ console.log("\n=== profileStore.ts buy success + atomicity (pure, in-process pro
   // Wallet derived from the real prices (+7 change) so the arithmetic below
   // stays valid across rebalances — IDEA-012 v2 moved skins 5 -> 25 and themes
   // to 50, which broke a hardcoded 12.
-  const scenarioCoins = Math.max(getBeagleSkinPrice("cookie"), getMazeThemePrice("classic")) + 7;
+  const scenarioCoins = Math.max(getBeagleSkinPrice("cookie"), getMazeThemePrice("forest")) + 7;
 
   const profile: StoredProfile = {
     equippedBeagleSkinId: "bagel",
@@ -934,8 +1024,8 @@ console.log("\n=== profileStore.ts buy success + atomicity (pure, in-process pro
   // maze theme purchase — proves buyMazeTheme's internal shape (identical to
   // buyBeagleSkin/buyEnemySkin's) also lands the coin-deduct and owned-add
   // together, and leaves the beagle/enemy fields untouched.
-  const themePrice = getMazeThemePrice("classic");
-  check("classic theme has a non-zero price for this scenario", themePrice > 0);
+  const themePrice = getMazeThemePrice("forest");
+  check("forest theme has a non-zero price for this scenario", themePrice > 0);
 
   const themeNewCoins = trySpend(profile.coins, themePrice);
   check("the wallet affords the theme and change is exact", themeNewCoins === profile.coins - themePrice);
@@ -943,10 +1033,10 @@ console.log("\n=== profileStore.ts buy success + atomicity (pure, in-process pro
   const afterThemeBuy: StoredProfile = {
     ...profile,
     coins: themeNewCoins as number,
-    ownedMazeThemeIds: [...profile.ownedMazeThemeIds, "classic"],
+    ownedMazeThemeIds: [...profile.ownedMazeThemeIds, "forest"],
   };
   check("theme buy atomicity: coins reduced by price", afterThemeBuy.coins === profile.coins - themePrice);
-  check("theme buy atomicity: id now owned in the SAME resulting object", afterThemeBuy.ownedMazeThemeIds.includes("classic"));
+  check("theme buy atomicity: id now owned in the SAME resulting object", afterThemeBuy.ownedMazeThemeIds.includes("forest"));
   check(
     "theme buy preserves the beagle/enemy owned lists untouched",
     afterThemeBuy.ownedBeagleSkinIds.length === 1 &&
@@ -987,12 +1077,12 @@ console.log("\n=== profileStore.ts equip gating (fresh hydrated cache) ===");
   const refusedSecret = equipEnemySkin("ghost");
   check("equipEnemySkin(unowned secret 'ghost') is refused (returns false)", refusedSecret === false);
 
-  const allowedEnemyDefault = equipEnemySkin("beetle");
-  check("equipEnemySkin(owned default 'beetle') succeeds (returns true)", allowedEnemyDefault === true);
+  const allowedEnemyDefault = equipEnemySkin("flea");
+  check("equipEnemySkin(owned default 'flea') succeeds (returns true)", allowedEnemyDefault === true);
 
   // IDEA-026: mirrors the beagle/enemy gating above exactly, for maze themes.
-  const refusedTheme = equipMazeTheme("classic");
-  check("equipMazeTheme(unowned 'classic') is refused (returns false)", refusedTheme === false);
+  const refusedTheme = equipMazeTheme("forest");
+  check("equipMazeTheme(unowned 'forest') is refused (returns false)", refusedTheme === false);
   check("equipMazeTheme(unowned) does not change the equipped id", getEquippedMazeThemeId() === DEFAULT_MAZE_THEME_ID);
 
   const allowedThemeDefault = equipMazeTheme("garden");
@@ -1022,14 +1112,51 @@ console.log("\n=== profileStore.ts equip gating (fresh hydrated cache) ===");
   setEquippedMazeThemeId(DEFAULT_MAZE_THEME_ID);
 }
 
-console.log("\n=== challenges.ts (IDEA-013 Challenge Mode) ===");
+console.log("\n=== challenges.ts (IDEA-013 Challenge Mode · IDEA-063 the 40-level ladder) ===");
 {
-  check("exactly 8 challenge levels", CHALLENGE_LEVELS.length === 8);
-  check("CHALLENGE_LEVEL_COUNT === 8", CHALLENGE_LEVEL_COUNT === 8);
+  check("exactly 40 challenge levels", CHALLENGE_LEVELS.length === 40);
+  check("CHALLENGE_LEVEL_COUNT === 40", CHALLENGE_LEVEL_COUNT === 40);
+  check("TOUR_LEVEL_COUNT === 30", TOUR_LEVEL_COUNT === 30);
 
-  // Every level's mazeIdx must be a valid index into the real MAZES pool
-  // (mazes.ts's MAZE_COUNT, 5 today) — challenge levels reuse the validated
-  // maze pool, never invent their own.
+  // The whole point of the tour chapter: one level per PLAYABLE maze, in maze
+  // order, covering every one of them exactly once. If this drifts, the mode
+  // silently stops doing the job it exists for — a maze nobody can reach from
+  // the level map is a maze most players will never see.
+  const tour = CHALLENGE_LEVELS.filter((l) => l.kind === "tour");
+  const twists = CHALLENGE_LEVELS.filter((l) => l.kind === "twist");
+  check("30 tour levels", tour.length === TOUR_LEVEL_COUNT);
+  check("10 twist levels", twists.length === 10);
+  check(
+    "the tour levels come FIRST, contiguously",
+    CHALLENGE_LEVELS.slice(0, TOUR_LEVEL_COUNT).every((l) => l.kind === "tour"),
+  );
+  check(
+    "tour level N plays maze N (every playable maze, in order, exactly once)",
+    tour.every((l, i) => l.mazeIdx === i),
+  );
+
+  // The six BONUS mazes are classic's between-stage reward boards — wide open,
+  // one enemy. A challenge level of one would be a level with nothing in it,
+  // so no level may reference an index at or past BONUS_MAZE_START.
+  check(
+    "no challenge level uses a BONUS maze",
+    CHALLENGE_LEVELS.every((l) => l.mazeIdx < BONUS_MAZE_START),
+  );
+  check(
+    "MAZE_NAMES covers every maze in the pool",
+    MAZE_NAMES.length === MAZE_COUNT && MAZE_NAMES.every((n) => n.trim().length > 0),
+  );
+  check(
+    "every MAZE_NAME is distinct (two boards with one name is a naming bug)",
+    new Set(MAZE_NAMES).size === MAZE_NAMES.length,
+  );
+  check(
+    "a tour level is NAMED after the maze it shows",
+    tour.every((l) => l.name === MAZE_NAMES[l.mazeIdx]),
+  );
+
+  // Every level's mazeIdx must be a valid index into the real MAZES pool —
+  // challenge levels reuse the validated maze pool, never invent their own.
   CHALLENGE_LEVELS.forEach((lvl, i) => {
     check(
       `L${i + 1} (${lvl.name}) mazeIdx ${lvl.mazeIdx} is within [0, MAZE_COUNT-1]`,
@@ -1037,11 +1164,29 @@ console.log("\n=== challenges.ts (IDEA-013 Challenge Mode) ===");
     );
   });
 
-  // Modifiers stay within sane, documented bounds for every level.
+  // THE TOUR IS CLASSIC, FIELD FOR FIELD. This is the chapter's entire design
+  // (see challenges.ts's module comment) and the thing most likely to be
+  // "improved" by a well-meaning later edit adding one twist to one level.
+  tour.forEach((lvl, i) => {
+    const m = lvl.modifiers;
+    check(
+      `tour L${i + 1} (${lvl.name}) is field-for-field CLASSIC_MODIFIERS`,
+      m.speedMult === CLASSIC_MODIFIERS.speedMult &&
+        m.ghostSpeedMult === CLASSIC_MODIFIERS.ghostSpeedMult &&
+        m.ghostCount === CLASSIC_MODIFIERS.ghostCount &&
+        m.frightSeconds === CLASSIC_MODIFIERS.frightSeconds,
+    );
+  });
+
+  // Modifiers stay within sane, documented bounds for every level. The speed
+  // range is [0.7, 2.2] rather than IDEA-013's [1, 2] because L39 is
+  // deliberately the first level ever to run BELOW classic pace — see its own
+  // comment. The bound is here to catch a typo'd 20 or 0.02, not to police the
+  // design space.
   CHALLENGE_LEVELS.forEach((lvl, i) => {
     const m = lvl.modifiers;
-    check(`L${i + 1} speedMult in [1, 2]`, m.speedMult >= 1 && m.speedMult <= 2);
-    check(`L${i + 1} ghostSpeedMult in [1, 2]`, m.ghostSpeedMult >= 1 && m.ghostSpeedMult <= 2);
+    check(`L${i + 1} speedMult in [0.7, 2.2]`, m.speedMult >= 0.7 && m.speedMult <= 2.2);
+    check(`L${i + 1} ghostSpeedMult in [0.7, 2.2]`, m.ghostSpeedMult >= 0.7 && m.ghostSpeedMult <= 2.2);
     check(`L${i + 1} ghostCount is 3, 4, or 5`, m.ghostCount === 3 || m.ghostCount === 4 || m.ghostCount === 5);
     check(`L${i + 1} frightSeconds > 0`, m.frightSeconds > 0);
     // Documented invariant: ghostSpeedMult tracks speedMult 1:1 on every
@@ -1050,20 +1195,28 @@ console.log("\n=== challenges.ts (IDEA-013 Challenge Mode) ===");
     check(`L${i + 1} ghostSpeedMult === speedMult (ratio stays fair)`, m.ghostSpeedMult === m.speedMult);
   });
 
-  // L1 must be a byte-for-byte match of CLASSIC_MODIFIERS — the very first
-  // challenge level is a warm-up that plays identically to classic.
-  const l1 = CHALLENGE_LEVELS[0];
-  check("L1 name is Warm-Up Walkies", l1.name === "Warm-Up Walkies");
-  check("L1.modifiers.speedMult === CLASSIC_MODIFIERS.speedMult", l1.modifiers.speedMult === CLASSIC_MODIFIERS.speedMult);
+  // THE FORCED THEME (IDEA-063). Every level names a real theme, and the tour
+  // walks the rotation evenly — six themes over thirty levels is five each, and
+  // an uneven spread would mean one of the six the shop sells is under-shown by
+  // exactly the screen built to show them off.
   check(
-    "L1.modifiers.ghostSpeedMult === CLASSIC_MODIFIERS.ghostSpeedMult",
-    l1.modifiers.ghostSpeedMult === CLASSIC_MODIFIERS.ghostSpeedMult,
+    "THEME_CYCLE is MAZE_THEMES' own id order",
+    THEME_CYCLE.join(",") === MAZE_THEMES.map((t) => t.id).join(","),
   );
-  check("L1.modifiers.ghostCount === CLASSIC_MODIFIERS.ghostCount", l1.modifiers.ghostCount === CLASSIC_MODIFIERS.ghostCount);
   check(
-    "L1.modifiers.frightSeconds === CLASSIC_MODIFIERS.frightSeconds",
-    l1.modifiers.frightSeconds === CLASSIC_MODIFIERS.frightSeconds,
+    "every level's themeId resolves against MAZE_THEMES",
+    CHALLENGE_LEVELS.every((l) => MAZE_THEMES.some((t) => t.id === l.themeId)),
   );
+  check(
+    "every level follows THEME_CYCLE[idx % 6] — no hand-typed exception",
+    CHALLENGE_LEVELS.every((l, i) => l.themeId === THEME_CYCLE[i % THEME_CYCLE.length]),
+  );
+  MAZE_THEMES.forEach((t) => {
+    check(
+      `the tour shows "${t.id}" exactly 5 times`,
+      tour.filter((l) => l.themeId === t.id).length === 5,
+    );
+  });
 
   // CLASSIC_MODIFIERS itself is the documented "no change" baseline, and its
   // frightSeconds is READ from config.ts's TIMING.frightSeconds (not a
@@ -1073,23 +1226,47 @@ console.log("\n=== challenges.ts (IDEA-013 Challenge Mode) ===");
   check("CLASSIC_MODIFIERS.ghostCount === 3", CLASSIC_MODIFIERS.ghostCount === 3);
   check("CLASSIC_MODIFIERS.frightSeconds === TIMING.frightSeconds", CLASSIC_MODIFIERS.frightSeconds === TIMING.frightSeconds);
 
-  // L8 (the finale) stacks every twist at max: 2x speed, 5 ghosts, short fright.
-  const l8 = CHALLENGE_LEVELS[7];
-  check("L8 name is Top Dog", l8.name === "Top Dog");
-  check("L8 speedMult === 2.0", l8.modifiers.speedMult === 2.0);
-  check("L8 ghostCount === 5", l8.modifiers.ghostCount === 5);
-  check("L8 frightSeconds < TIMING.frightSeconds (short fuse)", l8.modifiers.frightSeconds < TIMING.frightSeconds);
+  // The eight IDEA-013 levels are still here, in their original order, with
+  // their original dials — they are what every challenge score already on the
+  // board was set on, and the server prices a submission against them.
+  const ORIGINAL_EIGHT = [
+    "Warm-Up Walkies",
+    "Squirrel Sprint",
+    "Pack Mentality",
+    "Short Fuse",
+    "Four on the Floor",
+    "Full House",
+    "Hound Dash",
+    "Top Dog",
+  ];
+  check(
+    "the original eight twists open the twist chapter, in order",
+    ORIGINAL_EIGHT.every((name, i) => CHALLENGE_LEVELS[TOUR_LEVEL_COUNT + i].name === name),
+  );
+  const topDog = CHALLENGE_LEVELS[TOUR_LEVEL_COUNT + 7];
+  check("Top Dog still runs 2.0 speed", topDog.modifiers.speedMult === 2.0);
+  check("Top Dog still fields 5 ghosts", topDog.modifiers.ghostCount === 5);
+  check("Top Dog still shortens the fright", topDog.modifiers.frightSeconds < TIMING.frightSeconds);
+  check(
+    "the original eight still use mazes 0-4",
+    ORIGINAL_EIGHT.every((_, i) => CHALLENGE_LEVELS[TOUR_LEVEL_COUNT + i].mazeIdx <= 4),
+  );
 
   // Every level has a non-empty name and blurb (player-facing content, not
-  // placeholder/empty strings).
+  // placeholder/empty strings), and no two levels share a name — forty stones
+  // on one trail is exactly where a duplicate stops being noticeable.
   CHALLENGE_LEVELS.forEach((lvl, i) => {
     check(`L${i + 1} has a non-empty name`, lvl.name.trim().length > 0);
     check(`L${i + 1} has a non-empty blurb`, lvl.blurb.trim().length > 0);
   });
+  check(
+    "every challenge level name is distinct",
+    new Set(CHALLENGE_LEVELS.map((l) => l.name)).size === CHALLENGE_LEVEL_COUNT,
+  );
 
-  // At least one level of each twist category exists, so the "8 levels,
-  // difficulty arc" scope is actually represented (not, say, every level
-  // being ghostCount 3 with only speed varying).
+  // The twist chapter still represents every twist category — the scope of
+  // IDEA-013, now with IDEA-063's two new directions (below-classic pace and a
+  // LONGER-than-classic fright) asserted alongside them.
   check("at least one level has ghostCount 4", CHALLENGE_LEVELS.some((l) => l.modifiers.ghostCount === 4));
   check("at least one level has ghostCount 5", CHALLENGE_LEVELS.some((l) => l.modifiers.ghostCount === 5));
   check(
@@ -1097,6 +1274,19 @@ console.log("\n=== challenges.ts (IDEA-013 Challenge Mode) ===");
     CHALLENGE_LEVELS.some((l) => l.modifiers.frightSeconds < TIMING.frightSeconds),
   );
   check("at least one level has speedMult > 1", CHALLENGE_LEVELS.some((l) => l.modifiers.speedMult > 1));
+  check("at least one level runs BELOW classic pace", CHALLENGE_LEVELS.some((l) => l.modifiers.speedMult < 1));
+  check(
+    "at least one level has a LONGER fright than classic",
+    CHALLENGE_LEVELS.some((l) => l.modifiers.frightSeconds > TIMING.frightSeconds),
+  );
+  check(
+    "only twist levels turn any dial",
+    CHALLENGE_LEVELS.every(
+      (l) =>
+        l.kind === "twist" ||
+        (l.modifiers.speedMult === 1 && l.modifiers.ghostCount === 3 && l.modifiers.frightSeconds === TIMING.frightSeconds),
+    ),
+  );
 
   // Sanity: SPEEDS.beagle/ghost imported and finite, so a future SPEEDS edit
   // that broke the base numbers this module scales would show up here too
@@ -1104,15 +1294,64 @@ console.log("\n=== challenges.ts (IDEA-013 Challenge Mode) ===");
   check("SPEEDS.beagle and SPEEDS.ghost are positive finite numbers", SPEEDS.beagle > 0 && SPEEDS.ghost > 0);
 }
 
+console.log("\n=== challenges.ts chapters (IDEA-063) ===");
+{
+  // Seven chapters: six tour stages of five (matching classic's own
+  // MAPS_PER_STAGE, so "stage 4" means the same five mazes in both modes) and
+  // one twist chapter of ten.
+  check("7 chapters", CHALLENGE_CHAPTERS.length === 7);
+  check(
+    "the six tour chapters are five levels each",
+    CHALLENGE_CHAPTERS.slice(0, 6).every((c) => c.count === MAPS_PER_STAGE && c.kind === "tour"),
+  );
+  const last = CHALLENGE_CHAPTERS[6];
+  check("the last chapter is the twists", last.kind === "twist" && last.title === "The Twists");
+  check("the twist chapter holds 10 levels", last.count === 10);
+
+  // The chapters must TILE the ladder: contiguous, no gap, no overlap, and the
+  // last one ending exactly on the last level. A stone with no chapter has no
+  // banner above it and no chip that reaches it — invisible on the level map
+  // and invisible in every assertion that only checks counts.
+  let cursor = 0;
+  let tiles = true;
+  for (const c of CHALLENGE_CHAPTERS) {
+    if (c.from !== cursor || c.count <= 0) tiles = false;
+    cursor += c.count;
+  }
+  check("chapters tile the ladder with no gap or overlap", tiles);
+  check("chapters cover every level", cursor === CHALLENGE_LEVEL_COUNT);
+
+  // chapterForLevel agrees with the table for EVERY index, and clamps rather
+  // than returning undefined for garbage — the level map renders from a
+  // possibly-stale selection.
+  let agrees = true;
+  for (let i = 0; i < CHALLENGE_LEVEL_COUNT; i++) {
+    const c = chapterForLevel(i);
+    if (i < c.from || i >= c.from + c.count) agrees = false;
+  }
+  check("chapterForLevel(idx) returns the chapter that contains idx, for all 40", agrees);
+  check("chapterForLevel(-1) clamps to the first chapter", chapterForLevel(-1).from === 0);
+  check("chapterForLevel(999) clamps to the last chapter", chapterForLevel(999).from === last.from);
+  check("chapterForLevel(NaN) degrades to the first chapter", chapterForLevel(NaN).from === 0);
+  check(
+    "every chapter has a non-empty title and a short label for its chip",
+    CHALLENGE_CHAPTERS.every((c) => c.title.trim().length > 0 && c.short.trim().length > 0),
+  );
+}
+
 console.log("\n=== challenges.ts getChallengeLevel clamping ===");
 {
+  const LAST = CHALLENGE_LEVEL_COUNT - 1;
   check("getChallengeLevel(0) is L1", getChallengeLevel(0).name === CHALLENGE_LEVELS[0].name);
-  check("getChallengeLevel(7) is L8 (last)", getChallengeLevel(7).name === CHALLENGE_LEVELS[7].name);
+  check("getChallengeLevel(LAST) is the last level", getChallengeLevel(LAST).name === CHALLENGE_LEVELS[LAST].name);
   check("getChallengeLevel(3) is L4", getChallengeLevel(3).name === CHALLENGE_LEVELS[3].name);
 
   // Out-of-range / garbage indices clamp rather than throwing or returning undefined.
-  check("getChallengeLevel(8) clamps to the last level (one past the end)", getChallengeLevel(8).name === CHALLENGE_LEVELS[7].name);
-  check("getChallengeLevel(999) clamps to the last level", getChallengeLevel(999).name === CHALLENGE_LEVELS[7].name);
+  check(
+    "getChallengeLevel(COUNT) clamps to the last level (one past the end)",
+    getChallengeLevel(CHALLENGE_LEVEL_COUNT).name === CHALLENGE_LEVELS[LAST].name,
+  );
+  check("getChallengeLevel(999) clamps to the last level", getChallengeLevel(999).name === CHALLENGE_LEVELS[LAST].name);
   check("getChallengeLevel(-1) clamps to the first level", getChallengeLevel(-1).name === CHALLENGE_LEVELS[0].name);
   check("getChallengeLevel(-50) clamps to the first level", getChallengeLevel(-50).name === CHALLENGE_LEVELS[0].name);
   check("getChallengeLevel(NaN) clamps to the first level", getChallengeLevel(NaN).name === CHALLENGE_LEVELS[0].name);

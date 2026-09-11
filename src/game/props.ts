@@ -30,7 +30,18 @@ export type PropBaseShape =
   | "streetlight"
   | "umbrella"
   | "bloom"
-  | "sign";
+  | "sign"
+  // IDEA-060, built from references (src/render/gardenProps.ts). These are
+  // ADDITIONS rather than replacements for "shrub"/"tree": those two are
+  // referenced 38 and 23 times across the garden, the forest and the park, and
+  // rewriting them in place would silently re-dress two themes nobody has
+  // reviewed. The garden's own placements are repointed here; the other two
+  // keep what they have until their turn.
+  | "leafShrub"
+  | "broadleafTree"
+  | "treehouse"
+  | "flower"
+  | "birdhouse";
 
 /** The full tunable parameter set across ALL base shapes. Every field is
  *  OPTIONAL with a documented default the render factory applies, so a
@@ -85,6 +96,24 @@ export interface PropParams {
   /** sign only: the post-mounted board color behind the glow face
    *  (default 0x33333c dark). */
   signBoardColor?: number;
+
+  // --- IDEA-060 garden props ---
+  /** flower only: WHICH of the five garden flowers this is. Five defs share
+   *  one shape because they share a stem, a leaf pair and a head socket — but
+   *  the heads are genuinely different constructions, not one head in five
+   *  colours (the rose and the tulip are both red in the reference, so shape
+   *  is the only thing that can separate them). Default "daisy". */
+  flowerKind?: "daisy" | "sunflower" | "rose" | "tulip" | "blossom";
+  /** flower only: overrides the kind's own petal colour. */
+  petalColor?: number;
+  /** flower only: overrides the kind's own eye/throat colour. */
+  centerColor?: number;
+  /** birdhouse only: the bird perched on the ridge (default true). It is what
+   *  makes the prop read as a birdhouse rather than a letterbox at play size,
+   *  so turning it off is a deliberate choice, not a default. */
+  showBird?: boolean;
+  /** birdhouse only: the perched bird's plumage (default 0x3f9ede). */
+  birdColor?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -219,6 +248,12 @@ export const PROP_SHAPE_FIELDS: Record<PropBaseShape, readonly (keyof PropParams
   umbrella: ["height", "width", "tilt", "foliageColors", "trunkColor"],
   bloom: ["width", "glowColor", "glowIntensity"],
   sign: ["height", "trunkColor", "glowColor", "glowIntensity", "signBoardColor"],
+  // IDEA-060.
+  leafShrub: ["height", "width", "foliageColors", "trunkColor"],
+  broadleafTree: ["height", "width", "foliageColors", "trunkColor"],
+  treehouse: ["height", "width", "foliageColors", "trunkColor"],
+  flower: ["height", "width", "flowerKind", "petalColor", "centerColor"],
+  birdhouse: ["height", "width", "trunkColor", "showBird", "birdColor"],
 } as const;
 
 /** The starter library — the props IDEA-026 shipped, now as named reusable
@@ -350,6 +385,118 @@ export const PROP_LIBRARY: readonly PropDef[] = [
       signBoardColor: 0x33333c,
     },
   },
+  {
+    id: "garden-shrub",
+    name: "Garden Shrub",
+    shape: "leafShrub",
+    params: {
+      height: 1,
+      width: 1,
+      foliageColors: [0x4e9a3e, 0x3f8f3a, 0x5fae4d, 0x56a343],
+      trunkColor: 0x7a6250,
+    },
+  },
+  {
+    id: "garden-tree",
+    name: "Garden Tree",
+    shape: "broadleafTree",
+    params: {
+      height: 1,
+      width: 1,
+      foliageColors: [0x4e9a3e, 0x5fae4d, 0x46963c],
+      trunkColor: 0x7d5535,
+    },
+  },
+  {
+    id: "treehouse",
+    name: "Treehouse",
+    shape: "treehouse",
+    params: {
+      height: 1,
+      width: 1,
+      foliageColors: [0x4e9a3e, 0x57a442],
+      trunkColor: 0x7a5230,
+    },
+    parts: {
+      edits: [
+      { path: "1/2", position: [0, 0.98, 0.339], scale: [1, 1.95, 1] },
+      { path: "1/1", position: [-0.237, 0.91, 0.339], scale: [1, 1.57, 1] },
+      { path: "1/3", position: [0.237, 0.91, 0.339], scale: [1, 1.59, 1] },
+      { path: "1/4", position: [0.004, 0.63, 0.334] },
+      { path: "1/12", scale: [1.02, 1, 1.04] },
+      { path: "5/4", position: [-0.861, 0.662, -0.091] },
+      { path: "6", rotation: [-0.048, -0.042, 1.049], scale: [1, 1.1, 1] },
+      { path: "0", scale: [1, 1.08, 1] },
+      { path: "4", position: [0.494, 0.459, 0.078], rotation: [0, 0, 1.881], scale: [1, 1.245, 1] },
+      { path: "3", position: [0.828, -0.03, 0.087] },
+    ],
+      added: [],
+    },
+  },
+  {
+    id: "birdhouse",
+    name: "Birdhouse",
+    shape: "birdhouse",
+    params: {
+      height: 1,
+      width: 1,
+      trunkColor: 0x6b4a2f,
+      showBird: true,
+      birdColor: 0x3f9ede,
+    },
+  },
+  {
+    id: "flower-daisy",
+    name: "Daisy",
+    shape: "flower",
+    params: {
+      height: 1,
+      width: 1,
+      flowerKind: "daisy",
+      petalColor: 0xfaf6ec,
+      centerColor: 0xf2b632,
+    },
+  },
+  {
+    id: "flower-sunflower",
+    name: "Sunflower",
+    shape: "flower",
+    params: {
+      height: 1,
+      width: 1,
+      flowerKind: "sunflower",
+    },
+  },
+  {
+    id: "flower-rose",
+    name: "Rose",
+    shape: "flower",
+    params: {
+      height: 1,
+      width: 1,
+      flowerKind: "rose",
+    },
+  },
+  {
+    id: "flower-tulip",
+    name: "Tulip",
+    shape: "flower",
+    params: {
+      height: 1,
+      width: 1,
+      flowerKind: "tulip",
+    },
+  },
+  {
+    id: "flower-blossom",
+    name: "Blossom",
+    shape: "flower",
+    params: {
+      height: 1,
+      width: 1,
+      flowerKind: "blossom",
+    },
+  },
 ] as const;
 
 export const DEFAULT_PROP_ID = "shrub";
@@ -379,7 +526,16 @@ function getFallbackPropDef(): PropDef {
  *  hedge/wall top (small pieces), while the apron placement UI ([[IDEA-030]])
  *  offers the ground props. Not a hard render constraint — just what each
  *  editor surface lists by default. */
-export const WALL_TOP_SHAPES: readonly PropBaseShape[] = ["bloom", "sign"];
+export const WALL_TOP_SHAPES: readonly PropBaseShape[] = [
+  "bloom",
+  "sign",
+  // IDEA-060: the garden's five flowers and its birdhouse are wall-top
+  // pieces by design — Nuno's brief put the flowers ON the wall and said the
+  // birdhouse works either there or on the board, which is why the post is
+  // part of the birdhouse prop rather than something it stands on.
+  "flower",
+  "birdhouse",
+];
 
 export function isWallTopProp(id: string): boolean {
   return WALL_TOP_SHAPES.includes(getPropDef(id).shape);

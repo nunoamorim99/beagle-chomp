@@ -160,6 +160,13 @@ export const CHARACTERS: readonly CharacterDef[] = [
   enemyDef("beetle", "Beetle", "makeBeetle"),
   enemyDef("bee", "Bee", "makeBee"),
   enemyDef("ladybug", "Ladybug", "makeLadybug"),
+  enemyDef("flea", "Flea", "makeFlea"),
+  enemyDef("crab", "Crab", "makeCrab"),
+  enemyDef("mosquito", "Mosquito", "makeMosquito"),
+  enemyDef("maki", "Maki Roll", "makeSushiMaki"),
+  enemyDef("nigiri", "Nigiri", "makeNigiri"),
+  enemyDef("pizza", "Pizza Slice", "makePizza"),
+  enemyDef("burger", "Burger", "makeBurger"),
 ];
 
 /**

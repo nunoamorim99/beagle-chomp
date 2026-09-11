@@ -323,7 +323,13 @@ const DIORAMA_SPECK_SPOTS: ReadonlyArray<{ tile: [number, number]; jx: number; j
 // with the library by hand, same discipline as every other hand-authored
 // table in this file.
 const DIORAMA_SIGNATURE_IDS: Readonly<Record<string, readonly string[]>> = {
-  garden: ["shrub"],
+  // IDEA-060: the garden's own props were rebuilt from references and its
+  // placements repointed, so the diorama has to follow or the shop shows a
+  // DIFFERENT bush from the one the board plants — which is exactly the
+  // hand-kept-in-sync drift the comment above warns about. The tree comes
+  // along too: the garden's signature is a planted one, and one shrub alone
+  // undersells it next to the forest's pines.
+  garden: ["garden-shrub", "garden-tree"],
   classic: [],
   forest: ["pine"],
   beach: ["umbrella"],
@@ -640,9 +646,10 @@ export interface ShopScene {
    *  the current hero is already this exact beagle skin (still fine to call
    *  every time — see the doc comment below). */
   showBeagle(skin: BeagleSkin): void;
-  /** Swaps the hero to the enemy form for `skinId` (ghost/beetle/bee/ladybug),
-   *  in the canonical preview color. Disposes the previous hero and resets
-   *  the turntable angle. */
+  /** Swaps the hero to the enemy form for `skinId` (ghost/beetle/bee/ladybug/
+   *  flea/crab), in the canonical preview color. Disposes the previous hero and
+   *  resets the turntable angle. Dispatches through `makeEnemy`, so a new skin
+   *  needs nothing here. */
   showEnemy(skinId: string): void;
   /** IDEA-026: swaps the hero to `themeId`'s maze-corner diorama (a small
    *  floor + L-shaped wall run + biscuit trail + bone + theme-appropriate
@@ -678,7 +685,7 @@ export interface ShopScene {
 
 // The team color used for every enemy preview (per the task brief: rose, the
 // chaser) — the shop shows FORM, not team-color assignment, so one fixed
-// color across all four enemy skins keeps the comparison apples-to-apples.
+// color across all six enemy skins keeps the comparison apples-to-apples.
 const ENEMY_PREVIEW_COLOR = 0xe0577a;
 
 /**

@@ -61,9 +61,27 @@ const PARAM_FIELD_ORDER: readonly (keyof WorkingPropParams)[] = [
   "glowColor",
   "glowIntensity",
   "signBoardColor",
+  // IDEA-060 garden props. This list is HAND-WRITTEN, so a PropParams field
+  // missing from it is silently dropped from every def saved out of the
+  // editor — exactly the trap boardCodegen.ts has for the palette, and
+  // scripts/test-garden-props.ts now guards this one the same way
+  // test-board-surfaces.ts guards that one.
+  "flowerKind",
+  "petalColor",
+  "centerColor",
+  "showBird",
+  "birdColor",
 ];
 
-const COLOR_FIELDS = new Set<keyof WorkingPropParams>(["trunkColor", "windowColor", "glowColor", "signBoardColor"]);
+const COLOR_FIELDS = new Set<keyof WorkingPropParams>([
+  "trunkColor",
+  "windowColor",
+  "glowColor",
+  "signBoardColor",
+  "petalColor",
+  "centerColor",
+  "birdColor",
+]);
 const COLOR_LIST_FIELDS = new Set<keyof WorkingPropParams>(["foliageColors", "facadeColors"]);
 
 /** Formats one param field as `key: value,` — colors as hex literals, color
@@ -76,6 +94,11 @@ function paramFieldLiteral(key: keyof WorkingPropParams, params: WorkingPropPara
   if (COLOR_FIELDS.has(key)) return `${key}: ${hex(value as number)},`;
   if (COLOR_LIST_FIELDS.has(key)) return `${key}: ${colorsLiteral(value as readonly number[])},`;
   if (typeof value === "boolean") return `${key}: ${value},`;
+  // A STRING field has to be quoted. `flowerKind` (IDEA-060) is the first one
+  // PropParams has ever had, and without this it emitted `flowerKind: daisy,`
+  // — which is not a silent loss like a missing field, it is a props.ts that
+  // does not compile.
+  if (typeof value === "string") return `${key}: ${JSON.stringify(value)},`;
   return `${key}: ${value},`;
 }
 

@@ -305,6 +305,18 @@ function stone(
  * carry the detail; this one carries the biscuits. It is also the one grass
  * theme with no path in it, which is what keeps it distinct from the park.
  *
+ * IDEA-060 closed this out. The stones came back once more — Nuno asked for
+ * them — and were painted here again as a `gardenPath` kind, needing three
+ * separate concessions to stop them fighting the biscuit trail: the lawn's own
+ * value (the floor's `emissiveMap` is this same texture, so a pale mark is lit
+ * twice and blooms into fog), a different HUE from the biscuit (brightness is
+ * not a signal that survives 25px a tile), and a heavy keyline to carry the
+ * shape once the value step was gone. Every one of those is a constraint of
+ * PAINTING a floor. They now ship as real meshes instead
+ * (src/render/groundDetail.ts), where a silhouette, a lit top, a shaded side
+ * and a contact shadow do the separating — and this surface goes back to being
+ * what its own first paragraph says it should be: grass.
+ *
  * That leaves it grid-independent, like `earth` and `sand` — nothing here
  * reads `sh.walk`. It still goes through the same uncached path, since the
  * palette can change under it and the caller owns disposal either way.

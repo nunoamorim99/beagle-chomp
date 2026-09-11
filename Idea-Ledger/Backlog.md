@@ -19,7 +19,17 @@ Living backlog of ideas. Two purposes:
 _(empty — nothing to triage)_
 
 ## Backlog (open ideas)
-> New registered ideas go here. Next free ID: IDEA-053
+> New registered ideas go here. Next free ID: IDEA-065
+> (054 went to the crab and 055 to the mosquito — built in parallel by two sessions, which is
+> why the ids were split up front rather than both taking the next free one. 056 and 057 are the
+> sushi pair, registered together because neither is buildable without the other as its
+> foil. 058 is the pizza mascot and 059 the burger. 060 turns the img2threejs pipeline on the
+> BOARD instead of the cast, starting with the garden. 061 doubles the classic cycle to 30
+> maps and makes the map number a running count. 062 is the editor overhaul, registered from a
+> second session while 061 was in flight — the ids were deconflicted up front, as with 054/055.
+> 063 grows challenge mode to 40 levels: a thirty-level tour of every playable maze in front of
+> the original eight twists. 064 gives every beagle a power and turns the shop's "skins" into
+> BEAGLES, which is what makes room for real cosmetic skins — pirate, football kit — later.)
 
 ### IDEA-028 — Challenge twist: moving walls / maze changes mid-level 💡
 - **Priority:** 🟢
@@ -35,6 +45,561 @@ _(empty — nothing to triage)_
 - **Dependencies:** —
 
 ## In progress 🔨
+
+### IDEA-064 - Every beagle has a power ✅
+- **Priority:** 🔴
+- **Area:** gameplay
+- **Registered:** 2026-09-11
+- **Description:** a beagle is no longer a colour swap. Each of the five carries one power that
+  changes how a run plays, so choosing which dog to take in is a real decision. Nuno: "the color
+  pattern beagle the skins are not the best way because in the future I really want to add skins
+  like pirate, football player things like that" - so the shop sells BEAGLES now, and a cosmetic
+  SKIN layer on top of them is a later idea.
+- **Notes:** `src/game/perks.ts` (new, pure) is the only place the coat-to-number mapping and the
+  classic-only rule live. Server-side this reaches `plausibility.ts`, `catalog.generated.ts` and
+  two migrations. Carries the Ghost/Arcade-Night gating fix Nuno reported in the same breath.
+- **Dependencies:** [[IDEA-010]], [[IDEA-012]], [[IDEA-026]], [[IDEA-046]]
+- **History:**
+  - **v1** (2026-09-11) - the five powers, the tribute bundle, and the database bug underneath
+    the reported one. Bagel starts every run shielded; Cookie grants a life at the start of every
+    map; Muffin doubles every coin; Pepper adds 100 to every fruit; the Pac-Beagle unlocks the
+    Ghost AND the Arcade Night board (which dropped from 50 coins to free - it is granted, not
+    sold). The flea replaced the beetle as the free default enemy. **The reported bug turned out
+    to be in Postgres, not in the game**: `001_init.sql` still defaulted every new account's
+    enemy skin to `'ghost'`, written back when the ghost WAS the default and never moved when the
+    beetle took over or when the flea did - so every account ever created owned it, and
+    `visibleEnemySkins`' be-kind-to-legacy-accounts clause then matched everybody. The client
+    gate had been correct and unreachable the whole time.
+  - **v2** (2026-09-11) - the shop cards redrawn, and a second live bug found by looking at
+    them. A beagle's swatch is now a PAW painted in that coat's own colours (inline SVG - a font
+    glyph can only ever be one colour); the Pac-Beagle moved to the END of the list, since it is
+    the one coat that is not just another dog; enemies are marked by CATEGORY (six bugs, four
+    dinners, one special) because Material Symbols has no crab, flea, mosquito or sushi and
+    eleven near-misses is worse than three true marks; and every theme got its own place mark
+    drawn in its own wall colour on its own floor colour. **The Beetle, Bee and Ladybug cards
+    had been printing the words PEST_CONTROL, HIVE and BUG_REPORT across the rail in 26px text
+    for three releases** - `ENEMY_ICONS` held raw ligature strings instead of `ICON` roles, so
+    those glyphs were never in the font subset, and `test-icon-font.ts` could not catch it
+    because it builds its list from `ICON` too. That suite now refuses a raw snake_case literal
+    in any module that draws icons; verified by re-injecting the original bug.
+  - **v3** (2026-09-11) - **the tutorial was still describing a game where the beagle you pick
+    changes nothing.** It gained a seventh and final slide - "Every beagle has a power" - which
+    lists all five coats, each with a paw in its own colours and the one line the shop prints for
+    its perk. The list is DERIVED from `BEAGLE_SKINS`, so a sixth coat or a reworded perk updates
+    the tutorial by existing; `test-tutorial-carousel.ts` asserts every coat appears, in shop
+    order, with its label VERBATIM. The slide also carries the two facts the perks make load-
+    bearing and nothing else said: perks are classic only, and coins come from the maze and
+    nowhere else (IDEA-016 v2 removed the points conversion and nothing ever told the player).
+    `beagleSwatchHtml` moved out of `shop.ts`'s closure into `src/ui/swatches.ts` so the paw is
+    shared rather than copied. **And measuring the card in landscape found an older bug on five
+    of the seven slides**: `#tutorial` justified its column to `flex-end`, so a card taller than
+    the screen overflowed at the TOP, where a scroll container cannot reach it - the title and
+    the copy were simply gone. It now overflows downward and scrolls.
+
+### IDEA-062 — An editor you can actually finish a thing in 🔨
+- **Priority:** 🔴
+- **Area:** editor
+- **Registered:** 2026-09-11
+- **Building:** started 2026-09-11. v1 (the data loss), v2 (gizmo + board undo),
+  v3 (session autosave), v4 (Balance tab) and v5 (World tab) landed.
+  **Still open: the MAZE tab, and it is BLOCKED rather than deferred.** It needs
+  `scripts/validate-maze.ts` factored into a pure `src/game/mazeValidate.ts`
+  (the script is a CLI with top-level `console.log` and `process.exit`, so it
+  cannot be imported) — and that file AND `src/game/mazes.json` both carry
+  uncommitted changes from the concurrent IDEA-061 session. Refactoring under
+  another session's in-flight work is how you lose it. Pick this up once 061
+  lands. Also open: World Tier 2 (foliage, needs the `GARDEN_FOLIAGE` table
+  first) and serialising the character `EditLog` into the v3 session.
+- **Description:** (Nuno) "I have much difficulties on saving changes from the enemies and now on
+  the board and themes and props. I save one change and he deleted the previous ones I made, and
+  never can reach a final result that I like... lets give me a really option to edit the game."
+  Three things, for every tab: saving that never costs you work, direct manipulation (move / rotate
+  / scale) everywhere rather than only in Character mode, and reach into the parts of the game the
+  editor cannot touch at all today.
+- **Notes:** the complaint was literal, not a feeling. Four confirmed defects, all reproduced:
+  1. **Props part edits were REPLACED, not merged.** `syncPartsIntoWorkingDef` assigned
+     `def.parts = propPartLog.toPropPartLayer()`, but the log's baselines are taken from a mesh
+     `makePropFromDef` has ALREADY applied `def.parts` to — so the layer only ever described the
+     current session's deltas, and assigning it deleted every previously-saved edit. Found live in
+     the working tree: the `treehouse` def had gone from **7 part edits to 1**. Previously-ADDED
+     parts were wiped too (board.ts rebuilds them without `userData.editorAdded`, so the log's
+     `added` came back empty).
+  2. **Every save triggered a Vite full page reload**, proved with Playwright — nothing in `src/`
+     handles `import.meta.hot`, so a write to any file in the editor's module graph fell back to
+     `full-reload`. Saving Props destroyed the Board tab's unsaved placements, both undo stacks,
+     the camera and the selection.
+  3. **The `?raw` source snapshots were frozen at page load.** Masked by (2). The moment the reload
+     was fixed, the second save of a session would splice into page-load-era text and silently
+     revert the first — so (2) and (3) had to land in the same commit or "saving deletes my
+     previous change" would have got WORSE.
+  4. **Board mode has no undo at all** (main.ts's own "UNDO DECISION" note), and there is no gizmo
+     outside Character/Pickups even though `createGizmo` is already generic.
+- **v1 (2026-09-11):** the data loss, three defects in one commit because fixing any one
+  alone makes another worse. `PropPartEditLog.mergeIntoSaved()` merges per PATH and per
+  CHANNEL onto the def's saved layer instead of replacing it, and re-adopts previously-added
+  parts by name; `vite.config.ts`'s `handleHotUpdate` suppresses HMR for the editor's own
+  writes, keyed on a CONTENT HASH (a list per file — two close saves would race a single
+  entry) so a hand-edit still reloads; `src/editor/sourceStore.ts` replaces the frozen `?raw`
+  snapshots. Plus `rebaselineAfterSave()` for the mesh tabs, a `#staleChip` naming the honest
+  cost, a `.editorbak` sidecar on every write, and "reset to factory" — without which the
+  merge would make every saved edit permanent. Pinned by `scripts/test-prop-part-merge.ts`
+  (PURE, in `npm run test` — the bug only appears on the SECOND session over a def, which no
+  browser suite was saving twice to catch).
+- **v2 (2026-09-11):** the gizmo reaches every tab and board mode has undo.
+  `currentGizmoTarget()`/`syncGizmo()` route one generic `createGizmo` to character parts,
+  prop components and board placements. Placements are driven through a PROXY
+  (`src/editor/placementGizmo.ts`), never the live mesh — `buildProps` clamps a tall prop's
+  scale, so reading it back would destroy an authored 1.8 on any drag including a pure
+  rotate. Axes are cut to what the data holds (translate X/Z, none for a wall placement;
+  rotate Y; uniform scale). Board undo is the coarse `WorkingTheme` snapshot main.ts's own
+  "UNDO DECISION" note proposed and declined, with a `boardBaseline` so lil-gui's
+  bound-to-the-object controllers need no gesture hooks.
+- **v3 (2026-09-11):** rolling autosave to localStorage with a Restore / Discard bar.
+  Nothing is applied until Restore is clicked; the character EditLog is deliberately out
+  (live Object3D/Material refs — a replay, registered as a follow-up) and the bar says so.
+- **v4 (2026-09-11):** the **Balance** tab — src/game/config.ts's numbers, as a form.
+  `configRewrite.ts` swaps a numeric token at a path (same line count, every comment
+  intact — config.ts is mostly prose explaining its own numbers); `balanceFields.ts` is the
+  hand-written catalogue of 46 fields, every one of which `test-config-rewrite.ts` resolves
+  against the real file AND range-checks. The tab's main feature is the SYNC GATE: an
+  unsynced config.ts makes honest runs fail `SCORE_ITEM_MISMATCH` in production with nothing
+  failing locally, so the save button says so up front and a successful save leaves a panel
+  up with the exact commands until dismissed.
+- **v5 (2026-09-11):** the **World** tab — the IDEA-060 garden machinery no palette can
+  reach. `fence.ts` and `groundDetail.ts` grow named mutable params tables the editor
+  mutates live and writes back in place; the tab borrows board mode's own stage, so the
+  existing board rebuild IS the preview and there is no second path to drift from what the
+  game draws. Its fence readout measures picket and GAP in px at the play camera against the
+  CARTOON rule's ~2px floor — the one place that rule can be checked while dragging.
+  `foliage.ts` is deliberately OUT: all six gardenProps call sites override the module
+  defaults, so a control on them would change nothing (IDEA-041). Lifting those into a named
+  `GARDEN_FOLIAGE` table is its prerequisite.
+- **Plan:** phase 1 the data loss; phase 2 board undo (coarse `WorkingTheme` snapshots, the exit
+  that note itself names) + the gizmo routed to Props parts and Board placements; phase 3 a rolling
+  localStorage session with a Restore/Discard bar; phase 4 three new tabs — **Balance**
+  (`config.ts`, with the `npm run sync` gate made unforgettable), **Maze** (a DOM grid over
+  `mazes.json`, validator-gated, needs `src/game/mazeValidate.ts` factored out of the CLI script
+  first) and **World** (fence + groundDetail live and savable; foliage deferred because all six
+  `gardenProps.ts` call sites override the module defaults, so a control on them would change
+  nothing — IDEA-041's rule).
+
+
+### IDEA-060 — The board, rebuilt: garden first 🔨
+- **Priority:** 🔴
+- **Area:** render
+- **Registered:** 2026-09-10
+- **Building:** started 2026-09-10, garden theme.
+- **Description:** (Nuno) "we will improve the board and the themes — from the wall to the floor to
+  the props, we're going to touch a little bit everything", theme by theme, using the img2threejs
+  skill for each new component. The garden goes first. Its wall becomes a flowering shrub behind a
+  **wooden** picket fence (the reference's fence is white; it must read as wood here). Its props
+  become real objects rather than sphere stacks: a treehouse in the maze's top-left corner, a proper
+  leafy shrub and a broadleaf tree scattered over the apron, five individually-built garden flowers
+  as wall components, and a birdhouse that works on a wall top or on the ground. Its floor takes the
+  stepping-stone-in-groundcover read from the garden-path reference.
+- **Notes:** eight img2threejs runs so far have all been ENEMY skins. This is the first on the
+  WORLD, and the two are not the same problem: an enemy is one mesh reviewed in isolation at a
+  turntable, whereas a wall is 200 instances seen at 25px a face and a prop is dressing that must
+  never win a fight against the biscuit trail. References live in `.img2threejs/reference/`
+  (boardwalls, props/{treehouse,shrub,tree,flowergarden,birdhouse}, floor). Two of them are
+  WATERMARKED stock (the shrub is PngTree, the birdhouse VectorStock) — IDEA-053's rule 4 applies:
+  no pixel is used as colour or PBR evidence.
+- **Dependencies:** [[IDEA-026]], [[IDEA-029]], [[IDEA-030]], [[IDEA-031]], [[IDEA-047]]
+- **History:**
+  - **v1** (2026-09-10) — the garden, rebuilt end to end. **Wall:** a new
+    `hedgeFlower` texture (the hedge plus daisies, six a face at 5% — the first
+    cut ran fourteen at 2% and the maze rendered as white static, the cartoon
+    rule's "fewer, bigger" arriving at the same answer a third time) behind a
+    real **picket fence** — `src/render/fence.ts`, one InstancedMesh of one
+    panel per exposed wall face, ~440 panels and 67k triangles in ONE draw
+    call. Geometry rather than paint because a picket fence is uprights with
+    GAPS between them and a wall is one box wearing one material on all six
+    sides. Brown, not the reference's white, per the brief. **Props:** five new
+    reference-built shapes in `src/render/gardenProps.ts` over a new
+    `src/render/foliage.ts` — a treehouse landmark at the maze's NW corner, a
+    leafy shrub, a broadleaf tree with the reference's measured four-fold root
+    flare, five individually-built flowers (daisy / sunflower / rose / tulip /
+    blossom) and a birdhouse, the last two as wall-top pieces. Added as NEW
+    shapes rather than rewrites: `shrub` and `tree` are shared with the forest
+    and the park, which have not been reviewed. **Floor:** `gardenPath` —
+    stepping stones through the lawn, which CLAUDE.md had recorded as REMOVED
+    for competing with the biscuit trail and which Nuno asked back; they are
+    allowed on terms (cool grey-green against the biscuit's warm cream, half a
+    tile, disconnected, sparse, and never brighter than the lawn because the
+    floor's emissiveMap is the same texture and a pale mark blooms).
+    New harness `/preview-board/` + `scripts/shoot-board.ts`; new headless
+    suite `scripts/test-garden-props.ts` (167 checks) in `npm run test`.
+    **Two real bugs found on the way, both pre-existing.** (a) `buildWallDecor`
+    never checked that a hand-placed wall-top prop was on a WALL — `wallDecor`
+    is per-theme and the layout is per-maze, so Night City's five lamps hung in
+    mid-air over open corridor in 14-18 of the 18 mazes and the one at (9,9)
+    has never once been on a wall. It now takes the grid and skips; the city's
+    five were re-pointed. (b) `propsCodegen.ts` writes its fields by hand and
+    had no string case, so `flowerKind` would have emitted unquoted and broken
+    props.ts on the first editor save. Both now guarded.
+    `fence.ts`, `foliage.ts`, `gardenProps.ts`, `wallTexture.ts`,
+    `floorTexture.ts`, `board.ts`, `themes.ts`, `props.ts`, `game.ts`,
+    `shopScene.ts`, the four editor modules, `preview-board/`,
+    `scripts/{shoot-board,test-garden-props}.ts`.
+  - **v2** (2026-09-10) — Nuno's review pass on v1. **The ground stopped being a
+    drawing.** "instead of have a floor that is a draw can we make it with three
+    js? Like make the rock and put then on the floor? and the floor be all
+    green?" — so the painted `gardenPath` stepping stones are deleted outright
+    and `src/render/groundDetail.ts` scatters real rock meshes instead (one
+    InstancedMesh, deterministic from the tile coordinate, never at a tile
+    CENTRE because that is where the biscuits are). New palette slots
+    `groundDetail`/`groundDetailColor`; the garden's floor is plain `lawn`
+    again. It settled an argument the texture could not win: painting stones
+    into that floor needed three concessions in a row, all of them constraints
+    of painting rather than of stones. **Both buildings had a hole between the
+    wall top and the roof** — a gable roof that overhangs is wider than its
+    box, so the leftover wedge is open front and back; `gableFillGeometry`
+    closes it with a pentagon that follows the roof's slope. **The treehouse's
+    canopy was burying its own roof**; it now clears it, the two useless
+    under-deck braces are gone, and the foliage skirt hangs off a real branch
+    aimed off its endpoints. Also fixed a hazard this session created twice:
+    `test-editor-board.ts` edits the REAL themes.ts and its `finally` cannot
+    survive the process being killed (piping the suite through `tail` raises
+    EPIPE), so it now keeps a `.bak` sidecar and restores from one it finds.
+    `groundDetail.ts`, `gardenProps.ts`, `floorTexture.ts`, `themes.ts`,
+    `board.ts`, `game.ts`, `boardCodegen.ts`, `boardInspector.ts`,
+    `test-garden-props.ts` (180 checks), `test-editor-board.ts`.
+  - **v3** (2026-09-11) — Nuno's second review pass: fewer flowers. "lets remove
+    the flower from the props wall, they are perfect but since the ownshrub
+    fence has the flower is to much... the shrub fence lets make that a less
+    flower to." So the garden's 29 hand-placed flower props come off the wall
+    tops and the hedge texture's daisies go from six a face to **four**. The
+    five flower defs stay in PROP_LIBRARY untouched — a placement decision, not
+    a deletion. The **birdhouses stay, and that turns out to be load-bearing**:
+    board.ts gives a theme one wall-top mechanism or the other, so emptying
+    `wallDecor` would have switched the palette's ~40 density bloom spheres
+    back on — the opposite of the ask. That rule now lives in
+    `buildWallTopDecor` and in a test, because themes.ts cannot keep a comment.
+    Two things fixed along the way. **The editor's colour seeding was wrong**:
+    it seeded `petalColor`/`centerColor` from a flat table, so opening "petal
+    color" on the Sunflower repainted it in the daisy's cream and gold — which
+    had already been saved into props.ts. Seeds now follow `flowerKind`, and
+    the stray override is removed. **And saving a theme from the board editor
+    deletes ALL of that theme's comments**, not just the ones inside
+    `palette: {}` as v2 recorded — the writer rebuilds the edited entry from
+    data, and only OTHER themes are spliced through verbatim. The board-editor
+    suite also stopped pinning the garden's prop counts as literals (they have
+    moved three times in two sessions) and reads them from MAZE_THEMES.
+    `themes.ts`, `wallTexture.ts`, `board.ts`, `props.ts`,
+    `propsInspector.ts`, `test-garden-props.ts` (161 checks),
+    `test-editor-board.ts` (171 checks).
+
+### IDEA-050 — Persist the run: what actually happened, not just the score 🔨
+- **Priority:** 🔴
+- **Area:** backend
+- **Registered:** 2026-09-08
+- **Building:** started 2026-09-08. Client + server + migration + tests are in; see the plan for what remains (the portal reads this — [[IDEA-051]]).
+- **Description:** (Nuno) time to work on the observability of the game — a set of metrics to
+  judge retention and how the app is performing, plus the fun things: how many times each player
+  dies to each enemy colour, which skins and themes actually get used, which challenge level takes
+  longest and kills the most, how much fruit each player collects, how long they spend playing.
+  Data worth keeping so that at the end of the year we can hand each player a rewind of their own.
+  Only the username is ever attached — no name, nothing personal.
+- **Notes:** the striking thing found while planning this is that **the data already crosses the
+  wire and is then THROWN AWAY**. `runTelemetry.ts` accumulates pellets, bones, fruit and its exact
+  points, power-up ids, ghosts eaten, coins, lives lost, play seconds and the maze/level sequences;
+  the client sends all of it; `plausibility.ts` judges it — and then `scoreService.finishSession`
+  writes `reported_score`/`accepted_score` and discards the rest. It survives ONLY for REJECTED
+  runs, as `score_rejections.detail`. So step one is a `run_stats` row, not new collection.
+  Two consequences shape the whole idea. First, **every retention metric is answerable
+  RETROACTIVELY** — `game_sessions` has held one server-timestamped row per run since [[IDEA-019]],
+  so DAU/WAU/MAU, signup cohorts, D1/D7/D30, churn, run duration and the whole challenge funnel
+  (attempts, clears, clear-rate, median time-to-clear per level) work over the full history the day
+  this ships. Second, **almost nothing new needs collecting client-side**: the equipped skins, theme
+  and control scheme are already columns on the `users` row that `requireAuth` has loaded and the
+  finish transaction is holding, so they get STAMPED server-side — unforgeable and free.
+  Exactly ONE new client field is genuinely required: `deathsByGhost`, counts indexed by position
+  in `GHOST_DEFS`. That index is the only identity an enemy has — `Ghost` in `ghostAI.ts` carries no
+  id and no colour — and `checkCollisions` already holds the rig and the loop index at the fatal
+  branch and simply drops them; `beagleDies()` takes no arguments today. `fruitKindCounts` is the
+  optional second, wanted for the rewind's favourite fruit, and it PAYS FOR ITSELF on the validator
+  side: the server could then price fruit exactly instead of falling back to the
+  `fruitEaten x MIN/MAX_FRUIT_POINTS` band. Both are optional on the wire so runs already queued in
+  `runSubmit.ts`'s localStorage still validate — and both must be named in `wire.ts` or they are
+  silently dropped, which is the [[IDEA-040]] v3 bug exactly.
+  **The privacy contract has to change, honestly.** `001_init.sql` opens with "no analytics" and
+  `src/ui/privacy.ts` ships "No analytics, no ads, no tracking" to players. The spirit survives —
+  first-party only, no third parties, no ads, no cross-site tracking, keyed to a username that is
+  already public, cascade-deleted with the account — but the words don't, and they get rewritten in
+  the same change. NOT in `001_init.sql`: the migration runner checksums applied files and aborts,
+  and it runs from the Dockerfile CMD before the server binds, so editing it would break every
+  deploy. The amendment goes in the new migration's header and in STACK.md §8.
+  Aggregate on READ, no rollup tables and no cron: at ~100 runs/day the queries are trivial, and the
+  project already owns the honest trigger for changing its mind — the `[slow-query]` line at 200 ms
+  from [[IDEA-039]], which is STACK.md §6's own Redis threshold.
+- **Dependencies:** [[IDEA-019]], [[IDEA-020]], [[IDEA-039]]
+
+
+### IDEA-054 — The crab: the widest thing in the maze 🔨
+- **Priority:** 🟡
+- **Area:** skins
+- **Registered:** 2026-09-10
+- **Description:** Nuno: "lets continue to add a new enemies to the game, so now this time lets
+  add the crab" — a reference image dropped into `.img2threejs/reference/crab/`, built through the
+  img2threejs pipeline like the flea before it. It is the sixth enemy skin and the third rebuild
+  through that pipeline.
+- **Notes:** the argument for THIS animal, beyond "another one": every enemy the game ships is a
+  bug of roughly one silhouette — beetle, bee, ladybug, flea, and a ghost that predates the
+  garden. Measured, four of the five are taller than they are wide or square, and the widest is
+  the ladybug at 0.849. A crab is the first enemy whose shape argues with the others: **wider than
+  it is tall, and the only one with pincers.** Those two facts are identity ranks 2 and 1 in the
+  spec, and everything else in the build was subordinated to them.
+  Priced 25 with its siblings. Built in its own workspace (`.img2threejs/crab/`) so the beagle's
+  and the flea's evidence trails were left untouched — the per-subject convention IDEA-053
+  introduced. Pipeline ran to `status=complete`: all eight build passes recorded, strict-quality
+  clean with zero warnings, part coverage 0 errors, and **0 of the 6 available corrections used**.
+  Following IDEA-047's precedent the generated factory stays unimported in
+  `src/render/rework/createCrabModel.ts` and the SHIPPED mesh is hand-authored in `characters.ts`
+  from the numbers the pipeline locked.
+- **Dependencies:** [[IDEA-009]], [[IDEA-012]], [[IDEA-047]], [[IDEA-053]]
+- **History:**
+  - **v1** (2026-09-10) — `makeCrab()`: a laterally stretched carapace with a red crown grading
+    to a gold face over a cream chin, two stalked eyes with dark brow lozenges breaking the
+    shell's top outline, two open pincers held forward and low, and four
+    walking-leg pairs fanned per side. **Proportion base CW = 0.56** (carapace width, not a head
+    diameter — a crab's head is fused into its carapace, so a "head height" would be an invented
+    boundary and every ratio would inherit the invention). Lands at **0.896 wide × 0.726 tall**,
+    16 796 triangles across 116 meshes — the widest model in the game, and between the bee and
+    the beetle on cost. Registry + dispatch + editor tab + shop card + `catalog.generated.ts`
+    (server `npm run sync`, now 6 enemy skins). `characters.ts`, `cosmetics.ts`,
+    `editor/registry.ts`, `ui/shop.ts`, `render/shopScene.ts`, `preview-rework/`,
+    `scripts/shoot-rework.ts`, `test-cosmetics.ts`, `test-runtime-owned.ts`. Build + full suite
+    green.
+
+    **The pincer gap failed on the first render, and it is rank 1.** Scaled honestly from the
+    reference's measured ~32°, both claws closed into solid gold wedges at review size. The gap
+    is now sized from READABILITY at the game camera — 0.072 of clear daylight — and that is a
+    recorded deviation, not a slip. It then failed twice more on AIM rather than size: pointed
+    forward, the upper finger sat directly in front of the lower one and the gap vanished into its
+    own foreshortening (two mittens); swung purely inward, each claw read as a flat flipper laid
+    across the body. Down-and-inward from a chunky palm is what finally opened it to the camera.
+
+    **The gold face read as a STICKER twice before it read as the shell.** Aimed straight ahead it
+    rendered as an oval patch stuck on the front; tilted down-and-forward but cut short, it was a
+    closed oval floating inside the shell's own outline. It only became the shell's colour when the
+    patch's pole was tilted 0.75 rad AND cut wide enough to reach the silhouette, so the boundary
+    is a LINE across the shell rather than a shape on it.
+
+    **A gate reported a 0.584 scale error and a 0.068 aspect error on a model that had neither.**
+    Tier 1 compares the render against the reference image, and the review camera was the preview's
+    comfortable 32° default while the reference is a product render on a long lens. At 32° the
+    near-camera claws inflate and the model measures 1.126 wide:tall against the reference's 1.231
+    — it reads as TALLER. Near-orthographic the same model measures **1.403**, i.e. wider than the
+    reference, which is the opposite of what the gate said. Fixed by giving the preview a `?fov=`
+    knob and reviewing at fov 12 with a matched distance: scale delta 0.0083, aspect delta 0.0199.
+    The lesson is the general one — a framing mismatch reports as a model defect.
+
+    **Silhouette IoU still fails at 0.599 and is deliberately not chased.** That is the skill's own
+    documented photo-vs-procedural miscalibration; the Divine Eye's objectness signal reads 0.648,
+    above the same-object threshold, and downgraded its own reject to `probe`. Optimising toward
+    IoU here would distort the model trying to pixel-match an image it cannot match.
+
+    **The flea's two hard-won rules were designed in rather than rediscovered.** Every limb segment
+    is a cylinder spanning its joint EXACTLY with a knuckle ball AT each joint, so the flea's
+    disconnected-hind-leg defect is unrepresentable rather than merely absent — and
+    `scripts/_scratch-crab-gaps.ts` proves all **34 joints contained**. And `creaseDark`,
+    `browDark` and `apronCream` are all deliberately OUT of `accentMats`, so the crease ink, the
+    brows and the cream chin survive the frightened recolour; the clay render
+    (`/preview-rework/?model=crab&flat=1`) confirms it, which is the render that caught the
+    equivalent defect on the flea.
+
+    **That containment test was wrong twice before it was right, and both were instrument bugs
+    producing confident false alarms.** A cylinder's end cap is COPLANAR with its own joint, so a
+    first-face-hit method read 25 of 26 directions as escaping at a joint sitting dead centre in a
+    ball; and a first-face method cannot handle a UNION at all — a neighbouring solid's outer
+    surface between the joint and its own ball's far side reads as "outside". A parity count over
+    the union fixes both. Then a ray fired exactly along an axis exits a sphere at its degenerate
+    pole fan, where a ray-triangle test can be missed by every adjacent triangle at once; the
+    directions are tilted off-axis for that.
+
+    **Cut after review:** the mouth. It was built to the measurement — an upturned groove
+    0.208 wide with a 0.0436 corner rise, against a measured 0.212 / 0.0437 — and Nuno removed
+    it on sight: the crab reads better without one. Recorded in the spec's `deviationRecord`
+    with the numbers rather than deleted quietly, because the detail inventory and a build-pass
+    review both describe it. The face read was never resting on it: the eyes and brows were
+    ranked ahead of it, and the gold/cream boundary the groove sat on is the apron's own edge.
+
+    **Not done:** no dedicated shop glyph — a sixth icon means re-cutting the Material Symbols
+    subset, and an unlisted name renders as that word on the card, so the crab uses the documented
+    fallback like the flea. And the walking-leg segments are tapered tubes where the reference
+    draws overlapping plate shells; that is the largest remaining form gap and it is recorded in
+    the pass review rather than glossed.
+
+  - **v2** (2026-09-10) — **the team colour now reaches the carapace dome and nothing else.**
+    Nuno: "lets make one change related to the color of some parts like the Facepanel and the
+    cheliped or the chelaPalm and lets put this part with the same color of the rest of the body
+    and lets only let carapace change the color considering the enemies color." So the gold went:
+    `CRAB_FACE` (#FFB347) and `CRAB_CLAW` (#F7BE55) are deleted and the face panel, the chela palm,
+    both fingers and every knuckle now take `limbMat` — one cuticle red for the entire body below
+    the shell. `accentMats` collapses from `[limbMat, faceMat, clawMat]` to `[limbMat]`, since
+    those are now one material.
+
+    **It is a better decision here than in the reference, for two reasons that are about this game
+    rather than about crabs.** The gold sat within a few percent of the **amber team hue**
+    (`0xe8a23d`), so on one team of five the face panel — the largest single patch on the model —
+    closed into the carapace and the crab lost its two-tone entirely; the five-hue sheet is the
+    only instrument that shows that, which is why `scripts/_scratch-crab-review.ts` now exists
+    (play camera, frightened, clay, all five hues, one sheet). And the pincer gap is rank 1 but it
+    is NEGATIVE SPACE — it reads on its hole, not on the horn being a value step lighter than the
+    arm — so nothing that carries identity was being paid for by the gold. Verified: both gaps
+    still read at the front and at three-quarter.
+
+    The carapace lip earns more from this, not less: it is now the one geometric event marking
+    where the team colour stops. Build + suite green (the three `test:board-surfaces` failures in
+    the tree are the parallel garden-props work, confirmed by stashing this change).
+
+### IDEA-053 — The flea: the one enemy that belongs on a beagle 🔨
+- **Priority:** 🟡
+- **Area:** skins
+- **Registered:** 2026-09-08
+- **Description:** Nuno: add more enemies, starting with "the more common enemy of the dogs,
+  the flea", built from two reference images through the img2threejs pipeline and sold in the
+  shop like the rest. Every enemy so far is a garden bug that happens to be in the maze; a
+  flea is the first one with a reason to be chasing a beagle specifically.
+- **Notes:** a fifth `EnemySkin`, so it costs no new machinery — `makeEnemy` dispatches, the
+  registry gains a row, and `GhostUserData` is satisfied exactly as the beetle/bee/ladybug
+  satisfy it. Priced 25 with its siblings. Built through the **img2threejs** pipeline in its
+  own workspace (`.img2threejs/flea/`) so the beagle's IDEA-047 evidence trail was left
+  untouched; the pipeline ran to `status=complete` with all eight build passes recorded and
+  part coverage clean. Following the IDEA-047 precedent, the pipeline's generated factory
+  stays in `src/render/rework/` (never imported) and the SHIPPED mesh is hand-authored in
+  `characters.ts` from the numbers the pipeline locked — the reasoning is written into the
+  spec's `deviationRecord`.
+- **Dependencies:** [[IDEA-009]], [[IDEA-012]], [[IDEA-047]]
+- **History:**
+  - **v1** (2026-09-08) — `makeFlea()`: a banded ovoid abdomen, an oversized head with amber
+    eyes, swept beaded antennae and three limb pairs whose rear pair folds into a jumping Z.
+    Proportion base HD = 0.32 (head diameter), measured off the references in head-diameters;
+    crown 0.600 against ghost 0.660 / ladybug 0.656, 12 828 triangles — the cheapest of the
+    four insects. Registry + dispatch + editor tab + shop card + `catalog.generated.ts`
+    (server `npm run sync`, now 5 enemy skins). `characters.ts`, `cosmetics.ts`,
+    `editor/registry.ts`, `ui/shop.ts`, `preview-rework/`, `scripts/shoot-rework.ts`,
+    `test-cosmetics.ts`, `test-runtime-owned.ts`. Build + full suite green.
+
+    **Four things are written into the code because each was a real defect a gate caught,
+    not a preference.** **The chirality gate caught an inverted left/right convention**
+    before a line of code existed: with `forward:+Z` in a right-handed frame the character's
+    own left is +X, and the spec had `-l` at negative x. Harmless here (the model is
+    symmetric) but it would have driven the wrong side of any pose addressed by joint name.
+    **The band creases needed their own material.** They started on the shared dark accent,
+    which sits in `accentMats` — so the frightened recolour painted body and creases the same
+    blue and the segment banding, the model's rank-1 identity feature, vanished in the one
+    state where the player is chasing it. Only the map-stripped clay render showed it; in
+    normal colour it looked fine. **The hind leg took two rounds** — first a rudder sticking
+    straight back, then a zigzag twig — before folding into a Z with the knee above the body
+    line, which is the difference between reading as a flea and reading as a grub. **And the
+    comparison sheet said "beetle"**: the first stance was tall and the body elongated, so it
+    joined the cluster it exists to be distinct from. Lowered and rounded.
+
+    **The primary reference is a watermarked stock image** — legible over the abdomen once
+    the detail-zone scan enlarged it, which is exactly where a material analysis would sample.
+    No pixel of it is used as colour or PBR evidence anywhere; every hue is authored from the
+    observed read. It independently confirms the projection-first rejection, since projecting
+    it would have baked the watermark onto the model.
+
+    **A fifth defect, and the first one no gate caught — Nuno did, from a screenshot.** The
+    HIND legs rendered in three disconnected pieces: femur, tibia and tarsus with daylight
+    between them. `CapsuleGeometry`'s length argument is the CYLINDER only, the two round caps
+    add `radius` on top, and each segment was passing an arbitrary FRACTION of its joint
+    distance (0.72/0.82/0.80) with the caps left to cover the rest. That holds while the radius
+    is large relative to the segment — true of the front and middle legs, and false of the hind
+    leg, which is more than twice as long and, at `girth` 0.72, thinner as well. Measured: the
+    femur fell 0.0134 short of the knee and the tibia 0.0111 short of the ankle. Segments are
+    now sized from their real span with half a radius of overlap, and a **knuckle ball sits at
+    every knee and ankle**, because overlap closes a gap along the limb's axis but not ACROSS
+    the hind knee's 132° fold, where two tangent capsules leave an open wedge.
+    `scripts/_scratch-flea-gaps.ts` proves all 12 joints are contained in a solid — a
+    CONTAINMENT test, after a first attempt measuring distance-to-nearest-vertex reported every
+    joint "open" because a ball centred on a joint returns exactly its own radius. Cost: 10 860
+    to 12 828 triangles, still the cheapest of the four insect skins.
+
+    **Not done:** no dedicated shop glyph. A fifth icon means re-cutting the Material Symbols
+    subset, and an unlisted name renders as that word on the card, so the flea uses the
+    documented fallback until the subset is re-cut.
+
+### IDEA-055 — The mosquito: all needle and wings 🔨
+- **Priority:** 🟡
+- **Area:** skins
+- **Registered:** 2026-09-10
+- **Description:** (Nuno) the next enemy after the flea — a cartoon mosquito, built from a
+  reference image through the img2threejs pipeline and sold in the shop like the rest.
+- **Notes:** a sixth `EnemySkin`, so it costs no new machinery — `makeEnemy` dispatches, the
+  registry gains a row, and `GhostUserData` is satisfied exactly as the other five satisfy it.
+  Priced 25 with its siblings. Built in its own workspace (`.img2threejs/mosquito/`) so neither
+  the beagle's IDEA-047 trail nor the flea's IDEA-053 one was touched. Following the same
+  precedent, the pipeline's generated factory stays in `src/render/rework/` (never imported) and
+  the SHIPPED mesh is hand-authored in `characters.ts` from the numbers the pipeline locked.
+  **ID 055 rather than the free 054**: a concurrent session was starting a crab, and taking the
+  next-free ID from both sides would have collided at merge.
+- **Dependencies:** [[IDEA-009]], [[IDEA-012]], [[IDEA-047]], [[IDEA-053]]
+- **History:**
+  - **v1** (2026-09-10) — `makeMosquito()`: a revolved banded abdomen on a pinched waist, a
+    near-black thorax, an oversized head with a 0.73 HD proboscis, two long translucent veined
+    wings and six splayed legs. Proportion base **HD = 0.27** — deliberately NOT the 0.32 the bee
+    and flea use, because a mosquito is a LONGER animal at the same envelope: at 0.32 the model
+    measured 0.90 along Z, past the beetle's 0.872 which is the cast's ceiling. Measured
+    w 0.812 / h 0.762 / l 0.865 / crown 0.780, 13 648 triangles, 56 meshes — all four dimensions
+    inside the shipped cast's band, triangles between the flea's 12 828 and the bee's 16 868.
+    Registry + dispatch + editor tab + shop card + `catalog.generated.ts` (server `npm run sync`,
+    now 6 enemy skins). `characters.ts`, `cosmetics.ts`, `editor/registry.ts`, `ui/shop.ts`,
+    `preview-rework/`, `test-cosmetics.ts`, `test-runtime-owned.ts`. Build + full suite green.
+
+    **THE WHOLE MODEL IS BUILT AGAINST ONE RISK: the bee.** The bee already has translucent
+    veined wings, antennae, a three-mass head→thorax→abdomen diagonal, six legs and a hover node
+    — and colour cannot separate them, because every skin takes the team colour and is recoloured
+    AGAIN when frightened. Silhouette carries the entire identity, so every separator is measured:
+    ONE wing pair against the bee's two; 1.90 HD wings against its 0.85 HD forewing; an abdomen of
+    aspect 0.51 coming to a point against its rounded 1.15 HD; a proboscis where the bee has
+    nothing; legs splayed wider than the body against its tucked four. Verified the way the risk
+    was written — both models rendered at the SAME team colour and the SAME play-camera angle,
+    not asserted in a test.
+
+    **Four defects, each caught by a specific instrument rather than by looking.**
+    **The envelope caught two inverted orientations.** The abdomen and the proboscis were both
+    aimed with hand-written Euler angles and both came out pointing the wrong way — the abdomen
+    forward-down, tucked under the model's own head. The measured length came back 0.67 against a
+    solved 0.842, which is what exposed it; a render alone reads as "a bit odd". Both are now
+    aimed with `setFromUnitVectors` from the solved layout, where a sign cannot be got wrong.
+    **The band boundaries zigzagged.** Triangles were bucketed into material groups by their own
+    mean height, but a lathe quad's two triangles have different means — so the two halves of
+    every quad landed on opposite sides of a boundary and the band edge alternated around the
+    circumference. That is IDEA-047's "spiky markings" defect in a new place. Classifying by RING
+    makes every boundary a clean circle. **The clay render caught the droop.** The reference
+    projects 60.2° and a first pass used 56°; the play camera sits at 59° elevation, so the
+    abdomen pointed almost straight down the view axis and foreshortened to a stub with almost no
+    form presence. 44° trails it visibly while staying steeper than the bee's 32°. **And the
+    comparison sheet rejected the wings at 1.60 HD** — the reference's wings dominate its
+    silhouette and at 1.60 the model read as a small-winged insect. Grown to 1.90, which is what
+    the crown and width budgets actually allowed; the length axis had none.
+
+    **IDEA-053's rule 2 was applied deliberately rather than relearned.** `creaseMat` is its own
+    material and is kept OUT of `accentMats`, so the frightened recolour cannot erase the
+    banding — verified by rendering the frightened state, not by assertion. The crease WIDTHS are
+    narrowed from the measured runs, and that one is a genuine deviation with a reason: the
+    reference's dark runs are brown-on-brown, a modest step, but here they sit against a saturated
+    team colour at maximum contrast, and at measured width the abdomen read as a WASP — the one
+    silhouette this model must not borrow.
+
+    **The leg-joint rule was applied from the start**, not rediscovered: every segment spans its
+    joint distance with half a radius of overlap and a knuckle ball sits at each knee and ankle.
+    `scripts/_scratch-mosquito-gaps.ts` proves it as a CONTAINMENT test — 3 618 centreline samples
+    across 6 legs, all inside a solid.
+
+    **The generated factory does not work, and that is recorded rather than hidden.** It produced
+    4 meshes and 384 triangles of fan shapes, because the spec describes its lathes by dimension
+    and the generator therefore invents the silhouette — unrecoverable for a subject whose
+    identity IS a measured 41-point revolved profile. Full account in
+    `.img2threejs/mosquito/evidence/pipeline-completion.md`. The pipeline's value here was the
+    measurement, the gates and the evidence trail, not its code.
+
+    **Not done:** no dedicated shop glyph, same as the flea — a sixth icon means re-cutting the
+    Material Symbols subset, so it uses the documented fallback. Not deployed; this is a product
+    change and wants its own release decision.
 
 ### IDEA-048 — Toon boards, not glass panels: a real design system for the 2D layer 🔨
 - **Priority:** 🔴
@@ -159,6 +724,616 @@ _(empty — nothing to triage)_
 ## Delivered ✅
 > Already in production. Do NOT delete. Each keeps its version history.
 
+### IDEA-061 — Thirty maps, and a map number that never resets ✅
+- **Priority:** 🔴
+- **Area:** progression
+- **Registered:** 2026-09-11
+- **Delivered:** 2026-09-11
+- **Description:** (Nuno) "I already be able to run all the mazes and repeat some of them" — the
+  15-map cycle is short enough to lap, and when it laps the HUD drops back to Map 1, which reads as
+  losing your progress. Add 15 more numbered maps and 3 more bonus maps, put them in the normal
+  game, and make the map number keep counting: 31, 32, 33 … even when the maze underneath is one
+  you have already played.
+- **Notes:** the maze LIST doubled but the machinery did not — `progression.ts` is still the single
+  place difficulty is tuned, and `planLevel()` is still the one function the server vendors. The
+  two halves of the ask are independent and both land in that file: STAGE_COUNT 3 → 6 for the
+  maps, and `mapNumber` becoming `(lap - 1) * MAPS_PER_LAP + mapIdx + 1` for the count.
+- **Dependencies:** [[IDEA-040]], [[IDEA-018]], [[IDEA-048]]
+- **History:**
+  - **v1** (2026-09-11) — **36 mazes, six stages, and a running map number.** 15 new numbered maps
+    (16-30) and 3 new bonus maps, all hand-authored 19x21 and validated against the real
+    `Grid.walkable`: connected, every pellet reachable, ghosts able to leave the pen, 4 bones on a
+    numbered map and none on a bonus one. Six stages of five ramp the enemy count **3 / 3 / 4 / 4 /
+    5 / 5**, which brings the violet and leaf enemies into classic mode for the first time —
+    `ENEMY_SLOTS` has always had five and classic only ever took a slice of three or four.
+    **Maps 1-15 are byte-for-byte the progression they always were**, on the same mazes at the same
+    enemy counts: the new stages extend the ramp rather than redistribute it, because fifteen maps
+    players already know must not change difficulty underneath them. The three original bonus mazes
+    moved from indices 15-17 to 30-32 to make room, which is invisible — a run's `mazeIdxSequence`
+    is checked against `planLevel()`, never against an older run's — and mazes 0-4 stay put so
+    challenge mode is untouched. `mapNumber` is now a RUNNING COUNT, so lap 2 opens on **Map 31**
+    and the `·2` lap suffix is gone: the figure carries the lap, and one number says what two used
+    to. Server catalog regenerated (`npm run sync`), `MAX_ENEMY_SLOTS` followed the 5-enemy ceiling
+    on its own because it reads the constant rather than a literal. Client suite (validate, sim,
+    120 progression assertions), server suite (catalog 77, plausibility 110) and both typechecks
+    green.
+  - **v1 — two bugs found in shipped code, both invisible to every check that existed.**
+    (a) **Maze 10 and maze 14 were byte-identical.** A duplicate is a perfectly valid maze, so
+    nothing complained — which is exactly the repeat Nuno noticed. Maze 13 is now its own layout,
+    and both `validate-maze.ts` and `test-progression.ts` reject a repeated board. (b) **The maze
+    validator never asserted `REQUIRED_MAZE_COUNT`**, although `progression.ts` had carried a
+    comment saying it did since IDEA-040; a missing maze would have sent a level to `undefined`
+    rather than failing. It asserts it now.
+  - **v1 — the sim's bot was measuring luck, so it was rewritten.** Eight sound new mazes failed
+    `npm run sim`, and the cause was the test. Its bot picked whichever legal turn shortened the
+    STRAIGHT-LINE distance to the nearest pellet, which in a maze is not a plan: measured, it
+    wedged into a 3-to-17 tile loop in **every one of the eighteen shipped mazes** and differed
+    only in how long it wandered first, so the `eaten > 50` bar was a coin-flip on geometry (maze 7
+    cleared it with 59). It now runs a BFS over **(tile, incoming direction)** — the no-reverse
+    rule belongs inside the SEARCH, not in a filter applied after the target is chosen — and
+    decides inside `onArrive` the way the ghosts always have, since deciding in the outer tick
+    plans from the tile being LEFT and lands every turn one tile late. All 36 mazes now clear
+    **100%** of their pellets in under 73s of a 180s budget, so the bar is a cleared board and the
+    assertion is a real statement about reachability instead of a proxy for it.
+  - **v1 — two design rules the new maps had to be taught.** A **bonus map's pen must stand FREE**:
+    no wall tile may touch the ring around it, or the house reads as a lump fused to a wall rather
+    than sitting in a meadow. All three new bonus maps broke it on the first pass and
+    `test-progression.ts` caught all three. And the garden's wall-top props are authored per THEME
+    while walls are per MAZE, so the suite requires each decorated tile to be wall in at least half
+    the mazes — doubling the list moved that bar from 9 to 18 and three tiles fell under it, fixed
+    by four single-tile edits chosen by searching which mazes could take a wall there without
+    failing validation.
+  - **v1 — the HUD figure is no longer one character wide, and that was measured rather than
+    assumed.** `style.css`'s right-column budget was written around a one-digit map number. At 390px
+    the chip runs 75.5px at "5", 88.7 at "30" and 92.8 at "115" (lap 4 reaches three digits), and
+    the row holds all of them on one line — **"Bonus" is 94.9px, wider than any of them**, so a
+    numbered map can never be what wraps that row. Below 390 a three-digit figure wraps, which is
+    the same fallback "Bonus" has always taken there. No CSS change needed; the measurements are
+    recorded where the next person will look.
+
+### IDEA-056 — The maki roll: the first enemy that isn't a bug ✅
+- **Priority:** 🟡
+- **Area:** skins
+- **Registered:** 2026-09-10
+- **Delivered:** 2026-09-10
+- **Description:** (Nuno) the most revolutionary enemy yet — a humanised sushi piece, built from a
+  reference image through the img2threejs pipeline and sold in the shop like the rest. Two of them,
+  from two different reference images, so the game gains two sushi types rather than one.
+- **Notes:** an eighth `EnemySkin`, so it costs no new machinery — `makeEnemy` dispatches, the
+  registry gains a row, `GhostUserData` is satisfied exactly as the other seven satisfy it. Priced
+  25 with its siblings. Own workspace (`.img2threejs/maki/`), so no earlier subject's evidence was
+  touched. The generated factory stays in `src/render/rework/` (never imported) and the SHIPPED
+  mesh is hand-authored in `characters.ts` from the numbers the pipeline locked.
+- **Dependencies:** [[IDEA-009]], [[IDEA-012]], [[IDEA-047]], [[IDEA-053]], [[IDEA-057]]
+- **History:**
+  - **v1** (2026-09-10) — `makeSushiMaki()`: a nori drum leaning back on two booted legs, its cut
+    face a three-zone bullseye — dark rim, an annulus of 62 countable rice capsules, a
+    rounded-square salmon plug carrying the whole face. Proportion base **ND = 0.62, the nori disc
+    diameter**; there is no head, and a "head height" would be an invented boundary every ratio then
+    inherited (the crab's carapace-width reasoning). Measured w 0.832 / h 0.838 / l 0.663 /
+    crown 0.837, 18 072 triangles, 124 meshes — **the tallest thing in the maze**, past the bee's
+    0.803, and still well inside the crab's 0.896 width, because being the widest is the crab's
+    identity. Registry + dispatch + editor tab + shop card + `catalog.generated.ts` (server
+    `npm run sync`, now 9 enemy skins). Build, full suite and editor suite green.
+
+    **WHY IT EXISTS: every other enemy is a bug, and this one is FOOD, and it STANDS UP.** Those are
+    the two things the shipped cast could not say, and they are the whole reason for the skin — a
+    beagle chasing its dinner rather than a garden pest.
+
+    **The nori takes the team colour, and that is a real loss taken deliberately.** `bodyMat` has to
+    be the dominant mass or four enemies in four colours stop being distinguishable and the
+    frightened state stops reading; the sleeve IS the dominant mass. What keeps the seaweed at every
+    hue is `seamMat`, three lap laminations in their own fixed near-black, kept OUT of `accentMats`
+    — IDEA-053's rule applied up front. They also had to be **thin and low-contrast**: four
+    near-black rings at 0.005 on a red drum read as TREAD, and a dark cylinder on two legs with
+    concentric rings and a pale ring on its face is a TYRE, which is this model's recorded rank-1 risk.
+
+    **Four defects, each caught by an instrument rather than by looking.** *The arms were buried
+    inside the barrel by a rotation SIGN* — a child hanging at (0, −h, 0) under a pivot lands at
+    x = h·sin(z), so a negative angle swings it toward the median plane. Two passes widened the angle
+    and only buried them deeper; what said "direction, not distance" was the measured width never
+    moving off 0.65. *The rear cut face was placed at the FRONT* by a sign expression carried through
+    eight part positions — the rear face is now the same builder mirrored by one rotation on its
+    parent GROUP, which cannot be got wrong the way eight expressions can. *The fat striations sat
+    behind the plate* and showed through the mouth hole as a tan bar. *And the rice bed, a full disc,
+    occluded the mouth cavity* — it is an annulus now, which is what makes the mouth possible at all.
+
+    **The mouth is a real HOLE in the plate**, cut with `Shape.holes` and backed by a back-side
+    liner, not a dark shape laid on top: on a flat plate that is exact boolean subtraction for
+    nothing. It is also the one dimension **scaled up from the measurement** (0.225 × 0.125 ND
+    against 0.183 × 0.088) for the same reason the crab's pincer gap was — at the measured size it
+    closed into a pale sliver at review size.
+
+    **The −18° body pitch is a PLAY-CAMERA decision, not a measurement**, and it is a named constant
+    saying so. The game camera sits at 59° elevation, where a vertical cut face projects at
+    cos(59) = 0.515 of its area — half of the model's rank-1 feature. At −18° that becomes 0.73. It
+    must live on an INNER group: `applyGhostState` assigns `mesh.rotation.x` on the root every time
+    the state changes, so a pitch authored there is erased the first time the beagle eats a bone.
+
+    **The review harness gained `?bg=none`**, and the reason is worth keeping. `turntable_gate.py`
+    decides what is background BY COLOUR, then flood-fills any enclosed region and calls it an
+    interior HOLE. On the default warm-stone backdrop it reported a 378 × 374 px hole in the dead
+    centre of a solid model — the cream rice and the ground shadow, both segmenting as background.
+    A dark backdrop and a saturated one both made the gate give up honestly
+    (`segmentationReliable: false`) rather than lie. Rendering on TRANSPARENT and reading the mask
+    from ALPHA is the answer, and it needs both halves — `setClearAlpha(0)` plus the page's own CSS
+    background cleared, AND `page.screenshot({ omitBackground: true })`. Missing the shooter half
+    looks exactly like a pass and is not one. On true alpha: PASS, no holes, all four azimuths.
+    This is IDEA-054's `?fov=` finding in a new place — **a review-harness mismatch reports as a
+    model defect**.
+
+### IDEA-057 — The nigiri: a prawn on a rice pillow ✅
+- **Priority:** 🟡
+- **Area:** skins
+- **Registered:** 2026-09-10
+- **Delivered:** 2026-09-10
+- **Description:** (Nuno) the second sushi, from the second reference — a different type, so the
+  pair reads as a cuisine rather than as one idea rendered twice.
+- **Notes:** ninth `EnemySkin`. Own workspace (`.img2threejs/nigiri/`). Same split as every rebuild
+  before it. Registered alongside [[IDEA-056]] rather than after it, because each is built against
+  the other as its main risk and neither's numbers make sense alone.
+- **Dependencies:** [[IDEA-009]], [[IDEA-012]], [[IDEA-047]], [[IDEA-053]], [[IDEA-056]]
+- **History:**
+  - **v1** (2026-09-10) — `makeNigiri()`: a smooth rice pillow belted in nori, a seven-lobed prawn
+    laid over the top with a tail fan standing up behind it, and a face of half-lidded eyes, blush
+    and a closed smile on the one smooth panel the grain skirt leaves bare. Proportion base
+    **RW = 0.56, the rice block WIDTH** — the block is not square, so a "head height" would already
+    have been a choice. Measured w 0.811 / h 0.839 / l 0.481 / crown 0.823, 14 372 triangles,
+    110 meshes; at 0.481 deep it is **the shallowest thing in the cast**. Build, full suite and
+    editor suite green.
+
+    **THE TOPPING IS PRAWN (ebi), NOT SALMON**, and that reading changed the build: seven transverse
+    lobes with pale bands between them, and a three-blade tail fan. A salmon slice has neither. Read
+    as salmon it would have been a smooth orange pillow with stripes painted on it.
+
+    **The whole model is built against ONE risk: the maki.** Two sushi in one release, both
+    team-coloured, both recoloured again when frightened — colour cannot separate them, exactly as
+    it could not separate the mosquito from the bee. Seven measured silhouette separators do it, and
+    an eighth that is not a shape: **the two recolour in OPPOSITE places.** The maki's `bodyMat` is
+    its WRAPPER, so its pale centre stays pale while its outside changes; this one's is its TOPPING,
+    so its pale block stays pale while its top changes. They never converge at any team colour.
+    Verified by rendering both at the same colour and the same play-camera angle
+    (`scripts/_scratch-sushi-pair.ts`), never asserted.
+
+    **THE DEFECT WORTH KNOWING: three systems invisible, one cause.** The nori belt, the entire
+    rice-grain skirt and every mark on the face all rendered as nothing. Each was correctly built.
+    Each was placed against the block's own squircle footprint — and **`ExtrudeGeometry`'s
+    `bevelSize` grows OUTWARD**, so a block extruded from a 0.560 × 0.403 footprint measured
+    0.650 × 0.493 and swallowed all three. What found it was MEASURING the parts, not looking at the
+    render: what renders is a perfectly plausible plain rice block, with nothing to see. Three
+    separate hunts would have ended in three different places; one bounding-box dump ended all
+    three. The block is a smooth indexed `squirclePillow()` now, which also fixes the second problem
+    an extrusion had — it is non-indexed, so its bevel steps cannot be smoothed, and the toon ramp
+    quantised them into rectangular patches across the model's largest surface.
+
+    **Four more, each caught by its own instrument.** *The cap swallowed the face*: built as a full
+    tube centred on the block's top plane, its lower half hung down over the FRONT at the ends and
+    covered the whole face panel — it is a HALF tube seated just under the top plane now. *The
+    pillow rendered inside-out* from backwards winding in all three cases (body quad, both pole
+    fans), which looks like a material bug and is not one. *The lobe bands tested for the PEAKS* —
+    the valleys are at (2n−1)/14, not k/7 — and with the ring spacing at 0.014 the wrong test caught
+    exactly one, so the cap shipped with a single pale swoosh, i.e. it read as SALMON, the one thing
+    the topping must not be. *And the grains read as rivets* until their variation became a spin
+    about the surface NORMAL rather than three loose Euler angles.
+
+    **`accentMats` is deliberately EMPTY.** The obvious candidate is the rice block, being the
+    largest mass — but block and cap going blue together is the exact collapse this skin cannot
+    afford: the two-mass stack IS the identity, and losing it while frightened means losing it while
+    the player is chasing the thing. The belt is out for the same reason.
+
+    **Nuno's fix, same day: the cap's rim curls BELOW horizontal (`CAP_WRAP = 0.2`).** He spotted a
+    visible gap between the prawn and the rice and pushed the cap down in the editor. Lowering it
+    alone cannot close that gap: a clean half tube ends in a flat, horizontally-cut open rim, and
+    the cap is deliberately WIDER than the block (0.302 against 0.280 on the half-width — it
+    drapes), so the rim overhangs with nothing underneath. The block is a pillow, narrower still at
+    every height above its own mid-point, so there is no height at which it is as wide as the cap.
+    Carrying the arc past the horizontal curls the rim down onto the flank instead. The value is
+    bounded on BOTH sides: too little and the machined straight edge comes back; at 0.38 the cap
+    draped to the nori belt, buried the rice skirt on both flanks and cost the two-mass stack from
+    every side view.
+
+  - **v2** (2026-09-10) — **the eye rejoins the cast, and that turns out to be a STATE fix rather
+    than a cosmetic one.** (Nuno) "keep the style of the other enemies' eyes to be consistent". Every
+    other skin builds the same stack — a cream sclera BALL, a dark pupil CAP and a catchlight on a
+    dart pivot inside it, with the flattening carried by the shared parent GROUP so the caps stay
+    flush however flat the lens is. This one had shipped a single dark cap in `pupM` with a gold lid
+    line over it: no white, no pupil, and the dart swinging the whole eye instead of a pupil inside
+    it.
+
+    **The consistency was load-bearing.** `applyEnemyLook` whitens `pupM` for the frightened look,
+    which reads as the classic blank stare only because there is a sclera behind it to be blank
+    against. Here `pupM` WAS the eye, so frightened turned both eyes cream-on-cream against a cream
+    rice block and the face lost its eyes at exactly the moment the player is chasing it — IDEA-053's
+    `creaseMat` defect in a new place, and the second time this skin has hit it (its `accentMats` is
+    empty for the same class of reason). The eaten state gained the same thing for free: `scleraMat`
+    joins `nigiriEyeMats`, the list `collectSpiritMats` excludes, so the eyes stay solid while the
+    body goes translucent and still read as the thing you follow home.
+
+    **A pale body needs the eye to carry its own boundary.** The maki's sclera sits on saturated
+    salmon and needs none; a cream sclera on a cream rice block has almost no edge, and none at all
+    once the pupil whitens. So the gold lid became a hooded RIM (the crab's collar) rather than a
+    line — a fixed accent outside `accentMats`, so the eye stays outlined in all three states. It
+    has to stay narrow and near-VERTICAL: swept 1.12 rad about an up-and-FORWARD axis it projected
+    almost entirely onto the flattened lens's front face, covering two thirds of the eye, and the
+    whole thing read as a brass button with a dark sliver under it. 0.62 rad about (0.16, 0.97,
+    0.18) lands where an eyelid does.
+
+    **Then Nuno opened the eye in the editor, and the half-lidded read went with it** — his numbers,
+    applied as given and mirrored to the left side. The ball takes its own scale (0.791, 1.31) inside
+    the lens, so it measures 0.072 wide by 0.079 tall: taller than wide, where v1's was 0.091 by
+    0.060. The pupil is sized off the BALL rather than the lens (0.89 of its width, 0.92 of its
+    height) so the white reads as an even rim instead of a crescent, and stands 0.01 proud because a
+    cap narrower than the ball it lies in would otherwise hang over surface that has already fallen
+    away. The lid lifts 0.02 clear and becomes a brow-line over an open eye. **So the separator from
+    the maki is no longer how far each eye is CLOSED** — it is size and furniture: 0.139 across with
+    a cyan iris ring and brows against 0.072 with a gold lid line and blush. Re-verified by rendering
+    both at one team colour (`_scratch-sushi-pair.ts`), and the symmetry by measuring where each
+    cap's lit pole actually lands (`_scratch-eye-sym.ts`: L +0.0010, R −0.0010, y and z identical),
+    because the glint's rotation mirrors by `s` while an editor position does not — authored on the
+    right eye alone, +0.02 would have put both catchlights on the same side of the face.
+
+    **No iris ring, unlike seven of the ten.** Cyan would converge with the maki, which the pair
+    cannot afford, and amber would muddle with the lid a millimetre away; the ghost and the pizza
+    ship without one too. **Ring counts are spent on the SWEEP**: `SphereGeometry` lays its height
+    segments across `thetaLen`, so a full sphere's 12 on a 0.7-rad cap bought nothing and cost about
+    1 500 triangles across four caps. At 5/3/4 rings the model lands at 14 624 — 252 over v1 — with
+    the envelope unchanged (w 0.811 / h 0.796 / crown 0.798). Turntable gate PASS on alpha (no holes,
+    segmentation reliable, all four azimuths), part coverage 27 specified / 123 built / 0 errors,
+    suite and build green. Editor saveability is unchanged at 1 of 123, which is the deferred
+    cast-wide `rewriteBlocker` job and not this one.
+
+### IDEA-059 — The burger: the first enemy whose body is a STACK ✅
+- **Priority:** 🟡
+- **Area:** skins
+- **Registered:** 2026-09-10
+- **Delivered:** 2026-09-10
+- **Description:** (Nuno) "another revolutionary enemy — a humanization of the hamburger."
+  Reference supplied at `.img2threejs/reference/hamburguer/hamburguer.png`: a 1930s rubber-hose
+  mascot whose body is a stacked sandwich, standing on hose legs in red boots, with a face on the
+  top bun and one white glove held up in a two-finger V.
+- **Notes:** eleventh `EnemySkin`, eighth img2threejs rebuild, own workspace
+  (`.img2threejs/burger/`). Same split as every rebuild before it, with one difference recorded
+  below. New geometry module `src/render/burgerSculpt.ts`.
+- **Dependencies:** [[IDEA-009]], [[IDEA-012]], [[IDEA-047]], [[IDEA-053]], [[IDEA-056]],
+  [[IDEA-057]], [[IDEA-058]]
+- **History:**
+  - **v1** (2026-09-10) — `makeBurger()`. Measured **w 0.842 / h 0.792 / l 0.811 / crown 0.797**,
+    17 758 triangles, 100 meshes. Typecheck, production build, the full headless suite, the seven
+    editor suites and the server catalog drift test all green.
+
+    **WHY IT IS REVOLUTIONARY, IN THE ONLY TERMS THAT COUNT — what a player can see.** Ten enemies
+    ship today and every one of them has a body that is ONE mass wearing marks: a shell, a drum, a
+    block, a wedge. This one's body is a **STACK** — six contrasting horizontal bands piled up, bun
+    over lettuce over onion and tomato over cheese over patty over bun. Nothing else in the cast is
+    striped across its full width, and a striped tower is not confusable with a smooth one whatever
+    colour it takes. The second novelty is smaller and it is on the hands: every gloved enemy in
+    this game wears the same blob mitt, and this one has **FINGERS**, two of which it holds up in a
+    V while it walks at you. It is the only gesture in the cast.
+
+    **PROPORTION BASE: BH = THE STACK HEIGHT, MEASURED at 261 px, built at 0.62.** No head for the
+    fourth subject running, and this time the reason is the plainest yet: the face is drawn ON the
+    top bun, which is band 1 of the body. IDEA-054's carapace width, IDEA-056/057's nori disc and
+    rice width, IDEA-058's slice height — and the HEIGHT rather than the width here, because the
+    identity is how the body is BANDED and the bands divide the height. Every number under it came
+    off the reference by scanline colour runs and enclosed-white component analysis
+    (`.img2threejs/burger/measure.py`).
+
+    **THE DEFECT WORTH KNOWING, AND IT WAS FOUND TWICE BY TWO DIFFERENT INSTRUMENTS.** Built to the
+    reference's own measured division — 0.632 bun / 0.218 garnish / 0.149 base — the model came
+    back a red **EGG** with a stripe round its middle, from every angle. The cause is not
+    proportion: the drawing has an ORANGE bun against four loud garnish colours and a hard ink
+    KEYLINE round every region, and this renderer has neither, because `bodyMat` is the BREAD (so
+    both bun masses take the same team hue) and the project has no outline pass at all. Two
+    same-coloured domes a fifth of the stack apart simply close into one form. Re-divided
+    0.53 / 0.30 / 0.17 and narrowed the base — and then the **map-stripped CLAY render** showed the
+    same thing again: a ball with a ruffled skirt, because the entire six-band identity was still
+    being carried by PAINT and the only geometric events on the body were the frill and the boots.
+    The real fix is that **a band has to be a LEDGE in the silhouette, not a stripe on it**: the
+    patty now ships at 0.372 — wider than the top bun (0.330), the bottom bun (0.275) AND the
+    frill's own troughs (0.368) — inverting the reference, so the profile is a real step sequence.
+
+    **THE FINDING THAT IS NOT A DEFECT: at the play camera the stack is not what a player sees.**
+    From 59 degrees of elevation the six bands are stacked along the one axis the camera
+    foreshortens, and the top bun is the highest thing on the model so it occludes what is under
+    it. The play read is a **sesame dome, a garnish ring, a face and a raised hand** — which is
+    still a burger, unmistakably, and still unlike anything else in the cast, since nothing else is
+    speckled and nothing else has a hand up. Every available fix was taken (bun narrowed, patty
+    widened past it, cheese corners pushed past the frill's troughs, the whole stack pitched back
+    15 degrees on an INNER group) and together they roughly double what the band contributes from
+    above. The rest is the camera, and it is recorded rather than fought: the full six bands are
+    what the shop, the menu vignette and any lower angle show.
+
+    **WHAT TAKES THE TEAM COLOUR: THE BREAD — and `accentMats` IS EMPTY ON PURPOSE.** A fourth
+    distinct arrangement after the maki (repaints its wrapper), the nigiri (its topping) and the
+    pizza (its face plate): the first skin whose team colour lands in TWO DISJOINT places, the
+    crown of the figure and its base, with fixed colour clamped between. The patty is the obvious
+    thing to add to `accentMats`, being the largest fixed mass — and adding it would turn bread AND
+    meat blue together and collapse the six-band identity exactly while the player is chasing it.
+    Two fixed colours are pushed off their sampled values for the same class of reason the pizza's
+    crust was: the **patty** to a deep brown (the reference's red-brown vanishes into the ROSE
+    team's bun) and the **onion** to a deeper purple. The LEAF-team/lettuce collision is bounded
+    and on the record rather than solved.
+
+    **THREE MORE, each caught by a different instrument.** *The clay render* found the ledge
+    problem above. *The comparison sheet* found that widening the patty had quietly put a new thing
+    in front of the cheese drips, taking them back to a sliver — two systems, one number. *And a
+    SIGN*: `rotation.z` positive swings a part toward +x only when it hangs at **-y**, and the
+    raised arm points UP, so +0.46 on the +x shoulder rendered the entire arm, hand, fingers and
+    cuff INSIDE the bun. A limb buried in a solid looks exactly like a limb that was never built —
+    the maki lost both of its arms the same way. Two smaller ones on the face: the nose was
+    authored at t 0.762 where the measurement is 0.700, which sat it on the smile's crest and read
+    as a **TONGUE**; and the brows' tilt term swamped their arch term, so what rendered from the
+    play camera was a straight bar over a big pupil and the mascot looked stern.
+
+    **A maths error worth writing down: a squircle's DIAGONAL radius is `halfWidth * 2^(0.5 - 1/n)`,
+    not `2^(1/n)`.** The cheese's four drips are one mechanism — a square laid on a circle overhangs
+    at exactly four places by construction, so whatever sticks out past the patty's radius droops
+    and the drips place themselves. At the first build's n = 2.4 the diagonal bulge is 6%, i.e.
+    very nearly a circle: the whole mechanism was present, correct and producing nothing. It ships
+    at n = 6.
+
+    **This is the first run where the img2threejs generator legitimately BLOCKED.** No
+    `createBurgerModel.ts` exists; the BLOCKED artifact is kept instead. `--strict-quality` requires
+    a roughness/normal/bump/displacement response from some material, while the schema's own
+    evidence-bearing `textureless` escape — which this subject qualifies for, and which every
+    material declares with the measurements (66.18% of the reference is a single flat value) —
+    forbids exactly those fields. The two gates are mutually exclusive for any textureless
+    material, and `MeshToonMaterial` has no roughness channel to describe anyway. Same category as
+    IDEA-054's silhouette-IoU finding, and it changes nothing about the shipped result: the
+    generated factory has been unused since IDEA-047.
+
+    **One thing found on the way that is not about the burger:** `Box3.setFromObject` OVER-REPORTS
+    any child with an off-axis rotation, because it builds each box in local space and transforms
+    its eight corners. The burger has two such children and between them they made
+    `_scratch-enemy-cast.ts` report a 0.930-wide model whose real width is 0.842 — 15%, and the
+    difference between taking the crab's recorded "widest in the cast" claim and not.
+    `scripts/_scratch-exact-cast.ts` measures from VERTICES and prints the inflation alongside;
+    six of the eleven skins' published numbers were optimistic.
+
+    **Separation from the other three food skins was RENDERED, not asserted**
+    (`scripts/_scratch-food-quartet.ts`): all four at the same team colour and the same play camera,
+    in BOTH the normal and the frightened states — the harder half, since three of the four go blue
+    in most of the same places. No overlap.
+
+  - **v2** (2026-09-10) — **both arms down, and a friendly face.** Nuno, on the shipped model:
+    the raised arm should come down and match the other, and the eyes were creepy. Both were
+    right and both are worth recording, because the causes are opposite.
+
+    **The arm was a POSE problem.** The raised two-finger V was the reference's own pose and it
+    was the skin's most distinctive feature — the only set of fingers in the enemy cast. It also
+    read beautifully in every still I took. But this character spends the whole game WALKING at
+    the player, and a gesture held rigidly through a stride reads as a *stuck arm*, not as a
+    greeting; it gets less charming the more you see it. It also forced the two arms to be
+    non-mirrors, which is a thing a walk cycle fights. Both arms now hang and counter-swing as a
+    true reflection. **A pose that only has to survive one frame is not the same decision as a
+    pose that has to survive a loop**, and no still I captured could have told me that.
+
+    **The face was a MEASUREMENT problem, and that is the more useful half.** Three faithful
+    transcriptions of the reference were between them the whole of the creepiness: a sclera
+    taller than it is wide (0.72 x 0.95 — the shape a *glare* is drawn with), a small pupil
+    marooned in the middle of the white with clear space all the way round it (the doll stare),
+    and the reference's jagged four-sided catchlight, which is its one un-generic face mark and
+    which reads in three dimensions as a *flash of light* rather than as a highlight. Every one
+    of those came off `measure.py` correctly. **A flat drawing carries compensations a lit toon
+    mesh does not** — an ink keyline round every region, a stylised highlight that reads as
+    shorthand — so measuring the reference right is necessary and not sufficient. It now ships a
+    round sclera (0.90 x 0.92), a big pupil filling 0.79 of it and resting low against the lower
+    lid, two soft round catchlights instead of the spike, and thinner brows sat higher off the
+    eye.
+
+    Two smaller fixes found while re-rendering. The **boots** gained a 17-degree toe-out: almost
+    all of their shape is DEPTH, and none of it was available head-on, which is the framing the
+    shop showcase uses — turned out, the toe reads from the front too. And the **shoulders**
+    dropped to the patty's underside: hung from the garnish line the hoses ran down THROUGH the
+    patty, the widest thing on the body, so both limbs were buried for their whole length and
+    only the mitts emerged, reading as two white blobs stuck to the sides.
+
+    Re-measured **w 0.811 / h 0.785 / l 0.811 / crown 0.791**, 17 312 triangles, 97 meshes —
+    narrower than v1 (0.842), since the raised hand had been the widest thing on it. Typecheck,
+    build, the full suite, the seven editor suites, the server catalog test, part-coverage and
+    the in-game contract check across all five team hues are all green.
+
+    **One thing found on the way that is not about the burger, and it bit three models.** Running
+    two `npm run test:editor` chains CONCURRENTLY corrupts `src/render/characters.ts`.
+    `test-editor-save.ts` snapshots the file, writes to it through the real save middleware, and
+    restores the snapshot in a `finally` — which is safe alone and destructive in parallel, since
+    the second run snapshots the *modified* file and then "restores" that. It left editor-written
+    transforms in three body groups: the burger's play-camera pitch, the maki's `MK_PITCH` and the
+    pizza's `TIPY` were all replaced by inlined literals. `tsc` caught all three only because each
+    happened to orphan a named constant — a residue edit that replaced one literal with another
+    would have been silent. Restored, and verified by re-measuring the whole cast against the
+    recorded numbers: every other model matches exactly. **Never run two editor suites at once.**
+
+  - **v3** (2026-09-10) — **an open grin, and the eyes Nuno tuned himself.** He came back with
+    values straight out of the character editor — the right eye raised, pitched up 24 degrees and
+    its pupil and both catchlights nudged — plus `smile.visible = false` and a note: "make one
+    mouth like the pizza slice, that looks very friendly."
+
+    **His eye pitch is a play-camera fix in disguise, and I had missed it.** The eyes were
+    aligned to the dome's horizontal RADIUS, which on a dome is neither its surface normal nor
+    the direction a face should look: pointing straight out from a sphere's equator, a pair of
+    eyes ends up staring at the maze floor from a camera 59 degrees above them. Tipping them back
+    turns them toward the player. His edits arrive one-sided, so they are applied here
+    parametrically in `s` — `(EYE_PITCH, s * EYE_PHI, 0)` — which keeps the pair a REFLECTION by
+    construction rather than by two quaternions happening to agree.
+
+    **The mouth could not be built the pizza's way.** That face is a flat plate, so its mouth is a
+    real HOLE punched in a `Shape` with a dark floor behind it. This face is a revolved DOME:
+    nothing to cut, nothing flat behind to put a floor on. So it is four thin layers lying ON the
+    surface — cavity, tongue, tooth strip — all generated from the SAME aperture by a new
+    `smilePatch` at their own slice of it, so they cannot disagree about where the mouth is.
+
+    **A fourth layer was built and then cut, same day, on Nuno's call: an ink lip round the whole
+    aperture.** The argument for it was that this bun takes the TEAM COLOUR and a dark patch on a
+    violet dome reads as a sticker rather than as an opening. Reasonable, and wrong — rendered on
+    all five hues and on the frightened blue the cavity is already the darkest thing on the face
+    by a distance, the tooth strip gives the top lip a hard edge of its own and the tongue puts a
+    second value step inside, so the mouth reads as an opening on its own contents. What the lip
+    actually added was WEIGHT: 0.0062 of ink round an aperture only 0.066 tall is a tenth of the
+    mouth's height spent outlining it, and it closed the grin up. Kept in the record rather than
+    quietly dropped, because only the render could settle it.
+
+    **And then it was invisible, for TWO separate reasons at once.** First, `bandNormal` had its
+    sign flipped — the outward normal of a lathed band is `(-dy, dr)`, not `(dy, -dr)` — so every
+    layer "lifted off the surface" was pushed 0.0015 INTO it. Second, the patch grid's obvious
+    index order winds INWARD, because columns running left-to-right and rows running downward
+    cross to an inward normal, so the whole thing was back-face culled as well. What rendered was
+    an ink lip drawing a perfect grin around a bun-coloured hole. **Neither is visible in a
+    render and both were found in one line of a numeric probe** (`_scratch-patchprobe.ts`:
+    `dot = -0.953 FACES IN`, `min radial gap -0.00154 INSIDE THE BUN`).
+
+    The sign bug had been shipping since v1 in a second place nobody would have looked: all 38
+    **sesame seeds** were sunk 0.005 into the dome and oriented upside down. They read anyway,
+    because a seed is fatter than the error — but they stand properly proud now, and they are
+    visibly better for it on every hue. `scatterOnBand` had its own inline copy of the same
+    arithmetic; it calls `bandNormal` now.
+
+    Re-measured **w 0.811 / h 0.792 / l 0.811 / crown 0.798**, 18 428 triangles, 98 meshes. The
+    mouth is its own explodable subassembly and part-coverage is back to 0 errors.
+
+    **Blocked, and not by this work:** `src/render/wallTexture.ts` currently has a syntax error
+    (`rng(0xf10we2)` — not a hex literal) from another session's in-progress hedgeFlower/fence
+    change, which takes `test-board-surfaces` (3 checks) and the whole editor suite down with it,
+    since the editor imports that module. Left alone rather than repaired from here. Everything
+    that does not route through it is green.
+
+### IDEA-058 — The pizza slice: the first enemy that is a person ✅
+- **Priority:** 🟡
+- **Area:** skins
+- **Registered:** 2026-09-10
+- **Delivered:** 2026-09-10
+- **Description:** (Nuno) "another revolutionary enemy — a humanization of the pizza slice."
+  Reference supplied at `.img2threejs/reference/pizza/pizza.png`: a 1930s rubber-hose mascot,
+  a slice standing on its tip with the crust worn as a pompadour, white gloves and boots.
+- **Notes:** tenth `EnemySkin`, seventh img2threejs rebuild, own workspace
+  (`.img2threejs/pizza/`). Same split as every rebuild before it — the generated factory sits
+  unused in `src/render/rework/createPizzaModel.ts` and the shipped mesh is hand-authored from
+  the numbers the run locked. New geometry module `src/render/pizzaSculpt.ts`.
+- **Dependencies:** [[IDEA-009]], [[IDEA-012]], [[IDEA-047]], [[IDEA-053]], [[IDEA-056]], [[IDEA-057]]
+- **History:**
+  - **v1** (2026-09-10) — `makePizza()`. Measured **w 0.611 / h 0.873 / l 0.363 / crown 0.873**
+    (depth later 0.413 — see v2),
+    15 748 triangles, 87 meshes. Build, full suite, editor suite and the server catalog test all
+    green.
+
+    **WHY IT IS REVOLUTIONARY, IN THE ONLY TERMS THAT COUNT — what a player can see.** Nine
+    enemies ship today: six bugs, a ghost, and two pieces of sushi. Every one of them is an
+    animate OBJECT. This one is a PERSON: it has HAIR (the crust, worn as a pompadour), it WEARS
+    things (white mitts and boots — no other enemy wears anything), and it WALKS, with a real
+    stride and counter-swinging arms. It is also the only TRIANGLE in the cast and the only
+    silhouette that is decisively taller than wide: at **0.70 wide-over-tall** against a cast
+    that runs 0.92 to 1.30, and the tallest crown in the game past the maki's 0.837. Being
+    vertical is not a side effect, it is the identity — every number that costs width was cut
+    against it.
+
+    **PROPORTION BASE: SH = THE SLICE HEIGHT, MEASURED at 1494 px, built at 0.72.** No head
+    again, and this time not even the pretence of one — the face is painted on the body, so there
+    is no crown, no chin and no neck, and a "head height" would be an invention every ratio under
+    it inherited. IDEA-054's carapace-width reasoning, third subject running. Everything else is
+    an SH multiple read off the reference by enclosed-white component analysis (the two eye
+    sclerae, the tooth band, both gloves and both boot soles are each a white region fully
+    enclosed by ink, so they measure exactly) and by scanline ink runs for the limb tubes.
+
+    **RUBBER HOSE MEANS NO ELBOWS AND NO KNEES, and that is a measurement.** The reference's arm
+    ink-run is the same width at two scanlines 100 px apart across a large change of direction,
+    with no taper and no joint bulge anywhere. So every limb is ONE swept tube of constant radius
+    and the bend lives in its own curve. A capsule chain would not have been a cheaper version of
+    the right answer, it would have been the wrong idiom — and it would have dragged in the
+    flea's and the crab's whole joint-gap problem. A tube with no joints cannot have a joint gap;
+    the defect is unrepresentable rather than merely absent.
+
+    **ONE OUTLINE, THREE PARTS.** `sectorOutline()` in the new `pizzaSculpt.ts` produces the
+    wedge solid, the cheese plate laid on it and the arc the crust is swept along — so the dough
+    rim is uniform by construction rather than by three numbers being kept in step. The cheese
+    plate is the same call with `edgeInset` set, because an inset sector is just a sector whose
+    apex has slid up the axis by `inset / sin(alpha)`.
+
+    **THE DEFECT WORTH KNOWING: the mouth had no dark in it.** The aperture is a real hole cut
+    out of the plate's `Shape`, with a dark floor behind it — but the floor was authored at
+    `T/2 - 0.008`, which is INSIDE the wedge, so the wedge's own tan front face showed through
+    the hole instead. What rendered was a cream band over a tan blob: an open mouth with nothing
+    open about it, reading as a pout. This is IDEA-057's buried nori belt in a new place — a part
+    correctly built, correctly coloured, and behind another surface — and again nothing about the
+    render says so. The z arithmetic does.
+
+    **Three more, each caught by a different instrument.** *The comparison sheet* said the quiff
+    was a rim, not hair: at the MEASURED 0.168 SH it under-read, because a drawing gets an ink
+    keyline round the roll and a toon mesh does not, so it ships 9% over the measurement at
+    0.183. *The clay render* (`?flat=1`) confirmed the opposite of the flea's finding — every
+    mark on this model is geometry, so nothing identity-defining is carried by a material alone.
+    *And a torus ARC is not symmetric*, so its mirror is a reflection (`pi - a0 - A`), not a
+    rotation by pi: mirrored the wrong way the model had one brow and one stray tick, and once
+    both were visible their tilt sign was the difference between friendly and a scowl.
+
+    **WHAT TAKES THE TEAM COLOUR: THE CHEESE PLATE — the FACE.** A third distinct arrangement
+    after the maki (repaints its wrapper) and the nigiri (repaints its topping). `accentMats` is
+    `[crustMat]`, shared by the quiff and both boots, so the frightened blue lands at the TOP and
+    the BOTTOM of the figure and nothing warm is left in the middle of the silhouette. The
+    crust's own normal colour is a baked BROWN-orange chosen to sit outside all five team hues:
+    the amber team is a warm orange, and a crust in that family would have collapsed the
+    bread/cheese two-tone on exactly one team and nowhere else. The pepperoni is deeper than the
+    reference's salmon for the same class of reason — salmon on the rose team's plate is
+    invisible — and it is RAISED as well, so it survives on geometry where it loses on hue.
+
+    **The width budget is a real constraint and it was paid twice.** The two spiral termini sit at
+    the sweep's ends and MEASURED 0.330 on the first build, wider than the gloves and the widest
+    thing on the model. `crustSweepPoints` gained a `tuck` that pulls the ends inward as they
+    curl forward — which a real quiff's sides do anyway — and that bought 0.06 of envelope for
+    nothing that reads. The caps also ship at 0.155 across against a measured 0.189, recorded as
+    a deliberate reduction rather than as a measurement.
+
+    **The -18 degree pitch is a play-camera decision, on an INNER group.** The plate carries the
+    entire face and vertical it projects at cos(59) = 0.515 from the game camera; leaning back 18
+    degrees puts it 41 degrees off the view direction, a 46% larger projected face, for 0.01 of
+    crown. Verified by rendering at el=59, not asserted. It lives on an inner group because
+    `applyGhostState` writes `rotation.x` on the ROOT every state change (IDEA-056 rule 3).
+
+    **Separation from the other two food skins was rendered, not asserted**
+    (`scripts/_scratch-food-trio.ts`): all three at the same team colour and the same
+    play-camera angle. A triangle with hair against a round drum and a squared block — no
+    overlap at any hue.
+
+    **One thing found on the way that is not about the pizza:** the maki's body was pitched at
+    `-0.071` rad (about 4 degrees) while its own `MK_PITCH` constant said -18 and went unused —
+    so `tsc --noEmit` was failing on `noUnusedLocals` and the branch would not build. Its leg
+    pivots are positioned from the -18 figure by their own comment, so -0.071 was the accident.
+    Restored to `MK_PITCH`.
+
+    **Nuno's cut, same day: the boot SOLES are gone.** The reference draws a pale sliver under
+    each boot and it was measured (0.116 x 0.057 SH by enclosed-white component analysis) and
+    built. It should not have been: the game camera sits at 59 degrees ELEVATION and looks DOWN,
+    so a boot's underside is a surface no player ever sees, and all the sliver did at play size
+    was put a bright rim between the boot and its own ground shadow — a halo that made the foot
+    read as hovering rather than as planted. The collar alone does what the pair was there for,
+    which is to separate a boot from a blob. The hips dropped 0.0044 so the boots' own rounded
+    undersides land back on y = 0; the detail stays in the inventory marked observed-and-not-built,
+    because the observation was right and the decision is the record. Worth generalising: a
+    reference detail that only exists in a view this game never takes is a candidate for deletion
+    rather than for shrinking.
+
+  - **v2** (2026-09-10) — **the legs moved forward onto the slice's flanks** (Nuno's note:
+    "bring the legs more to the front, align on the side of the slice piece"). The hips were
+    authored at `z -0.045`, which is just behind the wedge's own back face at hip height, so the
+    whole stance hung off the BACK of the slice. It was written down as a virtue — "the hips sit
+    behind the wedge, which is what makes the tip hang down BETWEEN the legs" — and half of that
+    is true and half of it is a confusion: the tip hangs between the legs **laterally**, because
+    the hips sit at x +/-0.072 while the wedge tapers to |x| 0.006 at its point. Depth has nothing
+    to do with that reading and never did. What depth actually bought was a defect: from the play
+    camera at 59 degrees of ELEVATION, looking down, the tip occluded the tops of both legs and
+    the boots read as parked behind the body rather than planted under it.
+
+    Shipped at `z +0.005`, level with the wedge's own slab. The legs now run down the slice's
+    flanks and emerge clear of the point; from the play camera there is daylight between the tip
+    and each boot for the first time. **The cost is 0.050 of depth and nothing else** — measured:
+    w 0.611 unchanged, h 0.873 unchanged, crown 0.873 unchanged, floor 0.000 unchanged, 15 748
+    triangles unchanged, and `_scratch-cast-animated.ts` reports the stride sink still 0.029 and
+    the animated width still 0.595, because the move is purely in z. Depth 0.363 -> **0.413**,
+    which is nearer the 0.42 the spec targeted than the old number was.
+
+    Same lesson as the boot soles, one turn further on: **a claim recorded in a comment is not
+    evidence, and this one had been carried forward through seven review passes** because it
+    sounded like a reason. The instrument that settled it was the play-camera render, which is
+    the only view the argument was ever about.
 ### IDEA-052 — News in the app, and push worth granting ✅
 - **Priority:** 🟡
 - **Area:** ux · backend
@@ -1219,6 +2394,78 @@ _(empty — nothing to triage)_
 - **History:**
   - **v1** (2026-07-12) — the "Board & Themes" workbench, second item of v4.0 "New Territory". The /editor/ page gains a mode toggle: pick any of the 6 themes as a base and see a REAL validated maze (built by the actual `buildBoard`) under that theme's own atmosphere, orbit-framed via scene.ts's real fit math. EVERYTHING edits live through lil-gui — Atmosphere/Walls/Floor/Biscuits/Blooms/Specks folders plus a PROPS panel (Nuno's ask: add/remove/tune the shrub/building/streetlight/umbrella/... populations per theme — kind dropdown, density, scale band, up to 4 colors) — all applying through the real `applyBoardTheme` so the preview is honest. "Copy theme code" emits a paste-ready `MAZE_THEMES` entry (id/name/price editable, so brand-new themes can be authored, not just tuned); format byte-compatible with themes.ts, round-trip verified. Switching back to Character restores the workbench exactly (nothing torn down). Board mode ships without undo by design (the base-theme dropdown is the reset; documented). New committed Playwright suite `scripts/test-editor-board.ts` (86 checks incl. live prop-mesh-count assertions); `npm run test:editor` now runs character (40) + board (86). Dev-only boundary verified (dist/ greps clean). `src/editor/board*.ts` (4 new), `main.ts`, `stage.ts`, `editor/index.html`, `editor.css`, `package.json`. _(9fba958, 17f722c)_
 
+
+### IDEA-063 — Challenge mode: the grand tour (40 levels, one per maze, a theme each) ✅
+- **Priority:** 🔴
+- **Area:** modes · ux
+- **Registered:** 2026-09-11
+- **Description:** (Nuno) classic mode can be a bit of a slog and nobody comes back for it every
+  day — challenge mode is the quick distraction. Grow it from 8 levels to 40: the first **30 are
+  one per playable maze** (excluding the bonus ones), the **simplest possible** — 3 enemies, the
+  normal pace, the normal fruit and golden bone, no conditions at all — so a player actually gets
+  to see every board the game has. Give each one **a theme, unlocked or not**, cycling through all
+  six, so players meet the themes they have not bought and want them. Keep power-ups out of
+  challenge mode (a future twist will hand them out itself). Then the existing 8 twist levels
+  follow, plus 2 new ones, for 40.
+- **Notes:** the 30 tour levels are a CONTENT surface, not a mechanics one, and that is the whole
+  point — they layer nothing on the engine. What they do change is the ladder's length, which is a
+  DB migration in two places, a text-parsed catalog on the server, and a level map that was built
+  for eight stones. Follows [[IDEA-013]] (the modifier layer) and [[IDEA-014]] (the level map);
+  uses [[IDEA-061]]'s thirty playable mazes and [[IDEA-026]]'s six themes. [[IDEA-028]]
+  (moving walls) is still the open twist and now has an obvious home — a level 41.
+- **Dependencies:** [[IDEA-013]], [[IDEA-014]], [[IDEA-061]], [[IDEA-026]]
+- **History:**
+  - **v1** (2026-09-11) — **forty challenge levels in two chapters.** Levels 1-30 are THE GRAND
+    TOUR: one level per playable maze, in maze order, every one of them field-for-field
+    `CLASSIC_MODIFIERS` — three enemies, classic pace, full fright, the same fruit and golden
+    bones. Each is named after the board it shows (`MAZE_NAMES` grew from 5 placeholder-ish names
+    to all 36, and index 1's "Garden Two" is gone), and each FORCES one of the shop's six themes
+    whether the player owns it or not, on `THEME_CYCLE[idx % 6]` — so every theme is shown exactly
+    five times. Levels 31-40 are THE TWISTS: IDEA-013's eight byte-for-byte (same names, mazes and
+    dials — they are what every challenge score on the board was set on), plus **"Dream Walk"**,
+    the only level in the game below classic pace (0.7x) and the only fright window longer than
+    classic's (12s), and **"Last Dog Standing"**, the new ceiling at 2.2x with five enemies and a
+    1.5s fright on maze 29. No power-ups in either chapter, unchanged.
+    **The level map is a chapter trail now**: 40 stones, banners between the six tour stages and
+    the twists, and a 7-chip jump rail in the header that scrolls but deliberately never SELECTS
+    (a chip that did both would arm Play with a stone nobody had looked at). The panel gained a
+    theme tag and dropped the amber "Classic pace" warning-about-nothing that thirty tour levels
+    would otherwise have worn.
+    **Three bugs, each only reachable at this scale.** The desktop layout's sticky header AND
+    sticky side panel both scrolled away past the first screen — `.map-page` was `flex:1 1 auto`
+    inside a fixed-height `#levelMap`, so it was one viewport tall while the trail overflowed it,
+    and a sticky box cannot leave its containing block; at 8 stones the trail was ~700px and
+    nothing ever tested it. The panel's sticky offset was the literal `72px` (a one-row header),
+    so the rail's second row slid the panel's own title underneath — it is measured now and
+    published as `--map-header-h`. And `game_sessions.challenge_idx CHECK (BETWEEN 0 AND 7)` would
+    have failed at run START, so tapping Play on stone 9 would do nothing with the error nowhere
+    near the level map.
+    Also fixed: `sync-game-constants.ts`'s challenge-level count guard was the literal `!== 8` —
+    the one check protecting a regex parse was a hand-copy of the thing it checked; it now counts
+    the array's own entries and asserts the two agree. And `profile.ts` still read "/ 8 unlocked".
+    **Every account's `challenge_progress` resets to 0** (Nuno's call): the number means "levels of
+    the ladder cleared" and the ladder was rebuilt underneath it, so leaving it would relabel eight
+    hard-won twist clears as eight easy tour ones. High scores, coins and cosmetics are untouched.
+    Verified: full game suite, 110 plausibility, 77 catalog, 79 session, 96 auth-DB, 65 analytics,
+    typecheck and production build; plus browser review at 390x844 and 1280x800, and a live
+    forced-theme run photographed on Arcade Night from an account that owns only the garden.
+    `challenges.ts` (rewritten), `game.ts`, `levelMap.ts`, `profile.ts`, `style.css`,
+    `server/migrations/010_challenge_levels_40.sql` (new), `sync-game-constants.ts`,
+    `catalog.generated.ts`, `test-cosmetics.ts`, `test-plausibility.ts`,
+    `scripts/_scratch-levelmap-check.ts` + `_scratch-challenge-theme.ts` (new), `CLAUDE.md`.
+  - **v2** (2026-09-11) — **you can read a locked level, and the padlocks sit in the middle of
+    their dots** (Nuno). `selectNode` early-returned on a locked stone, so for a new player
+    thirty-nine of the forty were padlocks with nothing behind them — on the screen whose whole job
+    this release made "show the player what the game contains". Tapping one now fills the panel with
+    its name, blurb, theme and twists; only playing is refused, and the disabled button says
+    **"Clear stone N first"** rather than leaving them to work out which one. The stone is a real
+    focusable control again (no `aria-disabled`, no `tabindex="-1"`), and it hovers like the others.
+    The padlock was ~4px high on a 40px stone because `dominant-baseline="middle"` offsets by half
+    the X-HEIGHT — a Latin typography notion an icon font has no opinion about. Baloo 2's digits
+    happened to land within a third of a pixel that way, so the numbers looked right and the
+    construction looked correct. Both faces now use a `dy` MEASURED off the glyph's real ink box
+    (`scripts/_scratch-glyph-center.ts`, new: draws each glyph into a 2D canvas and scans the alpha
+    channel), in em so it tracks font-size. `levelMap.ts`, `style.css`, `CLAUDE.md`.
 
 ### IDEA-014 — Level map / level select for challenge mode ✅
 - **Priority:** 🟢

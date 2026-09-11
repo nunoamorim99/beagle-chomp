@@ -26,6 +26,9 @@ import { readSubmission } from "../src/validation/wire.js";
 import {
   planLevel,
   MAZE_FACTS,
+  MAPS_PER_LAP,
+  BONUS_MAZE_START,
+  STAGE_COUNT,
   SCORING,
   CHALLENGE_LEVELS,
   FRUIT_THRESHOLDS,
@@ -33,6 +36,9 @@ import {
   MIN_FRUIT_POINTS,
   POWERUP_THRESHOLDS,
   POWERUP_MULTIPLIER,
+  BEAGLE_PERKS,
+  BEAGLE_PERK_BY_SKIN,
+  FRUIT_VALUES,
 } from "../src/catalog.generated.js";
 
 let passed = 0;
@@ -103,6 +109,11 @@ function classicCtx(over: Partial<RunContext> = {}): RunContext {
     mode: "classic",
     challengeIdx: null,
     currentChallengeProgress: 0,
+    // IDEA-064: the default coat, whose perk (a start shield) cannot add a
+    // point and cannot widen a bound — so every bound asserted in this file
+    // before perks existed still means exactly what it meant. The perk cases
+    // pass their own coat through `over`.
+    beagleSkinId: "bagel",
     ...over,
   };
 }
@@ -140,27 +151,36 @@ ok("maze 0 has 175 biscuits", MAZE_FACTS[0].biscuits === 175, MAZE_FACTS[0].bisc
 ok("maze 2 has 200 biscuits (the biggest)", MAZE_FACTS[2].biscuits === 200, MAZE_FACTS[2].biscuits);
 ok("maze 3 has 198 biscuits", MAZE_FACTS[3].biscuits === 198, MAZE_FACTS[3].biscuits);
 ok("maze 4 has 176 biscuits", MAZE_FACTS[4].biscuits === 176, MAZE_FACTS[4].biscuits);
-// IDEA-040: every NUMBERED map has 4 bones; the three BONUS maps have none.
+// IDEA-040/061: every NUMBERED map has 4 bones; the BONUS maps have none.
 // A bone opens a fright window, and on a bonus level that means eating the
 // lone enemy for a free life on top of an already generous point haul — the
 // golden bone already covers "earn a life here". With 0 bones the ceiling
 // loses all ghost points there, which is exactly right.
+//
+// Counted off BONUS_MAZE_START rather than a literal 15, so the next time the
+// cycle grows this states the rule instead of restating the old size.
 ok(
-  "the 15 numbered maps have exactly 4 bones",
-  MAZE_FACTS.slice(0, 15).every((f) => f.bones === 4),
-  MAZE_FACTS.slice(0, 15).map((f) => f.bones).join(","),
+  `the ${MAPS_PER_LAP} numbered maps have exactly 4 bones`,
+  MAZE_FACTS.slice(0, BONUS_MAZE_START).every((f) => f.bones === 4),
+  MAZE_FACTS.slice(0, BONUS_MAZE_START).map((f) => f.bones).join(","),
 );
 ok(
-  "the 3 bonus maps have NO bones",
-  MAZE_FACTS.slice(15).every((f) => f.bones === 0),
-  MAZE_FACTS.slice(15).map((f) => f.bones).join(","),
+  `the ${STAGE_COUNT} bonus maps have NO bones`,
+  MAZE_FACTS.slice(BONUS_MAZE_START).every((f) => f.bones === 0),
+  MAZE_FACTS.slice(BONUS_MAZE_START).map((f) => f.bones).join(","),
+);
+ok(
+  "the bonus maps are exactly the tail of MAZE_FACTS",
+  MAZE_FACTS.length === BONUS_MAZE_START + STAGE_COUNT,
+  `${MAZE_FACTS.length} mazes, expected ${BONUS_MAZE_START + STAGE_COUNT}`,
 );
 // A bonus level therefore has no reachable ghost points at all.
 ok(
   "a bonus level's ceiling contains no ghost points",
-  maxLevelScore(15, 1) ===
-    MAZE_FACTS[15].biscuits * SCORING.biscuit + FRUIT_THRESHOLDS.length * MAX_FRUIT_POINTS,
-  maxLevelScore(15, 1),
+  maxLevelScore(BONUS_MAZE_START, 1) ===
+    MAZE_FACTS[BONUS_MAZE_START].biscuits * SCORING.biscuit +
+      FRUIT_THRESHOLDS.length * MAX_FRUIT_POINTS,
+  maxLevelScore(BONUS_MAZE_START, 1),
 );
 // Still true, and still worth pinning — but note it is NOT what bounds fruit
 // per level any more (IDEA-045). Only one fruit is on the board at a time and
@@ -241,10 +261,20 @@ expectAccept(
   classicCtx({ elapsedServerSeconds: 300 }),
 );
 
+// IDEA-063 moved "Top Dog" — the 5-ghost, 2x-speed finale this case exists to
+// price — from index 7 to index 37: the ladder gained thirty CLASSIC-pace tour
+// levels in front of the eight twists. Resolved by NAME rather than re-typed as
+// 37, so the next reshuffle moves it again on its own. Index 7 is now a 3-ghost
+// tour level, which is why this case failed with ITEM_COUNT_IMPOSSIBLE rather
+// than with anything to do with the validator: 18 ghosts eaten off 4 bones is
+// impossible with three of them, and entirely ordinary with five.
+const TOP_DOG_IDX = CHALLENGE_LEVELS.findIndex((l) => l.ghostCount === 5 && l.speedMult === 2);
+if (TOP_DOG_IDX < 0) throw new Error("test-plausibility: no 5-ghost 2x-speed challenge level in the catalog");
+
 expectAccept(
-  "a challenge L8 clear (5 ghosts, x2 speed)",
+  "a challenge Top Dog clear (5 ghosts, x2 speed)",
   makeRun({
-    mazeIdxSequence: [CHALLENGE_LEVELS[7].mazeIdx],
+    mazeIdxSequence: [CHALLENGE_LEVELS[TOP_DOG_IDX].mazeIdx],
     levelsCleared: 1,
     pelletsEaten: 176,
     bonesEaten: 4,
@@ -252,7 +282,12 @@ expectAccept(
     ghostsEaten: 18,
     livesLost: 2,
   }),
-  classicCtx({ mode: "challenge", challengeIdx: 7, currentChallengeProgress: 7, elapsedServerSeconds: 200 }),
+  classicCtx({
+    mode: "challenge",
+    challengeIdx: TOP_DOG_IDX,
+    currentChallengeProgress: TOP_DOG_IDX,
+    elapsedServerSeconds: 200,
+  }),
 );
 
 expectAccept(
@@ -1026,7 +1061,13 @@ expectReject(
     powerupsCollected: 1,
     powerupIds: ["shield"],
   }),
-  { elapsedServerSeconds: 300, mode: "challenge", challengeIdx: 0, currentChallengeProgress: 0 },
+  {
+    elapsedServerSeconds: 300,
+    mode: "challenge",
+    challengeIdx: 0,
+    currentChallengeProgress: 0,
+    beagleSkinId: "bagel",
+  },
 );
 
 // Backward compatibility, same shape as IDEA-045's: a run from before this
@@ -1179,6 +1220,201 @@ section("IDEA-050 — deaths name the enemy that caused them");
       empty.fruitKindCounts.length === 0 &&
       Array.isArray(empty.deathsByGhost) &&
       empty.deathsByGhost.length === 0,
+  );
+}
+
+
+// ===========================================================================
+section("IDEA-064 - beagle perks");
+// Three of the five coats move numbers this file checks. The failure mode when
+// the server does NOT know about one is the nastiest this project has: honest
+// runs rejected in production while nothing fails locally. So each perk is
+// tested in both directions - the coat that has it, and a coat that does not.
+
+// The catalog is GENERATED from the game source, so this is the drift guard: a
+// perk re-pointed in cosmetics.ts without `npm run sync` fails HERE.
+ok("the catalog knows Muffin doubles coins", BEAGLE_PERK_BY_SKIN.muffin === "doubleCoins");
+ok("the catalog knows Cookie grants per-map lives", BEAGLE_PERK_BY_SKIN.cookie === "extraLifePerMap");
+ok("the catalog knows Pepper bonuses fruit", BEAGLE_PERK_BY_SKIN.pepper === "fruitBonus");
+ok(
+  "the catalog carries the magnitudes",
+  BEAGLE_PERKS.coinMultiplier === 2 && BEAGLE_PERKS.fruitBonusPoints === 100,
+);
+
+// --- Muffin: the coin AWARD. This is the whole reason the server is the
+// authority on coins - the client's own balance is optimistic and reconciled
+// to whatever comes back from here.
+{
+  const run = makeRun({ coinsCollected: 5 });
+  const plain = validateRun(run, classicCtx());
+  const muffin = validateRun(run, classicCtx({ beagleSkinId: "muffin" }));
+  ok(
+    "a plain coat banks one coin per pickup",
+    plain.accepted && plain.coinsAwarded === 5,
+    plain.accepted ? plain.coinsAwarded : plain.reasonCode,
+  );
+  ok(
+    "Muffin banks double, from the SAME submission",
+    muffin.accepted && muffin.coinsAwarded === 10,
+    muffin.accepted ? muffin.coinsAwarded : muffin.reasonCode,
+  );
+  // The perk must never become a way to claim coins that were not on the board.
+  expectReject(
+    "Muffin still cannot report more pickups than the maps contained",
+    "ITEM_COUNT_IMPOSSIBLE",
+    makeRun({ coinsCollected: 99 }),
+    classicCtx({ beagleSkinId: "muffin" }),
+  );
+  // CLASSIC ONLY, on the money perk specifically.
+  const challengeMuffin = validateRun(
+    makeRun({ mazeIdxSequence: [CHALLENGE_LEVELS[0].mazeIdx], coinsCollected: 5 }),
+    {
+      elapsedServerSeconds: 300,
+      mode: "challenge",
+      challengeIdx: 0,
+      currentChallengeProgress: 0,
+      beagleSkinId: "muffin",
+    },
+  );
+  ok(
+    "a challenge run in Muffin banks single coins",
+    challengeMuffin.accepted && challengeMuffin.coinsAwarded === 5,
+    challengeMuffin.accepted ? challengeMuffin.coinsAwarded : challengeMuffin.reasonCode,
+  );
+}
+
+// --- Pepper: the one perk that moves the SCORE, so the one that rejects honest
+// runs if the server does not allow for it. This pair is the regression that
+// matters most in this section.
+{
+  const bonus = BEAGLE_PERKS.fruitBonusPoints;
+  const eaten = 2;
+  const fruitPoints = eaten * (FRUIT_VALUES[0] + bonus);
+  const pepperScore =
+    175 * SCORING.biscuit + 4 * SCORING.bone + fruitPoints + 6 * SCORING.ghostBase;
+  const pepperRun = makeRun({
+    fruitEaten: eaten,
+    fruitKindCounts: [eaten, 0, 0, 0, 0],
+    fruitPoints,
+    score: pepperScore,
+  });
+
+  expectAccept(
+    "Pepper's fruit total is accepted",
+    pepperRun,
+    classicCtx({ beagleSkinId: "pepper" }),
+  );
+  // THE POINT OF THE EXERCISE: the identical submission from a coat without the
+  // perk is a lie about what two apples are worth.
+  expectReject(
+    "the same total from a plain coat is refused",
+    "ITEM_COUNT_IMPOSSIBLE",
+    pepperRun,
+    classicCtx(),
+  );
+  // The band MOVED; it did not open.
+  expectReject(
+    "Pepper cannot claim more than the bonus allows",
+    "ITEM_COUNT_IMPOSSIBLE",
+    makeRun({
+      fruitEaten: eaten,
+      fruitKindCounts: [eaten, 0, 0, 0, 0],
+      fruitPoints: fruitPoints + 1,
+      score: pepperScore + 1,
+    }),
+    classicCtx({ beagleSkinId: "pepper" }),
+  );
+  // CLASSIC ONLY: the same claim in a challenge run is priced at the ladder's
+  // own values and refused.
+  expectReject(
+    "a challenge run cannot claim Pepper's bonus",
+    "ITEM_COUNT_IMPOSSIBLE",
+    makeRun({
+      mazeIdxSequence: [CHALLENGE_LEVELS[0].mazeIdx],
+      fruitEaten: eaten,
+      fruitKindCounts: [eaten, 0, 0, 0, 0],
+      fruitPoints,
+      score: pepperScore,
+    }),
+    {
+      elapsedServerSeconds: 300,
+      mode: "challenge",
+      challengeIdx: 0,
+      currentChallengeProgress: 0,
+      beagleSkinId: "pepper",
+    },
+  );
+  // MAX-1 has to carry the bonus too, or a Pepper run that ate the dearest
+  // fruit at every threshold trips the per-LEVEL cap instead of passing.
+  const allMangos = FRUIT_THRESHOLDS.length;
+  const maxFruitPoints = allMangos * (MAX_FRUIT_POINTS + bonus);
+  expectAccept(
+    "a Pepper run eating a mango at every threshold is inside the ceiling",
+    makeRun({
+      fruitEaten: allMangos,
+      fruitKindCounts: [0, 0, 0, 0, allMangos],
+      fruitPoints: maxFruitPoints,
+      score:
+        175 * SCORING.biscuit + 4 * SCORING.bone + maxFruitPoints + 6 * SCORING.ghostBase,
+    }),
+    classicCtx({ beagleSkinId: "pepper" }),
+  );
+}
+
+// --- Cookie: a life at the start of every map, so the lives bound widens per
+// level PLAYED. Built at the plain coat's exact limit, where one more life lost
+// is the entire difference between the two coats.
+{
+  const threeMaps = { mazeIdxSequence: [0, 0, 0], levelsCleared: 2 };
+  const levels = 3;
+  const base = makeRun(threeMaps);
+  const plainMax =
+    SCORING.startLives +
+    Math.floor(base.score / SCORING.livesMilestonePoints) +
+    1 * levels + // LIFE_THRESHOLDS.length, one golden bone per map
+    base.bonesEaten; // a perfect fright per bone
+
+  expectAccept(
+    "a plain coat may lose every life the game could have granted it",
+    makeRun({ ...threeMaps, livesLost: plainMax }),
+    classicCtx({ elapsedServerSeconds: 4000 }),
+  );
+  expectReject(
+    "...and not one more",
+    "LIVES_IMPOSSIBLE",
+    makeRun({ ...threeMaps, livesLost: plainMax + 1 }),
+    classicCtx({ elapsedServerSeconds: 4000 }),
+  );
+  expectAccept(
+    "Cookie may lose one more per map played",
+    makeRun({ ...threeMaps, livesLost: plainMax + levels }),
+    classicCtx({ elapsedServerSeconds: 4000, beagleSkinId: "cookie" }),
+  );
+  expectReject(
+    "...and Cookie's allowance is still bounded",
+    "LIVES_IMPOSSIBLE",
+    makeRun({ ...threeMaps, livesLost: plainMax + levels + 1 }),
+    classicCtx({ elapsedServerSeconds: 4000, beagleSkinId: "cookie" }),
+  );
+}
+
+// --- Bagel and the Pac-Beagle cost the validator NOTHING, and that is worth
+// pinning: a start shield absorbs a hit and is never reported, and the tribute
+// coat's perk is paid at the till. An unknown coat resolves to the default's
+// perk, which is the safe direction - it cannot inflate anything.
+{
+  const run = makeRun({ coinsCollected: 3 });
+  const bagel = validateRun(run, classicCtx({ beagleSkinId: "bagel" }));
+  const pac = validateRun(run, classicCtx({ beagleSkinId: "pacbeagle" }));
+  const unknown = validateRun(run, classicCtx({ beagleSkinId: "retired-in-v12" }));
+  ok(
+    "Bagel, Pac-Beagle and a retired coat all price identically",
+    bagel.accepted &&
+      pac.accepted &&
+      unknown.accepted &&
+      bagel.coinsAwarded === 3 &&
+      pac.coinsAwarded === 3 &&
+      unknown.coinsAwarded === 3,
   );
 }
 

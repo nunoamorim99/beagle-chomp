@@ -58,6 +58,8 @@ import type { WorkingTheme, WorkingPropPlacement, WorkingWallDecorPlacement } fr
 import { propOptionsFor, type PlacementSelection } from "./boardPlacement";
 import { MAZE_THEMES } from "../game/themes";
 import { type WallTextureKind } from "../render/wallTexture";
+import { type FenceKind } from "../render/fence";
+import { type GroundDetailKind } from "../render/groundDetail";
 import { type FloorTextureKind } from "../render/floorTexture";
 
 const MAX_BLOOM_COLORS = 4;
@@ -384,12 +386,29 @@ export function createBoardInspector(
     // the `needsUpdate` a null-to-texture swap needs (it changes the shader
     // program), and holding the material white while a texture is on.
     folder
-      .add({ wallTexture: p.wallTexture }, "wallTexture", ["flat", "hedge", "sand", "brick"])
+      .add({ wallTexture: p.wallTexture }, "wallTexture",
+        ["flat", "hedge", "hedgeFlower", "sand", "brick"])
       .name("surface")
       .onChange((v: WallTextureKind) => {
         p.wallTexture = v;
         cb.onDecorChange();
       });
+    // IDEA-060: the FENCE standing in front of the wall. Unlike everything
+    // else in this folder it is GEOMETRY, so changing it rebuilds an
+    // instanced mesh rather than re-tinting a material — which is exactly
+    // what onDecorChange's applyBoardTheme already does for it.
+    folder
+      .add({ fence: p.fence }, "fence", ["none", "picket"])
+      .name("fence")
+      .onChange((v: FenceKind) => {
+        p.fence = v;
+        cb.onDecorChange();
+      });
+    folder
+      .addColor({ color: "#" + p.fenceColor.toString(16).padStart(6, "0") }, "color")
+      .name("fence timber")
+      .onChange((v: string) => { p.fenceColor = new THREE.Color(v).getHex(); })
+      .onFinishChange(() => cb.onDecorChange());
   }
 
   function buildFloorFolder(theme: WorkingTheme, floor: THREE.MeshStandardMaterial): void {
@@ -425,6 +444,21 @@ export function createBoardInspector(
       .add(floor, "emissiveIntensity", 0, 2, 0.01)
       .name("emissive intensity")
       .onChange((v: number) => { p.floorEmissiveIntensity = v; });
+    // IDEA-060 v2: what is scattered ON the ground. Geometry, like the fence,
+    // so a change rebuilds an instanced mesh rather than re-tinting a
+    // material — which is what onDecorChange's applyBoardTheme already does.
+    folder
+      .add({ groundDetail: p.groundDetail }, "groundDetail", ["none", "rocks"])
+      .name("ground detail")
+      .onChange((v: GroundDetailKind) => {
+        p.groundDetail = v;
+        cb.onDecorChange();
+      });
+    folder
+      .addColor({ color: "#" + p.groundDetailColor.toString(16).padStart(6, "0") }, "color")
+      .name("stone color")
+      .onChange((v: string) => { p.groundDetailColor = new THREE.Color(v).getHex(); })
+      .onFinishChange(() => cb.onDecorChange());
   }
 
   function buildBiscuitsFolder(theme: WorkingTheme, biscuit: THREE.MeshStandardMaterial): void {

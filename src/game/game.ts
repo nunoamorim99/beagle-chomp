@@ -20,7 +20,7 @@ import {
   levelLabel,
   completesMaxDifficultyLap,
   MAPS_PER_LAP,
-  GHOSTS_STAGE_3,
+  GHOSTS_STAGE_5_6,
 } from "./progression";
 import {
   SPEEDS,
@@ -126,6 +126,8 @@ import {
   spinDecor,
   type Board,
 } from "../render/board";
+import { disposeFence } from "../render/fence";
+import { disposeGroundDetail } from "../render/groundDetail";
 import {
   makeBeagle,
   makeGhost,
@@ -155,10 +157,20 @@ import {
 } from "./profileStore";
 import {
   getEquippedEnemySkinId,
+  getEquippedBeagleSkinId,
   getEquippedBeagleSkin,
   getBeagleSkin,
 } from "./cosmetics";
-import { getEquippedMazeThemeId } from "./themes";
+// IDEA-064: what the equipped beagle DOES. Every read goes through this module
+// — it is the one place the coat-to-number mapping and the CLASSIC-ONLY rule
+// live, and a second copy of either here is how they drift.
+import {
+  perkStartShields,
+  perkExtraLivesPerMap,
+  perkCoinMultiplier,
+  perkFruitBonusPoints,
+} from "./perks";
+import { getEquippedMazeThemeId, getEquippedMazeTheme, getMazeTheme, type MazeTheme } from "./themes";
 
 /**
  * Swap the HUD pause button between "pause" and "resume".
@@ -361,6 +373,22 @@ export class Game {
   private gameKind: "classic" | "challenge" = "classic";
   private challengeIdx = 0;
   private activeModifiers: ChallengeModifiers = CLASSIC_MODIFIERS;
+
+  // IDEA-063: which theme the SCENE ATMOSPHERE (sky, fog, backdrop dome,
+  // lights) is currently painted with — NOT which theme is equipped.
+  //
+  // The two are the same thing right up until a challenge level forces one the
+  // player does not own (the whole point of the grand tour: the shop sells six
+  // themes and a player who bought one has never seen the other five). The
+  // board is rebuilt from scratch for every level, so it re-themes for free;
+  // the atmosphere is mutated in place by rig.applySceneTheme and has no such
+  // rebuild, so without tracking it a challenge run on Night City would leave
+  // the sky black for the next classic run and every menu behind it.
+  //
+  // Seeded from the equipped theme because that is exactly what makeRig()
+  // painted the scene with at construction (scene.ts reads
+  // getEquippedMazeTheme() as it builds).
+  private sceneThemeId: string = getEquippedMazeThemeId();
 
   // Boots idle on the Start panel ("start" — see state.ts for why this is
   // distinct from "ready") and only ever leaves it via the Start button's
@@ -628,6 +656,10 @@ export class Game {
       // game's welcome-mat branding, not part of the themed world.
       onThemeChanged: (theme) => {
         this.rig.applySceneTheme(theme);
+        // IDEA-063: the atmosphere now shows this theme, so a later level that
+        // wants the same one must not re-apply it (and one that wants a
+        // different one must).
+        this.sceneThemeId = theme.id;
         applyBoardTheme(this.level.board, this.rig.scene, this.level.grid, theme);
         // IDEA-037: re-tint the MENU showcase too. The shop sits over the
         // full-screen menu, so equipping a theme should change the vignette
@@ -786,8 +818,31 @@ export class Game {
    * #mainMenu — the frame loop (tick()) is what actually switches which
    * scene/camera gets rendered while mode==="start" (see below).
    */
+  /** Re-dresses the live world in the EQUIPPED theme, if it isn't already.
+   *
+   *  The counterpart to buildLevel's forced-theme branch, and deliberately
+   *  cheap to call from anywhere: both halves are guarded, so on the common
+   *  path (a classic run, or a menu reached from one) this does nothing at
+   *  all. The board half compares against the board's own last applied theme
+   *  via the scene tracker rather than re-applying blindly, because
+   *  applyBoardTheme rebuilds hedge decor and props. */
+  private restoreEquippedTheme(): void {
+    const equipped = getEquippedMazeTheme();
+    if (this.sceneThemeId === equipped.id) return;
+    this.rig.applySceneTheme(equipped);
+    applyBoardTheme(this.level.board, this.rig.scene, this.level.grid, equipped);
+    this.sceneThemeId = equipped.id;
+  }
+
   private showMenu(): void {
     this.hud.hideCenter();
+    // IDEA-063: put the world back in the player's OWN theme before the menu
+    // shows. A challenge level forces its own (owned or not), and the full-
+    // screen menu is translucent enough that the board and the sky behind it
+    // are part of the picture — backing out of a Night City challenge and
+    // finding the menu sitting under a black sky reads as the theme having
+    // been silently changed in the shop.
+    this.restoreEquippedTheme();
     document.body.classList.add("menu-open");
     // §10: birds and distant traffic, under the menu ONLY. A run has its own
     // layer, and the bed would sit under a chase where nothing should.
@@ -860,9 +915,29 @@ export class Game {
    * builder serves both modes and neither can accidentally inherit the
    * other's level maths.
    */
-  private buildLevel(mazeIdx: number): LevelAssets {
+  private buildLevel(mazeIdx: number, forcedTheme?: MazeTheme): LevelAssets {
     const grid = new Grid(MAZES[mazeIdx]);
     const board = buildBoard(this.rig.scene, grid);
+
+    // IDEA-063: a challenge level is dressed by its OWN theme, owned or not.
+    //
+    // buildBoard reads getEquippedMazeTheme() internally, so the board always
+    // comes out of it wearing whatever is equipped. Re-theming it here is a
+    // no-op for classic (no forcedTheme, and the guard below never fires) and
+    // one applyBoardTheme call for a challenge level, which is the same call
+    // the shop already makes on a mid-run equip — materials in place, hedge
+    // decor and props rebuilt, nothing reconstructed from the grid.
+    const theme = forcedTheme ?? getEquippedMazeTheme();
+    if (theme.id !== getEquippedMazeThemeId()) {
+      applyBoardTheme(board, this.rig.scene, grid, theme);
+    }
+    // The atmosphere, unlike the board, is not rebuilt per level — see
+    // sceneThemeId's own comment. This is what puts the sky back after a
+    // challenge run on a theme the player does not own.
+    if (this.sceneThemeId !== theme.id) {
+      this.rig.applySceneTheme(theme);
+      this.sceneThemeId = theme.id;
+    }
 
     const pellets = new Set<string>();
     const fruitTiles: Vec2[] = [];
@@ -913,6 +988,16 @@ export class Game {
     // geometry+materials — disposePropGroup is board.ts's canonical
     // teardown for them, so a level change never leaks prop GPU resources.
     if (level.board.props) disposePropGroup(this.rig.scene, level.board.props);
+    // IDEA-060: the fence owns its geometry AND its material (fence.ts), so it
+    // needs a real disposal, not the bare scene.remove the walls above get.
+    if (level.board.fence) {
+      this.rig.scene.remove(level.board.fence);
+      disposeFence(level.board.fence);
+    }
+    if (level.board.groundDetail) {
+      this.rig.scene.remove(level.board.groundDetail);
+      disposeGroundDetail(level.board.groundDetail);
+    }
   }
 
   start(): void {
@@ -983,6 +1068,14 @@ export class Game {
     // itself), so record both — see runTelemetry / plausibility.ts.
     recordLevelStarted(this.telemetry, plan.mazeIdx, idx);
     this.hud.setLevel(levelLabel(idx));
+
+    // IDEA-064: Cookie's perk — a life at the start of EVERY map, this one
+    // included, so map 1 opens the run on START_LIVES + 1. Routed through
+    // grantLife() like every other bonus life, which is what keeps the
+    // LIVES.max cap, the HUD and the sound in step; at the cap it is simply
+    // wasted, exactly as a golden bone is.
+    const perkLives = perkExtraLivesPerMap(getEquippedBeagleSkinId(), this.gameKind);
+    for (let i = 0; i < perkLives; i++) this.grantLife();
 
     this.resetActors();
     this.mode = "ready";
@@ -1064,7 +1157,9 @@ export class Game {
     this.hud.setLives(this.lives);
 
     this.disposeLevel(this.level);
-    this.level = this.buildLevel(level.mazeIdx);
+    // IDEA-063: forced theme — see buildLevel. A tour level's whole second job
+    // is showing the player a theme they have not bought.
+    this.level = this.buildLevel(level.mazeIdx, getMazeTheme(level.themeId));
     recordLevelStarted(this.telemetry, level.mazeIdx);
 
     // Small, readable challenge-level HUD label (e.g. "C3") — distinct from
@@ -1272,7 +1367,13 @@ export class Game {
     // telling the player the ladder is real — a flat "+100" over a mango would
     // make the whole feature invisible.
     if (this.fruitTile && this.fruitTile.x === tx && this.fruitTile.y === ty) {
-      const points = this.fruitKind.points;
+      // IDEA-064: Pepper's perk rides on top of the ladder's own value, so the
+      // popup shows the real number (600 over a mango) rather than the ladder's
+      // — the popup is the only thing that tells a player either feature is
+      // real. recordFruit is given the SAME total, which is what the server
+      // recomputes from fruitKindCounts plus the perk.
+      const points =
+        this.fruitKind.points + perkFruitBonusPoints(getEquippedBeagleSkinId(), this.gameKind);
       // IDEA-050: read the KIND's index before despawnFruit() clears the tile,
       // so the rewind can name a favourite fruit and the server can price the
       // fruit contribution exactly instead of over a 100..500 band.
@@ -1295,7 +1396,13 @@ export class Game {
     // stale countdown left running against whatever coin spawns next.
     if (this.coinTile && this.coinTile.x === tx && this.coinTile.y === ty) {
       this.despawnCoin();
-      addCoins(COINS.pickupValue);
+      // IDEA-064: Muffin's perk multiplies what a pickup is WORTH, never how
+      // many pickups happened — the telemetry below still records ONE coin,
+      // because that is the fact the server checks against the board (five per
+      // map) and then prices itself using the same perk. Recording two would
+      // make an honest Muffin run look like it grabbed coins that were never
+      // there.
+      addCoins(COINS.pickupValue * perkCoinMultiplier(getEquippedBeagleSkinId(), this.gameKind));
       recordCoin(this.telemetry);
       this.hud.setCoins(getCoins());
       this.effects.pelletEaten(worldX(tx), worldZ(ty), "biscuit");
@@ -1850,7 +1957,7 @@ export class Game {
     const panel = this.hud.showPanel(
       '<div class="eyebrow">maximum difficulty</div>' +
       `<h1>${plateHtml("trophy", "inline")} Top Dog</h1>` +
-      `<p>You cleared all ${MAPS_PER_LAP} maps with ${GHOSTS_STAGE_3} enemies on the pack. ` +
+      `<p>You cleared all ${MAPS_PER_LAP} maps with ${GHOSTS_STAGE_5_6} enemies on the pack. ` +
       "That's every map this game has, at its hardest — there's nothing left to " +
       "throw at you.</p>" +
       `<p>Score so far: <strong>${this.score}</strong></p>` +
@@ -1997,6 +2104,28 @@ export class Game {
     this.livesAwardedFromScore = 0;
     this.hud.setScore(this.score);
     this.hud.setLives(this.lives);
+
+    // IDEA-046: power-ups are RUN-scoped, so a fresh run starts with none. It
+    // has always been effectively true here (losing the last life clears them
+    // via powerupsOnDeath), but it was never STATED on this path, and IDEA-064
+    // now grants one immediately below — which must never land on top of the
+    // previous run's holdings.
+    this.powerups = createPowerupState();
+    this.shieldGrace = 0;
+
+    // IDEA-064: Bagel's perk. "classic" is passed as a literal rather than
+    // read off this.gameKind because gameKind is only set to classic further
+    // down the call chain (startLevel), so at this point it may still say
+    // "challenge" from the run before — and this method IS the one way a
+    // classic run begins.
+    //
+    // Granted through powerups.ts's own collect() so a perk shield is a shield
+    // in every respect, and deliberately NOT passed to recordPowerup: it was
+    // not picked up off the floor, it cannot add a point, and a run reporting a
+    // power-up it never collected is one the server has to price for one.
+    const shields = perkStartShields(getEquippedBeagleSkinId(), "classic");
+    for (let i = 0; i < shields; i++) collectPowerup(this.powerups, "shield");
+    this.syncPowerupHud();
 
     // beginRunSession also resets telemetry — the other half of what the old
     // replay path skipped, which left the new run counting the old one's

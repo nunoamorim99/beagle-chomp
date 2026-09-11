@@ -16,7 +16,159 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
 > lines here roll up into the numbered version below and this section is cleared (hold a line back
 > only if you explicitly choose to).
 
-_(nothing unreleased — v8.0 "Paying Attention" was cut on 2026-09-10)_
+- **[[IDEA-064]] v3** (2026-09-11) - **the tutorial now explains what each beagle DOES.** A
+  seventh and last slide lists all five dogs, each with a paw painted in its own coat, and says
+  what that one gives you - Bagel's shield, Cookie's extra life every map, Muffin's doubled
+  coins, Pepper's +100 fruit, and the Pac-Beagle's two arcade unlocks. It also says the two
+  things nothing in the game had ever told a new player: powers are classic-mode only, and coins
+  come from the maze and nowhere else, so grab them before they vanish.
+
+  **A long-standing bug turned up while measuring it**: held sideways, the tutorial card was
+  taller than the screen on five of the seven slides, and the part that fell off was the TOP -
+  the title and the explanation - with no way to scroll up to it. Fixed for every slide.
+
+- **[[IDEA-064]] v2** (2026-09-11) - **the shop cards, redrawn.** Each beagle now shows a
+  PAW painted in its own coat - Bagel's tricolour, Cookie's chocolate, Pepper's cool grey, and
+  the Pac-Beagle's yellow paw on red boots - instead of four colour dots. The Pac-Beagle moved
+  to the end of the row, where the special one belongs. The enemy cards say what KIND of thing
+  they are (a bug, something edible, or the secret one) rather than eleven cards wearing the
+  same face, and every board theme got its own mark - a flower for the Garden, trees for the
+  Deep Forest, a parasol for the Beach, an arcade cabinet for Arcade Night - drawn in that
+  board's own colours.
+
+  **And the Beetle, Bee and Ladybug cards had been broken for three releases**: instead of an
+  icon they were printing the words "PEST_CONTROL", "HIVE" and "BUG_REPORT" in large text
+  straight across the shop. Fixed, and the check that should have caught it has been taught how.
+
+- **[[IDEA-064]] v1** (2026-09-11) - **every beagle has a power now, and the shop sells
+  beagles rather than paint.** Bagel starts every run holding a shield. Cookie hands you an extra
+  life at the start of every map. Muffin makes every coin you grab worth two. Pepper adds 100
+  points to every fruit you eat - a mango pays 600. And the Pac-Beagle unlocks both arcade
+  tributes at once: the Ghost enemy and the **Arcade Night board**, which is no longer for sale
+  at all, because the coat is what buys it. The card in the shop tells you what each dog does
+  before you spend anything. Classic mode only - challenge scores stay set on the same terms
+  they always were. The **Flea** is the enemy you start with now, and the Beetle joins its
+  siblings at 25 coins.
+
+  **Two bugs came out with it.** The Ghost was supposed to be a secret you unlock, and it was
+  showing up in everyone's shop - the cause was in the database rather than the game: new
+  accounts had been handed the Ghost by a default that was written when the Ghost WAS the
+  starting enemy, and never moved after. It is now revoked from anyone who did not earn it with
+  the Pac-Beagle coat, and anyone who bought the Arcade Night board keeps it. And players who
+  had already bought the Pac-Beagle are given the Arcade Night board on their next sign-in,
+  rather than being shown a price for something their coat is advertised as unlocking.
+
+- **[[IDEA-063]] v1** (2026-09-11) — **challenge mode is forty levels now, and the first thirty
+  are a tour of every board in the game.** One level per playable maze, in order, played exactly
+  the way classic plays — three enemies, normal speed, the same fruit and golden bones, no twists
+  at all — because most players will never meet maze 23 through classic's own progression. Each
+  one is **dressed in one of the shop's six themes whether you own it or not**, cycling so every
+  theme is shown five times: the quickest way to want the Deep Forest is to play a level in it.
+  Behind them, the original eight twist levels are exactly as they were, joined by two new ones —
+  **Dream Walk**, the only level in the game that runs in slow motion, with five ghosts drifting
+  after you and a bone that frightens them for twelve seconds; and **Last Dog Standing**, the
+  fastest thing here, on the tour's final board. The level map became a real trail: forty stones,
+  a signpost between each stage, and a row of chapter buttons to jump down it. **Everyone's
+  challenge progress goes back to zero** — the ladder was rebuilt underneath the number, and
+  leaving it would quietly relabel eight hard twist clears as eight easy ones. High scores, coins
+  and cosmetics are untouched.
+
+- **[[IDEA-063]] v2** (2026-09-11) — **you can read a locked challenge before you reach it.**
+  Tapping a padlocked stone now shows what that level is — its name, the board, the theme it is
+  dressed in and any twists — instead of doing nothing; the button tells you which stone to clear
+  to get there. And the padlocks are centred in their dots now, which they were not.
+
+- **[[IDEA-061]] v1** (2026-09-11) — **thirty maps, and a map number that never resets.** The
+  classic cycle doubled: 15 new numbered maps and 3 new bonus maps, hand-authored and validated,
+  taking the game to **36 mazes and six stages of five**. The enemy count now ramps 3 / 3 / 4 / 4 /
+  5 / 5 across those stages, which puts the violet and leaf enemies into classic mode for the first
+  time — maps 1-15 are left exactly as they were, so the fifteen maps players already know do not
+  change difficulty underneath them. And the number on the HUD **keeps counting**: clearing map 30
+  takes you to Map 31, then 32, 33, 34, 35, 36, on round the same mazes rather than back to "Map 1
+  ·2". The maze repeats; the count never does. Also fixed: **maps 10 and 14 were the same board** —
+  byte-identical since the 15-map cycle shipped, which is the repeat that prompted this.
+
+- **[[IDEA-059]] v1** (2026-09-10) — **the burger**. An eleventh enemy skin, and the first whose
+  BODY is a stack: six contrasting horizontal bands — sesame bun, scalloped lettuce, onion and
+  tomato, a square cheese slice whose corners hang over, a thick dark patty and a base bun — where
+  every other enemy in the game has a body that is one mass wearing marks. It is also the only
+  enemy with FINGERS, and it walks at you holding two of them up in a V while its other arm swings.
+  It recolours in a fourth distinct place: the maki repaints its wrapper, the nigiri its topping,
+  the pizza its face, and this one repaints its BREAD — top and bottom, with the whole colourful
+  garnish band clamped between them and staying warm even when the bun turns frightened blue, which
+  is what keeps it reading as a burger while you are chasing it. Red boots, white gloves and 38
+  sesame seeds stay fixed on every team colour. Priced 25 with its siblings.
+- **[[IDEA-059]] v2** (2026-09-10) — **both arms down, and a friendlier face.** The reference's
+  raised two-finger V came down: a gesture held through a walk cycle reads as a stuck arm rather
+  than a greeting, so both arms now hang and counter-swing as a mirror. And the eyes were creepy —
+  caused, of all things, by measuring the reference faithfully: a sclera taller than wide, a small
+  pupil marooned mid-white, and a spiky catchlight are all correct on a flat drawing with an ink
+  keyline and all wrong on a lit toon mesh. Round eyes, a big pupil resting low, soft round
+  catchlights and lighter brows. Plus toe-out boots and arms that hang clear of the patty instead
+  of being buried inside it.
+- **[[IDEA-059]] v3** (2026-09-10) — **an open grin.** The closed smile line became a real open
+  mouth with a dark cavity, a tooth strip and a tongue — a thin curve on a big round face is a
+  mark, and a mark has no depth. It could not be built the pizza's way (that face is a flat plate
+  with a hole cut in it; this one is a dome), so it is four layers lying on the surface, all cut
+  from one aperture, with an ink lip that keeps it reading as an opening rather than a sticker on
+  all five team colours. Eyes tuned by Nuno in the character editor and pitched up 24 degrees so
+  they look at the player instead of at the maze floor.
+
+- **[[IDEA-058]] v2** (2026-09-10) — **the pizza stands on its feet.** Its legs hung from hips
+  set behind the wedge's back face, which had been recorded as a virtue for seven review passes:
+  "the hips sit behind the wedge, which is what makes the tip hang down between the legs". Half of
+  that is true, and it is the half about WIDTH — the hips sit at x +/-0.072 and the wedge tapers to
+  a 0.006 point, so the slice hangs between them laterally no matter what depth does. What depth
+  did was hide them: from the play camera, which looks down from 59 degrees, the tip covered the
+  top of each leg and the boots read as parked behind the body. The hips moved forward 0.050 onto
+  the slice's own flanks; the whole model is unchanged on every other axis, including its stride
+  sink and its animated width, and the depth it gained lands nearer the spec's original target
+  than the old number did.
+
+- **[[IDEA-058]] v1** (2026-09-10) — **the pizza slice**. A tenth enemy skin, and the first one
+  that is a PERSON rather than an animate object: it has HAIR (the crust, worn as a pompadour with
+  a rolled dough spiral closing each end), it WEARS things (white four-fingered mitts and
+  high-collared boots — nothing else in the cast wears anything), and it WALKS, with a real stride,
+  counter-swinging arms and a quiff that lags behind the step. It is also the only TRIANGLE in the
+  game and the only silhouette clearly taller than it is wide: 0.611 x 0.873, a ratio of 0.70
+  against a cast that runs 0.92 to 1.30, and the tallest crown in the maze past the maki's 0.837.
+  Its face — huge close-set eyes, detached brows and an open grin with teeth and a tongue — is a
+  real aperture cut out of the cheese, not a mark painted on it, which is what lets it keep reading
+  when the plate takes the team colour. It recolours in a third distinct place: the maki repaints
+  its wrapper, the nigiri its topping, and this one repaints its FACE, with the crust and boots
+  following into the frightened blue while the gloves stay white. Priced 25 with its siblings.
+
+- **[[IDEA-056]] v1 + [[IDEA-057]] v1** (2026-09-10) — **the sushi pair**. Two enemy skins that
+  break the cast's one rule: every other enemy is a bug, and these are FOOD, and they STAND UP. The
+  **maki** is a nori drum on two booted legs whose cut face is a three-zone bullseye — dark rim,
+  62 countable rice grains, a salmon plug carrying big open eyes and a real hole for a mouth; at
+  0.837 crown it is the tallest thing in the maze. The **nigiri** is a rice pillow belted in nori
+  under a seven-lobed prawn with a tail fan, half-lidded eyes and blush; at 0.481 deep it is the
+  shallowest. They ship together because each is built against the other as its main risk: both
+  take the team colour and both are recoloured again when frightened, so colour cannot separate
+  them and seven measured silhouette separators do — plus an eighth that is not a shape, since the
+  **two recolour in opposite places** (the maki repaints its wrapper, the nigiri its topping).
+  Priced 25 with their siblings; nothing about them is premium.
+
+- **[[IDEA-057]] v2** (2026-09-10) — **the nigiri's eye rejoins the cast**. It had shipped as a
+  single dark cap where every other enemy builds a cream sclera ball with a dark pupil cap and a
+  catchlight on a dart pivot inside it — so it read as a painted bean, and, less visibly, it broke
+  the frightened state: whitening `pupM` is a blank stare only when there is a sclera behind it, and
+  here `pupM` WAS the eye, so both eyes went cream-on-cream against a cream rice block at exactly
+  the moment the player is chasing it. On a pale body the eye also has to carry its own outline, so
+  the gold lid became a hooded rim rather than a line — narrow and near-vertical, because a wide
+  forward-tilted hood projects onto the flattened lens and turns the eye into a brass button. Nuno
+  then opened the eye in the editor: the ball is 0.072 wide by 0.079 tall now, taller than wide
+  where v1's was the other way round, with the pupil sized off the ball so the white reads as an
+  even rim and the lid lifted clear as a brow-line. The half-lidded read is gone deliberately, so
+  the separator from the maki is the eye's SIZE and furniture rather than how far it is closed.
+
+- **[[IDEA-049]] v1** (2026-09-05) — **the thumbstick**. A third touch scheme beside
+  swipe and the D-pad, and the one that removes the LIFT: the thumb stays on the
+  control between turns, so a change of direction is a roll rather than a whole new
+  gesture. Drawn as an arcade ball top in a wooden gate plate with four notches that
+  light amber as you push into them. Full-stack — the control scheme is a per-account
+  column with a CHECK constraint, so a new one is a migration.
 
 ## 📌 Planned
 > Forward-looking targets from `/plan-version`. Each is a checklist of IDEAs intended for a

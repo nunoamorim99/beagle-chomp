@@ -42,26 +42,94 @@ const SERVER_DIR = join(dirname(fileURLToPath(import.meta.url)), "..");
 const GAME_DIR = join(SERVER_DIR, "..", "src", "game");
 const OUT_FILE = join(SERVER_DIR, "src", "catalog.generated.ts");
 
-/** Pull `{ id: "...", ..., price: N }` pairs out of a source file.
+/** Blank every comment to SPACES, preserving length and every other byte.
+ *
+ *  Blanking rather than deleting, for the reason src/editor/configRewrite.ts
+ *  records: a mask that shortens the text moves every index after it, so any
+ *  position computed on the mask points at the wrong byte in the original.
+ *  The extractors below read straight off the masked copy, so what matters
+ *  here is the other half of the same rule — the code between the comments
+ *  must stay exactly where it was, character for character.
+ *
+ *  It exists because the brace matching below cannot survive a comment. These
+ *  registries are the most heavily commented data in the game, and a single
+ *  "{" in prose would make the extractor lose count and silently take the
+ *  wrong entry — the worst outcome this file has, since a short or skewed
+ *  catalog rejects honest purchases and honest runs. */
+function maskComments(source: string): string {
+  let out = "";
+  let i = 0;
+  while (i < source.length) {
+    const two = source.slice(i, i + 2);
+    if (two === "//") {
+      const nl = source.indexOf("\n", i);
+      const end = nl === -1 ? source.length : nl;
+      out += " ".repeat(end - i);
+      i = end;
+    } else if (two === "/*") {
+      const close = source.indexOf("*/", i + 2);
+      const end = close === -1 ? source.length : close + 2;
+      // Newlines are KEPT so the mask stays line-for-line with the original.
+      out += source.slice(i, end).replace(/[^\r\n]/g, " ");
+      i = end;
+    } else {
+      out += source[i];
+      i++;
+    }
+  }
+  return out;
+}
+
+/** Split a registry array's source into its TOP-LEVEL `{ ... }` entries.
+ *
+ *  It used to be one flat regex that split on every `id:` it could see and
+ *  took the first `price:` after each. That held for exactly as long as an
+ *  entry had no NESTED object carrying an `id` of its own — IDEA-064 gave
+ *  every coat a `perk: { id: "..." }`, the split fired on the inner id, every
+ *  beagle entry was cut off before reaching its own `price:`, and the
+ *  extractor returned ZERO skins. It failed loudly, which is what the count
+ *  guard below is for; but it failed for a reason that will keep recurring as
+ *  the registries grow, so the fix is structural rather than another regex.
+ *
+ *  Braces inside string literals would defeat this the same way comments
+ *  would. No registry has one today — it would have to be a `{` inside a name
+ *  or a blurb — and the count guard is the backstop if one ever appears. */
+function splitEntries(arraySource: string): string[] {
+  const src = maskComments(arraySource);
+  const out: string[] = [];
+  let depth = 0;
+  let start = -1;
+  for (let i = 0; i < src.length; i++) {
+    const ch = src[i];
+    if (ch === "{") {
+      if (depth === 0) start = i;
+      depth++;
+    } else if (ch === "}") {
+      depth--;
+      if (depth === 0 && start !== -1) {
+        out.push(src.slice(start, i + 1));
+        start = -1;
+      }
+    }
+  }
+  return out;
+}
+
+/** Pull `{ id: "...", ..., price: N }` pairs out of a registry array.
  *
  *  A regex over TypeScript source is normally a bad idea, but here it is the
  *  pragmatic choice: the alternative is compiling the frontend's module graph
- *  (which pulls in Vite-flavoured resolution) just to read two fields. The
- *  registries are hand-written literal arrays in a stable shape, and the
- *  count assertions below turn any format surprise into a loud build failure
- *  rather than a silently short catalog. */
+ *  (which pulls in Vite-flavoured resolution) just to read two fields. Each
+ *  entry is isolated by brace matching first, so the regexes only ever see ONE
+ *  entry and cannot wander into the next — and the count assertions below turn
+ *  any remaining format surprise into a loud build failure rather than a
+ *  silently short catalog. */
 function extractIdPricePairs(source: string): Array<{ id: string; price: number }> {
   const out: Array<{ id: string; price: number }> = [];
-  // Match an id, then the FIRST price that follows it before the next id.
-  const entryRe = /\bid:\s*"([a-z0-9-]+)"([\s\S]*?)(?=\bid:\s*"|$)/g;
-
-  for (const match of source.matchAll(entryRe)) {
-    const id = match[1];
-    const body = match[2] ?? "";
-    const priceMatch = /\bprice:\s*(\d+)/.exec(body);
-    if (priceMatch) {
-      out.push({ id, price: Number(priceMatch[1]) });
-    }
+  for (const entry of splitEntries(source)) {
+    const id = /\bid:\s*"([a-z0-9-]+)"/.exec(entry);
+    const price = /\bprice:\s*(\d+)/.exec(entry);
+    if (id && price) out.push({ id: id[1], price: Number(price[1]) });
   }
   return out;
 }
@@ -267,6 +335,19 @@ const powerupIds = [...sliceArray(configSrc, "POWERUPS").matchAll(/\bid:\s*"([a-
 );
 const powerupMultiplier = numberConst(configSrc, "POWERUP_MULTIPLIER");
 
+// IDEA-064: beagle perks. The server needs the same two halves the client
+// reads — which coat carries which perk (beaglePerks, from cosmetics.ts) and
+// what each perk is worth (here, from config.ts) — because three of the four
+// move numbers the validator scores a run against. A perk the server does not
+// know about is an honest run rejected, which is the exact failure mode this
+// whole generated file exists to prevent.
+const beaglePerkValues = {
+  startShields: numberField(configSrc, "BEAGLE_PERKS", "startShields"),
+  extraLivesPerMap: numberField(configSrc, "BEAGLE_PERKS", "extraLivesPerMap"),
+  coinMultiplier: numberField(configSrc, "BEAGLE_PERKS", "coinMultiplier"),
+  fruitBonusPoints: numberField(configSrc, "BEAGLE_PERKS", "fruitBonusPoints"),
+};
+
 if (powerupIds.length !== 5) {
   console.error(
     `[sync] extracted ${powerupIds.length} power-up ids, expected 5 — ` +
@@ -311,8 +392,20 @@ const configFrightSeconds = numberField(configSrc, "TIMING", "frightSeconds");
 // Parse ENTRY BY ENTRY. A single regex spanning the whole array is greedy
 // across entries and silently merges levels — the count guard below caught
 // exactly that. Each entry is `mazeIdx: N` followed by its own `modifiers: {…}`.
+const challengesArraySrc = sliceArray(challengesSrc, "CHALLENGE_LEVELS");
+
+// How many entries the array CLAIMS to have, counted independently of the
+// modifier parse below. IDEA-063 took this from 8 to 40 and the old guard was
+// the literal `!== 8`, which would have had to be hand-edited to the new
+// number — i.e. the one check protecting this parse was itself a copy of the
+// thing it was checking, and a wrong copy is a silently short catalog. Counting
+// `name:` in the sliced array and comparing it against the number of
+// `mazeIdx: N` / `modifiers: {...}` pairs actually found asserts the two agree,
+// whatever the count happens to be.
+const declaredLevelCount = [...challengesArraySrc.matchAll(/^\s*name:\s*"/gm)].length;
+
 const challengeLevels = [
-  ...challengesSrc.matchAll(/mazeIdx:\s*(\d+),\s*\n\s*modifiers:\s*\{([^}]*)\}/g),
+  ...challengesArraySrc.matchAll(/mazeIdx:\s*(\d+),\s*\n\s*modifiers:\s*\{([^}]*)\}/g),
 ].map((m) => {
   const mazeIdx = Number(m[1]);
   const mods = m[2];
@@ -336,15 +429,43 @@ const challengeLevels = [
   };
 });
 
-if (challengeLevels.length !== 8) {
+if (declaredLevelCount === 0 || challengeLevels.length !== declaredLevelCount) {
   console.error(
-    `[sync] extracted ${challengeLevels.length} challenge levels, expected 8 — ` +
-      `the CHALLENGE_LEVELS format probably changed.`,
+    `[sync] extracted ${challengeLevels.length} challenge levels but CHALLENGE_LEVELS ` +
+      `declares ${declaredLevelCount} — the entry format probably changed. Every entry ` +
+      `must keep "mazeIdx: N" on its own line immediately followed by ` +
+      `"modifiers: { ... }" on ONE line (see challenges.ts's own note).`,
   );
   process.exit(1);
 }
 
+/**
+ * IDEA-064: which PERK each coat carries.
+ *
+ * Rides on extractIdPricePairs' own entry split, so it inherits the brace
+ * matching and the comment mask rather than repeating either. The count is
+ * asserted against the skin list below, so a coat
+ * whose `perk:` line moved out of reach fails the build rather than quietly
+ * shipping a catalog where that coat has no perk — which would mean the
+ * validator refusing to allow for a bonus the game is really paying out, i.e.
+ * every honest run in that coat rejected.
+ *
+ * Only the ID is read. The magnitudes come from config.ts's BEAGLE_PERKS
+ * separately, exactly as they are split on the client: cosmetics.ts owns which
+ * coat does what, config.ts owns how much.
+ */
+function extractPerkIds(source: string): Array<{ id: string; perk: string }> {
+  const out: Array<{ id: string; perk: string }> = [];
+  for (const entry of splitEntries(source)) {
+    const id = /\bid:\s*"([a-z0-9-]+)"/.exec(entry);
+    const perk = /\bperk:\s*\{\s*id:\s*"([a-zA-Z]+)"/.exec(entry);
+    if (id && perk) out.push({ id: id[1], perk: perk[1] });
+  }
+  return out;
+}
+
 const beagleSkins = extractIdPricePairs(sliceArray(cosmeticsSrc, "BEAGLE_SKINS"));
+const beaglePerks = extractPerkIds(sliceArray(cosmeticsSrc, "BEAGLE_SKINS"));
 const enemySkins = extractIdPricePairs(sliceArray(cosmeticsSrc, "ENEMY_SKINS"));
 const mazeThemes = extractIdPricePairs(sliceArray(themesSrc, "MAZE_THEMES"));
 
@@ -372,6 +493,18 @@ for (const key of ["beagle", "enemy", "theme"] as const) {
     );
     process.exit(1);
   }
+}
+
+// EVERY coat must have produced a perk. A missing one is not a cosmetic gap:
+// the validator sizes three of its bounds from the perk, so a coat the catalog
+// thinks has none is a coat whose honest runs get rejected.
+if (beaglePerks.length !== beagleSkins.length) {
+  console.error(
+    `[sync] extracted ${beaglePerks.length} beagle perks for ${beagleSkins.length} ` +
+      `beagle skins. Every coat must carry a \`perk: { id: "..." }\` — fix the ` +
+      `registry or the extractor, never this check.`,
+  );
+  process.exit(1);
 }
 
 for (const [kind, id] of Object.entries(defaults)) {
@@ -415,7 +548,8 @@ function progressionConst(name: string): number {
 const MAPS_PER_STAGE = progressionConst("MAPS_PER_STAGE");
 const STAGE_COUNT = progressionConst("STAGE_COUNT");
 const GHOSTS_STAGE_1_2 = progressionConst("GHOSTS_STAGE_1_2");
-const GHOSTS_STAGE_3 = progressionConst("GHOSTS_STAGE_3");
+const GHOSTS_STAGE_3_4 = progressionConst("GHOSTS_STAGE_3_4");
+const GHOSTS_STAGE_5_6 = progressionConst("GHOSTS_STAGE_5_6");
 const GHOSTS_BONUS_FIRST_LAP = progressionConst("GHOSTS_BONUS_FIRST_LAP");
 const GHOSTS_BONUS_LATER_LAPS = progressionConst("GHOSTS_BONUS_LATER_LAPS");
 
@@ -504,6 +638,22 @@ export const POWERUP_IDS = ${JSON.stringify(powerupIds)} as const;
 export const POWERUP_MULTIPLIER = ${powerupMultiplier};
 export const SCORE_DOUBLING_POWERUPS = { biscuit: "doubleBiscuit", ghost: "doubleGhost" } as const;
 
+/** IDEA-064: BEAGLE PERKS — which coat carries which, and what each is worth.
+ *
+ *  Split across two constants because the game splits it across two files for
+ *  a reason: the MAPPING is an identity of the coat (cosmetics.ts) and the
+ *  MAGNITUDE is a balance number (config.ts). Joining them is the validator's
+ *  job, exactly as it is src/game/perks.ts's job on the client.
+ *
+ *  CLASSIC ONLY. The validator must apply none of these to a challenge run —
+ *  every challenge score already on the board was set without them, and the
+ *  client enforces the same rule from its side. If the two ever disagree, an
+ *  honest run is rejected rather than quietly mis-scored. */
+export const BEAGLE_PERK_BY_SKIN: Readonly<Record<string, string>> = ${
+  JSON.stringify(Object.fromEntries(beaglePerks.map((p) => [p.id, p.perk])), null, 2)
+};
+export const BEAGLE_PERKS = ${JSON.stringify(beaglePerkValues, null, 2)} as const;
+
 /** What each maze actually CONTAINS, derived from mazes.json rather than
  *  hand-copied. These are the hard ceilings the validator rests on: a run
  *  cannot eat more pellets than exist. */
@@ -568,9 +718,17 @@ export const LEVELS_PER_LAP = ${STAGE_COUNT * (MAPS_PER_STAGE + 1)};
 export const MAPS_PER_LAP = ${STAGE_COUNT * MAPS_PER_STAGE};
 export const BONUS_MAZE_START = ${STAGE_COUNT * MAPS_PER_STAGE};
 export const GHOSTS_STAGE_1_2 = ${GHOSTS_STAGE_1_2};
-export const GHOSTS_STAGE_3 = ${GHOSTS_STAGE_3};
+export const GHOSTS_STAGE_3_4 = ${GHOSTS_STAGE_3_4};
+export const GHOSTS_STAGE_5_6 = ${GHOSTS_STAGE_5_6};
 export const GHOSTS_BONUS_FIRST_LAP = ${GHOSTS_BONUS_FIRST_LAP};
 export const GHOSTS_BONUS_LATER_LAPS = ${GHOSTS_BONUS_LATER_LAPS};
+
+/** Enemies on a numbered map in the given 0-based stage, on lap 1. */
+export function ghostsForStage(stageIdx: number): number {
+  if (stageIdx >= 4) return GHOSTS_STAGE_5_6;
+  if (stageIdx >= 2) return GHOSTS_STAGE_3_4;
+  return GHOSTS_STAGE_1_2;
+}
 
 export interface LevelPlan {
   readonly mazeIdx: number;
@@ -606,9 +764,11 @@ export function planLevel(levelIdx: number): LevelPlan {
 
   return {
     mazeIdx: mapIdx,
-    ghostCount: lap > 1 || stageIdx === STAGE_COUNT - 1 ? GHOSTS_STAGE_3 : GHOSTS_STAGE_1_2,
+    ghostCount: lap > 1 ? GHOSTS_STAGE_5_6 : ghostsForStage(stageIdx),
     isBonus: false,
-    mapNumber: mapIdx + 1,
+    // IDEA-061: the RUNNING count, so lap 2's first map is Map 31. Never an
+    // index into anything — mazeIdx is what repeats.
+    mapNumber: (lap - 1) * MAPS_PER_LAP + mapIdx + 1,
     lap,
     stage: stageIdx + 1,
   };

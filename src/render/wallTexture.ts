@@ -41,7 +41,7 @@ import * as THREE from "three";
 import { css, lit, mix, rgbOf, rng, type RGB } from "./paint";
 
 /** Which surface a theme's walls wear. */
-export type WallTextureKind = "flat" | "hedge" | "sand" | "brick";
+export type WallTextureKind = "flat" | "hedge" | "hedgeFlower" | "sand" | "brick";
 
 /**
  * Canvas pixels per wall face.
@@ -151,6 +151,98 @@ function drawHedge(ctx: CanvasRenderingContext2D, base: RGB): void {
   ctx.fillStyle = css(deep);
   for (let i = 0; i < 6; i++) {
     clump(ctx, r() * SIZE, r() * SIZE, SIZE * (0.028 + r() * 0.03), r);
+  }
+}
+
+/**
+ * IDEA-060: one daisy — a ring of round petals with a warm eye.
+ *
+ * Drawn as overlapping CIRCLES rather than as tapered petals on purpose. The
+ * reference's daisies measure 7px across on a 363px wall, i.e. 2% of the
+ * face; a five-petal rosette with real petal shapes at that size is four
+ * pixels of white with a shape you cannot resolve, and the shape costs the
+ * same as the read. What survives the shrink is a light BLOB with a warm
+ * middle, and the ring of circles is what keeps its outline scalloped rather
+ * than round so it does not read as one of the hedge's lit clusters.
+ */
+function daisy(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  rad: number,
+  petal: RGB,
+  eye: RGB,
+  rnd: () => number,
+): void {
+  const N = 5;
+  const spin = rnd() * Math.PI * 2;
+  const pr = rad * 0.46;
+  const ring = rad * 0.56;
+  ctx.fillStyle = css(petal);
+  wrapped((dx, dy) => {
+    for (let i = 0; i < N; i++) {
+      const a = spin + (i / N) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.arc(x + Math.cos(a) * ring + dx, y + Math.sin(a) * ring + dy, pr, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+  ctx.fillStyle = css(eye);
+  wrapped((dx, dy) => {
+    ctx.beginPath();
+    ctx.arc(x + dx, y + dy, rad * 0.3, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
+/**
+ * The garden's wall: `drawHedge`'s foliage, then daisies scattered over it.
+ *
+ * Two decisions, both against the measurement rather than with it:
+ *
+ *  1. THE FLOWERS ARE ~2.5x THE MEASURED SIZE. 7px on a 363px reference wall
+ *     is 2% of the face, which on this 256px canvas is a 5px mark and at the
+ *     game camera's ~25px face is 0.5px — i.e. gone before it is drawn, and
+ *     what survives of a sub-pixel white dot is aliasing. They ship at 5% of
+ *     the face. The same call as the burger's sesame (IDEA-059 rule 6) and
+ *     the hedge's own "fewer, bigger clusters" note above.
+ *
+ *  2. THEY ARE COUNTED, NOT SCATTERED BY CHANCE, AND THE COUNT IS FOUR. A
+ *     per-pixel probability would give one face two and its neighbour ten,
+ *     and the maze would look blighted in patches.
+ *
+ *     Four, against the reference's own density of roughly seven per
+ *     hedge-tile. The count has come down twice and both times for the same
+ *     reason, which is worth stating plainly: THE REFERENCE SHOWS ONE FACE OF
+ *     ONE HEDGE, while this texture wraps all six sides of every one of ~200
+ *     boxes — and the sum of that is a pattern rather than a scatter. At
+ *     fourteen the maze rendered as white STATIC over green, a fine dense
+ *     stipple across the wall tops, which are the largest and most-seen
+ *     surface on the board. Six read as real flowers and was still busier than
+ *     a garden wants. Ink is conserved by making them BIGGER and FEWER, which
+ *     is this module's own "fewer, bigger clusters" note and floorTexture's
+ *     "fewer/bigger grass tufts" reaching the same answer for a third time.
+ *
+ *     There is no longer a second layer of flowers in front of this one. The
+ *     garden's wall tops carried 29 hand-placed flower PROPS as well, and
+ *     those went when this count came down — two flowering layers on one
+ *     surface is one too many, and the texture is the one that covers every
+ *     wall rather than 34 of them.
+ *
+ * The petal white is NOT pure white: the hedge's own lit band already reaches
+ * 1.26x the base green, and a flower has to sit ABOVE that to read as a
+ * separate thing rather than as one more lit leaf. Pure white does that but
+ * blows out under the cel ramp's top step; a warm off-white keeps the step.
+ */
+function drawHedgeFlower(ctx: CanvasRenderingContext2D, base: RGB): void {
+  drawHedge(ctx, base);
+  const petal: RGB = [0.96, 0.96, 0.92];
+  const eye: RGB = [0.95, 0.78, 0.22];
+  // Its own seed, deliberately not the hedge's: sharing one would place every
+  // daisy at a cluster centre, since both would consume the same sequence.
+  const r = rng(0xda151e5);
+  for (let i = 0; i < 4; i++) {
+    daisy(ctx, r() * SIZE, r() * SIZE, SIZE * 0.085, petal, eye, r);
   }
 }
 
@@ -300,6 +392,7 @@ export function wallTextureFor(kind: WallTextureKind, baseHex: number): THREE.Te
     const ctx = canvas2d();
     const base = rgbOf(baseHex);
     if (kind === "hedge") drawHedge(ctx, base);
+    else if (kind === "hedgeFlower") drawHedgeFlower(ctx, base);
     else if (kind === "sand") drawSand(ctx, base);
     else drawBrick(ctx, base);
     tex = new THREE.CanvasTexture(ctx.canvas);

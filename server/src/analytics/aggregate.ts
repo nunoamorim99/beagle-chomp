@@ -207,18 +207,73 @@ const num = (v: number | string | null | undefined): number | null => {
   return Number.isFinite(n) ? n : null;
 };
 
-export function challengeStandings(rows: readonly RawChallengeRow[]): ChallengeStanding[] {
-  return rows.map((r) => ({
-    challengeIdx: r.challenge_idx,
-    attempts: r.attempts,
-    clears: r.clears,
-    clearRate: r.attempts > 0 ? r.clears / r.attempts : null,
-    playersAttempted: r.players_attempted,
-    playersCleared: r.players_cleared,
-    attemptsPerClear: r.players_cleared > 0 ? r.attempts / r.players_cleared : null,
-    medianClearSeconds: num(r.median_clear_seconds),
-    avgDeaths: num(r.avg_deaths),
-  }));
+/**
+ * One standing per challenge level, DENSE.
+ *
+ * The zero-fill is the same argument `buildCohortMatrix` makes, and IDEA-063
+ * is what made it urgent: SQL returns a row only for a level somebody has
+ * actually attempted, and the ladder went from 8 levels to 40. So a portal fed
+ * the raw rows would show three lines and no indication that the other
+ * thirty-seven exist — "which level is the wall" silently becomes "which of the
+ * three levels anyone has opened is the wall", which is a different and much
+ * less useful question. A level nobody has tried is a real answer about the
+ * ladder, and the most likely one for most of a 40-level tour.
+ *
+ * `levelCount` comes from the generated catalog rather than from the data, for
+ * the reason `buildCohortMatrix` takes `maxOffset` rather than deriving it:
+ * derived, the list would silently narrow to whatever has been played and the
+ * grid would look more complete than it is.
+ *
+ * It is a FLOOR, never a cap. A row carrying an index past the end is kept
+ * rather than dropped — unlike `tallySlots`, which drops out-of-range slots
+ * because an unnamed enemy hue cannot be labelled. Here the index IS the label,
+ * and attempts recorded against a level the catalog does not know about is
+ * exactly the catalog drift this dashboard exists to make visible. Dropping it
+ * would hide the evidence.
+ */
+export function challengeStandings(
+  rows: readonly RawChallengeRow[],
+  levelCount = 0,
+): ChallengeStanding[] {
+  const byIdx = new Map<number, RawChallengeRow>();
+  let highest = -1;
+  for (const r of rows) {
+    if (!Number.isInteger(r.challenge_idx) || r.challenge_idx < 0) continue;
+    byIdx.set(r.challenge_idx, r);
+    if (r.challenge_idx > highest) highest = r.challenge_idx;
+  }
+
+  const length = Math.max(levelCount, highest + 1);
+  return Array.from({ length }, (_unused, challengeIdx) => {
+    const r = byIdx.get(challengeIdx);
+    if (!r) {
+      // Never attempted. Every RATE is null rather than 0 — reporting 0% would
+      // say "impossible" about content nobody has opened, and `hardestChallenges`
+      // relies on the null to keep it off the ranking.
+      return {
+        challengeIdx,
+        attempts: 0,
+        clears: 0,
+        clearRate: null,
+        playersAttempted: 0,
+        playersCleared: 0,
+        attemptsPerClear: null,
+        medianClearSeconds: null,
+        avgDeaths: null,
+      };
+    }
+    return {
+      challengeIdx,
+      attempts: r.attempts,
+      clears: r.clears,
+      clearRate: r.attempts > 0 ? r.clears / r.attempts : null,
+      playersAttempted: r.players_attempted,
+      playersCleared: r.players_cleared,
+      attemptsPerClear: r.players_cleared > 0 ? r.attempts / r.players_cleared : null,
+      medianClearSeconds: num(r.median_clear_seconds),
+      avgDeaths: num(r.avg_deaths),
+    };
+  });
 }
 
 /**

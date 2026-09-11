@@ -41,6 +41,15 @@ import {
 import { toon } from "./toon";
 import { wallTextureFor } from "./wallTexture";
 import { floorTextureFor } from "./floorTexture";
+import { buildFence, disposeFence } from "./fence";
+import { buildGroundDetail, disposeGroundDetail } from "./groundDetail";
+import {
+  makeBirdhouse,
+  makeBroadleafTree,
+  makeGardenFlower,
+  makeLeafShrub,
+  makeTreehouse,
+} from "./gardenProps";
 
 export const WALL_H = 1;
 
@@ -105,6 +114,23 @@ export interface Board {
    *  `placements` array (classic) — zero group, zero traverse cost, not just
    *  zero children. */
   props: THREE.Group | null;
+  /** IDEA-060: the picket fence standing in front of the walls, or `null` for
+   *  a theme whose palette says `fence: "none"` (every theme but the garden
+   *  today) — the same null-for-nothing contract `props` uses, and for the
+   *  same reason: a themeless board should cost no geometry, no instanced
+   *  mesh and no draw call, not an empty one.
+   *
+   *  It owns BOTH its geometry and its material (see fence.ts's buildFence),
+   *  so teardown is `disposeFence`, never a bare `scene.remove` — the walls
+   *  above share module-level singletons and must not be disposed, the fence
+   *  is the opposite case, and the two sit next to each other in the same
+   *  struct. */
+  fence: THREE.InstancedMesh | null;
+  /** IDEA-060 v2: loose ground dressing (the garden's rocks), or `null` for a
+   *  theme whose palette says `groundDetail: "none"`. Owns its geometry AND
+   *  material exactly like `fence` does, so teardown is `disposeGroundDetail`
+   *  and never a bare `scene.remove`. */
+  groundDetail: THREE.InstancedMesh | null;
 }
 
 // IDEA-026: wall/floor/biscuit materials are shared, module-level, and
@@ -1959,6 +1985,17 @@ export function buildBoard(scene: THREE.Object3D, grid: Grid): Board {
 
   const hedgeDecor = buildWallTopDecor(scene, grid, theme);
   const props = buildProps(scene, theme);
+  // IDEA-060. AFTER the walls, because it stands in front of them and the two
+  // interpenetrate at the corners; ordering keeps the depth writes sane on the
+  // handful of overlapping faces.
+  const fence =
+    theme.palette.fence === "none" ? null : buildFence(scene, grid, theme.palette.fenceColor);
+  const groundDetail = buildGroundDetail(
+    scene,
+    grid,
+    theme.palette.groundDetail,
+    theme.palette.groundDetailColor,
+  );
 
   return {
     pelletMeshes,
@@ -1971,6 +2008,8 @@ export function buildBoard(scene: THREE.Object3D, grid: Grid): Board {
     powerup: null,
     hedgeDecor,
     props,
+    fence,
+    groundDetail,
   };
 }
 
@@ -1988,8 +2027,20 @@ export function buildBoard(scene: THREE.Object3D, grid: Grid): Board {
  * whether the entry is an InstancedMesh or this one wall-decor Group).
  */
 function buildWallTopDecor(scene: THREE.Object3D, grid: Grid, theme: MazeTheme): THREE.Object3D[] {
+  // IDEA-060 v3, and the reason this dispatch is worth knowing about rather
+  // than just correct: EMPTYING A THEME'S `wallDecor` DOES NOT REMOVE ITS
+  // WALL-TOP DECORATION, it swaps it for the palette's density blooms. The
+  // garden's flower props were taken off the walls because the wall texture
+  // now carries daisies of its own and two flowering layers was too much —
+  // deleting the last entry as well would have put ~40 scattered bloom
+  // spheres back up there, which is the opposite of what was wanted. Its
+  // birdhouses are what hold this branch, as well as being wanted in
+  // their own right.
+  //
+  // The note lives here because themes.ts cannot keep one: the board editor's
+  // Save regenerates the edited theme's entry and strips its comments.
   if (theme.wallDecor.length > 0) {
-    const group = buildWallDecor(scene, theme);
+    const group = buildWallDecor(scene, theme, grid);
     return group ? [group] : [];
   }
   return buildHedgeDecor(scene, grid, theme.palette);
@@ -2215,6 +2266,14 @@ const PROP_HEIGHT_CLASS: Record<PropBaseShape, PropHeightClass> = {
   shrub: "low",
   bloom: "low",
   sign: "low",
+  // IDEA-060. The treehouse is the only TALL one — it is the board's landmark
+  // and it is meant to be seen, which is exactly why it also has to be capped
+  // anywhere but the skyline row behind the maze.
+  leafShrub: "low",
+  broadleafTree: "medium",
+  treehouse: "tall",
+  flower: "low",
+  birdhouse: "low",
 };
 
 // Fixed default trunk color family for every woody prop (tree/pine/palm) —
@@ -2910,6 +2969,16 @@ export function makePropFromDef(def: PropDef, instanceHash: number): THREE.Group
       case "umbrella": return makeUmbrella(p, instanceHash);
       case "bloom": return makeBloom(p, instanceHash);
       case "sign": return makeSign(p, instanceHash);
+      // IDEA-060: reference-built garden props. They live in
+      // src/render/gardenProps.ts rather than here for the reason every
+      // sculpt module does — this file owns the BOARD, not what a treehouse
+      // is made of — but they go through the SAME exhaustive switch, so a new
+      // shape without a factory is still a compile error.
+      case "leafShrub": return makeLeafShrub(p, instanceHash);
+      case "broadleafTree": return makeBroadleafTree(p, instanceHash);
+      case "treehouse": return makeTreehouse(p, instanceHash);
+      case "flower": return makeGardenFlower(p, instanceHash);
+      case "birdhouse": return makeBirdhouse(p, instanceHash);
     }
   })();
   if (def.parts) applyPropParts(g, def.parts);
@@ -3061,18 +3130,40 @@ const WALL_DECOR_Y_OFFSET = 0.08;
  * "low" PROP_HEIGHT_CLASS, so they can never loom over the play area
  * regardless of which wall tile they sit on.
  *
- * No `grid` parameter, same reasoning as buildProps above — a wall-top
- * placement's tile IS its position, nothing to enumerate/exclude against
- * the grid.
+ * It DOES take a `grid`, unlike buildProps — and the doc here used to say the
+ * opposite ("a wall-top placement's tile IS its position, nothing to exclude
+ * against the grid"), which was the reasoning that let the bug in. A tile is
+ * a position, but whether there is a WALL at it is a property of the maze,
+ * and this theme's placements outlive any one of them. See the skip inside.
  */
-export function buildWallDecor(scene: THREE.Object3D, theme: MazeTheme): THREE.Group | null {
+export function buildWallDecor(
+  scene: THREE.Object3D,
+  theme: MazeTheme,
+  grid: Grid,
+): THREE.Group | null {
   if (theme.wallDecor.length === 0) return null;
 
   const group = new THREE.Group();
 
   theme.wallDecor.forEach((placement: WallDecorPlacement) => {
-    const def = getPropDef(placement.propId);
     const [tx, ty] = placement.tile;
+    // IDEA-060: SKIP A PLACEMENT WHOSE TILE IS NOT A WALL IN THIS MAZE.
+    //
+    // This was a real shipping bug, and a bad one. `wallDecor` is per-THEME
+    // while the wall layout is per-MAZE, and there are eighteen mazes — so a
+    // lamp authored against one layout hangs in mid-air over an open corridor
+    // in every layout that has floor there. Audited (see
+    // scripts/_scratch-walldecor-audit.ts): of the city's five wall-top
+    // pieces, four floated in 14-16 of the 18 mazes and the one at (9,9)
+    // floated in ALL EIGHTEEN — it has never once been on a wall.
+    //
+    // Skipping is the right repair rather than clamping to the nearest wall:
+    // a themed board is allowed to be dressed differently on different
+    // layouts (81 of the 399 tiles are wall in every maze, so a placement on
+    // one of those always shows), and inventing a position the author did not
+    // choose is worse than honouring the ones they did.
+    if (grid.cells[ty]?.[tx] !== "#") return;
+    const def = getPropDef(placement.propId);
     const instanceHash = hash01(tx, ty, WALL_DECOR_INSTANCE_HASH_SEED);
 
     const mesh = makePropFromDef(def, instanceHash);
@@ -3163,6 +3254,31 @@ export function applyBoardTheme(board: Board, scene: THREE.Object3D, grid: Grid,
 
   if (board.props) disposePropGroup(scene, board.props);
   board.props = buildProps(scene, theme);
+
+  // IDEA-060: the fence is REBUILT rather than recoloured, unlike the wall and
+  // floor materials above. It has to be — `fence` is a KIND, so a re-theme can
+  // change whether there is any fence at all, and the panel count depends on
+  // the grid. Both halves matter: dropping the rebuild would leave the
+  // garden's pickets standing in front of the city's brick.
+  if (board.fence) {
+    scene.remove(board.fence);
+    disposeFence(board.fence);
+  }
+  board.fence =
+    theme.palette.fence === "none" ? null : buildFence(scene, grid, theme.palette.fenceColor);
+
+  // Same story as the fence: a KIND, so a re-theme can change whether there is
+  // any ground dressing at all, and the scatter depends on the grid.
+  if (board.groundDetail) {
+    scene.remove(board.groundDetail);
+    disposeGroundDetail(board.groundDetail);
+  }
+  board.groundDetail = buildGroundDetail(
+    scene,
+    grid,
+    theme.palette.groundDetail,
+    theme.palette.groundDetailColor,
+  );
 }
 
 /**

@@ -40,9 +40,51 @@
 // (`npx playwright install chromium`).
 import { createServer, type ViteDevServer } from "vite";
 import { chromium, type Browser, type Page } from "playwright";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { MAZE_THEMES } from "../src/game/themes";
+
+// ---------------------------------------------------------------------------
+// A CRASH-PROOF BACKUP OF themes.ts.
+//
+// The save section below edits the REAL src/game/themes.ts through the
+// editor's own dev-server middleware and restores it in a `finally`. That
+// covers a failed assertion and a thrown error. It does NOT cover the process
+// being KILLED mid-section, and that is not hypothetical: piping this suite
+// through `head` or `tail` closes stdout early, node takes EPIPE and dies, and
+// `finally` never runs. It happened, and what was left on disk was a themes.ts
+// with the editor's own regenerated palette — correct VALUES, but two stray
+// slider edits, two junk placements from the click tests, and every
+// hand-written comment inside the garden's `palette: {}` deleted, because the
+// writer emits that object field by field.
+//
+// So the original bytes go to a sidecar file before anything touches
+// themes.ts, and any run that finds one left over restores from it first.
+// A stale .bak on disk is itself the signal that a previous run was killed.
+const THEMES_PATH = resolve("src/game/themes.ts");
+const THEMES_BACKUP = THEMES_PATH + ".bak";
+
+if (existsSync(THEMES_BACKUP)) {
+  console.log(
+    "\n  !!   a previous run of this suite was killed before it could restore\n" +
+      "       src/game/themes.ts — restoring it from " + THEMES_BACKUP + "\n",
+  );
+  writeFileSync(THEMES_PATH, readFileSync(THEMES_BACKUP, "utf-8"), "utf-8");
+  rmSync(THEMES_BACKUP);
+}
+
+// IDEA-060 v3: the garden's own counts, read from the registry rather than
+// pinned as literals. They have moved three times in two sessions (a treehouse
+// added, 29 flower props taken off the wall tops) and each move broke a dozen
+// assertions here — but what these checks are FOR is that board mode loads
+// what the registry holds, not how many things a theme happens to plant.
+const GARDEN = MAZE_THEMES.find((t) => t.id === "garden");
+if (!GARDEN) throw new Error("no garden theme in MAZE_THEMES");
+const GARDEN_PLACEMENTS = GARDEN.placements.length;
+const GARDEN_WALL_DECOR = GARDEN.wallDecor.length;
+const GARDEN_PLANTED = GARDEN.placements.filter(
+  (pl) => pl.propId === "garden-shrub" || pl.propId === "garden-tree",
+).length;
 
 let failures = 0;
 function check(label: string, cond: boolean): void {
@@ -428,13 +470,15 @@ async function run(): Promise<void> {
       }
       check("no 'Placement' folder yet (nothing selected on first entry)", !folderTitles.some((t) => t.startsWith("Placement")));
 
-      // Garden (the board-mode default) authors 29 apron placements and an
+      // Garden (the board-mode default) authors its apron placements and
       // empty wallDecor (see src/game/themes.ts) — asserting these exact
       // numbers on the very FIRST board-mode entry proves buildBoard's own
       // buildProps call (not just applyBoardTheme's re-apply path) seeded
       // board.props correctly from the real registry data.
-      check("garden's working theme starts with 29 placements", snap.placementsLength === 29);
-      check("garden's working theme starts with an empty wallDecor", snap.wallDecorLength === 0);
+      check(`garden's working theme starts with ${GARDEN_PLACEMENTS} placements`, snap.placementsLength === GARDEN_PLACEMENTS);
+      // IDEA-060: 34 hand-placed wall-top pieces, where it used to have none and
+      // relied on the palette's density blooms instead.
+      check(`garden's working theme starts with ${GARDEN_WALL_DECOR} wallDecor entries`, snap.wallDecorLength === GARDEN_WALL_DECOR);
       check("garden's live apron prop mesh count is > 0 on first board-mode entry", snap.propMeshCount > 0);
       check("garden's sub-mode defaults to apron", snap.placementSubMode === "apron");
     }
@@ -474,7 +518,8 @@ async function run(): Promise<void> {
     // -------------------------------------------------------------------
     console.log("\n=== clicking an EMPTY apron slot auto-creates + selects a placement ===");
     {
-      // (-1, -1) is garden's NW apron corner — not one of the 29 authored
+      // (-1, -1) WAS garden's free NW apron corner; IDEA-060 put the
+      // treehouse there, so this now uses (-1, -2). Not one of the authored
       // shrub/oak spots (spot-checked against src/game/themes.ts: garden's
       // placements list has no [-1,-1] entry... actually it DOES; pick a
       // genuinely empty corner instead — (-1, 4) is not in garden's list).
@@ -508,7 +553,7 @@ async function run(): Promise<void> {
       await clickPlacementButton(page, "remove this placement 🗑");
       await page.waitForTimeout(300);
       const cleaned = await boardSnapshot(page);
-      check("removing it drops placementsLength back to garden's original 29", cleaned.placementsLength === before.placementsLength);
+      check("removing it drops placementsLength back to garden's original count", cleaned.placementsLength === before.placementsLength);
       check("removing it drops the live mesh count back down", cleaned.propMeshCount === before.propMeshCount);
     }
 
@@ -522,8 +567,9 @@ async function run(): Promise<void> {
       await page.waitForTimeout(300);
 
       const snap = await boardSnapshot(page);
-      check("clicking a filled slot does NOT add a new placement", snap.placementsLength === 29);
-      check("the selection reports the existing shrub", snap.placementSelection?.propId === "shrub");
+      check("clicking a filled slot does NOT add a new placement", snap.placementsLength === GARDEN_PLACEMENTS);
+      // IDEA-060 repointed the garden's 23 shrubs to the reference-built shape.
+      check("the selection reports the existing shrub", snap.placementSelection?.propId === "garden-shrub");
       check(
         "the selection is at garden's authored tile",
         snap.placementSelection?.tile[0] === filledTile[0] && snap.placementSelection?.tile[1] === filledTile[1],
@@ -610,7 +656,9 @@ async function run(): Promise<void> {
       // themes.ts to fix.)
       const wallTile: [number, number] = [9, 6];
       const before = await boardSnapshot(page);
-      check("garden starts with 0 wallDecor entries", before.wallDecorLength === 0);
+      // IDEA-060: the garden hand-places its wall-top pieces, where it used to
+      // rely on the palette's density blooms.
+      check(`garden starts with ${GARDEN_WALL_DECOR} wallDecor entries`, before.wallDecorLength === GARDEN_WALL_DECOR);
 
       await clickTile(page, wallTile, "wall");
       await page.waitForTimeout(300);
@@ -646,7 +694,7 @@ async function run(): Promise<void> {
     {
       const gardenWall = await folderColorSwatch(page, "Walls", 0);
       check("garden (default) wall swatch matches src/game/themes.ts", gardenWall === "#3f8f3a");
-      check("garden reloads with 29 placements", (await boardSnapshot(page)).placementsLength === 29);
+      check(`garden reloads with ${GARDEN_PLACEMENTS} placements`, (await boardSnapshot(page)).placementsLength === GARDEN_PLACEMENTS);
 
       await selectBaseTheme(page, "Arcade Night");
       await page.waitForTimeout(300);
@@ -670,9 +718,18 @@ async function run(): Promise<void> {
 
       await selectBaseTheme(page, "The Garden");
       await page.waitForTimeout(300);
+      // EIGHT, not the seven this asserted before IDEA-060: 4 swatches +
+      // remove + 2 sliders, plus the disabled "overridden by hand-placed Wall
+      // components" note buildBloomsFolder adds whenever `wallDecor` is
+      // non-empty. The garden's palette still CARRIES its four bloom colours —
+      // nothing about the data changed — but the theme now hand-places its
+      // wall-top pieces, and board.ts gives a theme one mechanism or the
+      // other, so the folder correctly says the sliders below it are inert.
+      // That note appearing is the editor being honest, and it is worth
+      // asserting rather than working around.
       check(
-        "Blooms folder is back to 7 controls for garden's 4 bloom colors (4 swatches + remove + 2 sliders)",
-        (await folderControllerCount(page, "Blooms")) === 7,
+        "Blooms folder shows garden's 4 colours PLUS the overridden-by-wall-components note",
+        (await folderControllerCount(page, "Blooms")) === 8,
       );
       await selectBaseTheme(page, "Arcade Night");
       await page.waitForTimeout(300);
@@ -702,8 +759,8 @@ async function run(): Promise<void> {
       await page.waitForTimeout(300);
       const backToGarden = await folderColorSwatch(page, "Walls", 0);
       check("re-selecting The Garden restores its wall swatch", backToGarden === "#3f8f3a");
-      check("re-selecting The Garden restores its 29 placements", (await boardSnapshot(page)).placementsLength === 29);
-      check("re-selecting The Garden restores its empty wallDecor", (await boardSnapshot(page)).wallDecorLength === 0);
+      check(`re-selecting The Garden restores its ${GARDEN_PLACEMENTS} placements`, (await boardSnapshot(page)).placementsLength === GARDEN_PLACEMENTS);
+      check(`re-selecting The Garden restores its ${GARDEN_WALL_DECOR} wallDecor entries`, (await boardSnapshot(page)).wallDecorLength === GARDEN_WALL_DECOR);
     }
 
     // -------------------------------------------------------------------
@@ -725,10 +782,19 @@ async function run(): Promise<void> {
     }
 
     // -------------------------------------------------------------------
-    console.log("\n=== bloomChance -> 0 clears decor meshes, back up rebuilds them (still applies with hand placements empty) ===");
+    console.log("\n=== bloomChance -> 0 clears decor meshes, back up rebuilds them ===");
     {
+      // ON DEEP FOREST, not on the garden. board.ts gives a theme ONE wall-top
+      // mechanism and never both (buildWallTopDecor's dispatch): a non-empty
+      // `wallDecor` means hand-placed components and NO density blooms. IDEA-060
+      // filled the garden's wallDecor with flowers, so bloomChance no longer
+      // does anything there — which is correct behaviour and made this section
+      // assert against a theme that has not got the feature. The forest still
+      // runs the density path, so it is where the density path gets tested.
+      await selectBaseTheme(page, "Deep Forest");
+      await page.waitForTimeout(300);
       const before = await boardSnapshot(page);
-      check("garden starts with hedge decor meshes (bloomChance 0.2, 4 colors, empty wallDecor)", before.hedgeDecorMeshCount > 0);
+      check("forest starts with hedge decor meshes (density blooms, empty wallDecor)", before.hedgeDecorMeshCount > 0);
 
       await setFolderSlider(page, "Blooms", "bloom chance", 0);
       await page.waitForTimeout(300);
@@ -740,6 +806,9 @@ async function run(): Promise<void> {
       await page.waitForTimeout(300);
       const rebuilt = await boardSnapshot(page);
       check("bloomChance back to 0.2 rebuilds the hedge decor meshes", rebuilt.hedgeDecorMeshCount > 0);
+      // Back to the garden, which every later section assumes is selected.
+      await selectBaseTheme(page, "The Garden");
+      await page.waitForTimeout(300);
     }
 
     // -------------------------------------------------------------------
@@ -837,7 +906,7 @@ async function run(): Promise<void> {
     console.log("\n=== IDEA-034: empty vs filled slot markers read differently (strong highlighting) ===");
     {
       // (-1, 6) is a genuinely empty garden apron slot (not one of garden's
-      // 29 authored tiles — cross-checked against src/game/themes.ts's
+      // its authored tiles — cross-checked against src/game/themes.ts's
       // garden.placements list, which has no [-1,6] entry) — an EMPTY marker
       // to contrast against a FILLED one below.
       const emptyTile: [number, number] = [-1, 6];
@@ -883,10 +952,10 @@ async function run(): Promise<void> {
       check("a selected marker's opacity is fully solid (1.0 — no pulse while selected)", selectedState?.opacity === 1);
 
       // Clean up: remove the just-created placement so it doesn't leak into
-      // later sections' placementsLength assumptions (garden's authored 29).
+      // later sections' placementsLength assumptions.
       await clickPlacementButton(page, "remove this placement 🗑");
       await page.waitForTimeout(300);
-      check("cleanup: placementsLength back to garden's 29 after removing the test placement", (await boardSnapshot(page)).placementsLength === 29);
+      check(`cleanup: placementsLength back to garden's ${GARDEN_PLACEMENTS} after removing the test placement`, (await boardSnapshot(page)).placementsLength === GARDEN_PLACEMENTS);
     }
 
     // -------------------------------------------------------------------
@@ -951,7 +1020,7 @@ async function run(): Promise<void> {
       // Clean up the wall placement.
       await clickPlacementButton(page, "remove this placement 🗑");
       await page.waitForTimeout(300);
-      check("cleanup: wallDecorLength back to 0 after removing the test wall placement", (await boardSnapshot(page)).wallDecorLength === 0);
+      check(`cleanup: wallDecorLength back to ${GARDEN_WALL_DECOR} after removing the test wall placement`, (await boardSnapshot(page)).wallDecorLength === GARDEN_WALL_DECOR);
       await clickTreeRow(page, "Props (apron)");
       await page.waitForTimeout(150);
     }
@@ -1098,8 +1167,12 @@ async function run(): Promise<void> {
       // original content is restored (via a plain fs.writeFileSync, not
       // another editor round trip) in a finally-equivalent block below no
       // matter which assertion fails.
-      const themesPath = resolve("src/game/themes.ts");
+      const themesPath = THEMES_PATH;
       const originalContents = readFileSync(themesPath, "utf-8");
+      // The sidecar goes down BEFORE the first write, so a kill at any point
+      // from here on is recoverable by the next run — see the note at the top
+      // of this file.
+      writeFileSync(THEMES_BACKUP, originalContents, "utf-8");
       try {
         // A small, identifying, harmless edit: floor color. Garden's own
         // registry floor is 0x6b4a2f (see src/game/themes.ts) — 0xabcdef is
@@ -1123,7 +1196,7 @@ async function run(): Promise<void> {
         check("saved file still contains garden's own id", /id: "garden",/.test(savedContents));
         check("saved file still contains every OTHER theme's id (Arcade Night/Deep Forest/Sunny Beach/City Park/Night City)", ["classic", "forest", "beach", "park", "city"].every((id) => savedContents.includes(`id: ${JSON.stringify(id)},`)));
         check("saved file preserves Night City's own hand-authored prose comment", savedContents.includes("Identity note (two tuning passes)"));
-        check("saved file's garden entry keeps its own 29 placements (round-trips the CURRENT working theme, not a stale one)", (savedContents.match(/propId: "(shrub|oak)"/g) ?? []).length >= 29);
+        check(`saved file's garden entry keeps its own ${GARDEN_PLANTED} shrub/tree placements (round-trips the CURRENT working theme, not a stale one)`, (savedContents.match(/propId: "(garden-shrub|garden-tree)"/g) ?? []).length >= GARDEN_PLANTED);
 
         // Brace/bracket balance as a structural sanity check that the splice
         // didn't truncate or duplicate anything.
@@ -1137,19 +1210,36 @@ async function run(): Promise<void> {
         writeFileSync(themesPath, originalContents, "utf-8");
         const restored = readFileSync(themesPath, "utf-8");
         check("themes.ts was restored to its exact original bytes after the save test", restored === originalContents);
+        if (restored === originalContents) rmSync(THEMES_BACKUP, { force: true });
       }
 
-      // Writing themes.ts (the save) AND restoring it (the finally) each
-      // trigger a Vite HMR reload of this editor page — so by here the page
-      // has navigated and lost its in-memory board state (working theme +
-      // mode). Recover deterministically: re-navigate, wait for the editor
-      // to boot, re-enter board mode, and load garden fresh. This makes the
-      // save test self-contained — later sections start from a known-good
-      // board-mode page rather than inheriting a mid-reload one (the source
-      // of the earlier floor-swatch / picking-gate flakiness).
-      await page.goto(base);
-      await page.waitForSelector(".tree-row");
-      await page.waitForTimeout(300);
+      // IDEA-062: the SAVE no longer reloads this page — vite.config.ts's
+      // handleHotUpdate suppresses HMR for the editor's own writes, which is
+      // what stops a save in one tab destroying unsaved work in the others.
+      // The RESTORE above still does, and correctly so: it is a plain Node
+      // writeFileSync, indistinguishable from someone editing themes.ts in
+      // their IDE, and that must keep hot-reloading.
+      //
+      // So exactly one reload is still in flight here, and it can land AFTER
+      // the goto below and tear down the page we just navigated to — the
+      // "Execution context was destroyed" crash.
+      //
+      // A fixed wait is not enough on its own: the watcher's latency is
+      // unbounded (it POLLS under Docker). So wait, navigate, and then prove
+      // the page is actually settled by evaluating against it until it stops
+      // being torn down. Cheap, and it converts a flake into a wait.
+      await page.waitForTimeout(2000);
+      for (let attempt = 0; attempt < 6; attempt++) {
+        await page.goto(base);
+        await page.waitForSelector(".tree-row");
+        await page.waitForTimeout(400);
+        try {
+          await page.evaluate(() => document.querySelectorAll(".tree-row").length);
+          break; // survived — the reload has been and gone
+        } catch {
+          await page.waitForTimeout(600); // torn down mid-check; go round again
+        }
+      }
       await page.click("#modeBoardBtn");
       await page.waitForTimeout(500);
       await selectBaseTheme(page, "The Garden");
@@ -1222,15 +1312,128 @@ async function run(): Promise<void> {
       // base-theme dropdown pick does that — see loadBaseTheme's own doc
       // comment). The underlying DATA is still garden's (only `.id` was
       // free-text-edited, not the palette/placements), so placementsLength
-      // stays 29.
+      // is unchanged.
       await page.click("#modeBoardBtn");
       await page.waitForTimeout(400);
       const backSnap = await boardSnapshot(page);
       check(
-        "re-entering board mode keeps the exact same working theme (id + 29 placements survive the round trip)",
-        backSnap.workingThemeId === "my-custom-theme" && backSnap.placementsLength === 29,
+        "re-entering board mode keeps the exact same working theme (id + placements survive the round trip)",
+        backSnap.workingThemeId === "my-custom-theme" && backSnap.placementsLength === GARDEN_PLACEMENTS,
       );
       check("re-entering board mode has picking enabled again", true); // implicit: the NEXT section's click succeeds
+    }
+
+    // -------------------------------------------------------------------
+    // IDEA-062: board mode gained a transform gizmo and an undo stack. Both
+    // are new surfaces, and the gizmo in particular has a failure mode that
+    // is INVISIBLE in a render: buildProps CLAMPS a "tall" prop's scale on
+    // the south row and the east/west columns, so a gizmo that read its
+    // transform back off the live mesh would overwrite an authored 1.8 with
+    // 0.55 on any drag — including a pure rotate. The proxy in
+    // src/editor/placementGizmo.ts exists to stop that; these checks are what
+    // prove it still does.
+    console.log("\n=== IDEA-062: the placement gizmo ===");
+    {
+      await page.click("#modeBoardBtn");
+      await page.waitForTimeout(900);
+      // The BAR stays up — most of what is on it (shading, the orientation
+      // cube, the readout, Focus) controls how you are LOOKING, not what is
+      // selected. Only the three TRANSFORM buttons are selection-scoped, and
+      // they dim rather than vanish so a mode chosen now is the mode the next
+      // selection gets.
+      check("the gizmo bar is up in board mode", await page.isVisible("#gizmoBar"));
+
+      const tile = await page.evaluate(() => window.__boardTestHook!.placementTile(0));
+      await clickTile(page, tile!, "apron");
+      await page.waitForTimeout(400);
+
+      check("the gizmo bar is still up with a placement selected", await page.isVisible("#gizmoBar"));
+
+      const axes = await page.evaluate(() => window.__boardTestHook!.gizmoAxes());
+      check("translate offers X and Z…", axes.x && axes.z);
+      check(
+        "…and NOT Y — a placement has no vertical offset, so a Y arrow would be a control wired to nothing",
+        !axes.y,
+      );
+
+      const before = await page.evaluate(() => window.__boardTestHook!.placementValues(0));
+      const h0 = await page.evaluate(() => window.__boardTestHook!.boardHistoryDepth());
+
+      // Find a real handle by PROBING for it rather than hard-coding a pixel
+      // offset — the camera framing is free to change, and the handle's
+      // screen position is not something this suite should own.
+      const origin = await page.evaluate(() => window.__boardTestHook!.proxyScreenXY());
+      let handle: { x: number; y: number } | null = null;
+      for (let r = 12; r <= 90 && !handle; r += 6) {
+        for (const deg of [0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330]) {
+          const px = origin!.x + r * Math.cos((deg * Math.PI) / 180);
+          const py = origin!.y + r * Math.sin((deg * Math.PI) / 180);
+          await page.mouse.move(px, py);
+          if (await page.evaluate(() => window.__boardTestHook!.gizmoAxis())) {
+            handle = { x: px, y: py };
+            break;
+          }
+        }
+      }
+      check("a translate handle is reachable on screen", handle !== null);
+
+      if (handle) {
+        await page.mouse.move(handle.x, handle.y);
+        await page.mouse.down();
+        for (let i = 1; i <= 8; i++) await page.mouse.move(handle.x + i * 5, handle.y + i * 2);
+        await page.mouse.up();
+        await page.waitForTimeout(400);
+
+        const after = await page.evaluate(() => window.__boardTestHook!.placementValues(0));
+        const h1 = await page.evaluate(() => window.__boardTestHook!.boardHistoryDepth());
+        check("the drag moved the placement's offset", JSON.stringify(after!.offset) !== JSON.stringify(before!.offset));
+        check(
+          "the offset stayed inside the ±0.5 the inspector's own slider allows",
+          Math.abs(after!.offset[0]) <= 0.5 && Math.abs(after!.offset[1]) <= 0.5,
+        );
+        check("a MOVE left the scale alone", after!.scale === before!.scale);
+        check("a MOVE left the rotation alone", after!.rotationY === before!.rotationY);
+        check("the whole drag is exactly ONE undo step", h1.undo - h0.undo === 1);
+
+        await page.keyboard.down("Control");
+        await page.keyboard.press("KeyZ");
+        await page.keyboard.up("Control");
+        await page.waitForTimeout(500);
+        const undone = await page.evaluate(() => window.__boardTestHook!.placementValues(0));
+        check("Ctrl+Z reverts the drag", JSON.stringify(undone!.offset) === JSON.stringify(before!.offset));
+        check(
+          "…and the placement stays SELECTED, so you can carry on adjusting it",
+          (await page.evaluate(() => window.__boardTestHook!.placementSelection())) !== null,
+        );
+
+        await page.keyboard.down("Control");
+        await page.keyboard.press("KeyY");
+        await page.keyboard.up("Control");
+        await page.waitForTimeout(500);
+        const redone = await page.evaluate(() => window.__boardTestHook!.placementValues(0));
+        check("Ctrl+Y puts it back", JSON.stringify(redone!.offset) === JSON.stringify(after!.offset));
+      }
+    }
+
+    // -------------------------------------------------------------------
+    // The clamp-drift regression in its own right: scale a placement up, then
+    // ROTATE it. If anything ever reads a placement's transform back off the
+    // live mesh instead of the proxy, the scale comes back as buildProps'
+    // clamped value and the authored one is gone — with nothing on screen to
+    // say so, because the mesh was already being drawn at the clamped size.
+    console.log("\n=== IDEA-062: a rotate must never touch the scale ===");
+    {
+      for (let i = 0; i < 12; i++) await page.keyboard.press("Equal");
+      await page.waitForTimeout(350);
+      const big = await page.evaluate(() => window.__boardTestHook!.placementValues(0));
+      check("scale grew past its authored value", (big?.scale ?? 0) > 1);
+
+      await page.keyboard.press("BracketRight");
+      await page.keyboard.press("BracketRight");
+      await page.waitForTimeout(350);
+      const rotated = await page.evaluate(() => window.__boardTestHook!.placementValues(0));
+      check("the rotation changed", rotated!.rotationY !== big!.rotationY);
+      check("and the SCALE is untouched (the clamp-drift regression)", rotated!.scale === big!.scale);
     }
 
     // -------------------------------------------------------------------

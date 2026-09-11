@@ -12,13 +12,18 @@
 // fetch simply 404s and saveEditorFile reports failure — the editor page
 // itself never ships anyway (not a rollup input), so this is belt-and-braces.
 
+import { setSourceText } from "./sourceStore";
+
 /** The exact source paths the dev middleware will accept (kept in sync with
  *  vite.config.ts's EDITOR_SAVABLE_FILES — a mismatch just yields a 403). */
 export type SavableFile =
   | "src/render/characters.ts"
   | "src/render/board.ts"
   | "src/game/themes.ts"
-  | "src/game/props.ts";
+  | "src/game/props.ts"
+  | "src/game/config.ts"
+  | "src/render/fence.ts"
+  | "src/render/groundDetail.ts";
 
 export interface SaveResult {
   ok: boolean;
@@ -43,6 +48,15 @@ export async function saveEditorFile(path: SavableFile, contents: string): Promi
       const detail = await res.text().catch(() => "");
       return { ok: false, error: detail || `HTTP ${res.status}` };
     }
+    // IDEA-062: advance the editor's own view of the file.
+    //
+    // Every save path splices into the file's EXISTING source, which used to
+    // come from a `?raw` import — frozen at page load. That was masked by the
+    // full page reload each save triggered; now that the reload is suppressed
+    // (vite.config.ts's handleHotUpdate), the second save of a session would
+    // splice into text that predated the first and silently revert it. These
+    // are the exact bytes the server just wrote, so no read-back is needed.
+    setSourceText(path, contents);
     return { ok: true };
   } catch (err) {
     // Most commonly: the endpoint doesn't exist (not running under `vite`),

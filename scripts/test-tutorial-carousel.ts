@@ -11,8 +11,16 @@
 //      granted when the chain equals the LEVEL's ghost count — 3 in stages
 //      1-2, 4 in stage 3, 1 on a bonus map — so naming any number is wrong
 //      somewhere.
+//
+// IDEA-064 adds a third kind of rot, and it is the one this file now guards
+// hardest: copy that is not WRONG but SILENT. The shop stopped selling colours
+// and started selling powers, and the tutorial went on describing a game where
+// the beagle you pick changes nothing. The coats slide is derived from
+// BEAGLE_SKINS, and the checks below are written so that a SIXTH coat, or a
+// reworded perk, fails here rather than quietly going untaught.
 
 import { buildSlides } from "../src/ui/tutorialSlides";
+import { BEAGLE_SKINS } from "../src/game/cosmetics";
 
 let passed = 0;
 let failed = 0;
@@ -37,11 +45,11 @@ const phonePad = buildSlides({ coarsePointer: true, scheme: "dpad" });
 const phoneStick = buildSlides({ coarsePointer: true, scheme: "stick" });
 
 section("Shape");
-// Six since IDEA-046. The count is pinned rather than left open because the
-// tutorial is a wall between the player and the game they asked to play — a
-// slide has to EARN its place, and a test that just counts whatever exists
-// would never notice the wall getting taller.
-ok("there are six slides", desktop.length === 6, desktop.length);
+// Seven since IDEA-064 (six since IDEA-046). The count is pinned rather than
+// left open because the tutorial is a wall between the player and the game they
+// asked to play — a slide has to EARN its place, and a test that just counts
+// whatever exists would never notice the wall getting taller.
+ok("there are seven slides", desktop.length === 7, desktop.length);
 ok("every slide has a title and body",
   desktop.every((s) => s.title.length > 0 && s.body.length > 0));
 ok("slide ids are unique", new Set(desktop.map((s) => s.id)).size === desktop.length);
@@ -59,9 +67,22 @@ ok("the power-ups slide stages the power-ups",
 ok("the lives slide stages the golden bone",
   desktop.find((s) => s.id === "lives")?.stage === "goldenBone",
   desktop.find((s) => s.id === "lives")?.stage);
-ok("the order teaches move → collect → avoid → bones → power-ups → lives",
-  desktop.map((s) => s.id).join(",") === "move,biscuits,pack,bones,powerups,lives",
+ok("the order teaches move → collect → avoid → bones → power-ups → lives → coats",
+  desktop.map((s) => s.id).join(",") === "move,biscuits,pack,bones,powerups,lives,coats",
   desktop.map((s) => s.id).join(","));
+// The coats slide is LAST on purpose: every line in it leans on a slide above
+// (a shield, a life, a fruit, a coin), and it is the only one that asks the
+// player to do something after the tutorial rather than during the run.
+ok("the coats slide is last", desktop[desktop.length - 1].id === "coats");
+// It stages the player's OWN equipped coat, which is the whole reason it can
+// say "the one you take in" — the dog turning on the stage IS that one.
+ok("the coats slide stages the beagle",
+  desktop.find((s) => s.id === "coats")?.stage === "beagle");
+// Only that slide carries a list. A perks array turning up anywhere else would
+// render five paws under copy that is not about coats.
+ok("only the coats slide carries a perk list",
+  desktop.filter((s) => s.perks).map((s) => s.id).join(",") === "coats",
+  desktop.filter((s) => s.perks).map((s) => s.id).join(","));
 
 section("Movement copy follows the DEVICE, not the account");
 {
@@ -134,6 +155,58 @@ section("The rules the brief asked for are all covered");
   ok("a bone makes enemies edible", /(scared and edible|only time you can eat)/i.test(all));
   ok("the ghost chain is spelled out", /200/.test(all) && /1600/.test(all));
   ok("touching an enemy costs a life", /costs a life/i.test(all));
+}
+
+section("Every beagle's power is taught, and taught from the registry");
+{
+  const coats = desktop.find((s) => s.id === "coats")!;
+  const rows = coats.perks ?? [];
+
+  // The point of the slide. Every coat the shop sells has to appear — a sixth
+  // beagle added to BEAGLE_SKINS and not to the tutorial is a power the player
+  // is never told about, which is the exact silence this slide exists to end.
+  ok("the list covers every coat in the shop", rows.length === BEAGLE_SKINS.length,
+    `${rows.length} vs ${BEAGLE_SKINS.length}`);
+  ok("…in the shop's own order",
+    rows.map((r) => r.skinId).join(",") === BEAGLE_SKINS.map((k) => k.id).join(","),
+    rows.map((r) => r.skinId).join(","));
+
+  // DERIVED, not hand-copied. This is the assertion that makes the whole slide
+  // maintenance-free: the tutorial prints the same string the shop card prints,
+  // so rewording a perk in cosmetics.ts reworders it here too. A paraphrase
+  // would pass every other check in this file and drift on the next edit.
+  for (const skin of BEAGLE_SKINS) {
+    const row = rows.find((r) => r.skinId === skin.id);
+    ok(`"${skin.id}" prints the shop's own name`, row?.name === skin.name, row?.name);
+    ok(`"${skin.id}" prints the shop's own perk line, verbatim`,
+      row?.label === skin.perk.label, row?.label);
+  }
+
+  // Each of the five perks is a DIFFERENT promise. Two coats sharing a line
+  // would mean one of them is a strictly worse buy at the same price, which is
+  // the thing IDEA-064 exists to prevent — and the tutorial is where a player
+  // would notice.
+  ok("no two coats promise the same thing",
+    new Set(rows.map((r) => r.label)).size === rows.length);
+
+  // Perks are CLASSIC ONLY (perks.ts, and the server agrees). A tutorial that
+  // did not say so would be selling a power that silently does nothing on the
+  // one mode with a ladder and a leaderboard.
+  ok("the slide says perks are classic only",
+    /classic/i.test(coats.body) && /challenge/i.test(coats.body), coats.body);
+
+  // IDEA-016 v2 removed the points-to-coins conversion, so the maze pickups are
+  // the ENTIRE economy — and this is the only slide that mentions coins at all.
+  // Without it the slide advertises five purchases and never says how anyone
+  // pays for them.
+  ok("…and where the coins come from",
+    /coin/i.test(coats.body) && /maze/i.test(coats.body), coats.body);
+  ok("…that the maze is the only source",
+    /nowhere else|only way|only source/i.test(coats.body), coats.body);
+  // The coin is TIMED (COINS.lifespanSeconds). A player told to collect coins
+  // but not that they expire will walk past one on the way back.
+  ok("…and that a coin does not wait",
+    /before they vanish|despawn|disappear|wait/i.test(coats.body), coats.body);
 }
 
 section("Nothing promises what the game no longer does");

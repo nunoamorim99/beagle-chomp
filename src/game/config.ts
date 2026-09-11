@@ -185,6 +185,50 @@ export const LIVES = {
 // reachable with room to spare before the level clears.
 export const LIFE_THRESHOLDS = [130] as const;
 
+// IDEA-064: BEAGLE PERKS — the magnitudes, not the mapping.
+//
+// WHICH beagle carries which perk is an identity of the coat and lives next to
+// it in cosmetics.ts; HOW MUCH each perk is worth is a balance number and lives
+// here, with every other balance number, so retuning one is a one-line edit in
+// the file the Balance tab already edits (IDEA-062 v4).
+//
+// src/game/perks.ts is the only reader. It is also the one place the
+// CLASSIC-ONLY rule is enforced: every challenge score already on the board was
+// set without perks, exactly as it was set without power-ups, so a perk must
+// never reach a challenge run. Do not read these constants directly from
+// game.ts — go through perks.ts, or that rule ends up in two places and one of
+// them will eventually be wrong.
+//
+// The SERVER prices three of these four (a doubled coin is a doubled award, a
+// per-map life widens the LIVES_IMPOSSIBLE bound, and the fruit bonus moves the
+// exact fruit total the score is checked against), so **changing a number here
+// means `npm run sync` in server/** — same contract as FRUITS and COINS above.
+// The start shield is the one that costs the server nothing: it absorbs a hit
+// and cannot add a point, and it is deliberately NOT recorded as a collected
+// power-up (see game.ts's startClassicRun), so a challenge run can never report
+// one.
+export const BEAGLE_PERKS = {
+  /** Bagel: shields held at the start of a run. ONCE per run — spend it and it
+   *  is gone until the next one, which is what keeps the default coat's perk a
+   *  head start rather than a permanent safety net. */
+  startShields: 1,
+  /** Cookie: lives granted at the start of EVERY map, the first one included —
+   *  so a run opens on START_LIVES + this. Still bounded by LIVES.max, so the
+   *  cap is what stops a long run becoming unlosable. */
+  extraLivesPerMap: 1,
+  /** Muffin: multiplier on every coin PICKUP (COINS.pickupValue). The server is
+   *  the authority on coins and recomputes the award with this same factor —
+   *  the client's own add is optimistic and is reconciled to whatever the
+   *  server returns. */
+  coinMultiplier: 2,
+  /** Pepper: points added to every fruit eaten, on top of the ladder's own
+   *  value — a mango pays 500 + this. Flat rather than a multiplier on purpose:
+   *  a multiplier would widen with the ladder and make the apple worthless
+   *  relative to the mango all over again, whereas a flat bonus is worth
+   *  proportionally MOST on the fruit you did not have to cross the maze for. */
+  fruitBonusPoints: 100,
+} as const;
+
 // IDEA-046: POWER-UPS.
 //
 // Five pickups that change how the run plays rather than adding to the score.

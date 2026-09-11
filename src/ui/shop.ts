@@ -34,8 +34,14 @@ import {
   type BeagleSkin,
   type EnemySkin,
 } from "../game/cosmetics";
-import { MAZE_THEMES, getEquippedMazeThemeId, type MazeTheme } from "../game/themes";
+import {
+  MAZE_THEMES,
+  getEquippedMazeThemeId,
+  visibleMazeThemes,
+  type MazeTheme,
+} from "../game/themes";
 import { ICON, iconHtml, plateHtml } from "./icons";
+import { beagleSwatchHtml, hexToCss } from "./swatches";
 import {
   getCoins,
   isBeagleSkinOwned,
@@ -118,29 +124,73 @@ export interface ShopHandle {
   isOpen: () => boolean;
 }
 
-/** One icon per enemy skin id — purely decorative labelling for the shop card
- *  (enemy skins have no color data to swatch; see cosmetics.ts's EnemySkin doc
- *  comment). Falls back to the generic enemy face for any future id that isn't
- *  listed here, so a new skin never renders with no icon at all.
+/**
+ * What KIND of enemy a card shows — bug, dinner, or the secret one.
  *
- *  These were emoji (👻🪲🐝🐞). The bug and ladybug in particular rendered as
- *  full-colour cartoons in a completely different drawing style from the toon
- *  meshes they were labelling, and each platform drew its own. Material
- *  Symbols gives four monochrome glyphs that take the card's own colour. */
+ * THE BUG THIS REPLACES, because it is the exact failure tokens.css warns
+ * about and it was live in the shop: this map used to hold RAW LIGATURE
+ * STRINGS ("pest_control", "hive", "bug_report") instead of going through
+ * ICON. The font subset is cut from the values in ICON and nothing else, so
+ * those three glyphs were never in the file — and a Material Symbols name that
+ * is not in the font does not fall back to a box, it PRINTS ITSELF. The Beetle,
+ * Bee and Ladybug cards were rendering the words "PEST_CONTROL", "HIVE" and
+ * "BUG_REPORT" in 26px text, spilling clean across the rail. It survived
+ * because `test-icon-font.ts` reads ICON to build its list, so the three names
+ * that were not in ICON were invisible to the one check that would have caught
+ * them. That suite now also refuses a raw string at any icon call site.
+ *
+ * WHY CATEGORIES AND NOT ONE GLYPH EACH (Nuno's call). Material Symbols has no
+ * crab, no flea, no mosquito and no sushi, so eleven distinct marks was never
+ * available — the honest choice is between eleven near-misses and three true
+ * ones. A card already carries its NAME; what the icon adds is the grouping the
+ * name cannot show at a glance, which is why the rail now reads as six bugs,
+ * four dinners and one special rather than as ten identical faces.
+ *
+ * Unlisted ids fall back to the generic enemy face, so a new skin can never
+ * render bare — but add it to a category, or it says nothing.
+ */
 const ENEMY_ICONS: Record<string, string> = {
-  ghost: ICON.enemies,
-  beetle: "pest_control",
-  bee: "hive",
-  ladybug: "bug_report",
+  // the bugs
+  beetle: ICON.critter,
+  bee: ICON.critter,
+  ladybug: ICON.critter,
+  flea: ICON.critter,
+  crab: ICON.critter,
+  mosquito: ICON.critter,
+  // the food
+  maki: ICON.food,
+  nigiri: ICON.food,
+  pizza: ICON.food,
+  burger: ICON.food,
+  // the one that is neither, and the only one you unlock
+  ghost: ICON.secret,
+};
+
+/**
+ * One mark per maze theme (Nuno's call).
+ *
+ * A theme's swatch keeps its four palette colours — that is real information
+ * about a board you have not seen — and this sits on top of it saying what the
+ * PLACE is. Unlike the enemies there are only six themes and Material Symbols
+ * has a true glyph for every one, so these are one-each rather than grouped.
+ *
+ * Keyed by theme id; an unlisted id falls back to the tab's own palette mark.
+ */
+const THEME_ICONS: Record<string, string> = {
+  garden: ICON.themeGarden,
+  classic: ICON.themeArcade,
+  forest: ICON.themeForest,
+  beach: ICON.themeBeach,
+  park: ICON.themePark,
+  city: ICON.themeCity,
 };
 
 function enemyIcon(id: string): string {
   return ENEMY_ICONS[id] ?? ICON.enemies;
 }
 
-/** Converts a cosmetics hex color number (e.g. 0xc98a3c) to a CSS color string. */
-function hexToCss(n: number): string {
-  return `#${n.toString(16).padStart(6, "0")}`;
+function themeIcon(id: string): string {
+  return THEME_ICONS[id] ?? ICON.themes;
 }
 
 function getBeagleSkinById(id: string): BeagleSkin {
@@ -215,7 +265,11 @@ export function attachShop(root: ParentNode, callbacks: ShopCallbacks = {}): Sho
     if (tab === "enemy") {
       return visibleEnemySkins(isBeagleSkinOwned(TRIBUTE_BEAGLE_SKIN_ID), isEnemySkinOwned);
     }
-    return MAZE_THEMES;
+    // IDEA-064: and not MAZE_THEMES either — Arcade Night is the Ghost's other
+    // half and is hidden by the same rule, revealed by the same purchase, and
+    // asked fresh here for the same reason: buy the coat on the Beagle tab and
+    // both are waiting when you switch tabs.
+    return visibleMazeThemes(isBeagleSkinOwned(TRIBUTE_BEAGLE_SKIN_ID), isMazeThemeOwned);
   }
 
   function currentEquippedId(): string {
@@ -267,44 +321,45 @@ export function attachShop(root: ParentNode, callbacks: ShopCallbacks = {}): Sho
 
   // ---- markup builders ----
 
-  function beagleSwatch(skin: BeagleSkin): string {
-    const { tan, white, black, ear } = skin.coat;
-    return (
-      '<div class="skin-swatch" aria-hidden="true">' +
-      `<span class="swatch-dot" style="background:${hexToCss(tan)}"></span>` +
-      `<span class="swatch-dot" style="background:${hexToCss(white)}"></span>` +
-      `<span class="swatch-dot" style="background:${hexToCss(black)}"></span>` +
-      `<span class="swatch-dot" style="background:${hexToCss(ear)}"></span>` +
-      "</div>"
-    );
-  }
-
   function enemySwatch(skin: EnemySkin): string {
     return `<div class="skin-swatch skin-swatch-icon" aria-hidden="true">${iconHtml(enemyIcon(skin.id))}</div>`;
   }
 
-  /** IDEA-026: a 4-dot swatch for a maze theme, mirroring beagleSwatch's
-   *  shape exactly but reading from the theme's palette instead of a coat —
-   *  wall + floor (the two dominant board materials) + biscuit (the pickup
-   *  tint, which is close to identical across most themes but still varies
-   *  slightly) + the theme's first bloom accent color (the hedge-decor pop
-   *  that most differentiates one theme's "mood" from another's), so each
-   *  theme card reads as a distinct at-a-glance palette. */
+  /**
+   * A maze theme's swatch: its own PLACE mark, standing on its own colours.
+   *
+   * It was four colour dots (IDEA-026), which is real information about a board
+   * you have not seen — a theme is a palette — and all four are kept, just
+   * doing jobs instead of sitting in a row: `floor` fills the tile, `wall`
+   * draws the mark, and `biscuit` + the bloom accent run as a band underneath.
+   * The band deliberately does NOT repeat `wall`: the glyph is already drawn in
+   * it, and a swatch that shows the same colour twice is one that shows three
+   * colours while looking like it shows four. What the dots could never
+   * say is what the PLACE is, which is what Nuno asked for and what the icon
+   * adds (see THEME_ICONS).
+   *
+   * `wall` on `floor` rather than any chrome colour is §04 applied literally —
+   * "colour comes from the world", and these two ARE the two dominant materials
+   * of the board being sold. It also means the mark's contrast is the theme's
+   * own: Night City draws neon-indigo on near-black, the Garden hedge-green on
+   * soil. Every one is checked at the bottom of this file's own review script.
+   */
   function themeSwatch(theme: MazeTheme): string {
     const { wall, floor, biscuit, bloomColors } = theme.palette;
     const accent = bloomColors[0] ?? wall;
     return (
-      '<div class="skin-swatch" aria-hidden="true">' +
-      `<span class="swatch-dot" style="background:${hexToCss(wall)}"></span>` +
-      `<span class="swatch-dot" style="background:${hexToCss(floor)}"></span>` +
-      `<span class="swatch-dot" style="background:${hexToCss(biscuit)}"></span>` +
-      `<span class="swatch-dot" style="background:${hexToCss(accent)}"></span>` +
+      `<div class="skin-swatch skin-swatch-theme" aria-hidden="true" style="background:${hexToCss(floor)}">` +
+      `<span class="theme-mark" style="color:${hexToCss(wall)}">${iconHtml(themeIcon(theme.id))}</span>` +
+      '<span class="theme-strip">' +
+      `<span style="background:${hexToCss(biscuit)}"></span>` +
+      `<span style="background:${hexToCss(accent)}"></span>` +
+      "</span>" +
       "</div>"
     );
   }
 
   function swatchFor(item: ShopItem): string {
-    if (tab === "beagle") return beagleSwatch(item as BeagleSkin);
+    if (tab === "beagle") return beagleSwatchHtml(item as BeagleSkin);
     if (tab === "enemy") return enemySwatch(item as EnemySkin);
     return themeSwatch(item as MazeTheme);
   }
@@ -428,8 +483,33 @@ export function attachShop(root: ParentNode, callbacks: ShopCallbacks = {}): Sho
       '<div class="shop-hero-body">' +
       `<div class="shop-hero-name">${item.name}</div>` +
       `<div class="shop-hero-blurb">${item.blurb}</div>` +
+      perkLine(item) +
       "</div>" +
       actionHtml +
+      "</div>"
+    );
+  }
+
+  /**
+   * IDEA-064: what this beagle DOES, under what it looks like.
+   *
+   * Beagle tab only — an enemy skin and a theme have no perk, and printing an
+   * empty row for them would make the panel jump height on every tab switch.
+   *
+   * NOT amber: §04 reserves amber for the single next action on a screen, and
+   * that is the buy/equip button two lines below this. A perk is information,
+   * not a call to act, so it takes the biscuit tone and leans on the bolt plate
+   * to be noticed. The bolt (ICON.power) is already in the font subset — adding
+   * a new glyph means re-cutting it (see tokens.css), and a name that is not in
+   * the file renders as that word.
+   */
+  function perkLine(item: ShopItem): string {
+    if (tab !== "beagle") return "";
+    const { perk } = item as BeagleSkin;
+    return (
+      '<div class="shop-hero-perk">' +
+      iconHtml(ICON.power) +
+      `<span>${perk.label}</span>` +
       "</div>"
     );
   }

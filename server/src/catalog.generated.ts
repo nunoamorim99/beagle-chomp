@@ -20,15 +20,22 @@ export const BEAGLE_SKINS: readonly CatalogItem[] = [
 ];
 
 export const ENEMY_SKINS: readonly CatalogItem[] = [
-  { id: "beetle", price: 0 },
+  { id: "flea", price: 0 },
+  { id: "beetle", price: 25 },
   { id: "bee", price: 25 },
   { id: "ladybug", price: 25 },
+  { id: "crab", price: 25 },
+  { id: "mosquito", price: 25 },
+  { id: "maki", price: 25 },
+  { id: "nigiri", price: 25 },
+  { id: "pizza", price: 25 },
+  { id: "burger", price: 25 },
   { id: "ghost", price: 0 },
 ];
 
 export const MAZE_THEMES: readonly CatalogItem[] = [
   { id: "garden", price: 0 },
-  { id: "classic", price: 50 },
+  { id: "classic", price: 0 },
   { id: "forest", price: 50 },
   { id: "beach", price: 50 },
   { id: "park", price: 50 },
@@ -36,12 +43,12 @@ export const MAZE_THEMES: readonly CatalogItem[] = [
 ];
 
 export const DEFAULT_BEAGLE_SKIN_ID = "bagel";
-export const DEFAULT_ENEMY_SKIN_ID = "beetle";
+export const DEFAULT_ENEMY_SKIN_ID = "flea";
 export const DEFAULT_MAZE_THEME_ID = "garden";
 
 /** Challenge level count — the upper bound on users.challenge_progress.
  *  The sentinel value itself (== this number) means "all levels cleared". */
-export const CHALLENGE_LEVEL_COUNT = 8;
+export const CHALLENGE_LEVEL_COUNT = 40;
 
 // ---------------------------------------------------------------------------
 // Scoring + timing constants, mirrored from src/game/config.ts (and
@@ -95,6 +102,31 @@ export const POWERUP_IDS = ["doubleBiscuit","doubleGhost","slowGhosts","star","s
 export const POWERUP_MULTIPLIER = 2;
 export const SCORE_DOUBLING_POWERUPS = { biscuit: "doubleBiscuit", ghost: "doubleGhost" } as const;
 
+/** IDEA-064: BEAGLE PERKS — which coat carries which, and what each is worth.
+ *
+ *  Split across two constants because the game splits it across two files for
+ *  a reason: the MAPPING is an identity of the coat (cosmetics.ts) and the
+ *  MAGNITUDE is a balance number (config.ts). Joining them is the validator's
+ *  job, exactly as it is src/game/perks.ts's job on the client.
+ *
+ *  CLASSIC ONLY. The validator must apply none of these to a challenge run —
+ *  every challenge score already on the board was set without them, and the
+ *  client enforces the same rule from its side. If the two ever disagree, an
+ *  honest run is rejected rather than quietly mis-scored. */
+export const BEAGLE_PERK_BY_SKIN: Readonly<Record<string, string>> = {
+  "bagel": "startShield",
+  "cookie": "extraLifePerMap",
+  "muffin": "doubleCoins",
+  "pacbeagle": "unlocksTribute",
+  "pepper": "fruitBonus"
+};
+export const BEAGLE_PERKS = {
+  "startShields": 1,
+  "extraLivesPerMap": 1,
+  "coinMultiplier": 2,
+  "fruitBonusPoints": 100
+} as const;
+
 /** What each maze actually CONTAINS, derived from mazes.json rather than
  *  hand-copied. These are the hard ceilings the validator rests on: a run
  *  cannot eat more pellets than exist. */
@@ -118,11 +150,29 @@ export const MAZE_FACTS: readonly MazeFacts[] = [
   { biscuits: 191, bones: 4, fruitTiles: 2 },
   { biscuits: 190, bones: 4, fruitTiles: 2 },
   { biscuits: 193, bones: 4, fruitTiles: 2 },
-  { biscuits: 190, bones: 4, fruitTiles: 2 },
+  { biscuits: 194, bones: 4, fruitTiles: 2 },
   { biscuits: 186, bones: 4, fruitTiles: 2 },
+  { biscuits: 180, bones: 4, fruitTiles: 2 },
+  { biscuits: 188, bones: 4, fruitTiles: 2 },
+  { biscuits: 188, bones: 4, fruitTiles: 2 },
+  { biscuits: 194, bones: 4, fruitTiles: 2 },
+  { biscuits: 188, bones: 4, fruitTiles: 2 },
+  { biscuits: 192, bones: 4, fruitTiles: 2 },
+  { biscuits: 196, bones: 4, fruitTiles: 2 },
+  { biscuits: 180, bones: 4, fruitTiles: 2 },
+  { biscuits: 196, bones: 4, fruitTiles: 2 },
+  { biscuits: 204, bones: 4, fruitTiles: 2 },
+  { biscuits: 188, bones: 4, fruitTiles: 2 },
+  { biscuits: 192, bones: 4, fruitTiles: 2 },
+  { biscuits: 198, bones: 4, fruitTiles: 2 },
+  { biscuits: 196, bones: 4, fruitTiles: 2 },
+  { biscuits: 192, bones: 4, fruitTiles: 2 },
   { biscuits: 262, bones: 0, fruitTiles: 2 },
   { biscuits: 270, bones: 0, fruitTiles: 2 },
   { biscuits: 248, bones: 0, fruitTiles: 2 },
+  { biscuits: 239, bones: 0, fruitTiles: 2 },
+  { biscuits: 247, bones: 0, fruitTiles: 2 },
+  { biscuits: 259, bones: 0, fruitTiles: 2 },
 ];
 
 export const MAZE_COUNT = MAZE_FACTS.length;
@@ -139,6 +189,36 @@ export interface ChallengeLevelFacts {
 
 export const CHALLENGE_LEVELS: readonly ChallengeLevelFacts[] = [
   { mazeIdx: 0, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 1, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 2, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 3, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 4, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 5, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 6, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 7, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 8, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 9, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 10, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 11, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 12, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 13, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 14, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 15, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 16, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 17, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 18, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 19, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 20, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 21, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 22, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 23, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 24, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 25, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 26, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 27, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 28, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 29, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 0, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
   { mazeIdx: 1, speedMult: 1.3, ghostCount: 3, frightSeconds: 7 },
   { mazeIdx: 2, speedMult: 1, ghostCount: 4, frightSeconds: 7 },
   { mazeIdx: 3, speedMult: 1.5, ghostCount: 3, frightSeconds: 3 },
@@ -146,6 +226,8 @@ export const CHALLENGE_LEVELS: readonly ChallengeLevelFacts[] = [
   { mazeIdx: 2, speedMult: 1, ghostCount: 5, frightSeconds: 3 },
   { mazeIdx: 3, speedMult: 1.8, ghostCount: 4, frightSeconds: 7 },
   { mazeIdx: 4, speedMult: 2, ghostCount: 5, frightSeconds: 3 },
+  { mazeIdx: 13, speedMult: 0.7, ghostCount: 5, frightSeconds: 12 },
+  { mazeIdx: 29, speedMult: 2.2, ghostCount: 5, frightSeconds: 1.5 },
 ];
 
 /** Classic mode's baseline — the explicit modifiers game.ts uses for a classic
@@ -168,14 +250,22 @@ export const CLASSIC_MODIFIERS: ChallengeLevelFacts = {
 // than a 3-ghost one. Sizing every level at 3 would reject honest runs.
 
 export const MAPS_PER_STAGE = 5;
-export const STAGE_COUNT = 3;
-export const LEVELS_PER_LAP = 18;
-export const MAPS_PER_LAP = 15;
-export const BONUS_MAZE_START = 15;
+export const STAGE_COUNT = 6;
+export const LEVELS_PER_LAP = 36;
+export const MAPS_PER_LAP = 30;
+export const BONUS_MAZE_START = 30;
 export const GHOSTS_STAGE_1_2 = 3;
-export const GHOSTS_STAGE_3 = 4;
+export const GHOSTS_STAGE_3_4 = 4;
+export const GHOSTS_STAGE_5_6 = 5;
 export const GHOSTS_BONUS_FIRST_LAP = 1;
 export const GHOSTS_BONUS_LATER_LAPS = 2;
+
+/** Enemies on a numbered map in the given 0-based stage, on lap 1. */
+export function ghostsForStage(stageIdx: number): number {
+  if (stageIdx >= 4) return GHOSTS_STAGE_5_6;
+  if (stageIdx >= 2) return GHOSTS_STAGE_3_4;
+  return GHOSTS_STAGE_1_2;
+}
 
 export interface LevelPlan {
   readonly mazeIdx: number;
@@ -211,9 +301,11 @@ export function planLevel(levelIdx: number): LevelPlan {
 
   return {
     mazeIdx: mapIdx,
-    ghostCount: lap > 1 || stageIdx === STAGE_COUNT - 1 ? GHOSTS_STAGE_3 : GHOSTS_STAGE_1_2,
+    ghostCount: lap > 1 ? GHOSTS_STAGE_5_6 : ghostsForStage(stageIdx),
     isBonus: false,
-    mapNumber: mapIdx + 1,
+    // IDEA-061: the RUNNING count, so lap 2's first map is Map 31. Never an
+    // index into anything — mazeIdx is what repeats.
+    mapNumber: (lap - 1) * MAPS_PER_LAP + mapIdx + 1,
     lap,
     stage: stageIdx + 1,
   };

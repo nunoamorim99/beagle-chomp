@@ -652,3 +652,314 @@ body {
 .runtime-owned {
   border-left: 2px solid #c9a227;
 }
+
+/* ---- IDEA-062: stale-module chip ----
+   Shown once this session has written a source file. Editor saves no longer
+   reload the page (that reload was destroying unsaved work in every other
+   tab), so for the mesh tabs the imported module now lags the file on disk —
+   rebuilding a character would show the pre-save mesh. The chip says so and
+   offers the reload as a CHOICE rather than taking it.
+
+   Sits under the gizmo bar at the viewport's top-left, in the amber the rest
+   of the tool already uses for "read this". */
+#staleChip {
+  position: absolute;
+  left: 10px;
+  top: 46px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 330px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  border: 1px solid #6b5320;
+  background: rgba(56, 43, 16, 0.94);
+  color: #f0dcae;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+#staleChip[hidden] {
+  display: none; /* `display:flex` would otherwise beat the hidden attribute */
+}
+
+#staleChipReload {
+  flex: none;
+  padding: 2px 9px;
+  border-radius: 4px;
+  border: 1px solid #8a6c2a;
+  background: #4d3b16;
+  color: #f7e9c6;
+  font: inherit;
+  cursor: pointer;
+}
+
+#staleChipReload:hover {
+  background: #634c1d;
+}
+
+/* ---- IDEA-062 v3: the session Restore / Discard bar ----
+   Prepended into #editorApp (a CSS grid), so it must claim a row of its own
+   or it lands in the modebar cell and overlaps the tabs. `grid-column: 1/-1`
+   plus a prepended row is the whole trick — #editorApp's rows are `auto 1fr
+   …`, and an extra leading `auto` row is exactly what a one-line bar wants.
+
+   Amber, not green: this is a question, not a confirmation. It is asking you
+   to choose, and it disappears either way. */
+#editorApp:has(#sessionBar) {
+  grid-template-rows: auto auto 1fr 250px;
+  grid-template-areas:
+    "session session session"
+    "modebar modebar modebar"
+    "tree viewport gui"
+    "code code code";
+}
+
+#editorApp.mode-board:has(#sessionBar),
+#editorApp.mode-props:has(#sessionBar) {
+  grid-template-rows: auto auto 1fr;
+  grid-template-areas:
+    "session session session"
+    "modebar modebar modebar"
+    "tree viewport gui";
+}
+
+#sessionBar {
+  grid-area: session;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  border-bottom: 1px solid #6b5320;
+  background: #382b10;
+  color: #f0dcae;
+  font-size: 12px;
+}
+
+#sessionBarCaveat {
+  color: #b9a274;
+  font-size: 11px;
+}
+
+#sessionBarRestore,
+#sessionBarDiscard {
+  flex: none;
+  margin-left: auto;
+  padding: 3px 12px;
+  border-radius: 4px;
+  border: 1px solid #8a6c2a;
+  background: #4d3b16;
+  color: #f7e9c6;
+  font: inherit;
+  cursor: pointer;
+}
+
+/* Only the FIRST button pushes off to the right; the pair sits together. */
+#sessionBarDiscard {
+  margin-left: 0;
+  border-color: #5c4a24;
+  background: transparent;
+  color: #c8b184;
+}
+
+#sessionBarRestore:hover,
+#sessionBarDiscard:hover {
+  background: #634c1d;
+}
+
+/* ---- IDEA-062 v4: the Balance tab ----
+   The first mode with no tree and no viewport — it is a form over
+   src/game/config.ts.
+
+   TWO THINGS HERE ARE BUG FIXES, not taste.
+
+   1. `#treePane` and `#viewportPane` MUST be display:none. They carry
+      `grid-area: tree` / `grid-area: viewport`, and this template declares
+      neither — so CSS Grid AUTO-PLACES them into implicit tracks rather than
+      ignoring them. The first version of this rule looked like it worked and
+      did not: the mode bar was squeezed to 566px (wrapping "Board & Themes"
+      onto three lines), the whole pane became a small island floating in the
+      top-left, and the 3D sky was still sitting there on the right in a tab
+      that has no scene at all. A grid area that does not exist does not hide
+      the element that names it.
+
+   2. The pane fills the WIDTH and the folders run in newspaper COLUMNS. A
+      centred 820px column in a 1600px window reads as an island too — just a
+      tidier one — and it is wrong for the job: a balance pass means playing
+      speeds off against score off against the spawn thresholds, so the
+      groups want to be visible TOGETHER rather than scrolled past one at a
+      time. Eight groups at ~340px wide is three or four columns on a laptop
+      and one on a narrow window, with no breakpoint to maintain. */
+#editorApp.mode-balance {
+  grid-template-columns: 1fr;
+  grid-template-rows: auto 1fr;
+  grid-template-areas:
+    "modebar"
+    "gui";
+}
+
+#editorApp.mode-balance:has(#sessionBar) {
+  grid-template-rows: auto auto 1fr;
+  grid-template-areas:
+    "session"
+    "modebar"
+    "gui";
+}
+
+/* See note 1 — without this the grid grows implicit tracks for them. */
+#editorApp.mode-balance #treePane,
+#editorApp.mode-balance #viewportPane {
+  display: none;
+}
+
+#editorApp.mode-balance #guiPane {
+  padding: 14px 18px 28px;
+  overflow-y: auto;
+}
+
+/* The header band: save, revert and the sync panel span the full width above
+   the columns, because they act on everything below them. */
+#editorApp.mode-balance #balanceGuiHost > .save-btn,
+#editorApp.mode-balance #balanceGuiHost > .copy-btn {
+  margin: 0 8px 10px 0;
+}
+
+/* The root folder's own title is redundant once the tab is named "Balance"
+   and the pane says src/game/config.ts nowhere else — keep it, but let its
+   CHILDREN be the multi-column flow. */
+#editorApp.mode-balance #balanceGuiHost > .lil-gui.lil-root > .lil-children {
+  columns: 340px 4;
+  column-gap: 18px;
+  padding: 0;
+}
+
+/* `display: inline-block` + `width: 100%` is the reliable way to keep a block
+   from being split across a column boundary — `break-inside: avoid` alone is
+   honoured inconsistently, and a group sliced in half across two columns is
+   exactly the thing this layout exists to avoid. */
+#editorApp.mode-balance #balanceGuiHost > .lil-gui.lil-root > .lil-children > .lil-gui {
+  display: inline-block;
+  width: 100%;
+  margin: 0 0 16px;
+  break-inside: avoid;
+  border: 1px solid #2c3037;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+/* ---- IDEA-062 v5: the World tab ----
+   Board mode's stage, but NOT its left column: board mode lists slots there
+   and World has nothing to list. On its first build it inherited that pane and
+   rendered the PROP LIBRARY in it — 19 rows of props in a tab about fences.
+
+   `#treePane` needs display:none, not just an unused area: it carries
+   `grid-area: tree`, and a grid area that does not exist in the template does
+   not hide the element naming it, it gets AUTO-PLACED into an implicit track.
+   That is the same bug the Balance block above documents. */
+#editorApp.mode-world {
+  grid-template-columns: 1fr 330px;
+  grid-template-rows: auto 1fr;
+  grid-template-areas:
+    "modebar modebar"
+    "viewport gui";
+}
+
+#editorApp.mode-world:has(#sessionBar) {
+  grid-template-rows: auto auto 1fr;
+  grid-template-areas:
+    "session session"
+    "modebar modebar"
+    "viewport gui";
+}
+
+#editorApp.mode-world #treePane {
+  display: none;
+}
+
+/* The per-group prose. These numbers rarely explain themselves from the name,
+   and the consequence of moving one is usually somewhere else entirely. */
+.balance-note {
+  padding: 6px 8px 8px;
+  color: #9fb0c4;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+/* The sync gate. Stays up until dismissed, on purpose: an unsynced config.ts
+   breaks score submission in PRODUCTION with nothing failing locally, so this
+   is the one panel in the editor that must not auto-hide. */
+#syncPanel {
+  margin: 8px 0 12px;
+  padding: 10px 12px;
+  border: 1px solid #8a6c2a;
+  border-radius: 6px;
+  background: #382b10;
+  color: #f0dcae;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+#syncPanel[hidden] {
+  display: none;
+}
+
+#syncPanel p {
+  margin: 6px 0;
+}
+
+#syncPanel code {
+  display: block;
+  margin: 8px 0;
+  padding: 7px 9px;
+  border-radius: 4px;
+  background: #17191d;
+  color: #9fe6bb;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  user-select: all;
+}
+
+#syncPanel button {
+  padding: 3px 12px;
+  margin-right: 6px;
+  border-radius: 4px;
+  border: 1px solid #8a6c2a;
+  background: #4d3b16;
+  color: #f7e9c6;
+  font: inherit;
+  cursor: pointer;
+}
+
+#syncPanel .sync-dismiss {
+  border-color: #5c4a24;
+  background: transparent;
+  color: #c8b184;
+}
+
+#syncPanel .sync-blocked {
+  color: #ffb4a2;
+}
+
+/* ---- IDEA-062 v5: the World tab's fence readout ----
+   The instrument, not decoration. A wall face is ~25px at the game camera, so
+   a picket and its gap are single-digit pixel counts — and the CARTOON rule's
+   floor is "nothing smaller than a couple of pixels". This is the only place
+   in the tool where that rule can be checked WHILE dragging rather than after
+   shooting a render. */
+#fenceReadout {
+  margin: 8px 0 10px;
+  padding: 7px 9px;
+  border-radius: 5px;
+  border: 1px solid #2c3037;
+  background: #17191d;
+  color: #9fe6bb;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+#fenceReadout.warn {
+  border-color: #8a4a2a;
+  background: #2e1a12;
+  color: #ffb4a2;
+}

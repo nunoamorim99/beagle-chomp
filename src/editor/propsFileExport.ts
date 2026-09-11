@@ -17,7 +17,10 @@
 // fileExport.ts's own header discusses at length (that concern is inherent
 // to injecting one MORE block on top of prior ones; here there is only ever
 // the ONE array, fully regenerated, so nothing can stack).
-import propsSource from "../game/props.ts?raw";
+// IDEA-062: read through sourceStore rather than a frozen `?raw` string —
+// see that module's header. A page-load snapshot meant a second save in one
+// session spliced into text that predated the first, silently reverting it.
+import { sourceTextFor } from "./sourceStore";
 import { formatPropLibrary } from "./propsCodegen";
 import { type WorkingPropDef } from "./propsWorking";
 
@@ -33,7 +36,7 @@ const CLOSER = "] as const;";
  * always be found unless props.ts itself is mid-refactor).
  */
 export function generateFullPropsFile(library: readonly WorkingPropDef[]): string | null {
-  const src = propsSource;
+  const src = sourceTextFor("src/game/props.ts");
   const start = src.indexOf(MARKER);
   if (start === -1) return null;
   const closerIdx = src.indexOf(CLOSER, start);

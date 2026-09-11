@@ -20,9 +20,23 @@
 // is for. The exact ladder is not spelled out on purpose — the score popup over
 // the fruit teaches that better than a wall of numbers here.
 //
-// Both are pinned by scripts/test-tutorial-carousel.ts.
+// IDEA-064 added a fourth, and it is the reason for the "coats" slide below:
+// the shop stopped selling colours and started selling POWERS, and the tutorial
+// went on describing a game where the beagle you pick changes nothing. That is
+// the worst kind of stale copy — not wrong about a number, but silent about a
+// whole decision the player is now being asked to make.
+//
+// SO THE COAT LIST IS DERIVED FROM BEAGLE_SKINS, NEVER TYPED OUT HERE. Every
+// perk line the tutorial prints is the SAME string the shop card prints,
+// because it is the same object: `perk.label` off cosmetics.ts. A sixth coat,
+// or a reworded perk, updates this slide by existing. Hand-copying it would be
+// ENEMY_ICONS' raw-string bug in a new file — three cards printed their own
+// ligature names for three releases because a list was written out twice.
+//
+// All of it is pinned by scripts/test-tutorial-carousel.ts.
 
 import type { ControlScheme } from "../game/profileStore";
+import { BEAGLE_SKINS } from "../game/cosmetics";
 
 /** Which 3D subject the carousel stages behind a slide. Rendered by game.ts
  *  through the existing shopScene, so these are exactly the previews the shop
@@ -32,12 +46,28 @@ export type TutorialStage = "beagle" | "enemy" | "maze" | "goldenBone" | "poweru
 /** A flat input diagram, for the one thing 3D cannot show: a gesture. */
 export type TutorialDiagram = "keys" | "swipe" | "dpad" | "stick";
 
+/** One coat and what it does, for the coats slide. A flat row rather than a
+ *  BeagleSkin so the carousel needs nothing from cosmetics.ts except the paw —
+ *  and so a test can read the copy without a shop. */
+export interface TutorialPerkRow {
+  /** The skin id, so the carousel can draw that coat's own paw swatch. */
+  skinId: string;
+  name: string;
+  /** `BeagleSkin.perk.label`, verbatim. Never a paraphrase — see the note at
+   *  the top of this file. */
+  label: string;
+}
+
 export interface TutorialSlide {
   id: string;
   title: string;
   body: string;
   stage: TutorialStage;
   diagram?: TutorialDiagram;
+  /** Present only on the coats slide. A list, because five coats written into
+   *  one paragraph is a paragraph nobody finishes — and because the rows are
+   *  what the player will scan for again in the shop. */
+  perks?: TutorialPerkRow[];
 }
 
 export interface DeviceInput {
@@ -74,14 +104,30 @@ function movement(input: DeviceInput): { body: string; diagram: TutorialDiagram 
   };
 }
 
+/** Every coat and the one line the shop prints for it, in shop order.
+ *
+ *  Derived, not typed out. See the note at the top of this file: the moment
+ *  these five lines exist in two places, the pair that drifts is never the pair
+ *  you are looking at. */
+function perkRows(): TutorialPerkRow[] {
+  return BEAGLE_SKINS.map((skin) => ({
+    skinId: skin.id,
+    name: skin.name,
+    label: skin.perk.label,
+  }));
+}
+
 /**
  * The slides, in teaching order: how to move, what to collect, what to avoid,
- * how to turn that around, what changes the rules, and how to last longer.
+ * how to turn that around, what changes the rules, how to last longer, and
+ * which dog to take in.
  *
  * The count is deliberate and kept tight. This is a wall between the player and
  * the game they just asked to play, so it has to be finishable in under a
- * minute — IDEA-046 earned its slide by changing what the pickups DO, which is
- * the one thing a new player cannot work out by looking.
+ * minute — IDEA-046 earned its slide by changing what the pickups DO, and
+ * IDEA-064 earned the seventh by making the beagle itself a choice with
+ * consequences. Both are things a new player cannot work out by looking, which
+ * is the only bar a slide clears.
  */
 export function buildSlides(input: DeviceInput): TutorialSlide[] {
   const move = movement(input);
@@ -139,6 +185,27 @@ export function buildSlides(input: DeviceInput): TutorialSlide[] {
         "Three ways: every 10,000 points, eating every enemy within a single bone, " +
         "and the golden bone that appears from time to time. You can hold five at once.",
       stage: "goldenBone",
+    },
+    {
+      // IDEA-064. Last on purpose, and it is the only slide that asks the
+      // player to do something AFTER the tutorial rather than during the run.
+      // It also has to come last because every line in it leans on a slide
+      // above: a shield, a life, a fruit and a coin all have to mean something
+      // before "starts every run with a shield" is an offer rather than a
+      // sentence.
+      //
+      // The coins line lives here rather than on the biscuits slide because
+      // this is where it becomes actionable — and because coins have ONE source
+      // since IDEA-016 v2, which is a rule a player who remembers the old
+      // points-to-coins conversion would otherwise get wrong.
+      id: "coats",
+      title: "Every beagle has a power",
+      body:
+        "The shop sells dogs, not paint jobs — the one you take in changes how the run plays. " +
+        "Coins buy them, and coins come from the maze and nowhere else — grab them before they " +
+        "vanish. Powers work in classic runs; challenge levels are played straight.",
+      stage: "beagle",
+      perks: perkRows(),
     },
   ];
 }
