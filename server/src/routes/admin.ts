@@ -38,7 +38,11 @@ import {
   rejectionHealth,
 } from "../analytics/aggregate.js";
 import { snapshot } from "../http/metrics.js";
-import { ENEMY_SLOT_LABELS, FRUIT_LABELS } from "../catalog.generated.js";
+import {
+  ENEMY_SLOT_LABELS,
+  FRUIT_LABELS,
+  CHALLENGE_LEVEL_COUNT,
+} from "../catalog.generated.js";
 import { APP_VERSION } from "../version.js";
 import { env } from "../env.js";
 import * as announcements from "../repo/announcements.js";
@@ -96,12 +100,27 @@ adminRoutes.get("/retention", async (c) => {
 /** The challenge ladder — which level is actually the wall. */
 adminRoutes.get("/challenges", async (c) => {
   const rows = await analytics.challengeFunnel();
-  const standings = challengeStandings(rows);
+  // Dense to the ladder's real length (40 since IDEA-063, and this is the
+  // generated figure, so it tracks challenges.ts through `npm run sync`). SQL
+  // returns nothing at all for a level nobody has opened, and with a 40-level
+  // ladder that is most of them — see challengeStandings for the full argument.
+  const standings = challengeStandings(rows, CHALLENGE_LEVEL_COUNT);
   // `insufficient` is returned SEPARATELY rather than merged and sorted, so the
   // portal can grey those rows instead of showing a level nobody has attempted
   // at the top of a "hardest" list on no evidence.
   const { ranked, insufficient } = hardestChallenges(standings);
-  return c.json({ standings, ranked, insufficient, depth: await analytics.classicDepth() });
+  return c.json({
+    standings,
+    ranked,
+    insufficient,
+    // The portal holds the level NAMES (it imports challenges.ts directly) while
+    // the server holds the COUNT, so shipping the count lets the portal notice
+    // when the two disagree. That disagreement is precisely a forgotten
+    // `npm run sync`, which is the failure this whole dashboard was built to
+    // make visible — and it would otherwise show as a quietly truncated table.
+    levelCount: CHALLENGE_LEVEL_COUNT,
+    depth: await analytics.classicDepth(),
+  });
 });
 
 /** Gameplay texture: who kills you, what you eat. */
@@ -132,7 +151,11 @@ adminRoutes.get("/content", async (c) => {
   const [beagle, enemy, theme, control] = await Promise.all([
     analytics.equippedShare("beagle_skin_id"),
     analytics.equippedShare("enemy_skin_id"),
-    analytics.equippedShare("maze_theme_id"),
+    // CLASSIC ONLY, and it is the one of the four that needs the filter: every
+    // challenge level FORCES a theme (IDEA-063), so a challenge run records the
+    // theme the player had equipped rather than the one they actually played
+    // in. See equippedShare's own note.
+    analytics.equippedShare("maze_theme_id", "classic"),
     analytics.equippedShare("control_scheme"),
   ]);
   return c.json({

@@ -28,6 +28,14 @@ import { resolve } from "node:path";
 
 export default defineConfig({
   root: resolve(__dirname, "admin"),
+  // Vite looks for .env files in `envDir`, which DEFAULTS TO `root` — so without
+  // this it reads `admin/.env`, which does not exist, and the portal comes up
+  // saying "VITE_API_URL is not set" with no way to reach the API. The deployed
+  // build is unaffected (Cloudflare Pages supplies the variable through the
+  // environment, and Vite picks VITE_-prefixed vars up from there), which is
+  // exactly why this stayed invisible: it breaks only `npm run dev:admin`, the
+  // one path nobody exercises after the portal is live.
+  envDir: __dirname,
   // The app source lives in src/admin/, outside the Vite root, so the root
   // tsconfig typechecks it with everything else rather than needing its own.
   resolve: { alias: { "/src": resolve(__dirname, "src") } },

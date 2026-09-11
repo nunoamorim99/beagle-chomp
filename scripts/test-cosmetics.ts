@@ -119,8 +119,8 @@ check("bagel.coat.ear === 0xb87438 (the coat's mid-brown)", bagel.coat.ear === 0
 check("bagel is BEAGLE_SKINS[0]", BEAGLE_SKINS[0].id === "bagel");
 check("exactly 5 skins", BEAGLE_SKINS.length === 5);
 check(
-  "skin ids are bagel, cookie, muffin, pacbeagle, pepper in order",
-  BEAGLE_SKINS.map((s) => s.id).join(",") === "bagel,cookie,muffin,pacbeagle,pepper",
+  "skin ids are bagel, cookie, muffin, pepper, pacbeagle in order (the tribute coat LAST)",
+  BEAGLE_SKINS.map((s) => s.id).join(",") === "bagel,cookie,muffin,pepper,pacbeagle",
 );
 
 // getBeagleSkin(unknown) -> default, never throws.
@@ -190,7 +190,7 @@ BEAGLE_SKINS.forEach((s) => {
   }
   check(
     `cycle visits all 5 skins then wraps to ${DEFAULT_BEAGLE_SKIN_ID}`,
-    seen.join(",") === "bagel,cookie,muffin,pacbeagle,pepper,bagel",
+    seen.join(",") === "bagel,cookie,muffin,pepper,pacbeagle,bagel",
   );
   check("cycleBeagleSkinId(unknown) returns the first skin's id", cycleBeagleSkinId("nope") === BEAGLE_SKINS[0].id);
 }

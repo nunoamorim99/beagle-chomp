@@ -15,6 +15,16 @@ import "./admin.css";
 import * as api from "./api.js";
 import { renderNewsTab } from "./news.js";
 import {
+  BEAGLE_CATALOG,
+  ENEMY_CATALOG,
+  THEME_CATALOG,
+  CONTROL_CATALOG,
+  CHALLENGE_LEVEL_COUNT,
+  challengeMeta,
+  nameShares,
+  type CatalogEntry,
+} from "./catalog.js";
+import {
   ENEMY_HUES,
   barChart,
   lineChart,
@@ -271,6 +281,33 @@ function renderRetention(d: api.Retention): string {
     </section>`;
 }
 
+/** One challenge row, named. A bare "C33" is unreadable on a 40-level ladder —
+ *  a tour level IS its maze, so the name is what makes a ranking mean anything. */
+function challengeRow(s: api.ChallengeStanding): (string | number)[] {
+  const m = challengeMeta(s.challengeIdx);
+  return [
+    `${m.code} · ${m.name}`,
+    m.kind === "twist" ? "Twist" : m.chapter,
+    s.attempts,
+    s.clears,
+    fmtPct(s.clearRate),
+    s.attemptsPerClear === null ? "—" : s.attemptsPerClear.toFixed(1),
+    s.medianClearSeconds === null ? "—" : fmtDuration(s.medianClearSeconds),
+    s.avgDeaths === null ? "—" : s.avgDeaths.toFixed(1),
+  ];
+}
+
+const CHALLENGE_COLUMNS = [
+  "Level",
+  "Chapter",
+  "Attempts",
+  "Clears",
+  "Clear rate",
+  "Attempts / clear",
+  "Median time",
+  "Avg deaths",
+];
+
 function renderDifficulty(c: api.Challenges, g: api.Gameplay): string {
   const enemyBars = g.enemies.map((e) => ({
     label: e.label,
@@ -279,37 +316,94 @@ function renderDifficulty(c: api.Challenges, g: api.Gameplay): string {
     note: fmtPct(e.share),
   }));
 
+  // The one thing importing the game's own ladder cannot catch: the SERVER's
+  // generated catalog falling behind challenges.ts. That is a forgotten
+  // `npm run sync`, which this dashboard exists to surface — and unflagged it
+  // would show as a table that is quietly the wrong length.
+  const drift =
+    c.levelCount === CHALLENGE_LEVEL_COUNT
+      ? ""
+      : `<div class="banner bad"><strong>The server's catalog is out of step.</strong>
+          The game has ${esc(CHALLENGE_LEVEL_COUNT)} challenge levels; the API reports
+          ${esc(c.levelCount)}. That is a <code>npm run sync</code> in <code>server/</code>
+          that never ran — the same drift that makes the validator refuse honest runs.
+          Everything below is measured against the API's figure.</div>`;
+
+  // Thin data and no data are DIFFERENT answers and must not be one list. A
+  // level three people have tried and failed is a level to watch; a level nobody
+  // has opened says something about how far down the ladder anyone gets.
+  const tried = c.insufficient.filter((s) => s.attempts > 0);
+  const untouched = c.insufficient.filter((s) => s.attempts === 0);
+  const attempted = c.standings.filter((s) => s.attempts > 0).length;
+
   const hardest = c.ranked.length
-    ? table(
-        ["Level", "Attempts", "Clears", "Clear rate", "Attempts / clear", "Median time", "Avg deaths"],
-        c.ranked.map((s) => [
-          `C${s.challengeIdx + 1}`,
-          s.attempts,
-          s.clears,
-          fmtPct(s.clearRate),
-          s.attemptsPerClear === null ? "—" : s.attemptsPerClear.toFixed(1),
-          s.medianClearSeconds === null ? "—" : fmtDuration(s.medianClearSeconds),
-          s.avgDeaths === null ? "—" : s.avgDeaths.toFixed(1),
-        ]),
-      )
+    ? table(CHALLENGE_COLUMNS, c.ranked.map(challengeRow))
     : empty("No challenge level has enough attempts to rank yet.");
 
-  const notRanked = c.insufficient.length
-    ? `<p class="sub">Not ranked (too few attempts to mean anything): ${c.insufficient
-        .map((s) => `C${s.challengeIdx + 1} (${s.attempts})`)
-        .join(", ")}</p>`
+  const thin = tried.length
+    ? `<h3>Too thin to rank</h3>
+       <p class="sub">
+         Attempted, but under 5 goes — one player failing once is a 0% clear rate
+         and means nothing. Shown so a level being hard is not confused with a
+         level being new.
+       </p>
+       <div class="scroll">${table(CHALLENGE_COLUMNS, tried.map(challengeRow))}</div>`
     : "";
 
+  // Per chapter, because the ladder is two different things: thirty tour levels
+  // that are the same game on thirty boards, and ten twists that change the
+  // rules. "Nobody has reached stage 5" and "the twists are brutal" are separate
+  // findings and a flat list of forty rows hides both.
+  const chapters = new Map<string, api.ChallengeStanding[]>();
+  for (const s of c.standings) {
+    const m = challengeMeta(s.challengeIdx);
+    const key = m.kind === "twist" ? "The Twists" : m.chapter;
+    chapters.set(key, [...(chapters.get(key) ?? []), s]);
+  }
+  const coverage = table(
+    ["Chapter", "Levels", "Attempted", "Cleared by someone", "Hardest so far"],
+    [...chapters.entries()].map(([title, levels]) => {
+      const withData = levels.filter((s) => s.attempts >= 5 && s.clearRate !== null);
+      const worst = withData.sort((a, b) => (a.clearRate ?? 1) - (b.clearRate ?? 1))[0];
+      return [
+        title,
+        levels.length,
+        levels.filter((s) => s.attempts > 0).length,
+        levels.filter((s) => s.playersCleared > 0).length,
+        worst ? `${challengeMeta(worst.challengeIdx).code} (${fmtPct(worst.clearRate)})` : "—",
+      ];
+    }),
+    "The ladder is empty.",
+  );
+
   return `
+    ${drift}
     <section class="panel">
       <h2>Hardest challenge levels</h2>
       <p class="sub">
-        Ordered by clear rate, hardest first. A level with fewer than 5 attempts
-        is listed but not ranked — one player failing once is a 0% clear rate and
-        means nothing.
+        Ordered by clear rate, hardest first. Every level is counted, including
+        the ones nobody has opened — on a ${esc(c.levelCount)}-level ladder, "no
+        one has got this far" is usually the honest answer and it is not the same
+        as 0%.
       </p>
+      <div class="stats" style="margin-bottom:12px">
+        ${statTile("Levels", fmt(c.levelCount), "the whole ladder")}
+        ${statTile("Attempted", fmt(attempted), "at least once")}
+        ${statTile("Ranked", fmt(c.ranked.length), "5+ attempts")}
+        ${statTile("Never opened", fmt(untouched.length))}
+      </div>
       <div class="scroll">${hardest}</div>
-      ${notRanked}
+      ${thin}
+    </section>
+
+    <section class="panel">
+      <h2>How far down the ladder anyone gets</h2>
+      <p class="sub">
+        The tour is one level per playable maze, in maze order; the twists change
+        the rules. A stage with nothing attempted is content nobody has reached
+        yet rather than content nobody likes.
+      </p>
+      <div class="scroll">${coverage}</div>
     </section>
 
     <div class="grid2">
@@ -321,6 +415,8 @@ function renderDifficulty(c: api.Challenges, g: api.Gameplay): string {
               ? `The <strong>${esc(g.nemesis.label)}</strong> one, ${esc(fmtPct(g.nemesis.share))} of all deaths.`
               : "No clear leader — a tie, or nothing recorded yet."
           }
+          By the enemy's PLACE IN THE PACK, which is what a run records — the five
+          hues are fixed, and the skin worn over them is the Content tab.
         </p>
         ${barChart(enemyBars, { unit: "deaths" })}
         <div class="legend">
@@ -352,36 +448,122 @@ function renderDifficulty(c: api.Challenges, g: api.Gameplay): string {
 
     <section class="panel">
       <h2>Where classic runs end</h2>
-      <p class="sub">Maps played per accepted run — the difficulty wall, as a shape.</p>
+      <p class="sub">
+        Maps played per accepted run — the difficulty wall, as a shape. A lap is
+        36 maps and the count never resets, so anything past that is a second lap.
+      </p>
       ${barChart(
-        c.depth.map((row) => ({ label: `${row.levels_played} maps`, value: row.runs })),
+        c.depth.map((row) => ({
+          label: `${row.levels_played} ${row.levels_played === 1 ? "map" : "maps"}`,
+          value: row.runs,
+        })),
         { unit: "runs" },
       )}
     </section>`;
 }
 
 function renderContent(d: api.Content): string {
-  const block = (title: string, sub: string, rows: api.Share[]): string => `
+  const block = (
+    title: string,
+    sub: string,
+    rows: api.Share[],
+    catalog: readonly CatalogEntry[],
+  ): string => {
+    const named = nameShares(rows, catalog);
+    const played = named.filter((r) => r.runs > 0);
+    const idle = named.filter((r) => r.runs === 0);
+    // A zero bar is a real answer, so the never-played are named rather than
+    // omitted — but they go in a line under the chart instead of as a column of
+    // empty tracks, which would push the ones with data off the panel.
+    const unused = idle.length
+      ? `<p class="sub">Never played: ${idle.map((r) => esc(r.label)).join(", ")}.</p>`
+      : "";
+    const unknown = named.filter((r) => !r.known);
+    const stale = unknown.length
+      ? `<p class="sub">Recorded under ${unknown
+          .map((r) => `<code>${esc(r.label)}</code>`)
+          .join(", ")} — ids this build of the game no longer has. Real runs, kept.</p>`
+      : "";
+
+    return `
     <section class="panel">
       <h2>${esc(title)}</h2>
-      <p class="sub">${esc(sub)}</p>
-      ${barChart(rows.map((r) => ({ label: r.value, value: r.runs, note: fmtPct(r.share) })), {
-        unit: "runs",
-      })}
+      <p class="sub">${sub}</p>
+      ${
+        played.length
+          ? barChart(
+              played.map((r) => ({
+                label: r.label,
+                value: r.runs,
+                note: r.note ? `${fmtPct(r.share)} · ${r.note}` : fmtPct(r.share),
+              })),
+              { unit: "runs" },
+            )
+          : empty("Nothing played yet.")
+      }
+      ${unused}
+      ${stale}
     </section>`;
+  };
+
+  // The coats are a TABLE, not bars, and that is the dataviz rule rather than a
+  // preference: five rows whose most interesting attribute is a sentence is not
+  // a magnitude comparison. The perk was in the bar chart's tooltip first, which
+  // is the same as not showing it — "which coat" stopped being about colour in
+  // IDEA-064, so the power is the column the operator is actually here to read.
+  const coats = nameShares(d.beagleSkins, BEAGLE_CATALOG);
+  const coatTable = table(
+    ["Coat", "Perk", "Runs", "Share", "Players"],
+    coats.map((c) => [
+      c.label,
+      c.note ?? "—",
+      c.runs,
+      c.runs > 0 ? fmtPct(c.share) : "never played",
+      c.players,
+    ]),
+    "No runs with a coat recorded yet.",
+  );
 
   return `
     <p class="sub" style="margin:0">
-      Measured per RUN, from what was equipped when each run finished — not from
-      what is equipped right now. Runs from before this shipped have no
-      cosmetics recorded and count toward the total but appear in no bar, so
-      shares can sum to less than 100%.
+      Measured per RUN, from what was worn when each run finished — not from what
+      is equipped right now. Runs from before this shipped have no cosmetics
+      recorded and count toward the total but appear in no bar, so shares can sum
+      to less than 100%.
     </p>
+    <section class="panel">
+      <h2>Beagle coats</h2>
+      <p class="sub">
+        Which coat was actually taken in — and since IDEA-064 that is a choice of
+        POWER, not of colour, so the perk is the column that matters. Perks apply
+        in CLASSIC ONLY, so a coat's share here includes challenge runs where its
+        perk did nothing.
+      </p>
+      <div class="scroll">${coatTable}</div>
+    </section>
     <div class="grid2">
-      ${block("Beagle skins", "Which coat was actually being played.", d.beagleSkins)}
-      ${block("Enemy skins", "Which enemy set was on screen.", d.enemySkins)}
-      ${block("Maze themes", "Which garden they played in.", d.mazeThemes)}
-      ${block("Control schemes", "Swipe, D-pad or thumbstick.", d.controlSchemes)}
+      ${block(
+        "Enemy skins",
+        `Which cast was on screen. All ${ENEMY_CATALOG.length} are accounted for —
+         any nobody has equipped are named under the chart rather than left out,
+         because "nobody plays the crab" is the answer worth acting on.`,
+        d.enemySkins,
+        ENEMY_CATALOG,
+      )}
+      ${block(
+        "Maze themes",
+        `CLASSIC RUNS ONLY. Every challenge level forces a theme, so a challenge
+         run records the theme the player had equipped rather than the one they
+         played in — counting those would answer neither question.`,
+        d.mazeThemes,
+        THEME_CATALOG,
+      )}
+      ${block(
+        "Control schemes",
+        "Swipe, D-pad or thumbstick. The cross-tab worth having: whether the thumbstick helped anyone.",
+        d.controlSchemes,
+        CONTROL_CATALOG,
+      )}
     </div>`;
 }
 
@@ -493,6 +675,21 @@ function renderPlayers(): void {
   load("");
 }
 
+/** A stored id as a person would say it. Falls back to the raw id rather than a
+ *  dash — a run really was played on it, and hiding that makes a renamed skin
+ *  look like a player who never equipped anything. */
+function labelOf(id: string | null, catalog: readonly CatalogEntry[]): string {
+  if (!id) return "—";
+  return catalog.find((c) => c.id === id)?.name ?? id;
+}
+
+/** The coat's perk, for the Rewind — the interesting half of "favourite coat"
+ *  now that a coat is a power (IDEA-064). */
+function perkOf(id: string | null): string | undefined {
+  if (!id) return undefined;
+  return BEAGLE_CATALOG.find((c) => c.id === id)?.note;
+}
+
 function showRewind(name: string): void {
   const host = document.getElementById("rewind");
   if (!host) return;
@@ -517,13 +714,21 @@ function showRewind(name: string): void {
             ${statTile("Enemies eaten", fmt(d.ghostsEaten))}
             ${statTile("Deaths", fmt(d.livesLost))}
             ${statTile("Maps cleared", fmt(d.levelsCleared))}
-            ${statTile("Challenges", fmt(d.challengeProgress))}
+            ${statTile(
+              "Challenges",
+              `${fmt(d.challengeProgress)} / ${CHALLENGE_LEVEL_COUNT}`,
+              "stones cleared",
+            )}
           </div>
           <div class="stats" style="margin-top:12px">
             ${statTile("Nemesis", d.nemesis ? d.nemesis.label : "—", d.nemesis ? `${fmt(d.nemesis.count)} deaths` : "no clear leader")}
             ${statTile("Favourite fruit", d.favouriteFruit ? d.favouriteFruit.label : "—")}
-            ${statTile("Favourite theme", d.favouriteTheme ?? "—")}
-            ${statTile("Favourite coat", d.favouriteBeagleSkin ?? "—")}
+            ${statTile("Favourite theme", labelOf(d.favouriteTheme, THEME_CATALOG))}
+            ${statTile(
+              "Favourite coat",
+              labelOf(d.favouriteBeagleSkin, BEAGLE_CATALOG),
+              perkOf(d.favouriteBeagleSkin),
+            )}
           </div>
         </section>`;
       host.scrollIntoView({ behavior: "smooth", block: "start" });

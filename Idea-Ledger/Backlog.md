@@ -70,6 +70,18 @@ _(empty — nothing to triage)_
     beetle took over or when the flea did - so every account ever created owned it, and
     `visibleEnemySkins`' be-kind-to-legacy-accounts clause then matched everybody. The client
     gate had been correct and unreachable the whole time.
+  - **v2** (2026-09-11) - the shop cards redrawn, and a second live bug found by looking at
+    them. A beagle's swatch is now a PAW painted in that coat's own colours (inline SVG - a font
+    glyph can only ever be one colour); the Pac-Beagle moved to the END of the list, since it is
+    the one coat that is not just another dog; enemies are marked by CATEGORY (six bugs, four
+    dinners, one special) because Material Symbols has no crab, flea, mosquito or sushi and
+    eleven near-misses is worse than three true marks; and every theme got its own place mark
+    drawn in its own wall colour on its own floor colour. **The Beetle, Bee and Ladybug cards
+    had been printing the words PEST_CONTROL, HIVE and BUG_REPORT across the rail in 26px text
+    for three releases** - `ENEMY_ICONS` held raw ligature strings instead of `ICON` roles, so
+    those glyphs were never in the font subset, and `test-icon-font.ts` could not catch it
+    because it builds its list from `ICON` too. That suite now refuses a raw snake_case literal
+    in any module that draws icons; verified by re-injecting the original bug.
 
 ### IDEA-062 — An editor you can actually finish a thing in 🔨
 - **Priority:** 🔴

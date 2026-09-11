@@ -150,6 +150,51 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v8.
   `initProfileFromCache` BACKFILLS both tributes for anyone who bought the coat
   before the board joined the bundle; without that they would own the coat and
   be shown a price for something it advertises as unlocking.
+  **THE SHOP CARDS WERE REDRAWN WITH IT** (v2, Nuno's call), and one of the
+  three changes was fixing something live and broken:
+  - **A beagle's swatch is a PAW painted in the coat's colours**, not four
+    colour dots. `beagleSwatch` emits inline SVG, which it must: the whole
+    point is showing four channels at once and a font glyph takes exactly one
+    colour, so `ICON.beagle`'s own paw could never do this. The mapping mirrors
+    where each colour sits on the dog — pad `tan`, outer toes `ear`, inner toes
+    `black`, sole `paw ?? white` — and the sole is at the pad's BOTTOM EDGE
+    because a lighter oval centred inside a wide one reads as an EYE at 48px,
+    which is worse on a card selling a dog than no marking at all. Stroked in
+    the system ink, never the coat's own `black`: Muffin's "black" is a soft
+    brown and would lose its outline entirely.
+  - **THE ENEMY CARDS WERE PRINTING THEIR OWN LIGATURE NAMES, and had been for
+    three releases.** `ENEMY_ICONS` held RAW STRINGS (`"pest_control"`,
+    `"hive"`, `"bug_report"`) instead of `ICON` roles. The font subset is cut
+    from the values in ICON and nothing else, so those three glyphs were never
+    in the file — and the Beetle, Bee and Ladybug cards rendered the words
+    PEST_CONTROL, HIVE and BUG_REPORT in 26px text clean across the rail.
+    `test-icon-font.ts` could not catch it because it builds its list from ICON
+    too: **the three names that were not in ICON were exactly the three it
+    could not test.** It now also REFUSES any snake_case string literal in a
+    module that draws icons (blunt, cheap, and the precise shape of the defect
+    — every multi-word ligature is snake_case and this codebase is otherwise
+    camelCase). Verified by re-injecting the original bug and watching it fail.
+  - **Enemies are marked by CATEGORY, themes one-each.** Material Symbols has
+    no crab, flea, mosquito or sushi, so eleven distinct marks was never
+    available — the honest choice was eleven near-misses or three true ones, and
+    the card already carries its name. Six bugs (`ICON.critter`), four dinners
+    (`ICON.food`), one special (`ICON.secret`, the ghost — the only enemy that
+    is not a creature and the only one you unlock). Themes DO get one each,
+    because there are six and the family has a true glyph for every one; each
+    is drawn in its own `wall` colour on its own `floor` colour with
+    `biscuit` + bloom accent as a band beneath, so the palette information the
+    four dots carried is all still there, doing jobs instead of sitting in a
+    row. The band does not repeat `wall` — the glyph is already drawn in it.
+    `ICON.themes` moved from `park` to `palette` so the Themes TAB stops
+    wearing the City Park theme's own mark.
+  **The subset was re-cut to 58 names** (10.8 KiB; the five faces total 100
+  KiB). `npm run test:icon-font` is the only thing that proves a re-cut worked
+  — Google's CSS endpoint answers 200 for a name the family does not have.
+  **The Pac-Beagle sits LAST in `BEAGLE_SKINS`** (Nuno's call): it costs twice
+  its siblings, is the only coat that changes the model's silhouette, and its
+  perk buys two other items rather than changing a run — so the rail reads as
+  four comparable coats and then the special one. Nothing is indexed by
+  position (`getBeagleSkin` and the default are both resolved by id).
   **The perk is shown in the shop's hero info** (`.shop-hero-perk`, beagle tab
   only) on `ICON.power` — already in the font subset — and deliberately NOT in
   amber, which §04 reserves for the one next action on a screen.
@@ -895,7 +940,7 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v8.
   5. **Three fonts, one icon family — all SELF-HOSTED AND SUBSET.** Baloo 2
      (display) · Quicksand (body) · DM Mono (anything that ticks or lines up),
      plus Material Symbols Rounded, as five woff2 files in `src/ui/fonts/`
-     (108 KiB total) declared in `tokens.css`. **Never add a Google Fonts
+     (100 KiB total) declared in `tokens.css`. **Never add a Google Fonts
      `<link>`.** They shipped that way once and a blocked CDN request took the
      entire visual language down — system-fallback type, tofu on the level map,
      and every icon printing its own ligature name ("arrow_back Menu"). This is

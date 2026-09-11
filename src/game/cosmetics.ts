@@ -181,6 +181,33 @@ export const BEAGLE_SKINS: readonly BeagleSkin[] = [
     price: 25,
   },
   {
+    id: "pepper",
+    name: "Pepper",
+
+    blurb: "Cool blue-tick grey · near-black saddle",
+    // Cool blue-tick grey-black coat: a slate/blue-grey body, white
+    // belly/snout, near-black saddle/nose/eyes for strong markings, and a
+    // dark cool grey ear — deliberately cool-toned to contrast the three
+    // warm coats above.
+    coat: { tan: 0x7d8794, white: 0xf2f3f5, black: 0x1c1f24, ear: 0x4a4f57, nose: 0x141210, iris: 0x5c6266 },
+    // The scoring coat: every fruit pays BEAGLE_PERKS.fruitBonusPoints on top
+    // of the ladder, so a mango is 600 and — more to the point — an apple is
+    // 200, which doubles the worth of the fruit you were going to walk past.
+    perk: { id: "fruitBonus", label: "Every fruit you eat pays 100 more" },
+    price: 25,
+  },
+  // LAST IN THE LIST, and the position is deliberate (Nuno's call). This is the
+  // only coat that is not just another dog: it costs twice what its siblings
+  // do, it is the only one that changes the model's silhouette, and its perk
+  // buys two OTHER items rather than changing how a run plays. The rail reads
+  // as four comparable coats and then the special one, instead of the special
+  // one interrupting the four — which is also the order the rail scrolls in, so
+  // a player meets the ordinary choice before the upsell.
+  //
+  // Nothing is indexed by position here (getBeagleSkin looks up by id, and
+  // DEFAULT_BEAGLE_SKIN_ID is resolved by id too), so order is purely what the
+  // shop shows. cycleBeagleSkinId walks it, which is the only other reader.
+  {
     id: "pacbeagle",
     name: "Pac-Beagle",
 
@@ -224,22 +251,6 @@ export const BEAGLE_SKINS: readonly BeagleSkin[] = [
     // 50 it buys three things, which is what keeps it worth twice a plain coat
     // now that every coat carries a perk of its own.
     price: 50,
-  },
-  {
-    id: "pepper",
-    name: "Pepper",
-
-    blurb: "Cool blue-tick grey · near-black saddle",
-    // Cool blue-tick grey-black coat: a slate/blue-grey body, white
-    // belly/snout, near-black saddle/nose/eyes for strong markings, and a
-    // dark cool grey ear — deliberately cool-toned to contrast the three
-    // warm coats above.
-    coat: { tan: 0x7d8794, white: 0xf2f3f5, black: 0x1c1f24, ear: 0x4a4f57, nose: 0x141210, iris: 0x5c6266 },
-    // The scoring coat: every fruit pays BEAGLE_PERKS.fruitBonusPoints on top
-    // of the ladder, so a mango is 600 and — more to the point — an apple is
-    // 200, which doubles the worth of the fruit you were going to walk past.
-    perk: { id: "fruitBonus", label: "Every fruit you eat pays 100 more" },
-    price: 25,
   },
 ] as const;
 

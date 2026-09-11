@@ -123,38 +123,73 @@ export interface ShopHandle {
   isOpen: () => boolean;
 }
 
-/** One icon per enemy skin id — purely decorative labelling for the shop card
- *  (enemy skins have no color data to swatch; see cosmetics.ts's EnemySkin doc
- *  comment). Falls back to the generic enemy face for any future id that isn't
- *  listed here, so a new skin never renders with no icon at all.
+/**
+ * What KIND of enemy a card shows — bug, dinner, or the secret one.
  *
- *  These were emoji (👻🪲🐝🐞). The bug and ladybug in particular rendered as
- *  full-colour cartoons in a completely different drawing style from the toon
- *  meshes they were labelling, and each platform drew its own. Material
- *  Symbols gives four monochrome glyphs that take the card's own colour. */
+ * THE BUG THIS REPLACES, because it is the exact failure tokens.css warns
+ * about and it was live in the shop: this map used to hold RAW LIGATURE
+ * STRINGS ("pest_control", "hive", "bug_report") instead of going through
+ * ICON. The font subset is cut from the values in ICON and nothing else, so
+ * those three glyphs were never in the file — and a Material Symbols name that
+ * is not in the font does not fall back to a box, it PRINTS ITSELF. The Beetle,
+ * Bee and Ladybug cards were rendering the words "PEST_CONTROL", "HIVE" and
+ * "BUG_REPORT" in 26px text, spilling clean across the rail. It survived
+ * because `test-icon-font.ts` reads ICON to build its list, so the three names
+ * that were not in ICON were invisible to the one check that would have caught
+ * them. That suite now also refuses a raw string at any icon call site.
+ *
+ * WHY CATEGORIES AND NOT ONE GLYPH EACH (Nuno's call). Material Symbols has no
+ * crab, no flea, no mosquito and no sushi, so eleven distinct marks was never
+ * available — the honest choice is between eleven near-misses and three true
+ * ones. A card already carries its NAME; what the icon adds is the grouping the
+ * name cannot show at a glance, which is why the rail now reads as six bugs,
+ * four dinners and one special rather than as ten identical faces.
+ *
+ * Unlisted ids fall back to the generic enemy face, so a new skin can never
+ * render bare — but add it to a category, or it says nothing.
+ */
 const ENEMY_ICONS: Record<string, string> = {
-  ghost: ICON.enemies,
-  beetle: "pest_control",
-  bee: "hive",
-  ladybug: "bug_report",
-  // NO ENTRY FOR THE FLEA, THE CRAB, THE MOSQUITO, THE MAKI, THE NIGIRI OR THE
-  // PIZZA, deliberately. Each new
-  // glyph means re-cutting the Material Symbols subset (tokens.css) — the font
-  // holds only the names it was cut with, and an unlisted name renders as that
-  // word in plain text on the card. The documented fallback below is the safe
-  // behaviour until the subset is re-cut; `pest_control` was the obvious
-  // candidate for the flea but the beetle already wears it, and two skins
-  // sharing one picture reads worse than the generic face does. Neither the crab
-  // nor the mosquito has a near-miss candidate at all in the 46 names the subset
-  // holds, and neither does the maki, the nigiri or the pizza — the subset has
-  // no food glyph at all (`local_pizza` exists upstream and is not in the 46),
-  // and neither does the burger (`lunch_dining` is upstream and not in the 46).
-  // SEVEN skins now wait on one subset re-cut, which is well past the point
-  // where it should be its own small job rather than a rider on the next enemy.
+  // the bugs
+  beetle: ICON.critter,
+  bee: ICON.critter,
+  ladybug: ICON.critter,
+  flea: ICON.critter,
+  crab: ICON.critter,
+  mosquito: ICON.critter,
+  // the food
+  maki: ICON.food,
+  nigiri: ICON.food,
+  pizza: ICON.food,
+  burger: ICON.food,
+  // the one that is neither, and the only one you unlock
+  ghost: ICON.secret,
+};
+
+/**
+ * One mark per maze theme (Nuno's call).
+ *
+ * A theme's swatch keeps its four palette colours — that is real information
+ * about a board you have not seen — and this sits on top of it saying what the
+ * PLACE is. Unlike the enemies there are only six themes and Material Symbols
+ * has a true glyph for every one, so these are one-each rather than grouped.
+ *
+ * Keyed by theme id; an unlisted id falls back to the tab's own palette mark.
+ */
+const THEME_ICONS: Record<string, string> = {
+  garden: ICON.themeGarden,
+  classic: ICON.themeArcade,
+  forest: ICON.themeForest,
+  beach: ICON.themeBeach,
+  park: ICON.themePark,
+  city: ICON.themeCity,
 };
 
 function enemyIcon(id: string): string {
   return ENEMY_ICONS[id] ?? ICON.enemies;
+}
+
+function themeIcon(id: string): string {
+  return THEME_ICONS[id] ?? ICON.themes;
 }
 
 /** Converts a cosmetics hex color number (e.g. 0xc98a3c) to a CSS color string. */
@@ -290,14 +325,66 @@ export function attachShop(root: ParentNode, callbacks: ShopCallbacks = {}): Sho
 
   // ---- markup builders ----
 
+  /**
+   * A PAW, painted in the coat's own colours (Nuno's call, replacing four
+   * colour dots).
+   *
+   * The dots carried the right information and said nothing about what the
+   * information was FOR: four swatches in a row is a palette chip, and this is
+   * a shop that sells dogs. A paw says "beagle" before you have read the name,
+   * and it can carry more of the coat than the dots did — five channels rather
+   * than four, including the boots, which is the Pac-Beagle's whole silhouette.
+   *
+   * WHY INLINE SVG AND NOT A GLYPH. `ICON.beagle` is Material Symbols' `pets`,
+   * which is a paw — and a font glyph takes exactly ONE colour. The entire
+   * point here is showing four or five at once, so this has to be real
+   * geometry. It is also why this is not a plate: a plate is one lit square
+   * with one glyph on it.
+   *
+   * THE MAPPING MIRRORS WHERE EACH COLOUR SITS ON THE DOG, which is what makes
+   * it readable rather than decorative:
+   *   pad          -> `tan`, the body colour and the largest mass here too
+   *   pad's inner  -> `paw ?? white`, the foot colour; falls back to the belly
+   *                   for every coat that does not ask for boots (see
+   *                   BeagleCoat.paw — the paws WERE painted `white` before
+   *                   that channel existed, so the fallback is exact)
+   *   outer toes   -> `ear`, the coat's mid-brown / blend band
+   *   inner toes   -> `black`, the saddle and markings
+   *
+   * Every shape is stroked in the system ink (§01: outline everything, 3px of
+   * `--bc-outline`), NOT in the coat's own `black` — a coat whose "black" is a
+   * soft brown (Muffin's 0x9c7248) would otherwise lose its outline on the one
+   * card that needs it most, and the ink is what ties this to the toon meshes
+   * behind it. Stroke width is in the SVG's own units, so it scales with the
+   * card rather than needing a second value for the phone layout.
+   */
   function beagleSwatch(skin: BeagleSkin): string {
     const { tan, white, black, ear } = skin.coat;
+    const sock = skin.coat.paw ?? white;
+    // A 24x24 viewBox: four toe beans across the top, one big pad below. The
+    // outer pair sit lower and are tilted outward, which is what stops the row
+    // reading as four identical circles.
     return (
-      '<div class="skin-swatch" aria-hidden="true">' +
-      `<span class="swatch-dot" style="background:${hexToCss(tan)}"></span>` +
-      `<span class="swatch-dot" style="background:${hexToCss(white)}"></span>` +
-      `<span class="swatch-dot" style="background:${hexToCss(black)}"></span>` +
-      `<span class="swatch-dot" style="background:${hexToCss(ear)}"></span>` +
+      '<div class="skin-swatch skin-swatch-paw" aria-hidden="true">' +
+      '<svg viewBox="0 0 24 24" class="paw-swatch">' +
+      `<g stroke="var(--bc-outline)" stroke-width="1.3" stroke-linejoin="round">` +
+      // outer toes (ear)
+      `<ellipse cx="4.1" cy="10.2" rx="2.9" ry="3.5" transform="rotate(-24 4.1 10.2)" fill="${hexToCss(ear)}"/>` +
+      `<ellipse cx="19.9" cy="10.2" rx="2.9" ry="3.5" transform="rotate(24 19.9 10.2)" fill="${hexToCss(ear)}"/>` +
+      // inner toes (black / markings)
+      `<ellipse cx="9.3" cy="6.2" rx="2.9" ry="3.6" transform="rotate(-9 9.3 6.2)" fill="${hexToCss(black)}"/>` +
+      `<ellipse cx="14.7" cy="6.2" rx="2.9" ry="3.6" transform="rotate(9 14.7 6.2)" fill="${hexToCss(black)}"/>` +
+      // The pad (tan), with the foot colour as a SOLE at its bottom edge.
+      //
+      // The sole was a concentric ellipse in the middle of the pad first, and
+      // at 48px a wide oval with a lighter oval centred inside it reads as an
+      // EYE — which on a card selling a dog is worse than no marking at all.
+      // Sitting it low and clipping it to the pad's own lower curve makes it a
+      // sole, which is where a foot's pale marking actually is.
+      `<path d="M12 11.6c4.3 0 7.2 2.8 7.2 5.8 0 2.7-2.5 4.5-7.2 4.5s-7.2-1.8-7.2-4.5c0-3 2.9-5.8 7.2-5.8z" fill="${hexToCss(tan)}"/>` +
+      `<path d="M12 17.1c2.9 0 5 .7 6.1 1.7-.9 1.8-3.1 3.1-6.1 3.1s-5.2-1.3-6.1-3.1c1.1-1 3.2-1.7 6.1-1.7z" fill="${hexToCss(sock)}"/>` +
+      "</g>" +
+      "</svg>" +
       "</div>"
     );
   }
@@ -306,22 +393,35 @@ export function attachShop(root: ParentNode, callbacks: ShopCallbacks = {}): Sho
     return `<div class="skin-swatch skin-swatch-icon" aria-hidden="true">${iconHtml(enemyIcon(skin.id))}</div>`;
   }
 
-  /** IDEA-026: a 4-dot swatch for a maze theme, mirroring beagleSwatch's
-   *  shape exactly but reading from the theme's palette instead of a coat —
-   *  wall + floor (the two dominant board materials) + biscuit (the pickup
-   *  tint, which is close to identical across most themes but still varies
-   *  slightly) + the theme's first bloom accent color (the hedge-decor pop
-   *  that most differentiates one theme's "mood" from another's), so each
-   *  theme card reads as a distinct at-a-glance palette. */
+  /**
+   * A maze theme's swatch: its own PLACE mark, standing on its own colours.
+   *
+   * It was four colour dots (IDEA-026), which is real information about a board
+   * you have not seen — a theme is a palette — and all four are kept, just
+   * doing jobs instead of sitting in a row: `floor` fills the tile, `wall`
+   * draws the mark, and `biscuit` + the bloom accent run as a band underneath.
+   * The band deliberately does NOT repeat `wall`: the glyph is already drawn in
+   * it, and a swatch that shows the same colour twice is one that shows three
+   * colours while looking like it shows four. What the dots could never
+   * say is what the PLACE is, which is what Nuno asked for and what the icon
+   * adds (see THEME_ICONS).
+   *
+   * `wall` on `floor` rather than any chrome colour is §04 applied literally —
+   * "colour comes from the world", and these two ARE the two dominant materials
+   * of the board being sold. It also means the mark's contrast is the theme's
+   * own: Night City draws neon-indigo on near-black, the Garden hedge-green on
+   * soil. Every one is checked at the bottom of this file's own review script.
+   */
   function themeSwatch(theme: MazeTheme): string {
     const { wall, floor, biscuit, bloomColors } = theme.palette;
     const accent = bloomColors[0] ?? wall;
     return (
-      '<div class="skin-swatch" aria-hidden="true">' +
-      `<span class="swatch-dot" style="background:${hexToCss(wall)}"></span>` +
-      `<span class="swatch-dot" style="background:${hexToCss(floor)}"></span>` +
-      `<span class="swatch-dot" style="background:${hexToCss(biscuit)}"></span>` +
-      `<span class="swatch-dot" style="background:${hexToCss(accent)}"></span>` +
+      `<div class="skin-swatch skin-swatch-theme" aria-hidden="true" style="background:${hexToCss(floor)}">` +
+      `<span class="theme-mark" style="color:${hexToCss(wall)}">${iconHtml(themeIcon(theme.id))}</span>` +
+      '<span class="theme-strip">' +
+      `<span style="background:${hexToCss(biscuit)}"></span>` +
+      `<span style="background:${hexToCss(accent)}"></span>` +
+      "</span>" +
       "</div>"
     );
   }

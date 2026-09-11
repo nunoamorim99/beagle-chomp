@@ -806,6 +806,30 @@ body.map-open #mainMenu{display:none}
 .skin-swatch{flex:0 0 auto;display:flex;gap:var(--bc-s1);align-items:center;justify-content:center;
   width:56px;height:56px;border-radius:var(--bc-r-chip);background:var(--bc-ink);padding:6px}
 .swatch-dot{width:14px;height:14px;border-radius:50%;border:2px solid var(--bc-outline)}
+/* IDEA-064 v2: the beagle swatch is a PAW painted in the coat's colours rather
+   than four dots (see shop.ts's beagleSwatch). The tile loses its padding — the
+   paw is drawn to its own margins inside the viewBox, and 6px on top of that
+   left it floating in a box instead of filling the chip. */
+.skin-swatch-paw{padding:3px}
+.paw-swatch{width:100%;height:100%;display:block;overflow:visible}
+/* IDEA-064 v2: a theme's swatch is its PLACE mark standing on its own board
+   colours — the tile is the theme's floor, the glyph its wall, and the three
+   remaining palette channels run as a band along the bottom. The band is what
+   keeps the original four-dot information; the mark is what says where it is. */
+.skin-swatch-theme{position:relative;overflow:hidden;padding:0}
+.theme-mark{display:flex;align-items:center;justify-content:center;
+  width:100%;height:100%;padding-bottom:6px}
+.theme-mark .bc-i{font-size:28px;line-height:1;
+  /* An ink edge, because a theme's own wall-on-floor pairing is not guaranteed
+     to carry contrast (§01: outline everything — it is the one thing that
+     works on hedge, sand and neon alike). A text-shadow rather than a stroke:
+     -webkit-text-stroke thins the glyph's own strokes from the inside, which
+     at 28px eats a Material Symbols hairline entirely. */
+  text-shadow:0 0 2px var(--bc-outline),0 1px 0 var(--bc-outline),
+    0 -1px 0 var(--bc-outline),1px 0 0 var(--bc-outline),-1px 0 0 var(--bc-outline)}
+.theme-strip{position:absolute;left:0;right:0;bottom:0;height:6px;display:flex;
+  border-top:2px solid var(--bc-outline)}
+.theme-strip span{flex:1 1 0}
 .skin-swatch-icon{font-size:26px;line-height:1;background:var(--bc-ink);
   color:var(--bc-cream)}
 .shop-rail-card-locked .skin-swatch-icon{color:rgba(255,247,232,.45)}

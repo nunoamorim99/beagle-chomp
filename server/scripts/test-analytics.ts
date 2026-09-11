@@ -202,6 +202,57 @@ section("challenge standings — rates, and refusing to guess");
   ok("…both are reported separately instead", insufficient.length === 2);
 }
 
+// IDEA-063 took the ladder from 8 levels to 40, so most of it is untried on any
+// given day. SQL returns NO ROW for a level nobody has opened, and a portal fed
+// those rows would answer "which of the levels anyone has played is hardest"
+// while looking like it answered "which level is the wall".
+{
+  const standings = challengeStandings(
+    [
+      { challenge_idx: 0, attempts: 12, clears: 9, players_attempted: 4, players_cleared: 3, median_clear_seconds: null, avg_deaths: null },
+      { challenge_idx: 33, attempts: 7, clears: 1, players_attempted: 2, players_cleared: 1, median_clear_seconds: null, avg_deaths: null },
+    ],
+    40,
+  );
+
+  ok("the ladder is dense to its real length", standings.length === 40);
+  ok("every index is its own position", standings.every((s, i) => s.challengeIdx === i));
+  ok("a played level keeps its figures", standings[33].attempts === 7);
+  // The whole point: an untried level is PRESENT and says nothing, rather than
+  // being absent (invisible) or zero (a 0% clear rate, i.e. "impossible").
+  ok("an untried level is present", standings[15].attempts === 0);
+  ok("…with a null rate, never 0%", standings[15].clearRate === null);
+  ok("…and no invented median", standings[15].medianClearSeconds === null);
+
+  const { ranked, insufficient } = hardestChallenges(standings, 5);
+  ok("only played levels are ranked", ranked.length === 2);
+  ok("the 14%-clear level ranks hardest", ranked[0].challengeIdx === 33);
+  ok("the other 38 are reported, not ranked", insufficient.length === 38);
+}
+
+// The count is a FLOOR, not a cap. A row past the end of the catalog means the
+// server's generated catalog has drifted behind challenges.ts — the forgotten
+// `npm run sync` this dashboard exists to surface — so it must survive to be
+// seen rather than being quietly trimmed away.
+{
+  const standings = challengeStandings(
+    [{ challenge_idx: 11, attempts: 3, clears: 0, players_attempted: 1, players_cleared: 0, median_clear_seconds: null, avg_deaths: null }],
+    8,
+  );
+  ok("a level past the catalog's count is kept", standings.length === 12);
+  ok("…with its attempts intact", standings[11].attempts === 3);
+  ok("…and the gap below it filled", standings[9].attempts === 0);
+}
+
+// Called with no count at all (the shape every existing caller used), the list
+// is still dense — just only as far as the data reaches.
+{
+  const standings = challengeStandings([
+    { challenge_idx: 2, attempts: 5, clears: 5, players_attempted: 1, players_cleared: 1, median_clear_seconds: null, avg_deaths: null },
+  ]);
+  ok("with no count it is dense to the data", standings.length === 3);
+}
+
 // ---------------------------------------------------------------------------
 section("slot tallies — zero is an answer, a tie is not");
 

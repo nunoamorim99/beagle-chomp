@@ -146,8 +146,73 @@ async function main(): Promise<void> {
       perkText,
     );
 
+    // IDEA-064 v2: the swatch is a PAW painted from the coat, not four dots.
+    // Checked as real geometry rather than by screenshot diff — the point is
+    // that each coat produces DIFFERENT fills, which is the thing a hard-coded
+    // palette or a one-colour font glyph could not do.
+    const pawFills = await page.$$eval(".shop-rail-card .paw-swatch", (svgs) =>
+      svgs.map((svg) =>
+        [...svg.querySelectorAll("[fill]")].map((el) => el.getAttribute("fill")).join(","),
+      ),
+    );
+    ok("every beagle card draws a paw", pawFills.length === 5, pawFills.length);
+    // Six filled shapes — four toes, the pad and the sole — drawn from four
+    // coat channels (the toes pair up: two `ear`, two `black`). Asserting the
+    // DISTINCT count is the check worth having: a paw rendering as one blob
+    // would still have six fills.
+    ok(
+      "each paw draws six shapes",
+      pawFills.every((f) => f.split(",").length === 6),
+      pawFills[0],
+    );
+    ok(
+      "…from at least three distinct coat colours, so no coat is one blob",
+      pawFills.every((f) => new Set(f.split(",")).size >= 3),
+      pawFills.map((f) => new Set(f.split(",")).size).join(","),
+    );
+    ok(
+      "no two coats paint the same paw",
+      new Set(pawFills).size === pawFills.length,
+    );
+    ok(
+      "the Pac-Beagle's paw shows its RED boots, which no other coat has",
+      pawFills.some((f) => f.includes("#e01f26")),
+      pawFills.find((f) => f.includes("#e01f26")) ?? "no red",
+    );
+    // The tribute coat sits LAST (Nuno's call) — the rail reads as four
+    // comparable coats and then the special one.
+    const coatNames = await railNames(page);
+    ok(
+      "the Pac-Beagle is the last card in the beagle rail",
+      coatNames[coatNames.length - 1] === "Pac-Beagle",
+      coatNames.join(","),
+    );
+
     await openShopTab(page, "enemy");
     const enemies = await railNames(page);
+
+    // THE GLYPH CHECK, and it is not decorative: a Material Symbols name that
+    // is not in the font subset PRINTS ITSELF, which is what three of these
+    // cards were doing. A rendered ligature name is many times wider than the
+    // 26px square an icon occupies, so width is the tell.
+    const enemyIconWidths = await page.$$eval(".shop-rail-card .skin-swatch-icon .bc-i", (els) =>
+      els.map((e) => Math.round((e as HTMLElement).offsetWidth)),
+    );
+    ok(
+      "every enemy card draws a GLYPH, not its ligature name",
+      enemyIconWidths.length === 10 && enemyIconWidths.every((w) => w > 0 && w < 60),
+      enemyIconWidths.join(","),
+    );
+    // Categories: six bugs, four dinners. Grouped rather than unique because
+    // Material Symbols has no crab, flea, mosquito or sushi.
+    const enemyGlyphs = await page.$$eval(".shop-rail-card .skin-swatch-icon .bc-i", (els) =>
+      els.map((e) => (e.textContent ?? "").trim()),
+    );
+    ok(
+      "the enemy rail reads as two categories, not ten identical faces",
+      new Set(enemyGlyphs).size === 2,
+      enemyGlyphs.join(","),
+    );
     ok("the enemy rail lists 10 skins", enemies.length === 10, enemies.join(","));
     ok("the Ghost is NOT listed before the coat is bought", !enemies.includes("Ghost"));
     ok("the Flea is listed", enemies.includes("Flea"), enemies.join(","));
@@ -159,6 +224,25 @@ async function main(): Promise<void> {
 
     await openShopTab(page, "theme");
     const themesBefore = await railNames(page);
+
+    // One mark per theme, each on its own board colours.
+    const themeMarks = await page.$$eval(".shop-rail-card .theme-mark .bc-i", (els) =>
+      els.map((e) => (e.textContent ?? "").trim()),
+    );
+    ok("every theme card carries a place mark", themeMarks.length === 5, themeMarks.join(","));
+    ok(
+      "no two themes wear the same mark",
+      new Set(themeMarks).size === themeMarks.length,
+      themeMarks.join(","),
+    );
+    const themeMarkWidths = await page.$$eval(".shop-rail-card .theme-mark .bc-i", (els) =>
+      els.map((e) => Math.round((e as HTMLElement).offsetWidth)),
+    );
+    ok(
+      "…and every one is a glyph rather than its own name",
+      themeMarkWidths.every((w) => w > 0 && w < 60),
+      themeMarkWidths.join(","),
+    );
     ok("the theme rail lists 5 boards", themesBefore.length === 5, themesBefore.join(","));
     ok(
       "Arcade Night is NOT listed before the coat is bought",

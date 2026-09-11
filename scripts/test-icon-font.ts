@@ -21,13 +21,30 @@
 // icon, about 24px wide; a missing one renders its own name and runs to 300px.
 // There is no grey area to tune a threshold against.
 //
+// IT NOW GUARDS TWO THINGS, and the second one is why the first was not enough.
+//
+// This suite builds its list by parsing ICON, on the documented assumption that
+// "nothing addresses this font any other way". That assumption was FALSE and had
+// been for three releases: src/ui/shop.ts's ENEMY_ICONS held raw ligature
+// strings ("pest_control", "hive", "bug_report") that were never in ICON, so
+// they were never in the subset Google cut, and the Beetle, Bee and Ladybug
+// cards rendered the words PEST_CONTROL, HIVE and BUG_REPORT in 26px text
+// across the shop rail. Every check here passed the whole time, because a name
+// this suite never hears about is a name it cannot test.
+//
+// So the source scan below closes the hole at the source instead: outside
+// icons.ts, no module that draws icons may contain a snake_case string literal
+// at all. That is a blunt rule and a cheap one, and it is exactly the shape of
+// the thing that went wrong — every multi-word Material Symbols ligature is
+// snake_case, and this codebase is otherwise camelCase throughout.
+//
 // NOT in `npm test` — it needs a browser, like every other Playwright suite
 // here. Run it after re-cutting the subset:  npm run test:icon-font
 
 import { chromium } from "playwright";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const FONT = join(ROOT, "src/ui/fonts/material-symbols-rounded-subset.woff2");
@@ -45,6 +62,71 @@ function iconNames(): string[] {
   const names = [...block.matchAll(/:\s*"([a-z0-9_]+)"/g)].map((m) => m[1]);
   if (names.length === 0) throw new Error("no icon names parsed — did ICON's shape change?");
   return [...new Set(names)].sort();
+}
+
+/**
+ * Storage keys, not glyph names. The only snake_case literals the interface is
+ * allowed to carry outside icons.ts, listed one by one rather than pattern-
+ * matched: an allowlist that takes a prefix would quietly accept the next
+ * `bc_`-looking icon name somebody invents.
+ */
+const ALLOWED_SNAKE_LITERALS = new Set(["bc_last_player", "bc_muted"]);
+
+/** Blank comments to SPACES so prose about this very rule cannot trip it —
+ *  the doc comment above ENEMY_ICONS names all three offending glyphs on
+ *  purpose, and it must stay legal to write them down. */
+function maskComments(src: string): string {
+  let out = "";
+  let i = 0;
+  while (i < src.length) {
+    const two = src.slice(i, i + 2);
+    if (two === "//") {
+      const nl = src.indexOf("\n", i);
+      const end = nl === -1 ? src.length : nl;
+      out += " ".repeat(end - i);
+      i = end;
+    } else if (two === "/*") {
+      const close = src.indexOf("*/", i + 2);
+      const end = close === -1 ? src.length : close + 2;
+      out += src.slice(i, end).replace(/[^\r\n]/g, " ");
+      i = end;
+    } else {
+      out += src[i];
+      i++;
+    }
+  }
+  return out;
+}
+
+function walk(dir: string, out: string[] = []): string[] {
+  for (const entry of readdirSync(dir)) {
+    const full = join(dir, entry);
+    if (statSync(full).isDirectory()) walk(full, out);
+    else if (entry.endsWith(".ts")) out.push(full);
+  }
+  return out;
+}
+
+/** Every icon name reachable from source must come from ICON. Returns the
+ *  offences as `file:line  "literal"` strings. */
+function rawGlyphLiterals(): string[] {
+  const offences: string[] = [];
+  for (const file of walk(join(ROOT, "src"))) {
+    if (file === ICONS) continue;
+    const src = readFileSync(file, "utf-8");
+    // Only modules that actually DRAW icons can be the source of this bug, and
+    // scoping to them keeps the rule from policing unrelated code.
+    if (!/from "\.{1,2}[./a-z]*icons"/.test(src)) continue;
+
+    const masked = maskComments(src);
+    masked.split(/\r?\n/).forEach((line, idx) => {
+      for (const m of line.matchAll(/"([a-z][a-z0-9]*(?:_[a-z0-9]+)+)"/g)) {
+        if (ALLOWED_SNAKE_LITERALS.has(m[1])) continue;
+        offences.push(`${relative(ROOT, file).replace(/\\/g, "/")}:${idx + 1}  "${m[1]}"`);
+      }
+    });
+  }
+  return offences;
 }
 
 const names = iconNames();
@@ -108,10 +190,21 @@ if (control <= 40) {
   failed++;
 }
 
+const rawLiterals = rawGlyphLiterals();
+console.log("\n  Every icon name comes from ICON (nothing addresses the font raw)");
+if (rawLiterals.length === 0) {
+  console.log("  ok   no raw snake_case literals in any icon-drawing module");
+} else {
+  for (const offence of rawLiterals) {
+    console.log(`  FAIL ${offence} — use an ICON.* role, or the glyph is not in the subset`);
+    failed++;
+  }
+}
+
 console.log(`\n${"-".repeat(60)}`);
 console.log(
   failed === 0
-    ? `ICON FONT: all ${names.length} glyphs present`
+    ? `ICON FONT: all ${names.length} glyphs present, every name from ICON`
     : `ICON FONT: ${failed} problem(s) — re-cut the subset (recipe in src/ui/tokens.css)`,
 );
 process.exit(failed === 0 ? 0 : 1);

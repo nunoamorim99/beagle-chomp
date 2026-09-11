@@ -16,6 +16,19 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
 > lines here roll up into the numbered version below and this section is cleared (hold a line back
 > only if you explicitly choose to).
 
+- **[[IDEA-064]] v2** (2026-09-11) - **the shop cards, redrawn.** Each beagle now shows a
+  PAW painted in its own coat - Bagel's tricolour, Cookie's chocolate, Pepper's cool grey, and
+  the Pac-Beagle's yellow paw on red boots - instead of four colour dots. The Pac-Beagle moved
+  to the end of the row, where the special one belongs. The enemy cards say what KIND of thing
+  they are (a bug, something edible, or the secret one) rather than eleven cards wearing the
+  same face, and every board theme got its own mark - a flower for the Garden, trees for the
+  Deep Forest, a parasol for the Beach, an arcade cabinet for Arcade Night - drawn in that
+  board's own colours.
+
+  **And the Beetle, Bee and Ladybug cards had been broken for three releases**: instead of an
+  icon they were printing the words "PEST_CONTROL", "HIVE" and "BUG_REPORT" in large text
+  straight across the shop. Fixed, and the check that should have caught it has been taught how.
+
 - **[[IDEA-064]] v1** (2026-09-11) - **every beagle has a power now, and the shop sells
   beagles rather than paint.** Bagel starts every run holding a shield. Cookie hands you an extra
   life at the start of every map. Muffin makes every coin you grab worth two. Pepper adds 100

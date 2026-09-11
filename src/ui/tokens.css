@@ -48,12 +48,12 @@
         settings, enterprise proxies and captive portals all break
         fonts.googleapis.com, and none of them are misconfiguration.
 
-   The cost is 108 KiB, and only because everything is SUBSET:
+   The cost is 100 KiB, and only because everything is SUBSET:
      - latin only (usernames are [A-Za-z0-9_-] and every string is English);
      - Baloo 2 and Quicksand are variable, so ONE file covers each family's
        whole weight range — the CDN served the same bytes for every weight;
-     - Material Symbols is cut to the 49 icons `src/ui/icons.ts` actually
-       names, which is 8.9 KiB against ~3 MB for the full family.
+     - Material Symbols is cut to the 58 icons `src/ui/icons.ts` actually
+       names, which is 10.8 KiB against ~3 MB for the full family.
 
    ADDING AN ICON MEANS RE-CUTTING THE SUBSET. A name that is not in the file
    renders as that name in plain text, exactly as above. Refetch with:
@@ -63,6 +63,17 @@
    take the one woff2 it points at. The name list is every value in ICON
    (src/ui/icons.ts) — which is ALSO the complete list, because nothing
    addresses this font any other way.
+
+   THAT LAST SENTENCE WAS FALSE FOR THREE RELEASES, and it is worth knowing how
+   before trusting it. src/ui/shop.ts's ENEMY_ICONS held raw ligature strings
+   ("pest_control", "hive", "bug_report") rather than ICON roles. They were not
+   in ICON, so they were not in the name list, so they were not in the font —
+   and the Beetle, Bee and Ladybug cards rendered the WORDS "PEST_CONTROL",
+   "HIVE" and "BUG_REPORT" in 26px text straight across the shop rail. Nothing
+   failed: test-icon-font builds its list from ICON too, so the three names it
+   had never heard of were the three it could not check.
+   The sentence is now ENFORCED rather than asserted — that suite refuses any
+   snake_case string literal in a module that draws icons (see its header).
 
    AND CHECK THE GLYPH ACTUALLY ARRIVED — WITH `npm run test:icon-font`.
    An icon_name the family does not have is not rejected; the CSS endpoint
@@ -133,7 +144,7 @@
   font-weight:400 700;
   /* `block`, not `swap`: there is no acceptable fallback rendering for an
      element whose text is "play_arrow". Blocking shows nothing for a moment;
-     swapping shows the word. Now that the file is local and 8.9 KiB, the
+     swapping shows the word. Now that the file is local and ~11 KiB, the
      block period is imperceptible. */
   font-display:block;
   src:url("./fonts/material-symbols-rounded-subset.woff2") format("woff2");

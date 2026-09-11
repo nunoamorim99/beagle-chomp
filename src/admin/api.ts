@@ -213,9 +213,14 @@ export interface ChallengeStanding {
   avgDeaths: number | null;
 }
 export interface Challenges {
+  /** DENSE — one entry per challenge level, including the ones nobody has
+   *  opened. The server zero-fills to its own catalog's level count. */
   standings: ChallengeStanding[];
   ranked: ChallengeStanding[];
   insufficient: ChallengeStanding[];
+  /** The ladder length the SERVER believes in. Compared against the portal's
+   *  own imported count to catch a forgotten `npm run sync` — see catalog.ts. */
+  levelCount: number;
   depth: { levels_played: number; runs: number }[];
 }
 

@@ -80,9 +80,41 @@ export const ICON = {
   shop: "storefront",
   board: "leaderboard",
   account: "person",
-  themes: "park",
+  /** The Themes tab and the level map's theme tag. A PALETTE, not the tree it
+   *  used to be: `park` is now the City Park theme's own card icon (see
+   *  shop.ts's THEME_ICONS), and a tab wearing one of its children's marks
+   *  reads as though that child were selected. */
+  themes: "palette",
   enemies: "sentiment_very_dissatisfied",
   beagle: "pets",
+
+  // ---- shop: WHAT KIND of thing a card is (IDEA-064 v2) ----
+  //
+  // Eleven enemy skins do not get eleven glyphs: Material Symbols has no crab,
+  // no mosquito, no flea and no sushi, so unique-per-skin was never on the
+  // table — which is how six of them ended up wearing the generic face and
+  // three of them ended up printing their own ligature names across the rail
+  // (see THE BUG in shop.ts's ENEMY_ICONS). Nuno's call is to mark the
+  // CATEGORY instead: a card says bug / food / special, and the name under it
+  // says which one. Three honest marks beat eleven near-misses.
+  /** Every bug-shaped enemy: beetle, bee, ladybug, flea, crab, mosquito. */
+  critter: "pest_control",
+  /** The four that are dinner: maki, nigiri, pizza, burger. */
+  food: "restaurant",
+  /** The ghost — the only enemy that is not a creature at all, and the only
+   *  one you have to unlock. Sparkles rather than a spooky face: this marks it
+   *  as SPECIAL, which is the thing the card has to say. */
+  secret: "auto_awesome",
+
+  // ---- shop: one mark per maze theme (IDEA-064 v2) ----
+  // A theme's swatch still carries its palette; these say what the PLACE is,
+  // which four colour dots never could.
+  themeGarden: "local_florist",
+  themeArcade: "videogame_asset",
+  themeForest: "forest",
+  themeBeach: "beach_access",
+  themePark: "park",
+  themeCity: "location_city",
 
   // ---- input ----
   swipe: "swipe",
