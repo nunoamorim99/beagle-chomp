@@ -26,6 +26,32 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
   garnish band clamped between them and staying warm even when the bun turns frightened blue, which
   is what keeps it reading as a burger while you are chasing it. Red boots, white gloves and 38
   sesame seeds stay fixed on every team colour. Priced 25 with its siblings.
+- **[[IDEA-059]] v2** (2026-09-10) — **both arms down, and a friendlier face.** The reference's
+  raised two-finger V came down: a gesture held through a walk cycle reads as a stuck arm rather
+  than a greeting, so both arms now hang and counter-swing as a mirror. And the eyes were creepy —
+  caused, of all things, by measuring the reference faithfully: a sclera taller than wide, a small
+  pupil marooned mid-white, and a spiky catchlight are all correct on a flat drawing with an ink
+  keyline and all wrong on a lit toon mesh. Round eyes, a big pupil resting low, soft round
+  catchlights and lighter brows. Plus toe-out boots and arms that hang clear of the patty instead
+  of being buried inside it.
+- **[[IDEA-059]] v3** (2026-09-10) — **an open grin.** The closed smile line became a real open
+  mouth with a dark cavity, a tooth strip and a tongue — a thin curve on a big round face is a
+  mark, and a mark has no depth. It could not be built the pizza's way (that face is a flat plate
+  with a hole cut in it; this one is a dome), so it is four layers lying on the surface, all cut
+  from one aperture, with an ink lip that keeps it reading as an opening rather than a sticker on
+  all five team colours. Eyes tuned by Nuno in the character editor and pitched up 24 degrees so
+  they look at the player instead of at the maze floor.
+
+- **[[IDEA-058]] v2** (2026-09-10) — **the pizza stands on its feet.** Its legs hung from hips
+  set behind the wedge's back face, which had been recorded as a virtue for seven review passes:
+  "the hips sit behind the wedge, which is what makes the tip hang down between the legs". Half of
+  that is true, and it is the half about WIDTH — the hips sit at x +/-0.072 and the wedge tapers to
+  a 0.006 point, so the slice hangs between them laterally no matter what depth does. What depth
+  did was hide them: from the play camera, which looks down from 59 degrees, the tip covered the
+  top of each leg and the boots read as parked behind the body. The hips moved forward 0.050 onto
+  the slice's own flanks; the whole model is unchanged on every other axis, including its stride
+  sink and its animated width, and the depth it gained lands nearer the spec's original target
+  than the old number did.
 
 - **[[IDEA-058]] v1** (2026-09-10) — **the pizza slice**. A tenth enemy skin, and the first one
   that is a PERSON rather than an animate object: it has HAIR (the crust, worn as a pompadour with

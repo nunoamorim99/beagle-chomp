@@ -323,7 +323,13 @@ const DIORAMA_SPECK_SPOTS: ReadonlyArray<{ tile: [number, number]; jx: number; j
 // with the library by hand, same discipline as every other hand-authored
 // table in this file.
 const DIORAMA_SIGNATURE_IDS: Readonly<Record<string, readonly string[]>> = {
-  garden: ["shrub"],
+  // IDEA-060: the garden's own props were rebuilt from references and its
+  // placements repointed, so the diorama has to follow or the shop shows a
+  // DIFFERENT bush from the one the board plants — which is exactly the
+  // hand-kept-in-sync drift the comment above warns about. The tree comes
+  // along too: the garden's signature is a planted one, and one shrub alone
+  // undersells it next to the forest's pines.
+  garden: ["garden-shrub", "garden-tree"],
   classic: [],
   forest: ["pine"],
   beach: ["umbrella"],

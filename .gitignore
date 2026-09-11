@@ -33,3 +33,4 @@ server/.env.*
 .img2threejs/renders/sweep/
 .img2threejs/renders/diag.png
 .img2threejs/detail-zones/
+*.ts.bak

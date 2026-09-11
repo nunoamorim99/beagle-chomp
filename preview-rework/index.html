@@ -33,6 +33,12 @@
       import { createCartoonMosquitoModel } from "/src/render/rework/createMosquitoModel.ts";
       import { createMakiRollMascotModel } from "/src/render/rework/createMakiModel.ts";
       import { makeEnemy, applyGhostState } from "/src/render/characters.ts";
+      // IDEA-060: the garden props go through the same turntable as an enemy
+      // skin. A prop is not reviewed at a turntable in PLAY (see
+      // /preview-board/ for that), but a turntable is still what catches a
+      // model that only works from one side — which is exactly the defect
+      // class the off-axis gate exists for.
+      import { makePropById } from "/src/render/board.ts";
       import { toon } from "/src/render/toon.ts";
 
       const q = new URLSearchParams(location.search);
@@ -132,6 +138,16 @@
         pizza: () => makeEnemy("pizza", Number(q.get("color") ?? 0xe8615f)),
         burger: () => makeEnemy("burger", Number(q.get("color") ?? 0xe8615f)),
         ghost: () => makeEnemy("ghost", Number(q.get("color") ?? 0xe8615f)),
+        // IDEA-060 garden props, by library id.
+        "prop-shrub": () => makePropById("garden-shrub", 0.31),
+        "prop-tree": () => makePropById("garden-tree", 0.42),
+        "prop-treehouse": () => makePropById("treehouse", 0.5),
+        "prop-birdhouse": () => makePropById("birdhouse", 0.27),
+        "prop-daisy": () => makePropById("flower-daisy", 0.2),
+        "prop-sunflower": () => makePropById("flower-sunflower", 0.6),
+        "prop-rose": () => makePropById("flower-rose", 0.35),
+        "prop-tulip": () => makePropById("flower-tulip", 0.75),
+        "prop-blossom": () => makePropById("flower-blossom", 0.15),
       };
       const modelName = q.get("model") ?? "beagle";
       const makeModel = MODELS[modelName] ?? MODELS.beagle;

@@ -422,23 +422,147 @@ export function scatterOnBand(
     const phi = (r() * 2 - 1) * Math.PI;
     if (avoid && Math.abs(phi) < avoid.phi && t >= avoid.t[0] && t <= avoid.t[1]) continue;
     const p = onBand(stations, t, phi, maxRadius, height, topY);
-    // Surface normal from the profile slope: a small step in t gives the
-    // tangent in the (radius, y) plane; the normal is that turned 90 degrees.
-    const dt = 0.004;
-    const t0 = Math.max(0, t - dt);
-    const t1 = Math.min(1, t + dt);
-    const dr = (stationRadius(stations, t1) - stationRadius(stations, t0)) * maxRadius;
-    const dy = -(t1 - t0) * height;
-    const len = Math.hypot(dr, dy) || 1;
-    // (dr, dy) is the tangent; (dy, -dr) normalised is the outward normal in
-    // that plane, lifted back out to 3D along the azimuth.
-    const nr = dy / len;
-    const ny = -dr / len;
+    // Surface normal from the profile slope. Shared with `bandNormal` rather
+    // than reimplemented: this function had its own inline copy and the copy
+    // carried the sign error described there, so the seeds were sunk into the
+    // bun rather than standing proud of it.
     out.push({
       position: p,
-      normal: new THREE.Vector3(nr * Math.sin(phi), ny, nr * Math.cos(phi)).normalize(),
+      normal: bandNormal(stations, t, phi, maxRadius, height),
       spin: r() * Math.PI,
     });
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// A mouth that lies ON a dome
+// ---------------------------------------------------------------------------
+
+/**
+ * The outward surface NORMAL of a lathed band at (t, phi).
+ *
+ * Not the same as the radial direction, and the difference is the whole reason
+ * this exists: on a dome the profile is expanding as it descends, so the true
+ * normal tilts UP away from horizontal by the profile's own slope. Anything
+ * laid on the surface and pushed out radially instead lifts off at the crown
+ * and digs in at the base.
+ */
+export function bandNormal(
+  stations: readonly (readonly [number, number])[],
+  t: number,
+  phi: number,
+  maxRadius: number,
+  height: number,
+): THREE.Vector3 {
+  const dt = 0.004;
+  const t0 = Math.max(0, t - dt);
+  const t1 = Math.min(1, t + dt);
+  const dr = (stationRadius(stations, t1) - stationRadius(stations, t0)) * maxRadius;
+  const dy = -(t1 - t0) * height;
+  const len = Math.hypot(dr, dy) || 1;
+  // (dr, dy) is the tangent in the (radius, y) plane as t DESCENDS, so on a
+  // dome dr > 0 and dy < 0. Turning it outward is (-dy, dr), NOT (dy, -dr):
+  // the outward normal has a POSITIVE radial component and points up.
+  //
+  // The wrong one of those two is not a small error, it is a sign, and it is
+  // invisible in a render: it pushes anything laid on the surface INTO the
+  // solid instead of proud of it, and what you get back is a part that is
+  // built, correctly coloured, correctly placed and simply not there. This
+  // file shipped it once — the mouth's whole interior went missing behind the
+  // bun, and the sesame seeds were being sunk 0.005 into the dome and oriented
+  // upside down, which nothing about either render says.
+  return new THREE.Vector3(
+    (-dy / len) * Math.sin(phi),
+    dr / len,
+    (-dy / len) * Math.cos(phi),
+  ).normalize();
+}
+
+export interface SmilePatchOptions {
+  stations: readonly (readonly [number, number])[];
+  maxRadius: number;
+  height: number;
+  topY: number;
+  /** Angular half-width of the mouth, radians. */
+  halfPhi: number;
+  /** Height fraction of the band the mouth's centre line sits at. */
+  tCentre: number;
+  /** Total vertical extent of the aperture, in t units. */
+  tHeight: number;
+  /** How far the patch stands proud of the surface. */
+  lift: number;
+  /** Sub-range of the aperture to build, 0 = top lip, 1 = bottom. */
+  vFrom: number;
+  vTo: number;
+  segments: number;
+  rows: number;
+}
+
+/** The aperture's top edge at parameter u (0..1 left to right), in t units. */
+function smileTopT(o: SmilePatchOptions, u: number): number {
+  return o.tCentre - 0.22 * o.tHeight * Math.sin(u * Math.PI);
+}
+
+/** The aperture's bottom edge at parameter u, in t units. */
+function smileBotT(o: SmilePatchOptions, u: number): number {
+  return o.tCentre + 0.78 * o.tHeight * Math.pow(Math.sin(u * Math.PI), 0.72);
+}
+
+/**
+ * A patch of the same open-smile aperture `sushiSculpt.smileHolePoints` draws,
+ * but CONFORMED to a lathed dome instead of cut out of a flat plate.
+ *
+ * The pizza and the maki carry their mouths as real HOLES, because both faces
+ * are flat and a hole is one `Shape` with one `Path` in it. This face is a
+ * revolved dome, where there is no plate to cut and no flat behind it to put a
+ * floor on, so the mouth is built the other way round: a stack of thin layers
+ * lying ON the surface — dark cavity, ink rim, tooth strip, tongue — each one
+ * generated here at its own `vFrom`/`vTo` slice of the same aperture, so they
+ * cannot disagree about where the mouth is.
+ *
+ * It is a GRID, not a triangulated outline, and that matters. `ShapeGeometry`
+ * only emits vertices on the contour, so a patch this wide (0.64 rad, about 37
+ * degrees of arc) would be spanned by long triangles that cut straight across
+ * the curvature and sink into the bun through the middle. Sampling rows and
+ * columns and putting every vertex on the surface makes the patch hug it.
+ */
+export function smilePatch(o: SmilePatchOptions): THREE.BufferGeometry {
+  const pos: number[] = [];
+  const idx: number[] = [];
+  const cols = o.segments + 1;
+  for (let i = 0; i <= o.segments; i++) {
+    const u = i / o.segments;
+    const phi = (u - 0.5) * 2 * o.halfPhi;
+    const tT = smileTopT(o, u);
+    const tB = smileBotT(o, u);
+    for (let j = 0; j <= o.rows; j++) {
+      const v = o.vFrom + (o.vTo - o.vFrom) * (j / o.rows);
+      const t = tT + (tB - tT) * v;
+      const p = onBand(o.stations, t, phi, o.maxRadius, o.height, o.topY);
+      const n = bandNormal(o.stations, t, phi, o.maxRadius, o.height);
+      pos.push(p.x + n.x * o.lift, p.y + n.y * o.lift, p.z + n.z * o.lift);
+    }
+  }
+  for (let i = 0; i < o.segments; i++) {
+    for (let j = 0; j < o.rows; j++) {
+      const a = i * (o.rows + 1) + j;
+      const b = a + (o.rows + 1);
+      // Wound so the patch faces OUT. `i` runs left to right and `j` runs
+      // DOWNWARD, and those two tangents cross to an INWARD normal — so the
+      // obvious index order gives a patch that faces into the dome, is
+      // back-face culled, and renders as nothing at all. The first build had
+      // it, and what it looks like is a mouth with the bun's own colour inside
+      // it: the ink lip (a tube, and so unaffected) drew a perfect grin around
+      // an empty hole. Same family as a limb buried in a solid — the part is
+      // built, correct and simply not visible.
+      idx.push(a, b + 1, b, a, a + 1, b + 1);
+    }
+  }
+  void cols;
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+  return geo;
 }

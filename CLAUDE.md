@@ -180,13 +180,30 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v7.
      foreshortening; swung purely inward each claw read as a flat flipper.
      Down-and-inward from a chunky palm is what opens it to the camera.
   3. **A surface patch aimed straight at the viewer reads as a STICKER.** The
-     gold face only stopped looking stuck on when its pole was tilted
+     face panel only stopped looking stuck on when its pole was tilted
      down-and-forward AND the patch was cut wide enough to reach the silhouette,
      so its boundary is a LINE across the shell rather than a closed oval inside
      it. Same construction as the ladybug's shell decals and the flea's bands:
      share the shell's own centre, scale and position, vary only `factor`.
   4. **`creaseDark`, `browDark` and `apronCream` are OUT of `accentMats`** —
      IDEA-053's rule applied up front rather than rediscovered.
+  5. **THE TEAM COLOUR REACHES THE CARAPACE DOME AND NOTHING ELSE** (v2, Nuno's
+     note). The face panel and the whole chela shipped GOLD — a measured
+     #FFC756 lower face and a #F7BE55 claw horn, each a full value step lighter
+     than the part carrying it. Both are now `CRAB_LIMB`, so the model is one
+     team-coloured shell over one red body, and `accentMats` collapsed from
+     `[limbMat, faceMat, clawMat]` to `[limbMat]`. Two reasons it is better here
+     than in the reference, and both are about this game rather than about
+     crabs: the gold sat within a few percent of the **amber team hue**
+     (`0xe8a23d`), so on one team of five the face panel and the dome closed
+     into a single mass and the crab lost its two-tone entirely; and the pincer
+     gap is NEGATIVE SPACE, so it reads on its hole rather than on the horn
+     being lighter than the arm — nothing that carries identity was being paid
+     for by the gold. The carapace LIP earns its keep here, not less: it is the
+     one geometric event marking where the team colour stops.
+     `scripts/_scratch-crab-review.ts` is the sheet — play camera, frightened,
+     clay and all five hues, which is the only instrument that could have caught
+     the amber collision.
 - **A REVIEW CAMERA MISMATCH REPORTS AS A MODEL DEFECT.** `/preview-rework/` now
   takes **`?fov=`** because of it. img2threejs's Tier 1 compares the render
   against the reference image, and these references are product renders on a long
@@ -367,8 +384,7 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v7.
   **`src/render/burgerSculpt.ts`**. Same split as every rebuild before it, with
   one difference recorded below. Evidence in `.img2threejs/burger/`.
   **It exists because ten enemies have a body that is ONE mass wearing marks;
-  this one's body is a STACK** — six contrasting bands piled up — and it is the
-  only enemy in the cast with FINGERS, which it holds up in a V. Proportion base
+  this one's body is a STACK** — six contrasting bands piled up. Proportion base
   **BH = the STACK HEIGHT** (0.62), the crown of the top bun to the underside of
   the bottom one: no head for the fourth subject running, because the face is
   painted on band 1 of the body. Seven rules are load-bearing.
@@ -424,12 +440,85 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v7.
      on the frightened blue. `scatterOnBand`'s `crownBias` is an EXPONENT and
      must be **> 1** to crowd the crown; below 1 it crowds the base, which does
      not look like a bug, it looks like a bun with bald patches.
-  7. **THE TWO ARMS ARE DELIBERATELY NOT MIRRORS**, and `rotation.z` positive
-     swings a part toward +x only when it hangs at **-y**. The raised arm points
-     UP, so the same positive angle folds it across the body: the first build
-     had +0.46 on the +x shoulder and the entire arm, hand, fingers and cuff
-     rendered INSIDE the bun. A limb buried in a solid looks exactly like a limb
-     that was never built — the maki lost both of its arms the same way.
+  7. **A LIMB BURIED IN A SOLID LOOKS EXACTLY LIKE A LIMB THAT WAS NEVER
+     BUILT**, and this model hit that twice. First on the SIGN: `rotation.z`
+     positive swings a part toward +x only when it hangs at **-y**, and the
+     original raised arm pointed UP, so +0.46 on the +x shoulder folded the
+     whole arm, hand and cuff inside the bun (the maki lost both of its arms the
+     same way). Then on the HEIGHT: with both arms hung from the garnish line
+     the hoses ran DOWN THROUGH the patty — the widest thing on the body — so
+     each limb was buried for its whole length and only the mitt emerged
+     underneath, reading as a white blob stuck to the side. Shoulders now hang
+     from the patty's UNDERSIDE, where the arm runs past the much narrower
+     bottom bun and clears the silhouette.
+  8. **THE FACE'S FAITHFUL MEASUREMENTS WERE THE THING THAT MADE IT CREEPY**
+     (v2, Nuno's note). Three of them, all correct off the reference and all
+     wrong once lit in three dimensions: a sclera taller than it is wide (the
+     shape a *glare* is drawn with), a small pupil marooned mid-white with clear
+     space all the way round it (the doll stare), and the reference's jagged
+     four-sided catchlight (which reads as a flash of light rather than as a
+     highlight). It ships round-sclera, big-pupil-resting-low, two soft round
+     catchlights, thinner and higher brows. **Generalisable, and the most
+     useful thing this run produced:** a flat drawing carries its own
+     compensations — an ink keyline round every region, a stylised highlight
+     that reads as shorthand — and a toon mesh has none of them, so measuring
+     the reference correctly is necessary and not sufficient. Only the render
+     can tell you a right measurement became the wrong shape.
+  9. **THE MOUTH IS AN OPEN GRIN AND IT IS BUILT INSIDE-OUT FROM THE PIZZA'S**
+     (v3, Nuno's note: "make one mouth like the pizza slice"). A thin dark curve
+     on a big round face is a MARK, and a mark has no depth — it sits on the bun
+     the way a drawn-on smile sits on a balloon. But the pizza's construction
+     does not port: its face is a flat plate, so its mouth is a real HOLE with a
+     dark floor behind it, and this face is a revolved DOME with nothing to cut
+     and nothing flat behind it. So the mouth is four thin layers lying ON the
+     surface — cavity, tongue, tooth strip, ink lip — every one generated from
+     the SAME aperture by `smilePatch` at its own `vFrom`/`vTo` slice, which is
+     what stops them disagreeing about where the mouth is. Two things are
+     load-bearing: it is a **grid**, not a triangulated outline (`ShapeGeometry`
+     only emits contour vertices, so a 37-degree-wide patch would be spanned by
+     triangles that cut across the curvature and sink into the bun); and **dark
+     has to stay the dominant thing inside it** or it stops reading as open,
+     which is the lesson the pizza's tooth band learned first. Aspect 3.2:1
+     against the pizza's 1.8:1 — a mouth belongs to the face it is on, and this
+     one is a wide dome.
+     **A fifth layer was built and CUT: an ink lip round the whole aperture.**
+     The argument for it was that this bun takes the TEAM COLOUR and a dark
+     patch on a violet dome reads as a sticker rather than as an opening — which
+     is sound, and which the render does not support. On all five hues and on
+     the frightened blue the cavity is already the darkest thing on the face by
+     a distance, the tooth strip gives the top lip a hard edge of its own and
+     the tongue puts a second value step inside, so the mouth reads as an
+     opening on its own contents. What the lip added was WEIGHT: 0.0062 of ink
+     round an aperture only 0.066 tall is a tenth of the mouth's height spent
+     outlining it, and it closed the grin up. Nuno called it; worth keeping as a
+     record because the reasoning was reasonable and only the render could
+     settle it.
+  10. **A SURFACE NORMAL IS NOT A RADIUS, AND GETTING ITS SIGN WRONG IS
+     INVISIBLE.** `bandNormal` in `burgerSculpt.ts` shipped with `(dy, -dr)`
+     where the outward normal is `(-dy, dr)`. On a dome the profile expands as
+     it descends, so the true normal tilts UP off horizontal — and with the sign
+     flipped, everything "lifted off the surface" was pushed INTO it instead.
+     Two systems, one character: the entire mouth interior rendered behind the
+     bun (an ink lip drawing a perfect grin around a bun-coloured hole), and all
+     38 sesame seeds were sunk 0.005 into the dome and oriented upside down,
+     which no render says at all. `scatterOnBand` had its own inline copy of the
+     same arithmetic, carrying the same error — it now calls `bandNormal`.
+     Third appearance of the family after IDEA-057's nori belt and IDEA-058's
+     mouth floor: a part built right, coloured right, placed right, and behind
+     another surface.
+  11. **A PATCH GRID'S OBVIOUS WINDING FACES INWARD.** Columns running left to
+     right and rows running DOWN cross to an INWARD normal, so `a, b, b+1` gives
+     a back-face-culled patch that renders as nothing. It looks exactly like the
+     sign bug above and is a different cause, which is why both are written
+     down: the mouth was invisible for two separate reasons at once.
+  12. **A POSE THAT SURVIVES ONE FRAME IS NOT A POSE THAT SURVIVES A LOOP.**
+     The reference's raised two-finger V was built, reviewed, rendered and cut
+     (v2). It was the only set of fingers in the enemy cast and it read
+     beautifully standing still — but this character spends the whole game
+     WALKING at the player, and a gesture held rigidly through a stride reads as
+     a stuck arm rather than as a greeting. It also forced the two arms to be
+     non-mirrors, which is a thing a walk cycle fights. Both arms now hang and
+     counter-swing.
   Two fixed colours are pushed off their sampled values because `bodyMat` is a
   team hue: the **patty** to a deep brown (a red-brown patty vanishes into the
   rose team's bun) and the **onion** to a deeper purple, for the same reason.
@@ -721,6 +810,168 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v7.
   hung every Playwright click on `#playBtn` — an element whose bounding box
   never settles never becomes actionable. Any new decoration on a control has
   to leave the hit target still.
+- **THE BOARD IS THE NINTH img2threejs SUBJECT, AND THE FIRST THAT IS NOT A
+  CHARACTER** (IDEA-060, garden theme). Eight runs before it were enemy skins:
+  one mesh, reviewed on a turntable, judged on whether it reads as itself.
+  A board is the opposite problem — 200 instanced walls at ~25px a face, a
+  grid-derived floor, and dressing that must never win a fight against the
+  biscuit trail — so it gets its own harness, **`/preview-board/`**
+  (`?theme=` · `?maze=` · `?view=game|close|hero|top` · `?flat=1` · `?fence=0`),
+  shot by `scripts/shoot-board.ts`. `view=game` is shot at **390x844**, not at
+  the turntable's square 1000: the whole question about a board surface is
+  whether it survives being that small. Evidence in `.img2threejs/garden-wall/`,
+  `garden-props/` and `garden-board/`.
+  Nine rules are load-bearing.
+  1. **THE FENCE IS GEOMETRY BECAUSE DAYLIGHT IS.** The garden's wall is a
+     flowering shrub behind a picket fence. The flowers went into the hedge
+     TEXTURE (they are 7px marks on a 363px reference wall); the fence could
+     not, because a picket fence is separate uprights with GAPS between them
+     and a gap is the one thing a map cannot draw — and a wall is one box
+     wearing one material on all six sides, so a painted fence would appear on
+     the wall's TOP. `src/render/fence.ts` builds one panel per exposed wall
+     face as a single InstancedMesh (~440 panels, 152 tris each, 67k total,
+     ONE draw call). **The pitch must divide the tile exactly** — 4 pickets at
+     0.25 — or every tile boundary shows a seam and a straight run reads as a
+     row of separate gates. `palette.fence`/`fenceColor` are per-theme; only
+     the garden has one. **Nuno's fence is WOOD, not the reference's white**,
+     so the colour comes from the project's own trunk-brown family and no
+     pixel of the reference.
+  2. **A GAP ONLY READS AS A GAP IF SOMETHING STEPS ACROSS IT.** The rails
+     behind the pickets started the same brown as the pickets, so a gap showed
+     brown-behind-brown and the whole fence rendered as a SKIRTING BOARD —
+     every picket outline gone, the one feature it exists for. They are now
+     darker through a **vertex colour** (grey, so it multiplies the palette's
+     own timber hue), which keeps the fence at one draw call where a second
+     material would not.
+  3. **EVERY PLANT IN THIS GAME WAS A SPHERE, AND THERE IS A NUMBER FOR THAT.**
+     The shrub reference's traced outline has a radius sd/mean of **0.135**;
+     a sphere measures 0.0. `src/render/foliage.ts`'s `lobedFoliageGeometry`
+     is an icosphere pushed toward lobe directions to carry it, and
+     `lobedRoughness` measures the same figure back — calibrated defaults
+     (16 lobes / sharpness 10 / amplitude 0.24) land on 0.1350. **Measure the
+     FIELD, not a built mesh**: binning a mesh's vertices by angle reads its
+     own tessellation, and a control detail-4 icosphere — roughness zero by
+     definition — scored 0.1667 while a UV sphere scored 0.0000. Always run
+     the zero-amplitude control; two instruments produced confident wrong
+     numbers before it did.
+  4. **THE NUMBER SAYS HOW FAR THE OUTLINE WANDERS, NOT HOW OFTEN.** The first
+     shrub hit 0.135 exactly and rendered as a BOULDER — facets the size of
+     the clumps and clumps the size of the bush. Lobe COUNT and subdivision
+     are the other half and no measurement carries them.
+  5. **AIM A PART WITH A FRAME, NOT WITH EULER ANGLES** (IDEA-055 rule 4,
+     third occurrence). Three.js applies an XYZ Euler as Rx*Ry*Rz, so a
+     `rotation.z` lean written beside a `rotation.y` spin is itself rotated by
+     that spin. Every rose whorl and tulip petal came out facing TANGENTIALLY:
+     the rose rendered as a pinwheel and the tulip's cup could not close.
+     `shellPivot()` is the fix — spin the pivot, place at +Z inside it, tilt
+     about X, where negative means in and positive means out, at every azimuth.
+  6. **A REST POSE IS NOT A FLOOR, AND ONLY VERTICES SAY SO.** The tulip's
+     left strap leaf sat **0.14 units underground** from a sign error, and the
+     treehouse's tyre swing 0.023 under because a torus hangs by its own outer
+     radius. Neither is visible in any render — a turntable has no floor
+     there. `scripts/_scratch-prop-measure.ts` walks world-space vertices, and
+     it must: `Box3.setFromObject` over-reported the shrub by **56%** because
+     it spins its own mass (CLAUDE.md's existing `Box3` note, in a new place).
+  7. **A HOLE IS ONLY A HOLE IF THERE IS DARK BEHIND IT** (IDEA-058 rule 4,
+     hit again inside the file whose own header states it). The birdhouse's
+     entrance is cut out of its front `Shape`, but the box behind it was
+     `boxD - wallT` deep and butted straight against the pierced wall — so
+     what showed through the aperture was the BODY'S OWN FRONT FACE in the
+     same tan wood, and the entrance rendered as a painted arch. The dark
+     plate was built, correctly coloured, and buried inside the body. A hole
+     needs a **recess** to look into.
+  8. **THE GROUND DRESSING IS GEOMETRY, AND THAT SETTLED AN ARGUMENT THE
+     TEXTURE COULD NOT WIN.** The garden's stepping stones were painted into
+     the floor first (`floorTexture.ts`, a `gardenPath` kind, now deleted) and
+     needed three separate concessions to stop them fighting the biscuit
+     trail: the lawn's own VALUE, because the floor's `emissiveMap` is that
+     same texture and a pale mark is lit twice and blooms into fog; a
+     different HUE from the biscuit, because brightness is not a signal that
+     survives 25px a tile; and a heavy KEYLINE, because once the value step
+     was gone the outline was all that was left. Every one of those is a
+     constraint of PAINTING a floor. **`src/render/groundDetail.ts` ships them
+     as real rock meshes instead** — one InstancedMesh, silhouette plus lit top
+     plus shaded side plus contact shadow — and the floor goes back to plain
+     grass (`lawn`). Three rules: **nothing sits at a tile CENTRE** (biscuits
+     do, and a rock there reads as a pickup that will not go away), rocks stay
+     under a fifth of a tile tall so a corridor never looks blocked, and the
+     per-instance `setColorAt` tint is **GREY**, so it multiplies the palette's
+     stone colour rather than replacing it — written as a full colour while the
+     material also carried one, every rock rendered at colour-squared and the
+     board came back speckled with what looked like dirt.
+  9. **A WALL-TOP PROP MUST BE ON A WALL, AND FOR TWO RELEASES NONE OF THEM
+     WERE.** `theme.wallDecor` is per-THEME while the wall layout is per-MAZE,
+     and `buildWallDecor` never checked — so Night City's five hand-placed
+     lamps hung in mid-air over open corridor in 14 to 18 of the 18 mazes, and
+     the one at (9, 9) has **never been on a wall in any of them**. It
+     rendered without a single error. `buildWallDecor` now takes the grid and
+     SKIPS a non-wall tile (skipping, not clamping — a themed board is allowed
+     to dress differently on different layouts, and inventing a position the
+     author did not choose is worse). The city's five were re-pointed onto
+     tiles that are wall in 15+ of 18; its own rebuild is a later session's.
+     `scripts/_scratch-walldecor-audit.ts` found it, `test-garden-props.ts`
+     guards it. **81 of the 399 tiles are wall in every maze.**
+  **THE GARDEN'S PROPS ARE NEW SHAPES, NOT BETTER OLD ONES.** `shrub` and
+  `tree` are referenced 38 and 23 times across the garden, the forest and the
+  park; rewriting them in place would silently re-dress two themes nobody has
+  reviewed. So `src/render/gardenProps.ts` adds `leafShrub`, `broadleafTree`,
+  `treehouse`, `flower` (five kinds) and `birdhouse`, and only the garden's own
+  placements are repointed. The **treehouse is the only prop in the game placed
+  singularly** — at the maze's NW apron corner, which is the skyline row where
+  `buildProps`' height-safety rules let a "tall" prop stand at full scale;
+  anywhere nearer the camera it is clamped to 0.55 and there would be no point
+  building it. The tree's measured **four-fold root flare** (0.117 of its width
+  at the shoulder, 0.473 at the ground) is the most characterful number in the
+  whole set and a `CylinderGeometry` cannot express it —
+  `flaredTrunkProfile` lathes a concave one.
+  **THE FIVE FLOWERS ARE SEPARATED BY SHAPE, BECAUSE TWO OF THEM ARE THE SAME
+  RED** (IDEA-056 rule 1 again): a layered BALL against a closed CUP. Verified
+  by rendering all five together at the play camera's 59 degrees
+  (`scripts/_scratch-flower-sheet.ts`), never asserted — that sheet is what
+  showed the rose as a broken artichoke and the tulip as a lampshade while
+  every unit check passed.
+  **`propsCodegen.ts` AND `boardCodegen.ts` BOTH WRITE THEIR FIELDS BY HAND**,
+  so a new `PropParams` or `ThemePalette` key that is not in their lists is
+  silently dropped from anything saved in the editor. `flowerKind` is also the
+  first STRING either has ever had, and unquoted it emitted `flowerKind: daisy,`
+  — a props.ts that does not compile. `test-garden-props.ts` now guards the
+  props writer the way `test-board-surfaces.ts` guards the palette one.
+  **AND SAVING A THEME FROM THE EDITOR DELETES THAT THEME'S OWN COMMENTS.**
+  `boardCodegen` regenerates the edited theme's entry, so prose inside
+  `palette: {}` does not survive — other themes are spliced through verbatim,
+  which is why only the edited one loses anything. Put notes ABOVE `palette:`.
+  Worse, `test-editor-board.ts` edits the REAL `src/game/themes.ts` and
+  restores it in a `finally` — which covers a failed assertion but NOT the
+  process being killed, and piping that suite through `head` or `tail` closes
+  stdout, raises EPIPE and kills it. That happened here and left a themes.ts
+  carrying two stray slider values, two junk placements from the click tests
+  and no comments. The suite now writes a `themes.ts.bak` sidecar before its
+  first write and restores from one it finds on startup; **a stale `.bak` is
+  the signal that a previous run was killed**. Do not pipe that suite into
+  `head`/`tail` — redirect to a file and read it.
+  **THREE THINGS THE FIRST REVIEW PASS CHANGED**, all of them the same defect
+  in different clothes — something correctly built and entirely hidden.
+  (a) Both buildings showed daylight between the wall top and the roof. A
+  gable roof that OVERHANGS spans wider than the box it covers, so at the
+  box's own edge the slab is still `rise * (1 - boxW/roofSpan)` above the
+  wall, and that wedge is open front and back. The fill is NOT a triangle —
+  its top follows the roof's slope and its sides stop at the box's width,
+  which makes it a pentagon (`gableFillGeometry`). (b) The treehouse's canopy
+  sat ON the ridge and buried the red roof, which is the model's most
+  recognisable feature; it now clears it. **A canopy that OVERLAPS the roof
+  and a canopy that is CONNECTED to the tree are not the same requirement**,
+  and solving the second with the first costs the building. (c) The two
+  under-deck braces did no visible job and are gone; the foliage skirt now
+  hangs off a real BRANCH, aimed with `setFromUnitVectors` from its two
+  endpoints. That branch was invisible twice before it worked — first routed
+  straight through the house body, then buried between the trunk's flare and
+  the leaves — which is the birdhouse's own buried-plate defect twice more.
+  **WHAT THE CLAY RENDER SAYS, AND IT IS WORTH KNOWING**: with every map
+  stripped (`/preview-board/?flat=1`), the fence and the wall-top flowers are
+  still there as real silhouettes — and the HEDGE IS STILL A PLAIN BOX. All of
+  its leafiness is paint. That is a deliberate constraint (walls are one
+  InstancedMesh of unit boxes, for the draw call and for corridor legibility),
+  not an oversight, and the fence is what puts real geometry at the wall base.
 - **Input / UI / PWA**: `src/input/{touch,keyboard,dpad,stick}.ts`, `src/ui/{hud,sound,install}.ts`,
   `public/icons/*` (192, 512, 512-maskable).
 - **THERE ARE THREE TOUCH SCHEMES** (IDEA-049): swipe (default), the D-pad, and the

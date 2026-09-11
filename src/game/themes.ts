@@ -16,6 +16,8 @@
 // so their gameplay meaning stays instantly readable.
 import { type WallTextureKind } from "../render/wallTexture";
 import { type FloorTextureKind } from "../render/floorTexture";
+import { type FenceKind } from "../render/fence";
+import { type GroundDetailKind } from "../render/groundDetail";
 
 
 /** Every color/lighting slot a maze theme controls. All colors are hex
@@ -47,6 +49,35 @@ export interface ThemePalette {
   wallTexture: WallTextureKind;
   wallEmissive: number;
   wallEmissiveIntensity: number;
+  /**
+   * IDEA-060: the railing that stands in FRONT of the wall, if the theme has
+   * one (src/render/fence.ts).
+   *
+   * This is the one board surface that is geometry rather than a texture, and
+   * it has to be: a picket fence is a row of separate uprights with daylight
+   * between them, and daylight between things is the one thing a map cannot
+   * draw. A wall is also a single box wearing one material on all six sides,
+   * so a fence painted into `wallTexture` would appear on the wall's TOP.
+   *
+   * "none" costs nothing at all — no geometry, no instanced mesh, no draw.
+   */
+  fence: FenceKind;
+  /** Fence timber colour. Read only when `fence` is not "none". */
+  fenceColor: number;
+  /**
+   * IDEA-060 v2: loose dressing scattered ON the ground
+   * (src/render/groundDetail.ts) — the second board surface that is geometry
+   * rather than a texture.
+   *
+   * The garden's stepping stones were painted into `floorTexture` first, and
+   * that took three separate concessions to keep them from competing with the
+   * biscuit trail, every one of them a constraint of PAINTING a floor rather
+   * than of the stones. As meshes they separate on FORM instead — silhouette,
+   * lit top, shaded side, contact shadow — and the floor goes back to grass.
+   */
+  groundDetail: GroundDetailKind;
+  /** Stone colour. Read only when `groundDetail` is not "none". */
+  groundDetailColor: number;
   floor: number;
   /**
    * Which procedural GROUND the floor wears (src/render/floorTexture.ts).
@@ -148,20 +179,30 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
     // Default theme: free and always owned (see profileStore.ts's
     // defaultProfile()).
     price: 0,
-    // The shipped daytime-garden look — every value here MUST match the
-    // constants the render layer used before themes existed (config.ts
-    // COLORS.bg/wall/wallEmissive/floor/biscuit, board.ts's material
-    // emissives + BLOOM_COLORS/LEAF_SPECK_COLOR/chances, scene.ts's
-    // backdrop/light rig), so equipping the default theme is a visual no-op
-    // and nothing regresses for players who never open the themes tab.
-    // Guarded by a regression test in scripts/test-cosmetics.ts.
+    // The daytime-garden look. Its colour/lighting values still match the
+    // constants the render layer used before themes existed, so equipping the
+    // default theme is a visual no-op — guarded by scripts/test-cosmetics.ts.
+    // IDEA-060 changed only the three slots that are about SURFACE and
+    // DRESSING: `wallTexture` gained the daisies, `fence` puts a wooden picket
+    // railing in front of the hedge, and `groundDetail` scatters real rock
+    // meshes over the lawn.
+    //
+    // WRITE NOTES LIKE THIS ONE HERE, NEVER INSIDE `palette: {}`. The board
+    // editor's Save regenerates the edited theme's palette field by field
+    // (src/editor/boardCodegen.ts), so any comment inside that object is
+    // silently deleted the first time someone saves — which is exactly what
+    // happened to this block's first draft.
     palette: {
       bg: 0x9ecbe8,
       backdropTop: 0xcfe9f7,
       wall: 0x3f8f3a,
-      wallTexture: "hedge",
+      wallTexture: "hedgeFlower",
       wallEmissive: 0x0e2a0e,
       wallEmissiveIntensity: 0.2,
+      fence: "picket",
+      fenceColor: 0xa9743f,
+      groundDetail: "rocks",
+      groundDetailColor: 0x9c9a90,
       floor: 0x6b4a2f,
       floorTexture: "lawn",
       floorEmissive: 0x2a1a0c,
@@ -184,38 +225,75 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
       speckChance: 0.35,
     },
     placements: [
-      { propId: "shrub", tile: [19, 4], offset: [-0.24, -0.162], rotationY: 5.691, scale: 0.949 },
-      { propId: "shrub", tile: [7, -1], offset: [0.184, -0.163], rotationY: 6.188, scale: 1.074 },
-      { propId: "shrub", tile: [0, -1], offset: [-0.22, -0.111], rotationY: 1.294, scale: 0.962 },
-      { propId: "shrub", tile: [14, 21], offset: [0.143, 0.131], rotationY: 2.155, scale: 1.132 },
-      { propId: "shrub", tile: [15, 21], offset: [-0.176, 0.148], rotationY: 3.487, scale: 1.163 },
-      { propId: "shrub", tile: [5, -1], offset: [0.217, 0.075], rotationY: 5.538, scale: 0.911 },
-      { propId: "shrub", tile: [19, 6], offset: [-0.007, -0.091], rotationY: 2.731, scale: 0.81 },
-      { propId: "shrub", tile: [11, -1], offset: [-0.037, -0.143], rotationY: 6.276, scale: 1.021 },
-      { propId: "shrub", tile: [4, -1], offset: [-0.065, 0.152], rotationY: 5.757, scale: 1.083 },
-      { propId: "shrub", tile: [8, -1], offset: [0.144, -0.125], rotationY: 4.636, scale: 1.206 },
-      { propId: "shrub", tile: [10, -1], offset: [-0.17, 0.032], rotationY: 3.87, scale: 1.111 },
-      { propId: "shrub", tile: [9, -1], offset: [-0.236, -0.048], rotationY: 3.852, scale: 1.068 },
-      { propId: "shrub", tile: [-1, -1], offset: [-0.152, 0.121], rotationY: 0.948, scale: 1.004 },
-      { propId: "shrub", tile: [1, -1], offset: [-0.038, -0.119], rotationY: 0.911, scale: 1.128 },
-      { propId: "shrub", tile: [-1, 15], offset: [-0.182, 0.25], rotationY: 5.075, scale: 0.931 },
-      { propId: "shrub", tile: [11, 21], offset: [0.107, -0.13], rotationY: 3.967, scale: 1.124 },
-      { propId: "shrub", tile: [19, 5], offset: [-0.242, 0.123], rotationY: 0.269, scale: 0.975 },
-      { propId: "shrub", tile: [19, 11], offset: [0.132, 0.154], rotationY: 3.038, scale: 1.132 },
-      { propId: "shrub", tile: [-1, 16], offset: [0.121, -0.157], rotationY: 2.239, scale: 0.855 },
-      { propId: "shrub", tile: [17, -1], offset: [-0.035, 0.01], rotationY: 2.977, scale: 1.164 },
-      { propId: "shrub", tile: [18, -1], offset: [-0.185, 0.249], rotationY: 5.882, scale: 0.928 },
-      { propId: "shrub", tile: [19, 7], offset: [0.026, -0.144], rotationY: 0.013, scale: 1.069 },
-      { propId: "shrub", tile: [19, 16], offset: [-0.036, -0.164], rotationY: 4.991, scale: 0.906 },
-      { propId: "oak", tile: [-1, 17], offset: [-0.114, -0.047], rotationY: 4.742, scale: 1.149 },
-      { propId: "oak", tile: [19, 1], offset: [-0.066, 0.227], rotationY: 3.638, scale: 0.981 },
-      { propId: "oak", tile: [-1, 2], offset: [-0.218, 0.056], rotationY: 2.902, scale: 1.056 },
-      { propId: "oak", tile: [19, 2], offset: [0.178, -0.196], rotationY: 4.689, scale: 1.092 },
-      { propId: "oak", tile: [-1, 3], offset: [-0.001, 0.245], rotationY: 1.083, scale: 1.068 },
-      { propId: "oak", tile: [19, 3], offset: [-0.131, 0.085], rotationY: 4.418, scale: 1.097 },
+      { propId: "treehouse", tile: [-1, -1], offset: [-0.18, -0.2], rotationY: 0.42, scale: 1 },
+      { propId: "garden-shrub", tile: [19, 4], offset: [-0.24, -0.162], rotationY: 5.691, scale: 0.949 },
+      { propId: "garden-shrub", tile: [7, -1], offset: [0.184, -0.163], rotationY: 6.188, scale: 1.074 },
+      { propId: "garden-shrub", tile: [0, -1], offset: [-0.22, -0.111], rotationY: 1.294, scale: 0.962 },
+      { propId: "garden-shrub", tile: [14, 21], offset: [0.143, 0.131], rotationY: 2.155, scale: 1.132 },
+      { propId: "garden-shrub", tile: [15, 21], offset: [-0.176, 0.148], rotationY: 3.487, scale: 1.163 },
+      { propId: "garden-shrub", tile: [5, -1], offset: [0.217, 0.075], rotationY: 5.538, scale: 0.911 },
+      { propId: "garden-shrub", tile: [19, 6], offset: [-0.007, -0.091], rotationY: 2.731, scale: 0.81 },
+      { propId: "garden-shrub", tile: [11, -1], offset: [-0.037, -0.143], rotationY: 6.276, scale: 1.021 },
+      { propId: "garden-shrub", tile: [4, -1], offset: [-0.065, 0.152], rotationY: 5.757, scale: 1.083 },
+      { propId: "garden-shrub", tile: [8, -1], offset: [0.144, -0.125], rotationY: 4.636, scale: 1.206 },
+      { propId: "garden-shrub", tile: [10, -1], offset: [-0.17, 0.032], rotationY: 3.87, scale: 1.111 },
+      { propId: "garden-shrub", tile: [9, -1], offset: [-0.236, -0.048], rotationY: 3.852, scale: 1.068 },
+      { propId: "garden-shrub", tile: [-1, -1], offset: [-0.152, 0.121], rotationY: 0.948, scale: 1.004 },
+      { propId: "garden-shrub", tile: [1, -1], offset: [-0.038, -0.119], rotationY: 0.911, scale: 1.128 },
+      { propId: "garden-shrub", tile: [-1, 15], offset: [-0.182, 0.25], rotationY: 5.075, scale: 0.931 },
+      { propId: "garden-shrub", tile: [11, 21], offset: [0.107, -0.13], rotationY: 3.967, scale: 1.124 },
+      { propId: "garden-shrub", tile: [19, 5], offset: [-0.242, 0.123], rotationY: 0.269, scale: 0.975 },
+      { propId: "garden-shrub", tile: [19, 11], offset: [0.132, 0.154], rotationY: 3.038, scale: 1.132 },
+      { propId: "garden-shrub", tile: [-1, 16], offset: [0.121, -0.157], rotationY: 2.239, scale: 0.855 },
+      { propId: "garden-shrub", tile: [17, -1], offset: [-0.035, 0.01], rotationY: 2.977, scale: 1.164 },
+      { propId: "garden-shrub", tile: [18, -1], offset: [-0.185, 0.249], rotationY: 5.882, scale: 0.928 },
+      { propId: "garden-shrub", tile: [19, 7], offset: [0.026, -0.144], rotationY: 0.013, scale: 1.069 },
+      { propId: "garden-shrub", tile: [19, 16], offset: [-0.036, -0.164], rotationY: 4.991, scale: 0.906 },
+      { propId: "garden-tree", tile: [-1, 17], offset: [-0.114, -0.047], rotationY: 4.742, scale: 1.149 },
+      { propId: "garden-tree", tile: [19, 1], offset: [-0.066, 0.227], rotationY: 3.638, scale: 0.981 },
+      { propId: "garden-tree", tile: [-1, 2], offset: [-0.218, 0.056], rotationY: 2.902, scale: 1.056 },
+      { propId: "garden-tree", tile: [19, 2], offset: [0.178, -0.196], rotationY: 4.689, scale: 1.092 },
+      { propId: "garden-tree", tile: [-1, 3], offset: [-0.001, 0.245], rotationY: 1.083, scale: 1.068 },
+      { propId: "garden-tree", tile: [19, 3], offset: [-0.131, 0.085], rotationY: 4.418, scale: 1.097 },
     ],
-    wallDecor: [],
+    wallDecor: [
+      { propId: "flower-daisy", tile: [5, 0], rotationY: 6.19, scale: 0.932 },
+      { propId: "flower-blossom", tile: [12, 0], rotationY: 3.47, scale: 0.941 },
+      { propId: "flower-tulip", tile: [15, 0], rotationY: 0.451, scale: 1.086 },
+      { propId: "birdhouse", tile: [2, 2], rotationY: 2.628, scale: 0.62 },
+      { propId: "flower-rose", tile: [7, 2], rotationY: 4.35, scale: 1.149 },
+      { propId: "flower-daisy", tile: [18, 2], rotationY: 2.914, scale: 0.935 },
+      { propId: "flower-blossom", tile: [0, 4], rotationY: 1.839, scale: 1.023 },
+      { propId: "flower-tulip", tile: [5, 4], rotationY: 0.683, scale: 0.949 },
+      { propId: "flower-sunflower", tile: [9, 4], rotationY: 5.178, scale: 0.915 },
+      { propId: "flower-rose", tile: [12, 4], rotationY: 1.248, scale: 1.037 },
+      { propId: "birdhouse", tile: [2, 6], rotationY: 6.132, scale: 0.62 },
+      { propId: "flower-blossom", tile: [15, 6], rotationY: 2.676, scale: 0.959 },
+      { propId: "flower-tulip", tile: [18, 6], rotationY: 2.077, scale: 1.083 },
+      { propId: "flower-sunflower", tile: [5, 7], rotationY: 5.227, scale: 0.963 },
+      { propId: "flower-rose", tile: [10, 8], rotationY: 3.475, scale: 1.086 },
+      { propId: "flower-daisy", tile: [13, 8], rotationY: 6.024, scale: 1.185 },
+      { propId: "flower-blossom", tile: [2, 10], rotationY: 2.448, scale: 1.119 },
+      { propId: "birdhouse", tile: [8, 10], rotationY: 4.406, scale: 0.62 },
+      { propId: "flower-sunflower", tile: [16, 10], rotationY: 4.985, scale: 1.118 },
+      { propId: "flower-rose", tile: [0, 12], rotationY: 1.575, scale: 1.125 },
+      { propId: "flower-daisy", tile: [5, 12], rotationY: 1.137, scale: 0.917 },
+      { propId: "flower-blossom", tile: [10, 12], rotationY: 5.066, scale: 1.138 },
+      { propId: "flower-tulip", tile: [13, 12], rotationY: 1.198, scale: 0.972 },
+      { propId: "flower-sunflower", tile: [15, 14], rotationY: 1.032, scale: 1.068 },
+      { propId: "birdhouse", tile: [0, 15], rotationY: 3.208, scale: 0.62 },
+      { propId: "flower-daisy", tile: [5, 16], rotationY: 2.538, scale: 1.054 },
+      { propId: "flower-blossom", tile: [9, 16], rotationY: 2.904, scale: 0.942 },
+      { propId: "flower-tulip", tile: [7, 18], rotationY: 4.877, scale: 0.93 },
+      { propId: "flower-sunflower", tile: [13, 18], rotationY: 1.112, scale: 0.956 },
+      { propId: "flower-rose", tile: [16, 18], rotationY: 6.089, scale: 0.966 },
+      { propId: "flower-daisy", tile: [0, 20], rotationY: 4.098, scale: 1.2 },
+      { propId: "birdhouse", tile: [3, 20], rotationY: 0.088, scale: 0.62 },
+      { propId: "flower-tulip", tile: [9, 20], rotationY: 6.28, scale: 1.166 },
+      { propId: "flower-sunflower", tile: [18, 20], rotationY: 2.551, scale: 0.871 },
+    ],
   },
+
   {
     id: "classic",
     name: "Arcade Night",
@@ -234,6 +312,10 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
       wallTexture: "flat",
       wallEmissive: 0x14143a,
       wallEmissiveIntensity: 0.72,
+      fence: "none",
+      fenceColor: 0xa9743f,
+      groundDetail: "none",
+      groundDetailColor: 0x9c9a90,
       floor: 0x111120,
       floorTexture: "flat",
       floorEmissive: 0x0a0a18,
@@ -275,6 +357,10 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
       wallTexture: "hedge",
       wallEmissive: 0x0a2210,
       wallEmissiveIntensity: 0.25,
+      fence: "none",
+      fenceColor: 0xa9743f,
+      groundDetail: "none",
+      groundDetailColor: 0x9c9a90,
       floor: 0x4a3524,
       floorTexture: "earth",
       floorEmissive: 0x1e1408,
@@ -356,6 +442,10 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
       wallTexture: "sand",
       wallEmissive: 0x4a3a18,
       wallEmissiveIntensity: 0.15,
+      fence: "none",
+      fenceColor: 0xa9743f,
+      groundDetail: "none",
+      groundDetailColor: 0x9c9a90,
       floor: 0x9a8258,
       floorTexture: "sand",
       floorEmissive: 0x3a2e14,
@@ -420,6 +510,10 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
       wallTexture: "hedge",
       wallEmissive: 0x143a12,
       wallEmissiveIntensity: 0.2,
+      fence: "none",
+      fenceColor: 0xa9743f,
+      groundDetail: "none",
+      groundDetailColor: 0x9c9a90,
       floor: 0x8a7a5e,
       floorTexture: "parkGrass",
       floorEmissive: 0x342c1c,
@@ -508,6 +602,10 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
       wallTexture: "brick",
       wallEmissive: 0x3a5aaa,
       wallEmissiveIntensity: 0.28,
+      fence: "none",
+      fenceColor: 0xa9743f,
+      groundDetail: "none",
+      groundDetailColor: 0x9c9a90,
       floor: 0x3a3640,
       floorTexture: "road",
       floorEmissive: 0x1c1a20,
@@ -571,12 +669,21 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
       { propId: "streetlight", tile: [-1, 13], offset: [-0.186, -0.206], rotationY: 6.08, scale: 1.1 },
       { propId: "streetlight", tile: [19, 12], offset: [-0.134, 0.002], rotationY: 1.942, scale: 1.089 },
     ],
+    // IDEA-060 moved all five of these. They were authored against tiles that
+    // are wall in 0 to 4 of the eighteen mazes — the one at (9, 9) has never
+    // been on a wall in ANY of them — so before buildWallDecor learned to skip
+    // a non-wall tile they hung in mid-air over open corridor, and after it
+    // they would simply never have appeared. Found by the audit that came with
+    // the garden's own wall-top flowers (scripts/_scratch-walldecor-audit.ts,
+    // now guarded by scripts/test-garden-props.ts). The replacements are all
+    // wall in 15+ of the 18, and the city is otherwise untouched — its own
+    // rebuild is a later session's job.
     wallDecor: [
-      { propId: "lamp-post", tile: [3, 3], rotationY: 0, scale: 1 },
-      { propId: "transit-sign", tile: [15, 3], rotationY: 1.571, scale: 1 },
-      { propId: "lamp-post", tile: [9, 9], rotationY: 0, scale: 1 },
-      { propId: "transit-sign", tile: [3, 15], rotationY: 0, scale: 1 },
-      { propId: "lamp-post", tile: [15, 15], rotationY: 0, scale: 1 },
+      { propId: "lamp-post", tile: [2, 2], rotationY: 0, scale: 1 },
+      { propId: "transit-sign", tile: [16, 2], rotationY: 1.571, scale: 1 },
+      { propId: "lamp-post", tile: [3, 12], rotationY: 0, scale: 1 },
+      { propId: "transit-sign", tile: [15, 12], rotationY: 0, scale: 1 },
+      { propId: "lamp-post", tile: [6, 18], rotationY: 0, scale: 1 },
     ],
   },
 ] as const;

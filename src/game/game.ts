@@ -126,6 +126,8 @@ import {
   spinDecor,
   type Board,
 } from "../render/board";
+import { disposeFence } from "../render/fence";
+import { disposeGroundDetail } from "../render/groundDetail";
 import {
   makeBeagle,
   makeGhost,
@@ -913,6 +915,16 @@ export class Game {
     // geometry+materials — disposePropGroup is board.ts's canonical
     // teardown for them, so a level change never leaks prop GPU resources.
     if (level.board.props) disposePropGroup(this.rig.scene, level.board.props);
+    // IDEA-060: the fence owns its geometry AND its material (fence.ts), so it
+    // needs a real disposal, not the bare scene.remove the walls above get.
+    if (level.board.fence) {
+      this.rig.scene.remove(level.board.fence);
+      disposeFence(level.board.fence);
+    }
+    if (level.board.groundDetail) {
+      this.rig.scene.remove(level.board.groundDetail);
+      disposeGroundDetail(level.board.groundDetail);
+    }
   }
 
   start(): void {

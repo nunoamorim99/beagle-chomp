@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Beagle board preview</title>
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #eae6df; }
+      canvas { display: block; width: 100%; height: 100%; }
+      #hud {
+        position: fixed; left: 12px; top: 12px; z-index: 10;
+        font: 600 12px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
+        color: #2a1a12; background: #ffffffcc; padding: 10px 12px;
+        border-radius: 8px; box-shadow: 0 2px 10px #0002; white-space: pre;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="c"></canvas>
+    <div id="hud"></div>
+    <script type="module">
+      // IDEA-060: dev-only viewer for the BOARD — walls, fence, floor, props,
+      // wall decor — in the REAL game rig. Never a rollup input, so it never
+      // ships (same construction as /editor/, /preview/ and /preview-rework/).
+      //
+      // Eight img2threejs runs before this one were enemy skins, and the
+      // /preview-rework/ harness they share is built around ONE model on a
+      // turntable. A board is the opposite subject: 200 instanced walls, a
+      // grid-derived floor, and dressing that only has to work at ONE camera —
+      // the game's, 27 units up at 59 degrees of elevation. Reviewing board
+      // work on a turntable would answer a question nobody is asking, so this
+      // page builds the real scene rig and the real board instead.
+      //
+      //   ?theme=garden|classic|forest|beach|park|city
+      //   ?maze=<index>       which maze layout (default 0)
+      //   ?view=game          the shipped camera, untouched (default)
+      //   ?view=close         dollied in on the top-left quadrant, for
+      //                       judging a surface at the size a PLAYER sees a
+      //                       wall face rather than at showcase magnification
+      //   ?view=hero          a low three-quarter, for reading silhouettes
+      //   ?view=top           straight down, for reading the floor's grid work
+      //   ?flat=1             map-stripped CLAY: every material becomes one
+      //                       neutral grey. The instrument that caught the
+      //                       flea's banding and the burger's missing ledge —
+      //                       here it answers "is any of this GEOMETRY, or is
+      //                       it all paint?" for the board too.
+      //   ?fence=0            build the board with the fence suppressed, for
+      //                       an A/B against the same frame
+      //   ?hud=0
+      import * as THREE from "three";
+      import { createScene } from "/src/render/scene.ts";
+      import { buildBoard } from "/src/render/board.ts";
+      import { Grid } from "/src/game/grid.ts";
+      import { MAZES } from "/src/game/mazes.ts";
+      import { MAZE_THEMES, setEquippedMazeThemeId, getEquippedMazeTheme } from "/src/game/themes.ts";
+
+      const q = new URLSearchParams(location.search);
+      const themeId = q.get("theme") ?? "garden";
+      // The board reads the EQUIPPED theme rather than taking one as an
+      // argument, so the preview equips it the way the shop does.
+      if (MAZE_THEMES.some((t) => t.id === themeId)) setEquippedMazeThemeId(themeId);
+
+      // ?fence=0 patches the palette rather than the builder: the A/B has to be
+      // the same code path with one value changed, or it is not an A/B.
+      if (q.get("fence") === "0") {
+        for (const t of MAZE_THEMES) t.palette.fence = "none";
+      }
+
+      const canvas = document.getElementById("c");
+      const rig = createScene(canvas);
+      rig.applySceneTheme(getEquippedMazeTheme());
+
+      const mazeIdx = Number(q.get("maze") ?? 0) % MAZES.length;
+      const grid = new Grid(MAZES[mazeIdx]);
+      const board = buildBoard(rig.scene, grid);
+
+      rig.resize();
+      addEventListener("resize", () => rig.resize());
+
+      // The shipped camera is what `rig.resize()` just set. The other views
+      // move it, and they are review instruments, not alternatives: `game` is
+      // the only one a player ever sees, so anything that only works in `hero`
+      // does not work.
+      const view = q.get("view") ?? "game";
+      if (view !== "game") {
+        const cam = rig.camera;
+        if (view === "close") {
+          // Framed on the maze's top-left quadrant, at roughly the distance a
+          // phone's camera sits from the near corner. A wall face is ~25px on
+          // a 390px phone; this is the honest magnification for judging one.
+          cam.position.set(-4.5, 9, 2.5);
+          cam.lookAt(-4.5, 0, -3.5);
+        } else if (view === "hero") {
+          cam.position.set(-9, 6.5, 14);
+          cam.lookAt(-2, 0.4, 0);
+        } else if (view === "top") {
+          cam.position.set(0, 30, 0.001);
+          cam.lookAt(0, 0, 0);
+        }
+        cam.updateProjectionMatrix();
+      }
+
+      if (q.get("flat") === "1") {
+        const clay = new THREE.MeshLambertMaterial({ color: 0xb9b2a8 });
+        rig.scene.traverse((o) => {
+          // The backdrop dome is a ShaderMaterial standing in for the sky, not
+          // a thing in the world — claying it paints the whole frame grey.
+          if (o.isMesh && !o.userData?.backdrop && o.material?.type !== "ShaderMaterial") {
+            o.material = clay;
+          }
+        });
+      }
+
+      let tris = 0, meshes = 0, instanced = 0;
+      rig.scene.traverse((o) => {
+        if (!o.isMesh) return;
+        meshes++;
+        const n = o.isInstancedMesh ? o.count : 1;
+        if (o.isInstancedMesh) instanced++;
+        const g = o.geometry;
+        tris += ((g.index ? g.index.count : g.attributes.position.count) / 3) * n;
+      });
+      const hud = document.getElementById("hud");
+      hud.textContent =
+        `theme   ${themeId}   maze ${mazeIdx}   view ${view}\n` +
+        `fence   ${board.fence ? board.fence.count + " panels" : "none"}\n` +
+        `props   ${board.props ? board.props.children.length : 0}\n` +
+        `decor   ${board.hedgeDecor.length}\n` +
+        `meshes  ${meshes} (${instanced} instanced)\n` +
+        `tris    ${Math.round(tris)}`;
+      if (q.get("hud") === "0") hud.style.display = "none";
+
+      window.__board = { THREE, rig, board, grid };
+
+      rig.renderer.render(rig.scene, rig.camera);
+      rig.renderer.setAnimationLoop(() => rig.renderer.render(rig.scene, rig.camera));
+      document.title = "Beagle board preview — ready";
+    </script>
+  </body>
+</html>

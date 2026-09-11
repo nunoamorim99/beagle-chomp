@@ -40,8 +40,30 @@ const DEFAULT_NEW_COLOR = 0xffffff;
  *  PROP_SHAPE_FIELDS' own placement rationale ("purely a UI concern; kept
  *  here beside PropParams so the two never drift" — same logic, this module
  *  is the one place that actually RENDERS controls from it). */
-const SINGLE_COLOR_FIELDS = new Set<keyof PropParams>(["trunkColor", "windowColor", "glowColor", "signBoardColor"]);
-const BOOLEAN_FIELDS = new Set<keyof PropParams>(["rooftop"]);
+const SINGLE_COLOR_FIELDS = new Set<keyof PropParams>([
+  "trunkColor",
+  "windowColor",
+  "glowColor",
+  "signBoardColor",
+  // IDEA-060.
+  "petalColor",
+  "centerColor",
+  "birdColor",
+]);
+const BOOLEAN_FIELDS = new Set<keyof PropParams>(["rooftop", "showBird"]);
+
+/** Fields whose value is one of a fixed set of STRINGS. The first of its kind
+ *  here — every PropParams field before IDEA-060 was a number, a colour, a
+ *  colour list or a boolean, and `buildFieldControl` fell through to a number
+ *  slider for anything it did not recognise. That fallback is fine for a
+ *  number it has no range for and silently wrong for a string: `flowerKind`
+ *  would have rendered as a slider driving a value the factory reads with a
+ *  `switch`. Same family of defect as IDEA-041's rule about showing a control
+ *  for a channel the model does not have — a control that lies about what it
+ *  edits is worse than no control. */
+const ENUM_FIELDS: Partial<Record<keyof PropParams, readonly string[]>> = {
+  flowerKind: ["daisy", "sunflower", "rose", "tulip", "blossom"],
+};
 
 /** Slider range/step per numeric field, per the task brief's exact numbers.
  *  A field not listed here (there are none today — every numeric PropParams
@@ -77,6 +99,12 @@ const FIELD_SEED_DEFAULT: Partial<Record<keyof PropParams, number>> = {
   glowColor: 0xf4d060,
   glowIntensity: 0.9,
   signBoardColor: 0x33333c,
+  // IDEA-060. The three flower colours seed to the DAISY's, since that is
+  // `flowerKind`'s own default — turning "petal color" on should not repaint
+  // the flower you are looking at into a different one.
+  petalColor: 0xfaf6ec,
+  centerColor: 0xf2b632,
+  birdColor: 0x3f9ede,
 };
 
 const FIELD_LABEL: Partial<Record<keyof PropParams, string>> = {
@@ -95,6 +123,11 @@ const FIELD_LABEL: Partial<Record<keyof PropParams, string>> = {
   glowColor: "glow color",
   glowIntensity: "glow intensity",
   signBoardColor: "sign board color",
+  flowerKind: "flower",
+  petalColor: "petal color",
+  centerColor: "centre color",
+  showBird: "perched bird",
+  birdColor: "bird color",
 };
 
 function hexProxy(get: () => number, set: (v: number) => void): { color: string } {
@@ -250,9 +283,32 @@ export function createPropsInspector(
       .onChange(() => cb.onChange());
   }
 
+  /** A dropdown over a fixed set of strings — see ENUM_FIELDS. Changing it
+   *  rebuilds the preview like every other field does, which is what lets the
+   *  five flowers be inspected by swapping one control rather than by
+   *  selecting five different defs. */
+  function buildEnumField(
+    folder: GUI,
+    def: WorkingPropDef,
+    key: keyof PropParams,
+    options: readonly string[],
+  ): void {
+    const label = FIELD_LABEL[key] ?? key;
+    if (def.params[key] === undefined) {
+      (def.params as Record<string, unknown>)[key] = options[0];
+    }
+    folder
+      .add(def.params as Record<string, string>, key as string, [...options])
+      .name(label)
+      .onChange(() => cb.onChange());
+  }
+
   function buildFieldControl(folder: GUI, def: WorkingPropDef, key: keyof PropParams): void {
+    const enumOptions = ENUM_FIELDS[key];
     if (key === "foliageColors" || key === "facadeColors") {
       buildColorListField(folder, def, key);
+    } else if (enumOptions) {
+      buildEnumField(folder, def, key, enumOptions);
     } else if (SINGLE_COLOR_FIELDS.has(key)) {
       buildSingleColorField(folder, def, key);
     } else if (BOOLEAN_FIELDS.has(key)) {

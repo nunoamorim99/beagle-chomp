@@ -53,6 +53,8 @@ import {
   frillRing,
   squircleSlab,
   scatterOnBand,
+  smilePatch,
+  type SmilePatchOptions,
 } from "./burgerSculpt";
 import { rng } from "./paint";
 
@@ -2861,14 +2863,22 @@ export function makeFlea(color: number): THREE.Group {
 // `GhostUserData` contract — team-coloured bodyMat, accentMats following the
 // frightened recolour, eyes surviving the eaten state, rotated pupil pivots.
 //
-// The fixed accents. The team colour goes on the carapace DOME; everything
-// below keeps its own hue, and which of them follow the frightened recolour is
-// a decision recorded per material in makeCrab and in
+// The fixed accents. The team colour goes on the carapace DOME and NOTHING
+// ELSE; everything below it is ONE cuticle red, and which materials follow the
+// frightened recolour is a decision recorded per material in makeCrab and in
 // `.img2threejs/crab/evidence/material-evidence.md`.
-const CRAB_FACE = 0xffb347; // golden lower face — the measured #FFC756/#FF9444 read
+//
+// v2 (Nuno's note): the face panel and the whole chela used to be GOLD — a
+// measured #FFC756/#FF9444 lower face and a #F7BE55 claw horn, each a full value
+// step lighter than the part carrying it. Both are now CRAB_LIMB, so the model
+// is a team-coloured dome over a single red body. Two reasons it is better here
+// than in the reference: the gold sat within a few percent of the AMBER team
+// hue (0xe8a23d), so on one team of five the face panel and the carapace closed
+// into one mass and the crab lost its two-tone entirely; and the pincer gap is
+// negative space, so it reads on its HOLE rather than on the horn's value —
+// nothing that carries identity was being paid for by the gold.
 const CRAB_APRON = 0xf7d9ac; // pale ventral apron, the only large LIGHT area
-const CRAB_LIMB = 0xe8492e; // limb cuticle, more saturated and redder than the shell
-const CRAB_CLAW = 0xf7be55; // chela horn, a full value step lighter than the arm
+const CRAB_LIMB = 0xe8492e; // the whole body below the shell: limbs, face panel, chelae
 // Mouth groove and inter-plate limb creases. Separate from every other accent
 // because it must NOT follow the frightened recolour — see makeCrab.
 const CRAB_CREASE = 0x7e2a14;
@@ -2979,15 +2989,17 @@ export function makeCrab(color: number): THREE.Group {
   const CW = 0.56;
 
   // --- materials -----------------------------------------------------------
-  // The carapace DOME carries the team colour: it is the single largest surface,
-  // and the three team colours are how a player tells four enemies apart.
+  // The carapace DOME carries the team colour, and it is the ONLY thing that
+  // does: it is the single largest surface, and the team colours are how a
+  // player tells the enemies apart. The face panel, the carapace lip and the
+  // tubercles all sit ON that dome and share it — they are the shell.
   const bodyMat = toon({ color, emissive: color, emissiveIntensity: 0.12 });
-  const faceMat = toon({ color: CRAB_FACE });
-  faceMat.userData.baseColor = CRAB_FACE;
+  // ONE cuticle red for everything below the shell: eight legs, two chelipeds,
+  // both chelae, the eyestalks and the face panel. See CRAB_LIMB's note — the
+  // face and the claws were gold until v2, and the gold collided with the amber
+  // team hue on the single largest patch of the model.
   const limbMat = toon({ color: CRAB_LIMB });
   limbMat.userData.baseColor = CRAB_LIMB;
-  const clawMat = toon({ color: CRAB_CLAW });
-  clawMat.userData.baseColor = CRAB_CLAW;
   // The apron is deliberately NOT an accent. It is the only large light area in
   // the model, and it is what keeps the face legible once the body turns
   // frightened blue — a cream chin under a blue shell still reads as a face; an
@@ -3059,10 +3071,14 @@ export function makeCrab(color: number): THREE.Group {
     return m;
   };
 
-  // THE GOLD FACE. The reference's crown-to-face gradient runs #FA5444 ->
+  // THE FACE PANEL. The reference's crown-to-face gradient runs #FA5444 ->
   // #FFC756 and is measured, but a MeshToonMaterial quantises a gradient into
   // the shared 3-step ramp anyway — so it bands regardless, and an authored
   // surface puts the band where it belongs rather than wherever the ramp lands it.
+  // Since v2 the panel is CUTICLE RED (limbMat) rather than gold, so the band it
+  // puts there is the shell/body division and not a third colour zone: the dome
+  // above it is the only team-coloured surface on the model, and this patch is
+  // where that colour STOPS.
   //
   // The patch's POLE IS TILTED DOWN-AND-FORWARD (0.75 rad) rather than aimed
   // straight ahead, and it is cut WIDE ENOUGH TO REACH THE SILHOUETTE (theta
@@ -3073,14 +3089,16 @@ export function makeCrab(color: number): THREE.Group {
   // own colour. Tilted and cut to the edge, the boundary is a LINE across the
   // shell — from y 0.421 at the face centre down to y 0.307 at the flanks —
   // which is what the reference shows.
-  const face = shellPatch(1.006, 0, Math.PI * 2, 0, 1.34, faceMat, 30, 14, 0.75);
+  const face = shellPatch(1.006, 0, Math.PI * 2, 0, 1.34, limbMat, 30, 14, 0.75);
   face.name = "facePanel";
   body.add(face);
 
   // THE ROLLED FRONT LIP. A narrow band standing 0.02 proud, straddling the
-  // gold/red boundary at the shell's outer margin. It is shell-coloured, not
-  // gold: the reference's rim is the carapace's own edge turning under, and a
-  // gold rim would read as a second colour zone instead of as thickness.
+  // shell/face boundary at the carapace's outer margin. It is TEAM-coloured, not
+  // a colour of its own: the reference's rim is the carapace's own edge turning
+  // under, and a third hue there would read as another zone instead of as
+  // thickness. It matters more since v2, not less — it is the one geometric
+  // event marking where the team colour ends and the red body begins.
   // Without it the dome is shrink-wrapped — the shell has no edge, and at the
   // review camera the boundary between crown and face reads as paint rather
   // than as the lip of a shell.
@@ -3091,8 +3109,8 @@ export function makeCrab(color: number): THREE.Group {
   // The ventral apron: the same construction, tilted further down and cut
   // shorter. Its lower edge lands at y 0.1715 against a measured chin bottom of
   // 0.171 — that falls out of the tilt rather than being placed by hand. Its top
-  // edge is now the only thing dividing the gold face from the cream chin, since
-  // the mouth groove that used to sit on that boundary is gone.
+  // edge is now the only thing dividing the red face panel from the cream chin,
+  // since the mouth groove that used to sit on that boundary is gone.
   const apron = shellPatch(1.012, 0, Math.PI * 2, 0, 0.66, apronMat, 26, 10, 1.06);
   apron.name = "chinApron";
   body.add(apron);
@@ -3106,7 +3124,7 @@ export function makeCrab(color: number): THREE.Group {
   // measurement is what a future build would need to put it back.
   //
   // The face still reads: the eyes and the brow lozenges carry it, which is what
-  // they were ranked on in the first place. The gold/cream boundary the mouth
+  // they were ranked on in the first place. The face/cream boundary the mouth
   // used to sit on is still there — it is the apron's own edge.
   //
   // And it turns out to be the CONSISTENT choice rather than only a taste one:
@@ -3445,7 +3463,9 @@ export function makeCrab(color: number): THREE.Group {
     // daylight. That is WIDER than the reference's measured ~32deg on purpose:
     // it is sized from readability at the game camera, where the whole enemy is
     // a few dozen pixels, and the first build — which did scale the reference
-    // angle honestly — closed into a solid gold wedge at exactly that size.
+    // angle honestly — closed into a solid wedge at exactly that size. That is
+    // why the claw survived losing its gold in v2: the gap reads on DAYLIGHT, not
+    // on the horn being a lighter colour than the arm.
     //
     // They also hang DOWN as well as inward. Swung purely inward (the third
     // build) each claw read as a flat flipper laid across the body; the
@@ -3489,9 +3509,12 @@ export function makeCrab(color: number): THREE.Group {
     elbowJoint.add(wristJoint);
     knuckle("chelipedWristBall" + side, wristJoint, V(0, 0, 0), rWrist * 1.06, limbMat);
 
-    // The palm — a full value step lighter than the red arm carrying it. The
-    // gold-against-red is what makes the claw read as a different substance.
-    const palm = new THREE.Mesh(new THREE.SphereGeometry(1, 18, 14), clawMat);
+    // The palm. It was a full value step lighter than the arm carrying it until
+    // v2 — a gold horn against red cuticle, so the claw read as a different
+    // substance. It is now the same red as the rest of the body: the pincer
+    // reads on the GAP between its fingers, which is the largest piece of
+    // negative space in the model and needs no colour to carry it.
+    const palm = new THREE.Mesh(new THREE.SphereGeometry(1, 18, 14), limbMat);
     palm.name = "chelaPalm" + side;
     palm.scale.set(CW * 0.1607, CW * 0.1696, CW * 0.1964);
     palm.position.copy(palmC.clone().sub(wrist));
@@ -3507,8 +3530,8 @@ export function makeCrab(color: number): THREE.Group {
     // The FIXED finger: lower, and the longer of the two. Rounded tip.
     const pA = pollexA.clone().sub(wrist);
     const pB = pollexB.clone().sub(wrist);
-    bone("chelaPollex" + side, wristJoint, pA, pB, CW * 0.0893, CW * 0.0304, clawMat, 12);
-    knuckle("chelaPollexTip" + side, wristJoint, pB, CW * 0.0304, clawMat);
+    bone("chelaPollex" + side, wristJoint, pA, pB, CW * 0.0893, CW * 0.0304, limbMat, 12);
+    knuckle("chelaPollexTip" + side, wristJoint, pB, CW * 0.0304, limbMat);
 
     // The MOVABLE finger, on a real hinge at the palm. It is the one joint that
     // visibly articulates in the reference, and it is what opens the gap.
@@ -3516,10 +3539,10 @@ export function makeCrab(color: number): THREE.Group {
     hinge.name = "chelaDactyl" + side;
     hinge.position.copy(dactA.clone().sub(wrist));
     wristJoint.add(hinge);
-    knuckle("chelaHinge" + side, hinge, V(0, 0, 0), CW * 0.0804, clawMat);
+    knuckle("chelaHinge" + side, hinge, V(0, 0, 0), CW * 0.0804, limbMat);
     const dEnd = dactB.clone().sub(dactA);
-    bone("chelaDactylTip" + side, hinge, V(0, 0, 0), dEnd, CW * 0.0804, CW * 0.0268, clawMat, 12);
-    knuckle("chelaDactylCap" + side, hinge, dEnd, CW * 0.0268, clawMat);
+    bone("chelaDactylTip" + side, hinge, V(0, 0, 0), dEnd, CW * 0.0804, CW * 0.0268, limbMat, 12);
+    knuckle("chelaDactylCap" + side, hinge, dEnd, CW * 0.0268, limbMat);
     dactyls.push(hinge);
 
     return root;
@@ -3534,12 +3557,17 @@ export function makeCrab(color: number): THREE.Group {
 
   const userData: GhostUserData = {
     bodyMat,
-    // The limbs, the gold face and the claws ARE the silhouette — ten limbs plus
-    // the whole lower face. Leaving them un-recoloured would blunt the "edible
-    // now" read, which is the documented large-accent rule. The apron, the crease
-    // ink and the brows keep their own colour: they are what holds the face and
-    // the leg count legible while everything else is one flat blue.
-    accentMats: [limbMat, faceMat, clawMat],
+    // ONE entry since v2, because the face panel and both chelae now share
+    // limbMat: ten limbs, two claws and the whole lower face are a single red
+    // mass, and it IS the silhouette. Leaving it un-recoloured would blunt the
+    // "edible now" read, which is the documented large-accent rule. The apron,
+    // the crease ink and the brows keep their own colour: they are what holds
+    // the face and the leg count legible while everything else is one flat blue.
+    //
+    // Note this is the frightened recolour, NOT the team colour. The team colour
+    // is bodyMat and reaches the carapace dome, its lip and its tubercles only —
+    // that is the whole point of v2.
+    accentMats: [limbMat],
     eyes,
     pupPivots,
     pupM,
@@ -4338,7 +4366,7 @@ export function makeSushiMaki(color: number): THREE.Group {
   const body = new THREE.Group();
   body.name = "body";
   body.position.y = 0.4658;
-  body.rotation.set(-0.03, 0, 0);
+  body.rotation.x = MK_PITCH;
   g.add(body);
 
   // --- the nori sleeve: barrel and both rims as ONE revolved surface --------
@@ -5697,7 +5725,7 @@ export function makePizza(color: number): THREE.Group {
   // feet and the mascot reads as falling over rather than as leaning back.
   const body = new THREE.Group();
   body.name = "body";
-  body.position.set(0, 0.145, 0.017);
+  body.position.set(0, TIPY, 0.055);
   body.rotation.x = PZ_PITCH;
   g.add(body);
 
@@ -6203,15 +6231,22 @@ export function makePizza(color: number): THREE.Group {
 
   // --- legs and boots -------------------------------------------------------
   // Children of the ROOT, not of the pitched body: the slice leans, the stance
-  // does not. The hips sit BEHIND the wedge, which is what makes the tip hang
-  // down BETWEEN the legs — a detail the reference is explicit about, and the
-  // thing that makes the pose legible as standing rather than as balancing on
-  // a point.
+  // does not. Laterally the hips straddle the tip, which is what makes the
+  // wedge hang down BETWEEN the legs — a detail the reference is explicit
+  // about, and the thing that makes the pose legible as standing rather than
+  // as balancing on a point.
+  //
+  // In DEPTH they sit level with the wedge's own slab rather than behind it
+  // (Nuno's note). The hips were at z -0.045, which is just behind the back
+  // face at hip height, so the legs hung off the BACK of the slice and the
+  // play camera — looking down from 59 degrees — read the boots as parked
+  // behind the body instead of under it. At z +0.005 the legs run down the
+  // slice's own flanks and the figure stands on its feet.
   const legs: THREE.Object3D[] = [];
   for (const s of [1, -1] as const) {
     const pivot = new THREE.Group();
     pivot.name = s > 0 ? "legPivotL" : "legPivotR";
-    pivot.position.set(s * 0.072, 0.2856, -0.045);
+    pivot.position.set(s * 0.072, 0.2856, 0.005);
     pivot.rotation.z = s * 0.1;
     g.add(pivot);
 
@@ -6319,10 +6354,10 @@ export function makePizza(color: number): THREE.Group {
 // Nothing else in the cast is striped across its full width, and at 25 px a
 // striped tower is not confusable with a smooth one whatever colour it is.
 //
-// The other novelty is smaller and it is on the hands. Every gloved enemy in
-// this game (the maki, the nigiri, the pizza) wears the same blob mitt. This
-// one has FINGERS, and it holds two of them up in a V. It is the only gesture
-// in the cast, and it is the reference's own pose.
+// It is the mitts and boots idiom the maki, the nigiri and the pizza already
+// wear — this skin does not try to out-do them on the hands, and an earlier
+// build that did (a raised two-finger V, the reference's own pose) was cut for
+// reading as a stuck arm once the thing started walking. See rule 5.
 //
 // PROPORTION BASE: BH = THE STACK HEIGHT, top-bun crown to bottom-bun
 // underside, MEASURED at 261 px in the reference and built at 0.62 world
@@ -6371,12 +6406,15 @@ export function makePizza(color: number): THREE.Group {
 //     also makes the flea's and the crab's joint-gap problem unrepresentable
 //     rather than merely absent.
 //
-//  5. THE TWO ARMS ARE DELIBERATELY NOT MIRRORS. One holds the V and does not
-//     swing with the stride; the other is a closed fist and counter-swings
-//     normally. An asymmetric pose is the thing that reads as a decision
-//     rather than as a bug, so the raised arm gets its own slow wave — a rigid
-//     raised arm on a walking figure looks broken, a waving one looks pleased
-//     with itself.
+//  5. THE TWO ARMS ARE A MIRROR, and that is a REVISION. The first build
+//     followed the reference's pose — one arm raised holding a two-finger V,
+//     the other closed at the side — which was charming standing still and
+//     wrong in motion: a held gesture on a character that spends the whole
+//     game walking at you reads as a stuck arm rather than as a greeting, and
+//     it gets less charming the more you see it. Both arms now hang and
+//     counter-swing. The cost is on the record — the V was the only set of
+//     fingers in the enemy cast and this skin no longer has that claim — and
+//     the banding, which was always identity rank 1, is untouched.
 const BG_LETTUCE = 0x7d9a35; // pushed to olive off the sampled #839f3c, see below
 const BG_LETTUCE_DK = 0x5f7526;
 const BG_TOMATO = 0xd8434b;
@@ -6399,6 +6437,8 @@ const BG_GLOVE = 0xfdfbf4;
 const BG_BOOT = 0xe5402c; // a VERMILION, not the sampled #ff4239 — see below
 const BG_BOOT_DK = 0xa82b1c;
 const BG_PUPIL = 0x3a1f18;
+const BG_MOUTH = 0x5e2320; // the cavity, deeper than the ink so it reads as depth
+const BG_TONGUE = 0xef6d6a;
 const BG_SESAME = 0xf6e6bd;
 
 // The walk. Slower than the pizza's 8.4 and with less swing: this one is a
@@ -6451,47 +6491,29 @@ const BG_IDLE_LEAN = 0.030;
  */
 const BG_PITCH = -15 * (Math.PI / 180);
 
-// The wave, on the raised arm only. Deliberately NOT locked to the stride — its
-// own frequency and phase, so the gesture never looks like part of the walk.
-//
-// It is ONE-SIDED, and that is a size decision as much as a motion one. A
-// symmetric wave swings the hand as far OUT as it swings it in, and the hand is
-// the furthest-out thing on the model: at an amplitude of 0.13 the burger's
-// animated width reached 0.895, past the crab's 0.861 and the mosquito's own
-// animated 0.861. Swinging inward-only from the authored pose means the
-// envelope is set by the REST pose — the number the cast table actually
-// publishes — so the gesture can be almost twice as large for free.
-const BG_WAVE_FREQ = 3.1;
-const BG_WAVE_AMP = 0.24;
-
 interface BurgerParts {
   legs: THREE.Object3D[]; // [left, right] hip pivots
-  swingArm: THREE.Object3D; // the FIST arm — counter-swings the stride
-  waveArm: THREE.Object3D; // the V arm — holds its raise and waves
+  arms: THREE.Object3D[]; // [left, right] shoulder pivots
   stack: THREE.Object3D; // the banded body, for the idle weight shift
 }
 
 function burgerBehaviour(parts: BurgerParts): EnemyBehaviour {
-  const { legs, swingArm, waveArm, stack } = parts;
-  const swingRest = swingArm.rotation.x;
-  const waveRestZ = waveArm.rotation.z;
+  const { legs, arms, stack } = parts;
+  const armRest = arms.map((a) => a.rotation.x);
   return {
     animate: (t, idleT, moveBlend) => {
       const step = Math.sin(t * BG_STEP_FREQ) * BG_STEP_SWING * moveBlend;
       legs[0].rotation.x = step;
       legs[1].rotation.x = -step;
-      // Only ONE arm counter-swings, because only one arm is free. The rest
-      // angle is the shoulder's own hang and has to be added back, or setting
-      // rotation.x here would swing the arm up into the patty.
+      // Both arms counter-phase to the legs while walking, and hang-sway
+      // slowly while standing. Blended rather than switched, so a stop eases
+      // out of the stride instead of snapping to attention. The rest angle is
+      // each shoulder's own hang and has to be added back, or setting
+      // rotation.x here would swing the arms up into the patty.
       const idleArm = Math.sin(idleT * BG_IDLE_FREQ) * BG_IDLE_ARM * (1 - moveBlend);
-      swingArm.rotation.x = swingRest - step * (BG_ARM_SWING / BG_STEP_SWING) + idleArm;
-      // The wave. It runs whether the burger is walking or standing — that is
-      // what makes the raised arm read as held on purpose rather than as an
-      // arm that failed to come down.
-      // (1 - sin) / 2 runs 0..1, so this only ever rotates the arm INWARD from
-      // its authored raise and never past it. See BG_WAVE_AMP.
-      waveArm.rotation.z =
-        waveRestZ + (1 - Math.sin(idleT * BG_WAVE_FREQ)) * 0.5 * BG_WAVE_AMP;
+      const ratio = BG_ARM_SWING / BG_STEP_SWING;
+      arms[0].rotation.x = armRest[0] - step * ratio + idleArm;
+      arms[1].rotation.x = armRest[1] + step * ratio - idleArm;
       // A wide body on two short legs needs a weight shift or it reads as a
       // prop being slid along. Roll about the travel axis, which syncToEntity's
       // own waddle then rides on top of.
@@ -6631,6 +6653,10 @@ export function makeBurger(color: number): THREE.Group {
   bootDkMat.userData.baseColor = BG_BOOT_DK;
   const sesameMat = toon({ color: BG_SESAME });
   sesameMat.userData.baseColor = BG_SESAME;
+  const mouthMat = toon({ color: BG_MOUTH });
+  mouthMat.userData.baseColor = BG_MOUTH;
+  const tongueMat = toon({ color: BG_TONGUE });
+  tongueMat.userData.baseColor = BG_TONGUE;
   // Its own material rather than a share of the glove: it belongs to eyeMats,
   // the list kept SOLID while the enemy is eaten, and sharing would leave the
   // gloves solid too — a spirit coming home still wearing them.
@@ -6646,7 +6672,7 @@ export function makeBurger(color: number): THREE.Group {
   // lives here for the same reason.
   const stack = new THREE.Group();
   stack.name = "stack";
-  stack.rotation.set(-0.037, 0.018, -0.01);
+  stack.rotation.x = BG_PITCH;
   // Pushed forward on Z because a 15-degree lean carries the crown 0.16
   // backwards; without it the mass sits behind the feet and the mascot reads as
   // toppling rather than as leaning.
@@ -6844,8 +6870,30 @@ export function makeBurger(color: number): THREE.Group {
   face.name = "face";
   stack.add(face);
 
-  const EYE_T = 0.530; // 0.335 BH below the crown — MEASURED
+  // 0.512, raised from the MEASURED 0.530 — Nuno's own adjustment in the
+  // character editor, which put pupilPivotR at y 0.637 against the 0.631 the
+  // measurement gives. Six thousandths, and worth keeping: it opens the gap
+  // between the eyes and the mouth that the new aperture needs.
+  const EYE_T = 0.512;
   const EYE_X = 0.1091; // half of a MEASURED 0.352 BH separation
+  /**
+   * Pitch the whole eye UP off the dome's radial direction.
+   *
+   * Also Nuno's, out of the editor (`pupilPivotR.rotation.set(-0.422, ...)`),
+   * and it is a play-camera fix in disguise. The eyes were aligned to the
+   * dome's horizontal RADIUS, which on a dome is not its surface normal and is
+   * not the direction a face should look either: pointing straight out from a
+   * sphere's equator, a pair of eyes ends up staring at the maze floor from a
+   * camera 59 degrees above them. Tipping them back 24 degrees turns them
+   * toward the player.
+   *
+   * It is applied as an Euler with the azimuth, NOT as a second quaternion, so
+   * that the left eye is `(EYE_PITCH, +EYE_PHI, 0)` against the right's
+   * `(EYE_PITCH, -EYE_PHI, 0)` — a reflection, x -> -x, which is what a pair
+   * has to be. Composing two quaternions per side is how you end up with two
+   * eyes that are subtly not each other.
+   */
+  const EYE_PITCH = -0.422;
   const eyeR = stationRadius(TOP_BUN_STATIONS, EYE_T) * BUN_R;
   const EYE_PHI = Math.asin(Math.min(0.99, EYE_X / eyeR));
 
@@ -6853,42 +6901,64 @@ export function makeBurger(color: number): THREE.Group {
   const pupPivots: THREE.Object3D[] = [];
   for (const s of [1, -1] as const) {
     const p = onBand(TOP_BUN_STATIONS, EYE_T, s * EYE_PHI, BUN_R, BUN_H, CROWN);
-    const outward = new THREE.Vector3(p.x, 0, p.z).normalize();
 
     const pivot = new THREE.Group();
     pivot.name = s > 0 ? "pupilPivotL" : "pupilPivotR";
     pivot.position.copy(p);
-    // Turn the whole eye to face out along the dome's own surface, so the
-    // sclera sits flush instead of cutting a lens out of the bun.
-    pivot.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), outward);
+    pivot.rotation.set(EYE_PITCH, s * EYE_PHI, 0);
     face.add(pivot);
 
     // MEASURED 0.115 x 0.153 BH, centres 0.352 BH apart — so the two nearly
     // touch, with a third of an eye's width of bun between them. That
     // closeness is the strongest cartoon signal the face carries; spaced at
     // human proportions the whole read goes.
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.050, 16, 12), scleraMat);
+    // ROUND, not the tall almond the first build used. A sclera taller than it
+    // is wide reads INTENSE — it is the shape a glare is drawn with — and at
+    // 0.72 x 0.95 this face came back creepy rather than cheerful. 0.90 x 0.92
+    // is very nearly a circle, which is the shape every friendly cartoon eye
+    // in the world is drawn with.
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.052, 16, 12), scleraMat);
     eye.name = s > 0 ? "eyeL" : "eyeR";
-    eye.scale.set(0.72, 0.95, 0.42);
+    eye.scale.set(0.90, 0.92, 0.44);
     eye.position.z = 0.004;
     pivot.add(eye);
 
-    const pup = new THREE.Mesh(new THREE.SphereGeometry(0.036, 14, 10), pupM);
+    // BIG and sitting LOW, so it very nearly touches the bottom of the sclera.
+    // Both halves of that matter. A small pupil marooned in the middle of a
+    // white with clear space all the way round it is the doll stare — it is
+    // what made the first face unsettling — while a big pupil resting on the
+    // lower lid is the baby-schema eye that reads as warm. It fills 0.79 of the
+    // sclera's width here against 0.55 before.
+    const pup = new THREE.Mesh(new THREE.SphereGeometry(0.042, 14, 10), pupM);
     pup.name = s > 0 ? "pupilL" : "pupilR";
-    pup.scale.set(0.76, 0.88, 0.36);
-    pup.position.set(s * 0.006, -0.004, 0.014);
+    pup.scale.set(0.86, 0.86, 0.34);
+    // INWARD, both of them — `-s`, not `s`. On the right eye the pivot's local
+    // +x points back toward the middle of the face, so a matched pair converging
+    // a few thousandths is what reads as two eyes LOOKING at something rather
+    // than two eyes pointed forward. Nuno's value from the editor.
+    pup.position.set(-s * 0.007, -0.006, 0.018);
     pivot.add(pup);
 
-    // The catchlight is a WEDGE, not a dot. It is the reference's one
-    // un-generic face mark and it costs four triangles to keep.
-    const glint = new THREE.Mesh(new THREE.ConeGeometry(0.013, 0.020, 4), glintMat);
+    // TWO ROUND DOTS, not the single four-sided wedge the reference draws.
+    // The reference's jagged catchlight is its one un-generic face mark and it
+    // was worth trying, but a spiky white shape inside a dark pupil reads as a
+    // GLARE — a flash of light — rather than as a soft highlight, and it was
+    // half of why this face came back creepy. A big dot upper-inner with a
+    // small one lower-outer is the standard two-light catchlight, and it is
+    // what makes an eye look wet and alive instead of painted on.
+    const glint = new THREE.Mesh(new THREE.SphereGeometry(0.014, 9, 7), glintMat);
     glint.name = s > 0 ? "glintL" : "glintR";
-    glint.scale.set(1, 1, 0.5);
-    glint.rotation.set(Math.PI / 2, 0, s * 0.5);
-    glint.position.set(s * -0.010, 0.012, 0.026);
+    glint.scale.set(1, 1, 0.42);
+    glint.position.set(-s * 0.013, 0.004, 0.030);
     pivot.add(glint);
 
-    eyes.push(pivot, eye, pup, glint);
+    const glint2 = new THREE.Mesh(new THREE.SphereGeometry(0.0072, 8, 6), glintMat);
+    glint2.name = s > 0 ? "glintSmallL" : "glintSmallR";
+    glint2.scale.set(1, 1, 0.42);
+    glint2.position.set(s * 0.006, -0.027, 0.028);
+    pivot.add(glint2);
+
+    eyes.push(pivot, eye, pup, glint, glint2);
     pupPivots.push(pivot);
   }
 
@@ -6907,7 +6977,7 @@ export function makeBurger(color: number): THREE.Group {
     // MEASURED: the reference's brow is 58 px across against a 30 px sclera,
     // i.e. 1.93x the eye's own width. The eye spans 0.232 rad here, so the brow
     // wants 0.448 — a half-width of 0.224, rounded up a touch.
-    const HALF = 0.24;
+    const HALF = 0.215;
     for (let i = 0; i <= 10; i++) {
       const u = i / 10;
       const phi = s * (EYE_PHI + (u - 0.5) * 2 * HALF);
@@ -6930,48 +7000,96 @@ export function makeBurger(color: number): THREE.Group {
       // it stays, and its SIGN is the difference between friendly and a scowl:
       // outer end LOWER (larger t). Two inner ends dropped is the universal
       // cartoon glare, and IDEA-058 shipped it once already.
-      const t = 0.352 + 0.095 * e * e + 0.014 * e;
+      const t = 0.316 + 0.072 * e * e + 0.012 * e;
       pts.push(onBand(TOP_BUN_STATIONS, t, phi, BUN_R * 1.012, BUN_H, CROWN));
     }
-    const brow = new THREE.Mesh(hoseGeometry(pts, 0.0068, 12, 6).geometry, inkMat);
+    const brow = new THREE.Mesh(hoseGeometry(pts, 0.0058, 12, 6).geometry, inkMat);
     brow.name = s > 0 ? "browL" : "browR";
     face.add(brow);
   }
 
-  // The smile. A LINE, not an aperture: no teeth, no tongue, no cavity. That
-  // is deliberate and it is a separator — the pizza's open mouth with a tongue
-  // in it is one of ITS identity features, and two food mascots with the same
-  // mouth would be two of the same thing.
-  const smilePts: THREE.Vector3[] = [];
-  const SMILE_HALF = 0.46;
-  for (let i = 0; i <= 18; i++) {
-    const u = i / 18;
-    const e = (u - 0.5) * 2;
-    const phi = e * SMILE_HALF;
-    // Lowest at the centre, rising at both ends: t is the fraction DOWN the
-    // dome, so the ends want a SMALLER t. Getting that sign backwards draws a
-    // frown, and a frown on a burger reads as a bug rather than as a mood.
-    const t = 0.891 - 0.150 * e * e;
-    smilePts.push(onBand(TOP_BUN_STATIONS, t, phi, BUN_R * 1.012, BUN_H, CROWN));
-  }
-  const smile = new THREE.Mesh(hoseGeometry(smilePts, 0.0105, 22, 6).geometry, inkMat);
-  smile.name = "smile";
-  face.add(smile);
+  // --- the mouth ------------------------------------------------------------
+  // AN OPEN GRIN, and it replaces the closed line the first two builds carried.
+  // Nuno's call after seeing them: "make one mouth like the pizza slice, that
+  // looks very friendly". He is right, and the reason is worth naming — a thin
+  // dark curve on a big round face is a MARK, and a mark has no depth, so it
+  // sits on the bun the way a drawn-on smile sits on a balloon. An aperture
+  // with dark inside it, a tooth strip and a tongue is a mouth.
+  //
+  // It cannot be built the pizza's way. That face is a flat plate, so its mouth
+  // is a real HOLE — one `Shape` with one `Path` punched in it and a dark floor
+  // behind. This face is a revolved DOME: there is no plate to cut and nothing
+  // flat behind it to put a floor on. So the mouth is a stack of thin layers
+  // lying ON the surface, every one of them generated from the SAME aperture
+  // by `smilePatch` at its own `vFrom`/`vTo` slice, which is what stops the
+  // cavity, the lip, the teeth and the tongue from disagreeing about where the
+  // mouth is. The pizza's `sectorOutline` reasoning in a new place.
+  const MOUTH: SmilePatchOptions = {
+    stations: TOP_BUN_STATIONS,
+    maxRadius: BUN_R,
+    height: BUN_H,
+    topY: CROWN,
+    // 0.32 rad each way = 0.211 across at this radius. Against a 0.066 tall
+    // aperture that is a 3.2:1 grin — wider and shallower than the pizza's
+    // 1.8:1, because this face is a wide dome and the pizza's is a narrow
+    // wedge, and a mouth has to belong to the face it is on.
+    halfPhi: 0.32,
+    tCentre: 0.764,
+    tHeight: 0.20,
+    lift: 0.0015,
+    vFrom: 0,
+    vTo: 1,
+    segments: 26,
+    rows: 8,
+  };
 
-  // The two ticks that turn up at the corners of the mouth. They are four
-  // hundred triangles of nothing at play size and they are what makes the
-  // smile read as drawn rather than as a groove.
-  for (const s of [1, -1] as const) {
-    const tick: THREE.Vector3[] = [];
-    for (let i = 0; i <= 5; i++) {
-      const u = i / 5;
-      const phi = s * (SMILE_HALF + u * 0.055);
-      tick.push(onBand(TOP_BUN_STATIONS, 0.741 - u * 0.052, phi, BUN_R * 1.012, BUN_H, CROWN));
-    }
-    const t = new THREE.Mesh(hoseGeometry(tick, 0.0085, 6, 5).geometry, inkMat);
-    t.name = s > 0 ? "smileTickL" : "smileTickR";
-    face.add(t);
-  }
+  // Its own subassembly: four layers that only mean anything together, and the
+  // thing a person reaches for when they say "the mouth".
+  const mouth = new THREE.Group();
+  mouth.name = "mouth";
+  face.add(mouth);
+
+  // The cavity. Deeper than the ink on purpose: it is the thing that has to
+  // read as DEPTH, and ink-coloured it reads as another line.
+  const mouthWell = new THREE.Mesh(smilePatch(MOUTH), mouthMat);
+  mouthWell.name = "mouthWell";
+  mouth.add(mouthWell);
+
+  // The tongue: the bottom 45% of the same aperture, lifted a little further so
+  // it sits inside the cavity rather than co-planar with it. Sized so the dark
+  // stays dominant above it and at both corners — an open mouth only reads as
+  // OPEN if dark is the biggest thing in it, which is the lesson the pizza's
+  // tooth band learned the hard way.
+  const tongue = new THREE.Mesh(
+    smilePatch({ ...MOUTH, vFrom: 0.62, vTo: 0.97, lift: 0.0034, rows: 5 }),
+    tongueMat,
+  );
+  tongue.name = "tongue";
+  mouth.add(tongue);
+
+  // The tooth strip FOLLOWS the aperture's top curve rather than lying flat
+  // across it — a straight bar pokes out through the corners, where the smile's
+  // top edge falls away. Thin: teeth are a highlight on the top lip, not the
+  // contents of the mouth.
+  const teeth = new THREE.Mesh(
+    smilePatch({ ...MOUTH, vFrom: 0, vTo: 0.13, lift: 0.0042, rows: 2 }),
+    gloveMat,
+  );
+  teeth.name = "toothBand";
+  mouth.add(teeth);
+
+  // NO INK LIP. One was built — a tube swept round the whole aperture — on the
+  // argument that this bun takes the TEAM COLOUR and a dark patch on a violet
+  // dome reads as a sticker rather than as an opening. Rendered on all five
+  // hues and on the frightened blue that argument does not survive: the cavity
+  // is already the darkest thing on the face by a distance, the tooth strip
+  // gives the upper lip a hard edge of its own, and the tongue puts a second
+  // value step inside — so the mouth reads as an opening on its own contents.
+  // What the lip actually added was WEIGHT: 0.0062 of ink all the way round an
+  // aperture only 0.066 tall, which is a tenth of the mouth's own height spent
+  // on outlining it, and it closed the grin up. Nuno's call and the model is
+  // better for it. Recorded rather than quietly dropped, because the reasoning
+  // that put it there was sound and only the render could settle it.
 
   // The nose: a small ball sitting ON the smile's crest and overlapping it,
   // which is what the reference draws. Bread-coloured, so it reads as part of
@@ -6987,8 +7105,8 @@ export function makeBurger(color: number): THREE.Group {
   // because it carries a full ink circle that closes the nose off as its own
   // object; a toon mesh has no outline to close with, so the separation has to
   // be geometric instead.
-  const noseP = onBand(TOP_BUN_STATIONS, 0.700, 0, BUN_R, BUN_H, CROWN);
-  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.0295, 12, 9), bodyMat);
+  const noseP = onBand(TOP_BUN_STATIONS, 0.630, 0, BUN_R, BUN_H, CROWN);
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.026, 12, 9), bodyMat);
   nose.name = "nose";
   nose.scale.set(1, 0.92, 0.78);
   nose.position.copy(noseP);
@@ -7008,163 +7126,102 @@ export function makeBurger(color: number): THREE.Group {
   face.add(noseInk);
 
   // --- arms -----------------------------------------------------------------
+  // BOTH ARMS HANG, and they are a true MIRROR of each other: same hose, same
+  // cuff, same mitt, same thumb, reflected x -> -x and swinging in counter-
+  // phase. The first build followed the reference's pose instead — one arm
+  // raised holding a two-finger V, the other closed at the side — and it was
+  // charming standing still and wrong in motion. A held gesture on a character
+  // that spends the whole game walking at you reads as a stuck arm, not as a
+  // greeting, and it is the sort of thing that gets less charming the more you
+  // see it. Nuno's call, and the right one: symmetry is what a walk cycle
+  // wants.
+  //
+  // What it costs is on the record: the V was the only set of fingers in the
+  // enemy cast, so this skin no longer has that claim. What it keeps is the
+  // banding, which was always identity rank 1.
+  //
   // Both shoulders sit at the garnish line, on the stack's own widest band —
   // there is no torso to hang them from and no shoulder to speak of, which is
   // the same thing the maki and the nigiri had to solve. Positive rotation.z
-  // swings a part hanging at -y toward +x.
-  const SHOULDER_Y = 0.408;
-  // INSIDE the patty's own radius (0.362) on purpose. There is no shoulder to
-  // hang an arm off, so the pivot is buried in the filling and the hose emerges
-  // from the side of the stack the way the reference draws it. It is also where
-  // the width budget came from: the raised hand's reach is measured from here,
-  // and moving the pivot in by 0.03 buys 0.03 of envelope for nothing visible.
+  // swings a part hanging at -y toward +x, so an OUTWARD hang is `s * 0.235`.
+  // 0.345 — at the patty's LOWER edge, not at the garnish line. The first
+  // build hung both arms from y 0.408, which is above the patty's top: the
+  // hose then ran DOWN THROUGH the patty, whose rim is the widest thing on the
+  // body at 0.372, so the whole limb was buried and only the mitt emerged
+  // underneath. What renders from that is two white blobs stuck to the sides
+  // with nothing connecting them to anything — the maki's buried-arm defect in
+  // a milder form, and just as invisible, because a hose inside a solid looks
+  // exactly like a hose that was never built. Hung from the patty's underside
+  // instead, the arm runs down past the BOTTOM bun, which is only 0.275 wide,
+  // so it clears the silhouette for its whole length.
+  const SHOULDER_Y = 0.345;
+  // Still INSIDE the patty's radius (0.372): there is no shoulder to hang an
+  // arm off, so the pivot is buried in the filling and the hose emerges from
+  // the side of the stack the way the reference draws it. Moving it OUT to the
+  // rim was tried and does not fit — at 0.36 the mitt reaches 0.48 and the
+  // model measures 0.96 wide, past everything in the cast.
   const SHOULDER_R = 0.285;
 
-  // The FIST arm. Hangs, and counter-swings the stride.
   const arms = new THREE.Group();
   arms.name = "arms";
   stack.add(arms);
 
-  const swingArm = new THREE.Group();
-  swingArm.name = "armPivotR";
-  swingArm.position.set(-SHOULDER_R, SHOULDER_Y, 0.02);
-  swingArm.rotation.z = -0.235;
-  arms.add(swingArm);
+  const armPivots: THREE.Object3D[] = [];
+  for (const s of [1, -1] as const) {
+    const pivot = new THREE.Group();
+    pivot.name = s > 0 ? "armPivotL" : "armPivotR";
+    pivot.position.set(s * SHOULDER_R, SHOULDER_Y, 0.02);
+    pivot.rotation.z = s * 0.235;
+    arms.add(pivot);
 
-  const fistHose = new THREE.Mesh(
-    hoseGeometry(
-      [
-        new THREE.Vector3(0, 0, 0),
-        new THREE.Vector3(-0.014, -0.050, 0.030),
-        new THREE.Vector3(-0.024, -0.098, 0.048),
-        new THREE.Vector3(-0.026, -0.142, 0.048),
-      ],
-      0.0195,
-      18,
-      9,
-    ).geometry,
-    inkMat,
-  );
-  fistHose.name = "armR";
-  fistHose.castShadow = true;
-  swingArm.add(fistHose);
+    // A REFLECTION, not a rotation: every x is negated and nothing else is.
+    const hose = new THREE.Mesh(
+      hoseGeometry(
+        [
+          new THREE.Vector3(0, 0, 0),
+          new THREE.Vector3(s * 0.014, -0.038, 0.030),
+          new THREE.Vector3(s * 0.024, -0.075, 0.048),
+          new THREE.Vector3(s * 0.026, -0.108, 0.048),
+        ],
+        0.0195,
+        18,
+        9,
+      ).geometry,
+      inkMat,
+    );
+    hose.name = s > 0 ? "armL" : "armR";
+    hose.castShadow = true;
+    pivot.add(hose);
 
-  // The CUFF. The pizza's mitts have no cuff and this one does: it is what
-  // makes the hand read as a worn glove rather than as a white blob on the end
-  // of a stick, and it is a measured 0.218 BH across — wider than the mitt.
-  const gloveFist = new THREE.Group();
-  gloveFist.name = "gloveFist";
-  swingArm.add(gloveFist);
+    const glove = new THREE.Group();
+    glove.name = s > 0 ? "gloveL" : "gloveR";
+    pivot.add(glove);
 
-  const fistCuff = new THREE.Mesh(new THREE.CylinderGeometry(0.052, 0.044, 0.026, 14), gloveMat);
-  fistCuff.name = "cuffR";
-  fistCuff.position.set(-0.026, -0.152, 0.048);
-  gloveFist.add(fistCuff);
+    // The CUFF. The pizza's mitts have no cuff and these do: it is what makes
+    // the hand read as a worn glove rather than as a white blob on the end of a
+    // stick, and it is a MEASURED 0.218 BH across — wider than the mitt.
+    const cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.052, 0.044, 0.026, 14), gloveMat);
+    cuff.name = s > 0 ? "cuffL" : "cuffR";
+    cuff.position.set(s * 0.026, -0.118, 0.048);
+    glove.add(cuff);
 
-  const fist = new THREE.Mesh(new THREE.SphereGeometry(0.050, 14, 11), gloveMat);
-  fist.name = "gloveR";
-  fist.scale.set(1, 0.94, 0.86);
-  fist.position.set(-0.028, -0.190, 0.048);
-  fist.castShadow = true;
-  gloveFist.add(fist);
+    const mitt = new THREE.Mesh(new THREE.SphereGeometry(0.050, 14, 11), gloveMat);
+    mitt.name = s > 0 ? "mittL" : "mittR";
+    mitt.scale.set(1, 0.94, 0.86);
+    mitt.position.set(s * 0.028, -0.156, 0.048);
+    mitt.castShadow = true;
+    glove.add(mitt);
 
-  const fistThumb = new THREE.Mesh(new THREE.CapsuleGeometry(0.013, 0.020, 3, 7), gloveMat);
-  fistThumb.name = "gloveThumbR";
-  fistThumb.rotation.set(0.3, 0, 0.9);
-  fistThumb.position.set(-0.064, -0.182, 0.058);
-  gloveFist.add(fistThumb);
+    // The thumb hook the reference draws on the closed hand. It is what stops a
+    // mitt reading as a ball: a sphere has no front, and a thumb gives it one.
+    const thumb = new THREE.Mesh(new THREE.CapsuleGeometry(0.013, 0.020, 3, 7), gloveMat);
+    thumb.name = s > 0 ? "thumbL" : "thumbR";
+    thumb.rotation.set(0.3, 0, s * -0.9);
+    thumb.position.set(s * 0.064, -0.148, 0.058);
+    glove.add(thumb);
 
-  // The V ARM. Raised, and it does NOT swing with the stride — it holds the
-  // gesture and waves. Its hand tops out AT the bun's crown rather than the
-  // measured 0.134 BH above it: measured, this model's crown would pass the
-  // pizza's 0.873, and being the tallest in the cast is the pizza's own
-  // recorded identity claim. A hand at crown height still reads as a wave.
-  const waveArm = new THREE.Group();
-  waveArm.name = "armPivotL";
-  waveArm.position.set(SHOULDER_R, SHOULDER_Y, 0.02);
-  // NEGATIVE, and the sign is the whole difference between a raised arm and no
-  // arm at all. rotation.z positive swings a part toward +x when it hangs at
-  // -y — but this one points UP, so the same positive angle folds it across
-  // the body instead. The first build had +0.46 and the entire arm, hand,
-  // fingers and cuff rendered INSIDE the bun: not a subtle defect, an invisible
-  // one, because a limb buried in a solid looks exactly like a limb that was
-  // never built. The maki lost both of its arms the same way.
-  waveArm.rotation.z = -0.195;
-  arms.add(waveArm);
-
-  const waveHose = new THREE.Mesh(
-    hoseGeometry(
-      [
-        new THREE.Vector3(0, 0, 0),
-        new THREE.Vector3(0.026, 0.078, 0.020),
-        new THREE.Vector3(0.030, 0.166, 0.040),
-        new THREE.Vector3(0.018, 0.254, 0.050),
-      ],
-      0.0195,
-      18,
-      9,
-    ).geometry,
-    inkMat,
-  );
-  waveHose.name = "armL";
-  waveHose.castShadow = true;
-  waveArm.add(waveHose);
-
-  const waveCuff = new THREE.Mesh(new THREE.CylinderGeometry(0.046, 0.052, 0.026, 14), gloveMat);
-  waveCuff.name = "cuffL";
-  waveCuff.position.set(0.018, 0.264, 0.050);
-  waveArm.add(waveCuff);
-
-  // THE HAND. It is the only one in the cast with fingers, so it is built as a
-  // hand: a palm, two fingers up in a V, two knuckles folded down and a thumb
-  // across them. At the 25 px play size this is a white nub above the body and
-  // the RAISED ARM is what reads; the V is a shop-and-showcase feature and the
-  // spec's review target tiers it 'important' rather than 'critical' for
-  // exactly that reason.
-  const hand = new THREE.Group();
-  hand.name = "gloveV";
-  hand.position.set(0.018, 0.300, 0.052);
-  hand.rotation.z = -0.12;
-  waveArm.add(hand);
-
-  const palm = new THREE.Mesh(new THREE.SphereGeometry(0.042, 13, 10), gloveMat);
-  palm.name = "palmL";
-  palm.scale.set(0.94, 1, 0.82);
-  palm.castShadow = true;
-  hand.add(palm);
-
-  // The two raised fingers. They have to CLEAR each other and clear the bun's
-  // outline, or the V closes up into the silhouette and the hand is a lump —
-  // which is the whole reason for building a hand at all. Splayed 34 degrees,
-  // measured off the reference's two finger runs (12x46 and 15x40 px).
-  const FINGERS: readonly (readonly [number, number, number])[] = [
-    [-0.30, 0.070, 0.0155], // the taller, more upright one
-    [0.30, 0.060, 0.0150],
-  ];
-  FINGERS.forEach(([tilt, len, rad], i) => {
-    const f = new THREE.Mesh(new THREE.CapsuleGeometry(rad, len, 4, 9), gloveMat);
-    f.name = `fingerL${i}`;
-    f.rotation.z = tilt;
-    f.position.set(Math.sin(tilt) * -(len / 2 + 0.030), Math.cos(tilt) * (len / 2 + 0.030), 0.004);
-    f.castShadow = true;
-    hand.add(f);
-  });
-
-  // The folded fingers and the thumb — drawn, in the reference, as a stack of
-  // knuckle bumps rather than as fingers. At this size a modelled curled
-  // finger is a smear; three bumps read.
-  for (let i = 0; i < 3; i++) {
-    const k = new THREE.Mesh(new THREE.SphereGeometry(0.0165, 8, 6), gloveMat);
-    k.name = `knuckleL${i}`;
-    k.scale.set(1, 0.86, 1.1);
-    k.position.set(0.030, 0.016 - i * 0.021, 0.014);
-    hand.add(k);
+    armPivots.push(pivot);
   }
-  const thumb = new THREE.Mesh(new THREE.CapsuleGeometry(0.0135, 0.022, 3, 7), gloveMat);
-  thumb.name = "thumbL";
-  thumb.rotation.set(0.2, 0, -1.15);
-  thumb.position.set(0.006, -0.026, 0.030);
-  hand.add(thumb);
 
   // --- legs and boots -------------------------------------------------------
   // Children of the ROOT, not of the stack: the body leans and sways, the
@@ -7202,6 +7259,15 @@ export function makeBurger(color: number): THREE.Group {
     const boot = new THREE.Group();
     boot.name = s > 0 ? "bootL" : "bootR";
     boot.position.set(0, BOOT_SOLE - HIP_Y, 0.034);
+    // TOE-OUT, and it is a read fix rather than a stance affectation. This
+    // boot carries almost all of its shape in DEPTH — a long toe projecting on
+    // +Z is what stops the pair reading as urns — and none of that depth is
+    // available head-on, which is the framing the shop showcase and the
+    // reference comparison both use. Turning each foot out by 17 degrees puts
+    // part of the toe's length into X, so the shape survives the one view that
+    // could not see it. It costs nothing in envelope: the boots sit at 0.11 and
+    // the model is 0.41 wide at the hands.
+    boot.rotation.y = s * 0.30;
     pivot.add(boot);
 
     // THE COLLAR IS A FUNNEL, and that is measured: 0.287 BH across against a
@@ -7300,7 +7366,7 @@ export function makeBurger(color: number): THREE.Group {
     // hairlines. The nigiri's accentMats is empty for the same shape of
     // reason (its block and cap collapse together), which is the precedent.
     accentMats: [],
-    behaviour: burgerBehaviour({ legs, swingArm, waveArm, stack }),
+    behaviour: burgerBehaviour({ legs, arms: armPivots, stack }),
     eyeMats: burgerEyeMats,
     spiritMats: collectSpiritMats(g, burgerEyeMats),
   };

@@ -19,11 +19,12 @@ Living backlog of ideas. Two purposes:
 _(empty — nothing to triage)_
 
 ## Backlog (open ideas)
-> New registered ideas go here. Next free ID: IDEA-060
+> New registered ideas go here. Next free ID: IDEA-061
 > (054 went to the crab and 055 to the mosquito — built in parallel by two sessions, which is
 > why the ids were split up front rather than both taking the next free one. 056 and 057 are the
 > sushi pair, registered together because neither is buildable without the other as its
-> foil. 058 is the pizza mascot and 059 the burger.)
+> foil. 058 is the pizza mascot and 059 the burger. 060 turns the img2threejs pipeline on the
+> BOARD instead of the cast, starting with the garden.)
 
 ### IDEA-028 — Challenge twist: moving walls / maze changes mid-level 💡
 - **Priority:** 🟢
@@ -115,6 +116,87 @@ _(empty — nothing to triage)_
 
 
 ## In progress 🔨
+
+### IDEA-060 — The board, rebuilt: garden first 🔨
+- **Priority:** 🔴
+- **Area:** render
+- **Registered:** 2026-09-10
+- **Building:** started 2026-09-10, garden theme.
+- **Description:** (Nuno) "we will improve the board and the themes — from the wall to the floor to
+  the props, we're going to touch a little bit everything", theme by theme, using the img2threejs
+  skill for each new component. The garden goes first. Its wall becomes a flowering shrub behind a
+  **wooden** picket fence (the reference's fence is white; it must read as wood here). Its props
+  become real objects rather than sphere stacks: a treehouse in the maze's top-left corner, a proper
+  leafy shrub and a broadleaf tree scattered over the apron, five individually-built garden flowers
+  as wall components, and a birdhouse that works on a wall top or on the ground. Its floor takes the
+  stepping-stone-in-groundcover read from the garden-path reference.
+- **Notes:** eight img2threejs runs so far have all been ENEMY skins. This is the first on the
+  WORLD, and the two are not the same problem: an enemy is one mesh reviewed in isolation at a
+  turntable, whereas a wall is 200 instances seen at 25px a face and a prop is dressing that must
+  never win a fight against the biscuit trail. References live in `.img2threejs/reference/`
+  (boardwalls, props/{treehouse,shrub,tree,flowergarden,birdhouse}, floor). Two of them are
+  WATERMARKED stock (the shrub is PngTree, the birdhouse VectorStock) — IDEA-053's rule 4 applies:
+  no pixel is used as colour or PBR evidence.
+- **Dependencies:** [[IDEA-026]], [[IDEA-029]], [[IDEA-030]], [[IDEA-031]], [[IDEA-047]]
+- **History:**
+  - **v1** (2026-09-10) — the garden, rebuilt end to end. **Wall:** a new
+    `hedgeFlower` texture (the hedge plus daisies, six a face at 5% — the first
+    cut ran fourteen at 2% and the maze rendered as white static, the cartoon
+    rule's "fewer, bigger" arriving at the same answer a third time) behind a
+    real **picket fence** — `src/render/fence.ts`, one InstancedMesh of one
+    panel per exposed wall face, ~440 panels and 67k triangles in ONE draw
+    call. Geometry rather than paint because a picket fence is uprights with
+    GAPS between them and a wall is one box wearing one material on all six
+    sides. Brown, not the reference's white, per the brief. **Props:** five new
+    reference-built shapes in `src/render/gardenProps.ts` over a new
+    `src/render/foliage.ts` — a treehouse landmark at the maze's NW corner, a
+    leafy shrub, a broadleaf tree with the reference's measured four-fold root
+    flare, five individually-built flowers (daisy / sunflower / rose / tulip /
+    blossom) and a birdhouse, the last two as wall-top pieces. Added as NEW
+    shapes rather than rewrites: `shrub` and `tree` are shared with the forest
+    and the park, which have not been reviewed. **Floor:** `gardenPath` —
+    stepping stones through the lawn, which CLAUDE.md had recorded as REMOVED
+    for competing with the biscuit trail and which Nuno asked back; they are
+    allowed on terms (cool grey-green against the biscuit's warm cream, half a
+    tile, disconnected, sparse, and never brighter than the lawn because the
+    floor's emissiveMap is the same texture and a pale mark blooms).
+    New harness `/preview-board/` + `scripts/shoot-board.ts`; new headless
+    suite `scripts/test-garden-props.ts` (167 checks) in `npm run test`.
+    **Two real bugs found on the way, both pre-existing.** (a) `buildWallDecor`
+    never checked that a hand-placed wall-top prop was on a WALL — `wallDecor`
+    is per-theme and the layout is per-maze, so Night City's five lamps hung in
+    mid-air over open corridor in 14-18 of the 18 mazes and the one at (9,9)
+    has never once been on a wall. It now takes the grid and skips; the city's
+    five were re-pointed. (b) `propsCodegen.ts` writes its fields by hand and
+    had no string case, so `flowerKind` would have emitted unquoted and broken
+    props.ts on the first editor save. Both now guarded.
+    `fence.ts`, `foliage.ts`, `gardenProps.ts`, `wallTexture.ts`,
+    `floorTexture.ts`, `board.ts`, `themes.ts`, `props.ts`, `game.ts`,
+    `shopScene.ts`, the four editor modules, `preview-board/`,
+    `scripts/{shoot-board,test-garden-props}.ts`.
+  - **v2** (2026-09-10) — Nuno's review pass on v1. **The ground stopped being a
+    drawing.** "instead of have a floor that is a draw can we make it with three
+    js? Like make the rock and put then on the floor? and the floor be all
+    green?" — so the painted `gardenPath` stepping stones are deleted outright
+    and `src/render/groundDetail.ts` scatters real rock meshes instead (one
+    InstancedMesh, deterministic from the tile coordinate, never at a tile
+    CENTRE because that is where the biscuits are). New palette slots
+    `groundDetail`/`groundDetailColor`; the garden's floor is plain `lawn`
+    again. It settled an argument the texture could not win: painting stones
+    into that floor needed three concessions in a row, all of them constraints
+    of painting rather than of stones. **Both buildings had a hole between the
+    wall top and the roof** — a gable roof that overhangs is wider than its
+    box, so the leftover wedge is open front and back; `gableFillGeometry`
+    closes it with a pentagon that follows the roof's slope. **The treehouse's
+    canopy was burying its own roof**; it now clears it, the two useless
+    under-deck braces are gone, and the foliage skirt hangs off a real branch
+    aimed off its endpoints. Also fixed a hazard this session created twice:
+    `test-editor-board.ts` edits the REAL themes.ts and its `finally` cannot
+    survive the process being killed (piping the suite through `tail` raises
+    EPIPE), so it now keeps a `.bak` sidecar and restores from one it finds.
+    `groundDetail.ts`, `gardenProps.ts`, `floorTexture.ts`, `themes.ts`,
+    `board.ts`, `game.ts`, `boardCodegen.ts`, `boardInspector.ts`,
+    `test-garden-props.ts` (180 checks), `test-editor-board.ts`.
 
 ### IDEA-050 — Persist the run: what actually happened, not just the score 🔨
 - **Priority:** 🔴
@@ -256,6 +338,29 @@ _(empty — nothing to triage)_
     fallback like the flea. And the walking-leg segments are tapered tubes where the reference
     draws overlapping plate shells; that is the largest remaining form gap and it is recorded in
     the pass review rather than glossed.
+
+  - **v2** (2026-09-10) — **the team colour now reaches the carapace dome and nothing else.**
+    Nuno: "lets make one change related to the color of some parts like the Facepanel and the
+    cheliped or the chelaPalm and lets put this part with the same color of the rest of the body
+    and lets only let carapace change the color considering the enemies color." So the gold went:
+    `CRAB_FACE` (#FFB347) and `CRAB_CLAW` (#F7BE55) are deleted and the face panel, the chela palm,
+    both fingers and every knuckle now take `limbMat` — one cuticle red for the entire body below
+    the shell. `accentMats` collapses from `[limbMat, faceMat, clawMat]` to `[limbMat]`, since
+    those are now one material.
+
+    **It is a better decision here than in the reference, for two reasons that are about this game
+    rather than about crabs.** The gold sat within a few percent of the **amber team hue**
+    (`0xe8a23d`), so on one team of five the face panel — the largest single patch on the model —
+    closed into the carapace and the crab lost its two-tone entirely; the five-hue sheet is the
+    only instrument that shows that, which is why `scripts/_scratch-crab-review.ts` now exists
+    (play camera, frightened, clay, all five hues, one sheet). And the pincer gap is rank 1 but it
+    is NEGATIVE SPACE — it reads on its hole, not on the horn being a value step lighter than the
+    arm — so nothing that carries identity was being paid for by the gold. Verified: both gaps
+    still read at the front and at three-quarter.
+
+    The carapace lip earns more from this, not less: it is now the one geometric event marking
+    where the team colour stops. Build + suite green (the three `test:board-surfaces` failures in
+    the tree are the parallel garden-props work, confirmed by stashing this change).
 
 ### IDEA-053 — The flea: the one enemy that belongs on a beagle 🔨
 - **Priority:** 🟡
@@ -832,6 +937,108 @@ _(empty — nothing to triage)_
     in BOTH the normal and the frightened states — the harder half, since three of the four go blue
     in most of the same places. No overlap.
 
+  - **v2** (2026-09-10) — **both arms down, and a friendly face.** Nuno, on the shipped model:
+    the raised arm should come down and match the other, and the eyes were creepy. Both were
+    right and both are worth recording, because the causes are opposite.
+
+    **The arm was a POSE problem.** The raised two-finger V was the reference's own pose and it
+    was the skin's most distinctive feature — the only set of fingers in the enemy cast. It also
+    read beautifully in every still I took. But this character spends the whole game WALKING at
+    the player, and a gesture held rigidly through a stride reads as a *stuck arm*, not as a
+    greeting; it gets less charming the more you see it. It also forced the two arms to be
+    non-mirrors, which is a thing a walk cycle fights. Both arms now hang and counter-swing as a
+    true reflection. **A pose that only has to survive one frame is not the same decision as a
+    pose that has to survive a loop**, and no still I captured could have told me that.
+
+    **The face was a MEASUREMENT problem, and that is the more useful half.** Three faithful
+    transcriptions of the reference were between them the whole of the creepiness: a sclera
+    taller than it is wide (0.72 x 0.95 — the shape a *glare* is drawn with), a small pupil
+    marooned in the middle of the white with clear space all the way round it (the doll stare),
+    and the reference's jagged four-sided catchlight, which is its one un-generic face mark and
+    which reads in three dimensions as a *flash of light* rather than as a highlight. Every one
+    of those came off `measure.py` correctly. **A flat drawing carries compensations a lit toon
+    mesh does not** — an ink keyline round every region, a stylised highlight that reads as
+    shorthand — so measuring the reference right is necessary and not sufficient. It now ships a
+    round sclera (0.90 x 0.92), a big pupil filling 0.79 of it and resting low against the lower
+    lid, two soft round catchlights instead of the spike, and thinner brows sat higher off the
+    eye.
+
+    Two smaller fixes found while re-rendering. The **boots** gained a 17-degree toe-out: almost
+    all of their shape is DEPTH, and none of it was available head-on, which is the framing the
+    shop showcase uses — turned out, the toe reads from the front too. And the **shoulders**
+    dropped to the patty's underside: hung from the garnish line the hoses ran down THROUGH the
+    patty, the widest thing on the body, so both limbs were buried for their whole length and
+    only the mitts emerged, reading as two white blobs stuck to the sides.
+
+    Re-measured **w 0.811 / h 0.785 / l 0.811 / crown 0.791**, 17 312 triangles, 97 meshes —
+    narrower than v1 (0.842), since the raised hand had been the widest thing on it. Typecheck,
+    build, the full suite, the seven editor suites, the server catalog test, part-coverage and
+    the in-game contract check across all five team hues are all green.
+
+    **One thing found on the way that is not about the burger, and it bit three models.** Running
+    two `npm run test:editor` chains CONCURRENTLY corrupts `src/render/characters.ts`.
+    `test-editor-save.ts` snapshots the file, writes to it through the real save middleware, and
+    restores the snapshot in a `finally` — which is safe alone and destructive in parallel, since
+    the second run snapshots the *modified* file and then "restores" that. It left editor-written
+    transforms in three body groups: the burger's play-camera pitch, the maki's `MK_PITCH` and the
+    pizza's `TIPY` were all replaced by inlined literals. `tsc` caught all three only because each
+    happened to orphan a named constant — a residue edit that replaced one literal with another
+    would have been silent. Restored, and verified by re-measuring the whole cast against the
+    recorded numbers: every other model matches exactly. **Never run two editor suites at once.**
+
+  - **v3** (2026-09-10) — **an open grin, and the eyes Nuno tuned himself.** He came back with
+    values straight out of the character editor — the right eye raised, pitched up 24 degrees and
+    its pupil and both catchlights nudged — plus `smile.visible = false` and a note: "make one
+    mouth like the pizza slice, that looks very friendly."
+
+    **His eye pitch is a play-camera fix in disguise, and I had missed it.** The eyes were
+    aligned to the dome's horizontal RADIUS, which on a dome is neither its surface normal nor
+    the direction a face should look: pointing straight out from a sphere's equator, a pair of
+    eyes ends up staring at the maze floor from a camera 59 degrees above them. Tipping them back
+    turns them toward the player. His edits arrive one-sided, so they are applied here
+    parametrically in `s` — `(EYE_PITCH, s * EYE_PHI, 0)` — which keeps the pair a REFLECTION by
+    construction rather than by two quaternions happening to agree.
+
+    **The mouth could not be built the pizza's way.** That face is a flat plate, so its mouth is a
+    real HOLE punched in a `Shape` with a dark floor behind it. This face is a revolved DOME:
+    nothing to cut, nothing flat behind to put a floor on. So it is four thin layers lying ON the
+    surface — cavity, tongue, tooth strip — all generated from the SAME aperture by a new
+    `smilePatch` at their own slice of it, so they cannot disagree about where the mouth is.
+
+    **A fourth layer was built and then cut, same day, on Nuno's call: an ink lip round the whole
+    aperture.** The argument for it was that this bun takes the TEAM COLOUR and a dark patch on a
+    violet dome reads as a sticker rather than as an opening. Reasonable, and wrong — rendered on
+    all five hues and on the frightened blue the cavity is already the darkest thing on the face
+    by a distance, the tooth strip gives the top lip a hard edge of its own and the tongue puts a
+    second value step inside, so the mouth reads as an opening on its own contents. What the lip
+    actually added was WEIGHT: 0.0062 of ink round an aperture only 0.066 tall is a tenth of the
+    mouth's height spent outlining it, and it closed the grin up. Kept in the record rather than
+    quietly dropped, because only the render could settle it.
+
+    **And then it was invisible, for TWO separate reasons at once.** First, `bandNormal` had its
+    sign flipped — the outward normal of a lathed band is `(-dy, dr)`, not `(dy, -dr)` — so every
+    layer "lifted off the surface" was pushed 0.0015 INTO it. Second, the patch grid's obvious
+    index order winds INWARD, because columns running left-to-right and rows running downward
+    cross to an inward normal, so the whole thing was back-face culled as well. What rendered was
+    an ink lip drawing a perfect grin around a bun-coloured hole. **Neither is visible in a
+    render and both were found in one line of a numeric probe** (`_scratch-patchprobe.ts`:
+    `dot = -0.953 FACES IN`, `min radial gap -0.00154 INSIDE THE BUN`).
+
+    The sign bug had been shipping since v1 in a second place nobody would have looked: all 38
+    **sesame seeds** were sunk 0.005 into the dome and oriented upside down. They read anyway,
+    because a seed is fatter than the error — but they stand properly proud now, and they are
+    visibly better for it on every hue. `scatterOnBand` had its own inline copy of the same
+    arithmetic; it calls `bandNormal` now.
+
+    Re-measured **w 0.811 / h 0.792 / l 0.811 / crown 0.798**, 18 428 triangles, 98 meshes. The
+    mouth is its own explodable subassembly and part-coverage is back to 0 errors.
+
+    **Blocked, and not by this work:** `src/render/wallTexture.ts` currently has a syntax error
+    (`rng(0xf10we2)` — not a hex literal) from another session's in-progress hedgeFlower/fence
+    change, which takes `test-board-surfaces` (3 checks) and the whole editor suite down with it,
+    since the editor imports that module. Left alone rather than repaired from here. Everything
+    that does not route through it is green.
+
 ### IDEA-058 — The pizza slice: the first enemy that is a person ✅
 - **Priority:** 🟡
 - **Area:** skins
@@ -846,7 +1053,8 @@ _(empty — nothing to triage)_
   the numbers the run locked. New geometry module `src/render/pizzaSculpt.ts`.
 - **Dependencies:** [[IDEA-009]], [[IDEA-012]], [[IDEA-047]], [[IDEA-053]], [[IDEA-056]], [[IDEA-057]]
 - **History:**
-  - **v1** (2026-09-10) — `makePizza()`. Measured **w 0.611 / h 0.873 / l 0.363 / crown 0.873**,
+  - **v1** (2026-09-10) — `makePizza()`. Measured **w 0.611 / h 0.873 / l 0.363 / crown 0.873**
+    (depth later 0.413 — see v2),
     15 748 triangles, 87 meshes. Build, full suite, editor suite and the server catalog test all
     green.
 
@@ -944,6 +1152,30 @@ _(empty — nothing to triage)_
     because the observation was right and the decision is the record. Worth generalising: a
     reference detail that only exists in a view this game never takes is a candidate for deletion
     rather than for shrinking.
+
+  - **v2** (2026-09-10) — **the legs moved forward onto the slice's flanks** (Nuno's note:
+    "bring the legs more to the front, align on the side of the slice piece"). The hips were
+    authored at `z -0.045`, which is just behind the wedge's own back face at hip height, so the
+    whole stance hung off the BACK of the slice. It was written down as a virtue — "the hips sit
+    behind the wedge, which is what makes the tip hang down BETWEEN the legs" — and half of that
+    is true and half of it is a confusion: the tip hangs between the legs **laterally**, because
+    the hips sit at x +/-0.072 while the wedge tapers to |x| 0.006 at its point. Depth has nothing
+    to do with that reading and never did. What depth actually bought was a defect: from the play
+    camera at 59 degrees of ELEVATION, looking down, the tip occluded the tops of both legs and
+    the boots read as parked behind the body rather than planted under it.
+
+    Shipped at `z +0.005`, level with the wedge's own slab. The legs now run down the slice's
+    flanks and emerge clear of the point; from the play camera there is daylight between the tip
+    and each boot for the first time. **The cost is 0.050 of depth and nothing else** — measured:
+    w 0.611 unchanged, h 0.873 unchanged, crown 0.873 unchanged, floor 0.000 unchanged, 15 748
+    triangles unchanged, and `_scratch-cast-animated.ts` reports the stride sink still 0.029 and
+    the animated width still 0.595, because the move is purely in z. Depth 0.363 -> **0.413**,
+    which is nearer the 0.42 the spec targeted than the old number was.
+
+    Same lesson as the boot soles, one turn further on: **a claim recorded in a comment is not
+    evidence, and this one had been carried forward through seven review passes** because it
+    sounded like a reason. The instrument that settled it was the play-camera render, which is
+    the only view the argument was ever about.
 
 ### IDEA-049 — Thumbstick: a third touch control, and the retro one ✅
 - **Priority:** 🟡

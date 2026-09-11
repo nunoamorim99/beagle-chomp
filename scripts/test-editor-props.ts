@@ -16,6 +16,7 @@
 // browser). Requires Playwright's browser binaries to already be installed
 // (`npx playwright install chromium`).
 import { createServer, type ViteDevServer } from "vite";
+import { PROP_LIBRARY } from "../src/game/props";
 import { chromium, type Browser, type Page } from "playwright";
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -411,7 +412,15 @@ async function run(): Promise<void> {
       await page.waitForTimeout(500);
 
       const rows = await treeRows(page);
-      check("Props tree lists exactly 10 defs (PROP_LIBRARY's starter count)", rows.length === 10);
+      // IDEA-060 added nine reference-built garden props (leafShrub,
+      // broadleafTree, treehouse, birdhouse and the five flowers) to the ten
+      // starters. Asserted against the live library rather than a literal, so
+      // the next addition does not need this line edited — the COUNT was
+      // never the point, "the tree shows every def" is.
+      check(
+        `Props tree lists every def in PROP_LIBRARY (${PROP_LIBRARY.length})`,
+        rows.length === PROP_LIBRARY.length,
+      );
       check(
         "Props tree shows every starter def's name",
         [
@@ -599,7 +608,7 @@ async function run(): Promise<void> {
     console.log("\n=== add / duplicate / remove work ===");
     {
       const before = await propsSnapshot(page);
-      check("library starts at 10 defs", before.libraryLength === 10);
+      check(`library starts at ${PROP_LIBRARY.length} defs`, before.libraryLength === PROP_LIBRARY.length);
 
       await clickFolderButton(page, "Library", "add prop ✚");
       await page.waitForTimeout(250);
@@ -609,7 +618,7 @@ async function run(): Promise<void> {
       check("the newly-added prop renders a live preview (default shrub)", afterAdd.previewMeshCount > 0);
 
       const rowsAfterAdd = await treeRows(page);
-      check("tree list grows by 1 row too (now 11)", rowsAfterAdd.length === 11);
+      check(`tree list grows by 1 row too (now ${PROP_LIBRARY.length + 1})`, rowsAfterAdd.length === PROP_LIBRARY.length + 1);
       check("new prop's default name is 'New Prop'", rowsAfterAdd.some((r) => r.text === "New Prop"));
 
       // Duplicate the just-added prop.
@@ -636,18 +645,20 @@ async function run(): Promise<void> {
       check("removing the original add shrinks the library back to the starting 10", afterRemoveAdd.libraryLength === before.libraryLength);
 
       const rowsAfterCleanup = await treeRows(page);
-      check("tree list is back to 10 rows", rowsAfterCleanup.length === 10);
+      check(`tree list is back to ${PROP_LIBRARY.length} rows`, rowsAfterCleanup.length === PROP_LIBRARY.length);
       check("'New Prop' is gone from the list", !rowsAfterCleanup.some((r) => r.text === "New Prop"));
     }
 
     // -------------------------------------------------------------------
     console.log("\n=== remove is guarded against emptying the library ===");
     {
-      // Drive the library down to exactly 1 def by removing 9 of the 10
+      // Drive the library down to exactly 1 def by removing all but one
       // (whichever the current selection walks to — the removal picks the
-      // next available def each time, so a fixed loop count reaches 1
-      // remaining regardless of order).
-      for (let i = 0; i < 9; i++) {
+      // next available def each time, so the loop count reaches 1 remaining
+      // regardless of order). Counted from the live library rather than from
+      // a literal: IDEA-060 took the starter set from 10 to 19 and this loop
+      // silently stopped at 10 instead of 1.
+      for (let i = 0; i < PROP_LIBRARY.length - 1; i++) {
         await clickFolderButton(page, "Library", "remove 🗑");
         await page.waitForTimeout(150);
       }
@@ -672,7 +683,7 @@ async function run(): Promise<void> {
       await page.click("#modePropsBtn");
       await page.waitForTimeout(500);
       const reloaded = await propsSnapshot(page);
-      check("reload restores the full 10-def starter library", reloaded.libraryLength === 10);
+      check(`reload restores the full ${PROP_LIBRARY.length}-def starter library`, reloaded.libraryLength === PROP_LIBRARY.length);
     }
 
     // -------------------------------------------------------------------
@@ -747,7 +758,7 @@ async function run(): Promise<void> {
         params: Record<string, unknown>;
       }>;
       check("emitted array parses as valid JS", Array.isArray(parsed));
-      check("parsed array has exactly 10 entries", parsed.length === 10);
+      check(`parsed array has exactly ${PROP_LIBRARY.length} entries`, parsed.length === PROP_LIBRARY.length);
       const parsedBloom = parsed.find((p) => p.id === "bloom");
       check("parsed 'bloom' entry exists", parsedBloom !== undefined);
       check("parsed bloom keeps the edited glowColor (0x123456)", parsedBloom?.params.glowColor === 0x123456);
@@ -978,7 +989,7 @@ async function run(): Promise<void> {
       check("switching BACK to Props mode flips mode() again", snap === "props");
 
       const rows = await treeRows(page);
-      check("Props tree is restored with all 10 (edited-in-session) defs", rows.length === 10);
+      check(`Props tree is restored with all ${PROP_LIBRARY.length} (edited-in-session) defs`, rows.length === PROP_LIBRARY.length);
       const propsSnap = await propsSnapshot(page);
       check("a def is still selected after the round trip", propsSnap.selectedPropId !== null);
       check("preview still renders after the round trip", propsSnap.previewMeshCount > 0);
