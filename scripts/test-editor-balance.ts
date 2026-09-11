@@ -91,6 +91,56 @@ async function run(): Promise<void> {
         await page.evaluate(() => document.getElementById("editorApp")!.classList.contains("mode-balance")),
       );
 
+      // THE regression this pins: a grid area that does not exist does NOT
+      // hide the element naming it — the browser auto-places it into an
+      // implicit track. Balance's first layout omitted the `tree`/`viewport`
+      // areas and looked like a styling nit; what it actually produced was a
+      // mode bar squeezed to 566px, the pane as a small island in the
+      // top-left, and the 3D SKY still on screen in a tab with no scene.
+      // NOTE: no helper FUNCTION declared inside this evaluate. tsx/esbuild
+      // compiles a named arrow in here through its `keepNames` helper, which
+      // emits a `__name(...)` call that does not exist in the browser — the
+      // page throws `ReferenceError: __name is not defined` and the failure
+      // looks nothing like its cause. Keep evaluate bodies to plain
+      // expressions.
+      const layout = await page.evaluate(() => {
+        const vp = document.getElementById("viewportPane")!;
+        const tp = document.getElementById("treePane")!;
+        const vpBox = vp.getBoundingClientRect();
+        const tpBox = tp.getBoundingClientRect();
+        return {
+          viewport: getComputedStyle(vp).display !== "none" && vpBox.width > 0 && vpBox.height > 0,
+          tree: getComputedStyle(tp).display !== "none" && tpBox.width > 0 && tpBox.height > 0,
+          modeBarW: document.getElementById("modeBar")!.getBoundingClientRect().width,
+          guiW: document.getElementById("guiPane")!.getBoundingClientRect().width,
+          win: window.innerWidth,
+        };
+      });
+      check("the 3D viewport pane is GONE, not merely unused", !layout.viewport);
+      check("the tree pane is GONE too", !layout.tree);
+      check(
+        `the mode bar spans the full window (${Math.round(layout.modeBarW)} of ${layout.win})`,
+        layout.modeBarW >= layout.win - 4,
+      );
+      check(
+        `the pane fills the width rather than floating as an island (${Math.round(layout.guiW)} of ${layout.win})`,
+        layout.guiW >= layout.win - 4,
+      );
+
+      // All eight groups OPEN and laid out in columns — a balance pass plays
+      // speeds off against score off against the thresholds, so they have to
+      // be visible together.
+      const openFolders = await page.$$eval(
+        "#balanceGuiHost .lil-gui.lil-gui:not(.lil-root)",
+        (els) => els.filter((e) => !e.classList.contains("lil-closed")).length,
+      );
+      check(`every group is open (${openFolders})`, openFolders >= 8);
+      const cols = await page.evaluate(() => {
+        const children = document.querySelector("#balanceGuiHost > .lil-gui.lil-root > .lil-children");
+        return getComputedStyle(children as Element).columnWidth;
+      });
+      check(`the groups run in newspaper columns (column-width ${cols})`, cols !== "auto" && cols !== "");
+
       const titles = await page.$$eval("#balanceGuiHost .lil-gui .lil-title", (els) =>
         els.map((e) => e.textContent ?? ""),
       );

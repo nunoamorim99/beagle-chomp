@@ -176,7 +176,11 @@ export function createBalanceInspector(
     const src = cb.source();
     for (const group of BALANCE_GROUPS) {
       const folder = gui.addFolder(group.title);
-      folder.close();
+      // OPEN, not closed. The pane lays the groups out in columns (see
+      // editor.css's mode-balance block), so all eight fit side by side —
+      // and a balance pass is playing speeds off against score off against
+      // the spawn thresholds, which means seeing them together rather than
+      // opening one at a time.
       folders.push(folder);
       if (group.note) {
         const note = document.createElement("div");

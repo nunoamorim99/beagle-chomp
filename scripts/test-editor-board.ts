@@ -1209,13 +1209,25 @@ async function run(): Promise<void> {
       // their IDE, and that must keep hot-reloading.
       //
       // So exactly one reload is still in flight here, and it can land AFTER
-      // the goto below and tear down the page we just navigated to. Waiting
-      // for it to arrive first makes the ordering deterministic instead of a
-      // race — this was the "Execution context was destroyed" crash.
-      await page.waitForTimeout(1800);
-      await page.goto(base);
-      await page.waitForSelector(".tree-row");
-      await page.waitForTimeout(300);
+      // the goto below and tear down the page we just navigated to — the
+      // "Execution context was destroyed" crash.
+      //
+      // A fixed wait is not enough on its own: the watcher's latency is
+      // unbounded (it POLLS under Docker). So wait, navigate, and then prove
+      // the page is actually settled by evaluating against it until it stops
+      // being torn down. Cheap, and it converts a flake into a wait.
+      await page.waitForTimeout(2000);
+      for (let attempt = 0; attempt < 6; attempt++) {
+        await page.goto(base);
+        await page.waitForSelector(".tree-row");
+        await page.waitForTimeout(400);
+        try {
+          await page.evaluate(() => document.querySelectorAll(".tree-row").length);
+          break; // survived — the reload has been and gone
+        } catch {
+          await page.waitForTimeout(600); // torn down mid-check; go round again
+        }
+      }
       await page.click("#modeBoardBtn");
       await page.waitForTimeout(500);
       await selectBaseTheme(page, "The Garden");

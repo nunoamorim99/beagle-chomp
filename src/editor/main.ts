@@ -3170,16 +3170,25 @@ function setMode(next: Mode): void {
   // a form over config.ts. Its own layout class, so editor.css can give the
   // GUI pane the whole width instead of leaving two empty columns.
   editorApp.classList.toggle("mode-balance", next === "balance");
-  // World reuses BOARD mode's layout and stage — it is tuning what the board
-  // draws, so it must be looking at a board.
-  editorApp.classList.toggle("mode-board", next === "board" || next === "world");
+  // World reuses BOARD mode's STAGE — it is tuning what the board draws, so it
+  // must be looking at a board — but not its LAYOUT: board mode's left pane
+  // lists slots, and World has nothing to list. Its own class drops that
+  // column and gives the width to the viewport.
+  editorApp.classList.toggle("mode-board", next === "board");
+  editorApp.classList.toggle("mode-world", next === "world");
+  // Balance and World hide the tree pane entirely (see editor.css) — neither
+  // has anything to list — so their titles are never read. Named anyway, so a
+  // future layout change cannot expose a pane labelled "Prop library" in a tab
+  // that has no props, which is exactly what World did on its first build.
   treePaneTitle.textContent = meshMode
     ? "Parts"
     : next === "board"
       ? "Board slots"
       : next === "balance"
         ? "Balance"
-        : "Prop library";
+        : next === "world"
+          ? "World"
+          : "Prop library";
   charGuiHost.hidden = !meshMode;
   boardGuiHost.hidden = next !== "board";
   propsGuiHost.hidden = next !== "props";

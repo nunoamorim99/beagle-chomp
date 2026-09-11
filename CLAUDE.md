@@ -1284,10 +1284,21 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v7.
   No 3D preview, deliberately — these are values whose effect is only visible
   by playing, and a viewport showing an idle beagle beside a "ghost speed"
   slider would imply a feedback loop that does not exist. The tab is a form,
-  and `.mode-balance` gives the GUI pane the whole width rather than leaving
-  two empty columns. Edits are PENDING until Save (the other tabs mutate a
-  working copy live); a half-dragged slider writing a real game number every
-  frame would be the worst possible behaviour for a file this load-bearing.
+  and `.mode-balance` gives the GUI pane the whole width. Edits are PENDING
+  until Save (the other tabs mutate a working copy live); a half-dragged slider
+  writing a real game number every frame would be the worst possible behaviour
+  for a file this load-bearing.
+  **A GRID AREA THAT DOES NOT EXIST DOES NOT HIDE THE ELEMENT THAT NAMES IT.**
+  `#editorApp` is a CSS grid and every pane claims an area — `tree`, `viewport`,
+  `gui`, `code`. A mode template that simply omits one does NOT drop that pane:
+  the browser AUTO-PLACES it into an implicit track. Balance shipped its first
+  layout that way and it looked like a styling nit and was not — the mode bar
+  was squeezed to 566px (wrapping "Board & Themes" onto three lines), the pane
+  became a small island floating in the top-left, and the 3D SKY was still
+  sitting there on the right in a tab that has no scene at all. Any mode
+  dropping a pane must `display: none` it. It cost the World tab too, which
+  inherited board mode's left column and rendered the PROP LIBRARY — 19 rows of
+  props in a tab about fences.
 - **THE WORLD TAB REACHES THE GARDEN MACHINERY NO PALETTE CAN** (IDEA-062 v5).
   A sixth tab over `fence.ts` and `groundDetail.ts` — the IDEA-060 numbers that
   are neither a theme palette field nor a prop param. Four things:
