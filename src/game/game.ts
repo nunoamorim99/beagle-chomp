@@ -20,7 +20,7 @@ import {
   levelLabel,
   completesMaxDifficultyLap,
   MAPS_PER_LAP,
-  GHOSTS_STAGE_3,
+  GHOSTS_STAGE_5_6,
 } from "./progression";
 import {
   SPEEDS,
@@ -1862,7 +1862,7 @@ export class Game {
     const panel = this.hud.showPanel(
       '<div class="eyebrow">maximum difficulty</div>' +
       `<h1>${plateHtml("trophy", "inline")} Top Dog</h1>` +
-      `<p>You cleared all ${MAPS_PER_LAP} maps with ${GHOSTS_STAGE_3} enemies on the pack. ` +
+      `<p>You cleared all ${MAPS_PER_LAP} maps with ${GHOSTS_STAGE_5_6} enemies on the pack. ` +
       "That's every map this game has, at its hardest — there's nothing left to " +
       "throw at you.</p>" +
       `<p>Score so far: <strong>${this.score}</strong></p>` +

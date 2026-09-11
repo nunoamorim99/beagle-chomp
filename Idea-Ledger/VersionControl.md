@@ -16,6 +16,16 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
 > lines here roll up into the numbered version below and this section is cleared (hold a line back
 > only if you explicitly choose to).
 
+- **[[IDEA-061]] v1** (2026-09-11) — **thirty maps, and a map number that never resets.** The
+  classic cycle doubled: 15 new numbered maps and 3 new bonus maps, hand-authored and validated,
+  taking the game to **36 mazes and six stages of five**. The enemy count now ramps 3 / 3 / 4 / 4 /
+  5 / 5 across those stages, which puts the violet and leaf enemies into classic mode for the first
+  time — maps 1-15 are left exactly as they were, so the fifteen maps players already know do not
+  change difficulty underneath them. And the number on the HUD **keeps counting**: clearing map 30
+  takes you to Map 31, then 32, 33, 34, 35, 36, on round the same mazes rather than back to "Map 1
+  ·2". The maze repeats; the count never does. Also fixed: **maps 10 and 14 were the same board** —
+  byte-identical since the 15-map cycle shipped, which is the repeat that prompted this.
+
 - **[[IDEA-059]] v1** (2026-09-10) — **the burger**. An eleventh enemy skin, and the first whose
   BODY is a stack: six contrasting horizontal bands — sesame bun, scalloped lettuce, onion and
   tomato, a square cheese slice whose corners hang over, a thick dark patty and a base bun — where

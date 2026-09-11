@@ -1201,14 +1201,18 @@ async function run(): Promise<void> {
         if (restored === originalContents) rmSync(THEMES_BACKUP, { force: true });
       }
 
-      // Writing themes.ts (the save) AND restoring it (the finally) each
-      // trigger a Vite HMR reload of this editor page — so by here the page
-      // has navigated and lost its in-memory board state (working theme +
-      // mode). Recover deterministically: re-navigate, wait for the editor
-      // to boot, re-enter board mode, and load garden fresh. This makes the
-      // save test self-contained — later sections start from a known-good
-      // board-mode page rather than inheriting a mid-reload one (the source
-      // of the earlier floor-swatch / picking-gate flakiness).
+      // IDEA-062: the SAVE no longer reloads this page — vite.config.ts's
+      // handleHotUpdate suppresses HMR for the editor's own writes, which is
+      // what stops a save in one tab destroying unsaved work in the others.
+      // The RESTORE above still does, and correctly so: it is a plain Node
+      // writeFileSync, indistinguishable from someone editing themes.ts in
+      // their IDE, and that must keep hot-reloading.
+      //
+      // So exactly one reload is still in flight here, and it can land AFTER
+      // the goto below and tear down the page we just navigated to. Waiting
+      // for it to arrive first makes the ordering deterministic instead of a
+      // race — this was the "Execution context was destroyed" crash.
+      await page.waitForTimeout(1800);
       await page.goto(base);
       await page.waitForSelector(".tree-row");
       await page.waitForTimeout(300);
@@ -1293,6 +1297,119 @@ async function run(): Promise<void> {
         backSnap.workingThemeId === "my-custom-theme" && backSnap.placementsLength === 30,
       );
       check("re-entering board mode has picking enabled again", true); // implicit: the NEXT section's click succeeds
+    }
+
+    // -------------------------------------------------------------------
+    // IDEA-062: board mode gained a transform gizmo and an undo stack. Both
+    // are new surfaces, and the gizmo in particular has a failure mode that
+    // is INVISIBLE in a render: buildProps CLAMPS a "tall" prop's scale on
+    // the south row and the east/west columns, so a gizmo that read its
+    // transform back off the live mesh would overwrite an authored 1.8 with
+    // 0.55 on any drag — including a pure rotate. The proxy in
+    // src/editor/placementGizmo.ts exists to stop that; these checks are what
+    // prove it still does.
+    console.log("\n=== IDEA-062: the placement gizmo ===");
+    {
+      await page.click("#modeBoardBtn");
+      await page.waitForTimeout(900);
+      // The BAR stays up — most of what is on it (shading, the orientation
+      // cube, the readout, Focus) controls how you are LOOKING, not what is
+      // selected. Only the three TRANSFORM buttons are selection-scoped, and
+      // they dim rather than vanish so a mode chosen now is the mode the next
+      // selection gets.
+      check("the gizmo bar is up in board mode", await page.isVisible("#gizmoBar"));
+
+      const tile = await page.evaluate(() => window.__boardTestHook!.placementTile(0));
+      await clickTile(page, tile!, "apron");
+      await page.waitForTimeout(400);
+
+      check("the gizmo bar is still up with a placement selected", await page.isVisible("#gizmoBar"));
+
+      const axes = await page.evaluate(() => window.__boardTestHook!.gizmoAxes());
+      check("translate offers X and Z…", axes.x && axes.z);
+      check(
+        "…and NOT Y — a placement has no vertical offset, so a Y arrow would be a control wired to nothing",
+        !axes.y,
+      );
+
+      const before = await page.evaluate(() => window.__boardTestHook!.placementValues(0));
+      const h0 = await page.evaluate(() => window.__boardTestHook!.boardHistoryDepth());
+
+      // Find a real handle by PROBING for it rather than hard-coding a pixel
+      // offset — the camera framing is free to change, and the handle's
+      // screen position is not something this suite should own.
+      const origin = await page.evaluate(() => window.__boardTestHook!.proxyScreenXY());
+      let handle: { x: number; y: number } | null = null;
+      for (let r = 12; r <= 90 && !handle; r += 6) {
+        for (const deg of [0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330]) {
+          const px = origin!.x + r * Math.cos((deg * Math.PI) / 180);
+          const py = origin!.y + r * Math.sin((deg * Math.PI) / 180);
+          await page.mouse.move(px, py);
+          if (await page.evaluate(() => window.__boardTestHook!.gizmoAxis())) {
+            handle = { x: px, y: py };
+            break;
+          }
+        }
+      }
+      check("a translate handle is reachable on screen", handle !== null);
+
+      if (handle) {
+        await page.mouse.move(handle.x, handle.y);
+        await page.mouse.down();
+        for (let i = 1; i <= 8; i++) await page.mouse.move(handle.x + i * 5, handle.y + i * 2);
+        await page.mouse.up();
+        await page.waitForTimeout(400);
+
+        const after = await page.evaluate(() => window.__boardTestHook!.placementValues(0));
+        const h1 = await page.evaluate(() => window.__boardTestHook!.boardHistoryDepth());
+        check("the drag moved the placement's offset", JSON.stringify(after!.offset) !== JSON.stringify(before!.offset));
+        check(
+          "the offset stayed inside the ±0.5 the inspector's own slider allows",
+          Math.abs(after!.offset[0]) <= 0.5 && Math.abs(after!.offset[1]) <= 0.5,
+        );
+        check("a MOVE left the scale alone", after!.scale === before!.scale);
+        check("a MOVE left the rotation alone", after!.rotationY === before!.rotationY);
+        check("the whole drag is exactly ONE undo step", h1.undo - h0.undo === 1);
+
+        await page.keyboard.down("Control");
+        await page.keyboard.press("KeyZ");
+        await page.keyboard.up("Control");
+        await page.waitForTimeout(500);
+        const undone = await page.evaluate(() => window.__boardTestHook!.placementValues(0));
+        check("Ctrl+Z reverts the drag", JSON.stringify(undone!.offset) === JSON.stringify(before!.offset));
+        check(
+          "…and the placement stays SELECTED, so you can carry on adjusting it",
+          (await page.evaluate(() => window.__boardTestHook!.placementSelection())) !== null,
+        );
+
+        await page.keyboard.down("Control");
+        await page.keyboard.press("KeyY");
+        await page.keyboard.up("Control");
+        await page.waitForTimeout(500);
+        const redone = await page.evaluate(() => window.__boardTestHook!.placementValues(0));
+        check("Ctrl+Y puts it back", JSON.stringify(redone!.offset) === JSON.stringify(after!.offset));
+      }
+    }
+
+    // -------------------------------------------------------------------
+    // The clamp-drift regression in its own right: scale a placement up, then
+    // ROTATE it. If anything ever reads a placement's transform back off the
+    // live mesh instead of the proxy, the scale comes back as buildProps'
+    // clamped value and the authored one is gone — with nothing on screen to
+    // say so, because the mesh was already being drawn at the clamped size.
+    console.log("\n=== IDEA-062: a rotate must never touch the scale ===");
+    {
+      for (let i = 0; i < 12; i++) await page.keyboard.press("Equal");
+      await page.waitForTimeout(350);
+      const big = await page.evaluate(() => window.__boardTestHook!.placementValues(0));
+      check("scale grew past its authored value", (big?.scale ?? 0) > 1);
+
+      await page.keyboard.press("BracketRight");
+      await page.keyboard.press("BracketRight");
+      await page.waitForTimeout(350);
+      const rotated = await page.evaluate(() => window.__boardTestHook!.placementValues(0));
+      check("the rotation changed", rotated!.rotationY !== big!.rotationY);
+      check("and the SCALE is untouched (the clamp-drift regression)", rotated!.scale === big!.scale);
     }
 
     // -------------------------------------------------------------------

@@ -171,7 +171,7 @@ export function createHud(root: HTMLElement, maxLives: number): Hud {
     setLevel(label: string): void {
       // The chip is an eyebrow plus a figure ("MAP 3"), which is the compact
       // shape the redesign asks for. But the label it is handed already names
-      // itself — progression.ts returns "Map 3", "Bonus", "Bonus ·2", and the
+      // itself — progression.ts returns "Map 3", "Map 31" or "Bonus", and the
       // challenge path returns "C5" — so blindly prefixing it produced
       // "MAP Map 3" and, worse, "MAP Bonus".
       //

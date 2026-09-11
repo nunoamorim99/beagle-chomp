@@ -172,6 +172,14 @@ export class History {
     this.notify();
   }
 
+  /** IDEA-062: how many steps are available in each direction. Test support —
+   *  a suite proving "this gesture produced exactly ONE undo step" needs a
+   *  number, and counting `.history-row` elements only works for the panels
+   *  that have a DOM. */
+  depth(): { undo: number; redo: number } {
+    return { undo: this.undoStack.length, redo: this.redoStack.length };
+  }
+
   /** Wipes both stacks (character switch — old entries point at dead objects). */
   clear(): void {
     this.discard(this.undoStack);

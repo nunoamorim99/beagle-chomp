@@ -19,12 +19,14 @@ Living backlog of ideas. Two purposes:
 _(empty — nothing to triage)_
 
 ## Backlog (open ideas)
-> New registered ideas go here. Next free ID: IDEA-061
+> New registered ideas go here. Next free ID: IDEA-063
 > (054 went to the crab and 055 to the mosquito — built in parallel by two sessions, which is
 > why the ids were split up front rather than both taking the next free one. 056 and 057 are the
 > sushi pair, registered together because neither is buildable without the other as its
 > foil. 058 is the pizza mascot and 059 the burger. 060 turns the img2threejs pipeline on the
-> BOARD instead of the cast, starting with the garden.)
+> BOARD instead of the cast, starting with the garden. 061 doubles the classic cycle to 30
+> maps and makes the map number a running count. 062 is the editor overhaul, registered from a
+> second session while 061 was in flight — the ids were deconflicted up front, as with 054/055.)
 
 ### IDEA-028 — Challenge twist: moving walls / maze changes mid-level 💡
 - **Priority:** 🟢
@@ -116,6 +118,94 @@ _(empty — nothing to triage)_
 
 
 ## In progress 🔨
+
+### IDEA-062 — An editor you can actually finish a thing in 🔨
+- **Priority:** 🔴
+- **Area:** editor
+- **Registered:** 2026-09-11
+- **Building:** started 2026-09-11. v1 (the data loss), v2 (gizmo + board undo),
+  v3 (session autosave), v4 (Balance tab) and v5 (World tab) landed.
+  **Still open: the MAZE tab, and it is BLOCKED rather than deferred.** It needs
+  `scripts/validate-maze.ts` factored into a pure `src/game/mazeValidate.ts`
+  (the script is a CLI with top-level `console.log` and `process.exit`, so it
+  cannot be imported) — and that file AND `src/game/mazes.json` both carry
+  uncommitted changes from the concurrent IDEA-061 session. Refactoring under
+  another session's in-flight work is how you lose it. Pick this up once 061
+  lands. Also open: World Tier 2 (foliage, needs the `GARDEN_FOLIAGE` table
+  first) and serialising the character `EditLog` into the v3 session.
+- **Description:** (Nuno) "I have much difficulties on saving changes from the enemies and now on
+  the board and themes and props. I save one change and he deleted the previous ones I made, and
+  never can reach a final result that I like... lets give me a really option to edit the game."
+  Three things, for every tab: saving that never costs you work, direct manipulation (move / rotate
+  / scale) everywhere rather than only in Character mode, and reach into the parts of the game the
+  editor cannot touch at all today.
+- **Notes:** the complaint was literal, not a feeling. Four confirmed defects, all reproduced:
+  1. **Props part edits were REPLACED, not merged.** `syncPartsIntoWorkingDef` assigned
+     `def.parts = propPartLog.toPropPartLayer()`, but the log's baselines are taken from a mesh
+     `makePropFromDef` has ALREADY applied `def.parts` to — so the layer only ever described the
+     current session's deltas, and assigning it deleted every previously-saved edit. Found live in
+     the working tree: the `treehouse` def had gone from **7 part edits to 1**. Previously-ADDED
+     parts were wiped too (board.ts rebuilds them without `userData.editorAdded`, so the log's
+     `added` came back empty).
+  2. **Every save triggered a Vite full page reload**, proved with Playwright — nothing in `src/`
+     handles `import.meta.hot`, so a write to any file in the editor's module graph fell back to
+     `full-reload`. Saving Props destroyed the Board tab's unsaved placements, both undo stacks,
+     the camera and the selection.
+  3. **The `?raw` source snapshots were frozen at page load.** Masked by (2). The moment the reload
+     was fixed, the second save of a session would splice into page-load-era text and silently
+     revert the first — so (2) and (3) had to land in the same commit or "saving deletes my
+     previous change" would have got WORSE.
+  4. **Board mode has no undo at all** (main.ts's own "UNDO DECISION" note), and there is no gizmo
+     outside Character/Pickups even though `createGizmo` is already generic.
+- **v1 (2026-09-11):** the data loss, three defects in one commit because fixing any one
+  alone makes another worse. `PropPartEditLog.mergeIntoSaved()` merges per PATH and per
+  CHANNEL onto the def's saved layer instead of replacing it, and re-adopts previously-added
+  parts by name; `vite.config.ts`'s `handleHotUpdate` suppresses HMR for the editor's own
+  writes, keyed on a CONTENT HASH (a list per file — two close saves would race a single
+  entry) so a hand-edit still reloads; `src/editor/sourceStore.ts` replaces the frozen `?raw`
+  snapshots. Plus `rebaselineAfterSave()` for the mesh tabs, a `#staleChip` naming the honest
+  cost, a `.editorbak` sidecar on every write, and "reset to factory" — without which the
+  merge would make every saved edit permanent. Pinned by `scripts/test-prop-part-merge.ts`
+  (PURE, in `npm run test` — the bug only appears on the SECOND session over a def, which no
+  browser suite was saving twice to catch).
+- **v2 (2026-09-11):** the gizmo reaches every tab and board mode has undo.
+  `currentGizmoTarget()`/`syncGizmo()` route one generic `createGizmo` to character parts,
+  prop components and board placements. Placements are driven through a PROXY
+  (`src/editor/placementGizmo.ts`), never the live mesh — `buildProps` clamps a tall prop's
+  scale, so reading it back would destroy an authored 1.8 on any drag including a pure
+  rotate. Axes are cut to what the data holds (translate X/Z, none for a wall placement;
+  rotate Y; uniform scale). Board undo is the coarse `WorkingTheme` snapshot main.ts's own
+  "UNDO DECISION" note proposed and declined, with a `boardBaseline` so lil-gui's
+  bound-to-the-object controllers need no gesture hooks.
+- **v3 (2026-09-11):** rolling autosave to localStorage with a Restore / Discard bar.
+  Nothing is applied until Restore is clicked; the character EditLog is deliberately out
+  (live Object3D/Material refs — a replay, registered as a follow-up) and the bar says so.
+- **v4 (2026-09-11):** the **Balance** tab — src/game/config.ts's numbers, as a form.
+  `configRewrite.ts` swaps a numeric token at a path (same line count, every comment
+  intact — config.ts is mostly prose explaining its own numbers); `balanceFields.ts` is the
+  hand-written catalogue of 46 fields, every one of which `test-config-rewrite.ts` resolves
+  against the real file AND range-checks. The tab's main feature is the SYNC GATE: an
+  unsynced config.ts makes honest runs fail `SCORE_ITEM_MISMATCH` in production with nothing
+  failing locally, so the save button says so up front and a successful save leaves a panel
+  up with the exact commands until dismissed.
+- **v5 (2026-09-11):** the **World** tab — the IDEA-060 garden machinery no palette can
+  reach. `fence.ts` and `groundDetail.ts` grow named mutable params tables the editor
+  mutates live and writes back in place; the tab borrows board mode's own stage, so the
+  existing board rebuild IS the preview and there is no second path to drift from what the
+  game draws. Its fence readout measures picket and GAP in px at the play camera against the
+  CARTOON rule's ~2px floor — the one place that rule can be checked while dragging.
+  `foliage.ts` is deliberately OUT: all six gardenProps call sites override the module
+  defaults, so a control on them would change nothing (IDEA-041). Lifting those into a named
+  `GARDEN_FOLIAGE` table is its prerequisite.
+- **Plan:** phase 1 the data loss; phase 2 board undo (coarse `WorkingTheme` snapshots, the exit
+  that note itself names) + the gizmo routed to Props parts and Board placements; phase 3 a rolling
+  localStorage session with a Restore/Discard bar; phase 4 three new tabs — **Balance**
+  (`config.ts`, with the `npm run sync` gate made unforgettable), **Maze** (a DOM grid over
+  `mazes.json`, validator-gated, needs `src/game/mazeValidate.ts` factored out of the CLI script
+  first) and **World** (fence + groundDetail live and savable; foliage deferred because all six
+  `gardenProps.ts` call sites override the module defaults, so a control on them would change
+  nothing — IDEA-041's rule).
+
 
 ### IDEA-060 — The board, rebuilt: garden first 🔨
 - **Priority:** 🔴
@@ -632,6 +722,73 @@ _(empty — nothing to triage)_
 
 ## Delivered ✅
 > Already in production. Do NOT delete. Each keeps its version history.
+
+### IDEA-061 — Thirty maps, and a map number that never resets ✅
+- **Priority:** 🔴
+- **Area:** progression
+- **Registered:** 2026-09-11
+- **Delivered:** 2026-09-11
+- **Description:** (Nuno) "I already be able to run all the mazes and repeat some of them" — the
+  15-map cycle is short enough to lap, and when it laps the HUD drops back to Map 1, which reads as
+  losing your progress. Add 15 more numbered maps and 3 more bonus maps, put them in the normal
+  game, and make the map number keep counting: 31, 32, 33 … even when the maze underneath is one
+  you have already played.
+- **Notes:** the maze LIST doubled but the machinery did not — `progression.ts` is still the single
+  place difficulty is tuned, and `planLevel()` is still the one function the server vendors. The
+  two halves of the ask are independent and both land in that file: STAGE_COUNT 3 → 6 for the
+  maps, and `mapNumber` becoming `(lap - 1) * MAPS_PER_LAP + mapIdx + 1` for the count.
+- **Dependencies:** [[IDEA-040]], [[IDEA-018]], [[IDEA-048]]
+- **History:**
+  - **v1** (2026-09-11) — **36 mazes, six stages, and a running map number.** 15 new numbered maps
+    (16-30) and 3 new bonus maps, all hand-authored 19x21 and validated against the real
+    `Grid.walkable`: connected, every pellet reachable, ghosts able to leave the pen, 4 bones on a
+    numbered map and none on a bonus one. Six stages of five ramp the enemy count **3 / 3 / 4 / 4 /
+    5 / 5**, which brings the violet and leaf enemies into classic mode for the first time —
+    `ENEMY_SLOTS` has always had five and classic only ever took a slice of three or four.
+    **Maps 1-15 are byte-for-byte the progression they always were**, on the same mazes at the same
+    enemy counts: the new stages extend the ramp rather than redistribute it, because fifteen maps
+    players already know must not change difficulty underneath them. The three original bonus mazes
+    moved from indices 15-17 to 30-32 to make room, which is invisible — a run's `mazeIdxSequence`
+    is checked against `planLevel()`, never against an older run's — and mazes 0-4 stay put so
+    challenge mode is untouched. `mapNumber` is now a RUNNING COUNT, so lap 2 opens on **Map 31**
+    and the `·2` lap suffix is gone: the figure carries the lap, and one number says what two used
+    to. Server catalog regenerated (`npm run sync`), `MAX_ENEMY_SLOTS` followed the 5-enemy ceiling
+    on its own because it reads the constant rather than a literal. Client suite (validate, sim,
+    120 progression assertions), server suite (catalog 77, plausibility 110) and both typechecks
+    green.
+  - **v1 — two bugs found in shipped code, both invisible to every check that existed.**
+    (a) **Maze 10 and maze 14 were byte-identical.** A duplicate is a perfectly valid maze, so
+    nothing complained — which is exactly the repeat Nuno noticed. Maze 13 is now its own layout,
+    and both `validate-maze.ts` and `test-progression.ts` reject a repeated board. (b) **The maze
+    validator never asserted `REQUIRED_MAZE_COUNT`**, although `progression.ts` had carried a
+    comment saying it did since IDEA-040; a missing maze would have sent a level to `undefined`
+    rather than failing. It asserts it now.
+  - **v1 — the sim's bot was measuring luck, so it was rewritten.** Eight sound new mazes failed
+    `npm run sim`, and the cause was the test. Its bot picked whichever legal turn shortened the
+    STRAIGHT-LINE distance to the nearest pellet, which in a maze is not a plan: measured, it
+    wedged into a 3-to-17 tile loop in **every one of the eighteen shipped mazes** and differed
+    only in how long it wandered first, so the `eaten > 50` bar was a coin-flip on geometry (maze 7
+    cleared it with 59). It now runs a BFS over **(tile, incoming direction)** — the no-reverse
+    rule belongs inside the SEARCH, not in a filter applied after the target is chosen — and
+    decides inside `onArrive` the way the ghosts always have, since deciding in the outer tick
+    plans from the tile being LEFT and lands every turn one tile late. All 36 mazes now clear
+    **100%** of their pellets in under 73s of a 180s budget, so the bar is a cleared board and the
+    assertion is a real statement about reachability instead of a proxy for it.
+  - **v1 — two design rules the new maps had to be taught.** A **bonus map's pen must stand FREE**:
+    no wall tile may touch the ring around it, or the house reads as a lump fused to a wall rather
+    than sitting in a meadow. All three new bonus maps broke it on the first pass and
+    `test-progression.ts` caught all three. And the garden's wall-top props are authored per THEME
+    while walls are per MAZE, so the suite requires each decorated tile to be wall in at least half
+    the mazes — doubling the list moved that bar from 9 to 18 and three tiles fell under it, fixed
+    by four single-tile edits chosen by searching which mazes could take a wall there without
+    failing validation.
+  - **v1 — the HUD figure is no longer one character wide, and that was measured rather than
+    assumed.** `style.css`'s right-column budget was written around a one-digit map number. At 390px
+    the chip runs 75.5px at "5", 88.7 at "30" and 92.8 at "115" (lap 4 reaches three digits), and
+    the row holds all of them on one line — **"Bonus" is 94.9px, wider than any of them**, so a
+    numbered map can never be what wraps that row. Below 390 a three-digit figure wraps, which is
+    the same fallback "Bonus" has always taken there. No CSS change needed; the measurements are
+    recorded where the next person will look.
 
 ### IDEA-056 — The maki roll: the first enemy that isn't a bug ✅
 - **Priority:** 🟡

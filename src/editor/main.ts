@@ -32,6 +32,7 @@ import { generateCode, buildPrimitiveGeometry, GEOMETRY_DEFAULTS } from "./codeg
 import { generateFullFile, applyEditsInPlace } from "./fileExport";
 import { applyGhostState } from "../render/characters";
 import { saveEditorFile } from "./saveFile";
+import { onSourceChanged } from "./sourceStore";
 import { History } from "./history";
 import {
   createInspector,
@@ -46,6 +47,21 @@ import { attachPicking } from "./picking";
 // file's own pushTransformHistory so a drag and a typed coordinate are the
 // same edit downstream — see gizmo.ts's header.
 import { createGizmo, GIZMO_MODES, type GizmoMode } from "./gizmo";
+import { createPlacementGizmo } from "./placementGizmo";
+import { createBalanceInspector } from "./balanceInspector";
+import { createWorldInspector } from "./worldInspector";
+import { allWorldFields, type WorldField } from "./worldFields";
+import { FENCE_PARAMS } from "../render/fence";
+import { GROUND_DETAIL_PARAMS } from "../render/groundDetail";
+import { applyConfigEdits, type ConfigEdit } from "./configRewrite";
+import {
+  startSessionRecorder,
+  readStoredSession,
+  clearStoredSession,
+  showRestoreBar,
+  sessionHasContent,
+  type EditorSession,
+} from "./session";
 // Viewport furniture: the scene readout + solid/wireframe/normals shading.
 import { createViewportExtras, SHADING_MODES, type ShadingMode } from "./viewportExtras";
 // Play/scrub the REAL procedural animation, with sampled per-channel tracks.
@@ -96,6 +112,7 @@ import { createPropsTreeView } from "./propsTree";
 import { createPropsInspector } from "./propsInspector";
 import {
   cloneWorkingLibrary,
+  clonePropPartLayer,
   defaultWorkingPropDef,
   duplicateWorkingPropDef,
   nextPropId,
@@ -118,8 +135,8 @@ import { createPropsPartInspector } from "./propsPartInspector";
 import { PropPartEditLog, nextAddedPartId, type LiveAddedPropPart } from "./propPartEditLog";
 import { PROP_PART_GEOMETRY_DEFAULTS, buildPropPartPrimitiveGeometry } from "./propsPartCodegen";
 import { generateFullPropsFile } from "./propsFileExport";
-import { type PropPrimKind } from "../game/props";
-import { hasEmissive, isEditableMaterial, roughnessOf } from "../render/toon";
+import { type PropPrimKind, type PropPartLayer, type PropPartEdit } from "../game/props";
+import { hasEmissive, isEditableMaterial, roughnessOf, toon } from "../render/toon";
 import { materialDeclsByColor } from "./sourceRewrite";
 import { sourceTextFor } from "./sources";
 import { type SavableFile } from "./saveFile";
@@ -136,6 +153,8 @@ const treePaneTitle = byId<HTMLHeadingElement>("treePaneTitle");
 const charGuiHost = byId<HTMLDivElement>("charGuiHost");
 const boardGuiHost = byId<HTMLDivElement>("boardGuiHost");
 const propsGuiHost = byId<HTMLDivElement>("propsGuiHost");
+const balanceGuiHost = byId<HTMLDivElement>("balanceGuiHost");
+const worldGuiHost = byId<HTMLDivElement>("worldGuiHost");
 const generatedPre = byId<HTMLPreElement>("generatedView");
 const sourcePre = byId<HTMLPreElement>("sourceView");
 const codeTitle = byId<HTMLSpanElement>("codeTitle");
@@ -146,8 +165,15 @@ const editorApp = byId<HTMLDivElement>("editorApp");
 const modeCharacterBtn = byId<HTMLButtonElement>("modeCharacterBtn");
 const modeBoardBtn = byId<HTMLButtonElement>("modeBoardBtn");
 const modePropsBtn = byId<HTMLButtonElement>("modePropsBtn");
+const modeBalanceBtn = byId<HTMLButtonElement>("modeBalanceBtn");
+const modeWorldBtn = byId<HTMLButtonElement>("modeWorldBtn");
 const modePickupsBtn = byId<HTMLButtonElement>("modePickupsBtn");
 const viewportHint = byId<HTMLDivElement>("viewportHint");
+// IDEA-062: see the chip's own note in editor/index.html and the wiring
+// further down (onSourceChanged).
+const staleChip = byId<HTMLDivElement>("staleChip");
+const staleChipText = byId<HTMLSpanElement>("staleChipText");
+const staleChipReload = byId<HTMLButtonElement>("staleChipReload");
 const gizmoBar = byId<HTMLDivElement>("gizmoBar");
 const gizmoSpaceBtn = byId<HTMLButtonElement>("gizmoSpaceBtn");
 const gizmoSnapBtn = byId<HTMLButtonElement>("gizmoSnapBtn");
@@ -204,12 +230,123 @@ function gizmoChannel(): TransformChannel {
   return m === "translate" ? "position" : m === "rotate" ? "rotation" : "scale";
 }
 
+/**
+ * IDEA-062: which mode's selection the gizmo is currently driving.
+ *
+ * The gizmo was wired to character mode alone — `gizmoBar.hidden = !meshMode`
+ * — even though `createGizmo` has always been generic (`attach(objects[])`,
+ * `onCommit(channel, changes)`). That was the single biggest reason Board and
+ * Props felt like a preview rather than a workbench: both already had a
+ * selection and a full transform-commit path, and neither had a handle.
+ *
+ * Props parts are ordinary Object3Ds, so they take the gizmo directly. Board
+ * PLACEMENTS do not — see placementGizmo.ts for why they are driven through a
+ * proxy instead of the live prop mesh.
+ */
+type GizmoTarget =
+  | { kind: "character"; nodes: PartNode[] }
+  | { kind: "propPart"; nodes: PartNode[] }
+  | { kind: "placement"; selection: PlacementSelection };
+
+function currentGizmoTarget(): GizmoTarget | null {
+  if (mode === "character" || mode === "pickups") {
+    // The root (path "") is excluded for the same reason it always was: Save
+    // never writes its transform, so a handle on it would be a lie.
+    const nodes = selection.filter((n) => n.path !== "");
+    return nodes.length > 0 ? { kind: "character", nodes } : null;
+  }
+  if (mode === "props") {
+    return selectedPropPart && selectedPropPart.path !== ""
+      ? { kind: "propPart", nodes: [selectedPropPart] }
+      : null;
+  }
+  const sel = boardPlacement.getSelection();
+  return sel?.existing ? { kind: "placement", selection: sel } : null;
+}
+
+/** Points the gizmo at whatever the active mode has selected, and shows or
+ *  hides the toolbar accordingly. Called from every selection path plus
+ *  setMode — one function so no mode can forget a case. */
+function syncGizmo(): void {
+  const target = currentGizmoTarget();
+  // The BAR stays up whenever the viewport does, in EVERY mode, and nothing
+  // on it is disabled. Two attempts were wrong before this one, and both are
+  // worth recording because they look reasonable:
+  //
+  //  - Hiding the strip when nothing is selected. Most of what is on it
+  //    (shading, the orientation cube, the scene readout, Focus) controls how
+  //    you are LOOKING, not what is selected — so it took away five working
+  //    controls to hide three idle ones.
+  //  - Disabling just the three transform buttons. Also wrong: the gizmo MODE
+  //    is a persistent setting, not an action on the current selection.
+  //    Picking "rotate" with nothing selected is a perfectly sensible thing to
+  //    do — it is the mode the next part you click will get — and disabling it
+  //    makes the tool argue with you over a preference.
+  //
+  // What genuinely depends on the selection is the HANDLE, and that is
+  // already handled: gizmo.attach([]) below removes it.
+  gizmoBar.hidden = false;
+  // Export/Ref act on the CHARACTER group, which board and props modes do not
+  // have — those two really would be wired to nothing (IDEA-041's rule).
+  const meshMode = mode === "character" || mode === "pickups";
+  exportGlbBtn.hidden = !meshMode;
+  refLoadBtn.hidden = !meshMode;
+  if (!meshMode) refClearBtn.hidden = true;
+  if (!target) {
+    gizmo.attach([]);
+    placementGizmo.detach();
+    return;
+  }
+  if (target.kind === "placement") {
+    placementGizmo.attachTo(target.selection);
+    gizmo.attach([placementGizmo.proxy]);
+    applyPlacementAxisLimits();
+  } else {
+    placementGizmo.detach();
+    gizmo.attach(target.nodes.map((n) => n.object));
+    gizmo.setAxes({ x: true, y: true, z: true });
+  }
+}
+
+/** Board placements cannot express what a free gizmo offers, so the handle is
+ *  cut down to what the DATA can hold rather than letting a drag silently
+ *  discard two of its three axes. See placementGizmo.ts. */
+function applyPlacementAxisLimits(): void {
+  const sel = boardPlacement.getSelection();
+  const m = gizmo.getMode();
+  if (m === "rotate") {
+    // rotationY only — one ring, not three.
+    gizmo.setAxes({ x: false, y: true, z: false });
+  } else if (m === "translate") {
+    // Apron placements have an `offset` in X/Z; wall-top ones sit dead-centre
+    // on their tile and have no offset field at all, so there is nothing to
+    // drag and the handle says so by not being there.
+    const apron = sel?.subMode === "apron";
+    gizmo.setAxes({ x: apron, y: false, z: apron });
+  } else {
+    // Scale is UNIFORM. TransformControls only shows its uniform (XYZE) handle
+    // when all three axis flags are true (TransformControls.js:1475 at r169),
+    // so this deliberately does NOT restrict them — placementGizmo collapses
+    // the result to one number on commit.
+    gizmo.setAxes({ x: true, y: true, z: true });
+  }
+}
+
 const gizmo = createGizmo({
   camera: stage.camera,
   canvas,
   scene: stage.scene,
   orbit: stage.orbit,
   onCommit: (channel, changes) => {
+    const target = currentGizmoTarget();
+    if (target?.kind === "placement") {
+      commitPlacementGizmo();
+      return;
+    }
+    if (target?.kind === "propPart") {
+      commitPropPartGizmo(channel, changes);
+      return;
+    }
     // One drag = one undo entry, however many parts moved. The single-part
     // case routes through the SAME pushTransformHistory the inspector's
     // number fields use, so a drag and a typed coordinate stay identical
@@ -251,6 +388,10 @@ function syncGizmoBar(mode: GizmoMode): void {
   for (const btn of document.querySelectorAll<HTMLButtonElement>(".gizmo-btn")) {
     btn.classList.toggle("active", btn.dataset.gizmo === mode);
   }
+  // IDEA-062: which axes a board placement can accept depends on the MODE
+  // (translate -> X/Z, rotate -> Y, scale -> uniform), so the limits have to
+  // be re-applied every time the mode changes, not only on selection.
+  if (currentGizmoTarget()?.kind === "placement") applyPlacementAxisLimits();
 }
 
 for (const btn of document.querySelectorAll<HTMLButtonElement>(".gizmo-btn")) {
@@ -550,10 +691,12 @@ function setSelection(next: PartNode[]): void {
   tree.setSelected(selection.map((n) => n.path));
   highlighter.set(state.highlight ? selection : []);
   if (node && state.animation !== "off") setAnimation("off"); // hold still while editing
-  // The gizmo drives the whole selection, primary first. The root (path "")
-  // is excluded: Save never writes its transform, so a gizmo on it would be a
-  // control wired to nothing (IDEA-041's rule).
-  gizmo.attach(selection.filter((n) => n.path !== "").map((n) => n.object));
+  // IDEA-062: the gizmo is now mode-routed — syncGizmo resolves the target
+  // from `mode` plus that mode's own selection, so character, props and board
+  // cannot drift onto three different attach paths. The root (path "") is
+  // still excluded there: Save never writes its transform, so a gizmo on it
+  // would be a control wired to nothing (IDEA-041's rule).
+  syncGizmo();
   inspector.setSelection(node, node ? selectionContext() : null);
   sourceView.markVar(node && !node.isAutoNamed && !node.isAdded ? node.varName : null);
 }
@@ -1266,12 +1409,72 @@ saveFileBtn.addEventListener("click", () => {
       flash(saveFileBtn, "Save failed — use Copy full file", false);
       return;
     }
-    // Still alive (no reload yet) — show it now too, so the feedback is
-    // immediate whether or not HMR gets to us.
     flash(saveFileBtn, flashText, report.blocked.length === 0);
+    // Re-baseline FIRST, then render the report — rebaselineAfterSave calls
+    // updateGenerated() (the log is empty now, so that prints "No edits
+    // yet"), and doing it afterwards would wipe the account of what was just
+    // written out from under the user.
+    rebaselineAfterSave();
     renderGenerated(text);
   });
 });
+
+// IDEA-062: the stale-module chip.
+//
+// Suppressing the save-triggered reload is what stops a Props save from
+// destroying the Board tab's unsaved placements. Its one cost is that for the
+// MESH tabs the imported module now lags the file on disk: buildCharacter()
+// rebuilds from the characters.ts the page loaded, so switching characters
+// after a save would show the pre-save mesh and read as "my save was lost".
+//
+// Board and Props are unaffected — their working theme / working library ARE
+// the truth — so the chip names the files that actually went stale rather
+// than nagging generically. Reloading is offered, never taken: the whole
+// point of this pass is that the editor stops throwing your work away on its
+// own initiative.
+const staleFiles = new Set<SavableFile>();
+onSourceChanged((file) => {
+  staleFiles.add(file);
+  const names = [...staleFiles].map((f) => f.split("/").pop()).join(", ");
+  staleChipText.textContent =
+    `Saved to disk: ${names}. The live scene is still the pre-save build — ` +
+    "reload to re-read it (your unsaved work in other tabs is NOT restored by a reload).";
+  staleChip.hidden = false;
+});
+staleChipReload.addEventListener("click", () => window.location.reload());
+
+/**
+ * IDEA-062: do the work the page reload used to do, now that saves no longer
+ * reload (vite.config.ts's handleHotUpdate).
+ *
+ * A save writes this session's edits into the REAL definitions in
+ * characters.ts/board.ts, so after it lands those edits are AUTHORED, not
+ * pending. Without re-baselining, the log still believes it owes them — and
+ * the next save would apply them a second time on top of source that already
+ * has them (re-inserting every added part, re-writing every transform). The
+ * reload used to make that impossible by throwing the whole log away.
+ *
+ * Clearing `editorAdded` is the part that is easy to miss and silent when
+ * missed: EditLog.touchTransform early-returns on an added node (its whole
+ * construction block IS its transform), so a part that stays flagged after
+ * being written into the source would stop recording ANY further move —
+ * you would drag it and nothing at all would happen to the generated code.
+ * Once saved it is an ordinary authored part, named by its own `const`.
+ */
+function rebaselineAfterSave(): void {
+  if (!group) return;
+  for (const rec of log.addedParts) delete rec.object.userData.editorAdded;
+  refreshParts(); // re-walks the tree so the rows lose their "added" badge
+  log.snapshot(nodes, materials);
+  // refreshParts rebuilt every PartNode, so the old `selected` object is a
+  // stale node for the same mesh — re-resolve it through the fresh map so the
+  // inspector and the source marker key off the node the tree now holds.
+  select(selected ? nodeByObject.get(selected.object) ?? null : null);
+  updateGenerated();
+  // The "Real source" panel is showing the pre-save text; sourceTextFor now
+  // returns the bytes just written, so re-point it at the same builder.
+  sourceView.showBuilder(def.builderName, def.sourceFile);
+}
 
 // --- keyboard: Ctrl+Z / Ctrl+Y, arrow nudging, Escape, Delete ---
 const NUDGE_STEP = 0.01;
@@ -1518,6 +1721,17 @@ window.addEventListener(
 
     if (inTextField || active instanceof HTMLSelectElement) return;
 
+    // IDEA-062: the gizmo mode keys, the same W/E/T the character workbench
+    // uses (deliberately not the reference editor's W/E/R — R and S are held
+    // modifiers in this project, see the character listener's own note). Must
+    // come BEFORE the `s`/`r` modifier handling below, and `t` cannot collide
+    // with anything here.
+    if (!e.ctrlKey && !e.metaKey && !e.altKey && (key === "w" || key === "e" || key === "t")) {
+      e.preventDefault();
+      gizmo.setMode(key === "w" ? "translate" : key === "e" ? "rotate" : "scale");
+      return;
+    }
+
     if (key === "s") scaleKeyHeld = true;
     if (key === "r") rotateKeyHeld = true;
 
@@ -1575,6 +1789,23 @@ window.addEventListener(
 // full-reset (reload the base theme dropdown), this ships without undo — a
 // future pass COULD add a coarser "snapshot the whole WorkingTheme on every
 // committed gesture" history entry if that's ever worth the complexity.
+//
+// IDEA-062 — IT WAS WORTH THE COMPLEXITY, AND THE EXIT THIS NOTE NAMES IS THE
+// ONE TAKEN. Board mode now has undo, via exactly the "snapshot the whole
+// WorkingTheme" entry the paragraph above describes. Both objections stand and
+// both are answered by that shape rather than argued with: a STRUCTURAL edit
+// (add/remove a bloom colour) and a base-theme SWAP are just two more
+// snapshots, because a snapshot does not care what changed. `cloneWorkingTheme`
+// already existed as the deep-copy primitive, so there is no new vocabulary in
+// history.ts at all — an entry is still a pair of closures.
+//
+// What changed the cost/benefit: Nuno's own account of using this tab was "I
+// save one change and he deleted the previous ones I made, and never can reach
+// a final result that I like". Re-picking the base theme IS a full reset, and
+// that is the problem — the only way to take back one bad nudge was to throw
+// away every good one with it. A theme is a palette plus ~50 small placement
+// objects: a few kB per snapshot, a few hundred at the 200-entry cap.
+// See pushBoardSnapshot/restoreWorkingTheme below.
 // IDEA-029: widened from "character" | "board" to add "props" — every OTHER
 // reference to Mode/mode in this board-mode block (the keydown guard, the
 // per-frame character-only gate, boardTest hook) already tests `mode ===
@@ -1586,7 +1817,7 @@ window.addEventListener(
 // different registry and source file. It is a separate tab rather than more
 // entries in the character dropdown because a bone has no skin, no team
 // colour and no walk cycle — different things to reason about, same tools.
-type Mode = "character" | "pickups" | "board" | "props";
+type Mode = "character" | "pickups" | "board" | "props" | "balance" | "world";
 let mode: Mode = "character";
 
 // IDEA-030/031: onTreeSelect now branches on WHICH KIND of row was clicked —
@@ -1704,6 +1935,130 @@ function rebuildBoardFromWorkingTheme(): void {
   boardStage.setSky(workingTheme.palette.bg, workingTheme.palette.backdropTop);
 }
 
+// IDEA-062: the proxy the transform gizmo drives in board mode. Parented to
+// boardStage.boardRoot so it shares the board's coordinate space (worldX/
+// worldZ already account for the OX/OZ centring). See placementGizmo.ts for
+// why a proxy and not the prop mesh itself — the short version is that
+// buildProps CLAMPS a tall prop's scale, so reading it back off the mesh
+// would destroy an authored 1.8 on any drag, including a pure rotate.
+const placementGizmo = createPlacementGizmo(boardStage.boardRoot);
+
+/** Commits a board placement gizmo drag: proxy -> placement data (clamped),
+ *  one board rebuild, one undo step. */
+function commitPlacementGizmo(): void {
+  const sel = boardPlacement.getSelection();
+  if (!sel?.existing) return;
+  const m = gizmo.getMode();
+  if (!placementGizmo.commit(sel, m)) return; // clamped to where it already was
+  rebuildBoardFromWorkingTheme();
+  boardPlacement.refreshMarkerFor(sel.tile);
+  boardInspector.refreshPlacementDisplays(); // the number fields must follow the handle
+  // No coalesce key: a drag is already one complete gesture, and sharing a key
+  // with the inspector's sliders would let a drag swallow a later typed value.
+  recordBoardEdit(`${m} placement`);
+}
+
+/** Commits a props-mode part gizmo drag. A near-literal mirror of the
+ *  character branch — props already had `propHistory`, the commit function and
+ *  a viewport picker; all that was missing was the handle. */
+function commitPropPartGizmo(
+  channel: TransformChannel,
+  changes: readonly { object: THREE.Object3D; before: Vec3Tuple; after: Vec3Tuple }[],
+): void {
+  const moved = changes
+    .map((c) => ({ node: propPartNodeByObject.get(c.object), change: c }))
+    .filter((m): m is { node: PartNode; change: (typeof changes)[number] } => m.node !== undefined);
+  if (moved.length === 0) return;
+  for (const m of moved) propPartLog.touchTransform(m.node, channel);
+  if (moved.length === 1) {
+    pushPropTransformHistory(moved[0].node, channel, moved[0].change.before, moved[0].change.after);
+  } else {
+    propHistory.begin();
+    for (const m of moved) pushPropTransformHistory(m.node, channel, m.change.before, m.change.after);
+    propHistory.commit(`${channel} ${moved.length} parts`);
+  }
+  afterPropHistoryApply(selectedPropPart);
+}
+
+// ---------------------------------------------------------------------------
+// IDEA-062: board undo/redo — coarse WorkingTheme snapshots.
+//
+// See the UNDO DECISION note above for why this shape, and why it is the one
+// that note itself proposed. The whole mechanism is three functions and no new
+// history.ts vocabulary.
+const boardHistory = new History();
+
+/** Replaces the working theme with a snapshot and re-applies everything that
+ *  reads it.
+ *
+ *  Clones on EVERY apply rather than adopting the stored object: an undo entry
+ *  can be replayed any number of times (undo, redo, undo again), and handing
+ *  out the same object twice would let the second replay be mutated by edits
+ *  made after the first — the stored snapshot would stop being a snapshot. */
+function restoreWorkingTheme(snap: WorkingTheme): void {
+  workingTheme = cloneWorkingTheme(snap);
+  // The restored state is now the "before" for whatever is edited next —
+  // without this, the edit after an undo would record a before/after pair
+  // spanning the undo itself and one Ctrl+Z would jump two steps.
+  boardBaseline = cloneWorkingTheme(snap);
+  rebuildBoardFromWorkingTheme();
+  if (boardMaterials) {
+    boardInspector.setTheme(workingTheme, loadedBaseThemeId, boardMaterials, boardStage.lights);
+  }
+  // A full marker resync is right here for the same reason loadBaseTheme does
+  // it: after a restore, every marker's empty/filled state and the current
+  // selection may both be stale — the placement the user had selected can
+  // simply not exist in the snapshot being restored.
+  //
+  // But losing the selection on every undo is its own annoyance: undo one
+  // nudge and you are dropped back to nothing selected, unable to carry on
+  // adjusting the thing you were adjusting. So the tile is re-selected if it
+  // still carries a placement — and honestly NOT if it does not (undoing the
+  // creation of a placement leaves an empty slot, and faking a selection on
+  // one would be inventing a click the user never made).
+  const keep = boardPlacement.getSelection();
+  boardPlacement.syncFromTheme(workingTheme);
+  if (keep) boardPlacement.reselect(keep.subMode, keep.tile);
+  syncGizmo();
+}
+
+/**
+ * The last state this history knows about — i.e. the "before" for whatever
+ * edit happens next.
+ *
+ * This is what lets board undo work WITHOUT touching boardInspector.ts at all.
+ * lil-gui binds its controllers straight to `workingTheme`, so by the time an
+ * `onChange` reaches main.ts the object has ALREADY been mutated and there is
+ * no pre-edit value left to capture. Carrying a baseline forward sidesteps
+ * that entirely: nothing else mutates `workingTheme` between commits, so the
+ * baseline IS the pre-edit state, for a palette slider and a placement nudge
+ * alike. The alternative — threading an onGestureStart/onGestureEnd pair
+ * through every one of the inspector's several dozen controls — would be a
+ * large surgery with a new way to be wrong at each call site.
+ */
+let boardBaseline: WorkingTheme = cloneWorkingTheme(workingTheme);
+
+/**
+ * Records one committed board gesture and advances the baseline.
+ *
+ * `coalesceKey` folds a continuous gesture into one entry — a slider drag, or
+ * a run of arrow-key nudges on one tile — the same way the character
+ * workbench's own nudges coalesce. history.ts keeps the OLDER entry's undo and
+ * adopts the newer redo, which is exactly right for a snapshot pair: you undo
+ * to where the drag started and redo to where it ended.
+ */
+function recordBoardEdit(label: string, coalesceKey?: string): void {
+  const before = boardBaseline;
+  const after = cloneWorkingTheme(workingTheme);
+  boardBaseline = after;
+  boardHistory.push({
+    undo: () => restoreWorkingTheme(before),
+    redo: () => restoreWorkingTheme(after),
+    coalesceKey,
+    label,
+  });
+}
+
 /** Loads a fresh working copy of a MAZE_THEMES entry — the ONLY place
  *  `workingTheme` is reassigned to a new object (every other board edit
  *  mutates the existing one in place), so this is also the natural
@@ -1721,20 +2076,50 @@ function rebuildBoardFromWorkingTheme(): void {
  *  syncFromTheme doc comment ("Clears the current selection") and the
  *  createBoardPlacement call site above, whose onChange calls
  *  rebuildBoardFromWorkingTheme WITHOUT ever calling syncFromTheme. */
-function loadBaseTheme(id: string): void {
+function loadBaseTheme(id: string, recordUndo = true): void {
+  // IDEA-062: a base-theme swap is itself undoable now. It used to BE the undo
+  // ("re-picking the base theme is a full reset"), which was the problem: the
+  // only way to take back one bad nudge was to throw away every good one with
+  // it. `recordUndo` is false only for the first entry into board mode, where
+  // there is no prior state to return to.
+  const before = boardBaseline;
   loadedBaseThemeId = id;
   workingTheme = cloneWorkingTheme(getMazeTheme(id));
+  boardBaseline = cloneWorkingTheme(workingTheme);
   rebuildBoardFromWorkingTheme();
   if (!boardMaterials) throw new Error("editor: board materials not captured after buildBoard");
   boardInspector.setTheme(workingTheme, loadedBaseThemeId, boardMaterials, boardStage.lights);
   boardPlacement.syncFromTheme(workingTheme);
+  syncGizmo();
+  if (recordUndo) {
+    const after = cloneWorkingTheme(workingTheme);
+    boardHistory.push({
+      undo: () => restoreWorkingTheme(before),
+      redo: () => restoreWorkingTheme(after),
+      label: `load theme ${workingTheme.name}`,
+    });
+  }
 }
 
 const boardInspector = createBoardInspector(boardGuiHost, {
   onBaseTheme: (id) => loadBaseTheme(id),
-  onAtmosphereBg: () => boardStage.setSky(workingTheme.palette.bg, workingTheme.palette.backdropTop),
-  onDecorChange: () => rebuildBoardFromWorkingTheme(),
-  onMetaChange: () => {}, // no live visual effect — codegen just reads `workingTheme` fresh each copy
+  onAtmosphereBg: () => {
+    boardStage.setSky(workingTheme.palette.bg, workingTheme.palette.backdropTop);
+    recordBoardEdit("sky", "board:atmosphere");
+  },
+  onDecorChange: () => {
+    rebuildBoardFromWorkingTheme();
+    // IDEA-062: ONE coalesce key for every palette/decor control, deliberately.
+    // history.ts merges same-key entries pushed within COALESCE_MS, so a
+    // slider drag collapses to a single step — which is what you want — and
+    // two different sliders touched a second apart stay separate steps, which
+    // is also what you want. A per-control key would be more precise and buy
+    // nothing: a snapshot restores the whole theme either way, so splitting
+    // two edits made inside the same second into two entries would only make
+    // Ctrl+Z feel slower without making it more accurate.
+    recordBoardEdit("board edit", "board:decor");
+  },
+  onMetaChange: () => recordBoardEdit("theme details", "board:meta"),
   onCopyCode: () => {
     const code = formatThemeEntry(workingTheme, 2);
     return navigator.clipboard.writeText(code);
@@ -1786,8 +2171,22 @@ const boardPlacement = createBoardPlacement(
   stage.camera,
   boardStage.boardRoot,
   boardGrid,
-  () => rebuildBoardFromWorkingTheme(),
+  () => {
+    rebuildBoardFromWorkingTheme();
+    // Every placement mutation boardPlacement performs — create, prop swap,
+    // remove, keyboard nudge — funnels through this one onChange, so it is
+    // also the one place a placement undo step needs to be recorded. The
+    // nudge coalesce is handled by the shared key: a run of arrow presses
+    // inside a second becomes one step.
+    recordBoardEdit("placement", "board:placement");
+    // IDEA-062: the gizmo handle must follow a keyboard nudge or an inspector
+    // slider, not sit where the last drag left it — otherwise the next drag
+    // starts from a pose the board is not actually in.
+    const sel = boardPlacement.getSelection();
+    if (sel?.existing) placementGizmo.sync(sel);
+  },
   (selection: PlacementSelection | null) => {
+    syncGizmo(); // a placement selection is a gizmo target (IDEA-062)
     boardInspector.setPlacementSelection(selection, () => {
       rebuildBoardFromWorkingTheme();
       // A field edit (offset/rotation/scale/prop swap) changes what this ONE
@@ -1857,6 +2256,39 @@ window.addEventListener(
     const active = document.activeElement;
     const inTextField = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement;
     if (inTextField || active instanceof HTMLSelectElement) return; // arrows/typing inside a widget belong to it
+
+    // IDEA-062: board undo/redo. Its own listener rather than the character
+    // one's, because that listener early-returns on `mode !== "character"`
+    // and the two histories are genuinely separate stacks — a Ctrl+Z in
+    // board mode must never reach into the character's.
+    if ((e.ctrlKey || e.metaKey) && (e.key === "z" || e.key === "Z")) {
+      e.preventDefault();
+      if (e.shiftKey) boardHistory.redo();
+      else boardHistory.undo();
+      return;
+    }
+    if ((e.ctrlKey || e.metaKey) && (e.key === "y" || e.key === "Y")) {
+      e.preventDefault();
+      boardHistory.redo();
+      return;
+    }
+
+    // IDEA-062: the gizmo mode keys, matching the character workbench's own
+    // W/E/T (deliberately not the reference editor's W/E/R — see that
+    // listener's note: R and S are held modifiers here).
+    if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+      const k = e.key.toLowerCase();
+      if (k === "w" || k === "e" || k === "t") {
+        e.preventDefault();
+        gizmo.setMode(k === "w" ? "translate" : k === "e" ? "rotate" : "scale");
+        return;
+      }
+      if (k === "q") {
+        e.preventDefault();
+        setGizmoEnabled(!gizmo.isEnabled());
+        return;
+      }
+    }
 
     if (e.key === "ArrowUp" || e.key === "ArrowDown" || e.key === "ArrowLeft" || e.key === "ArrowRight") {
       const step = e.shiftKey ? NUDGE_COARSE : e.altKey ? NUDGE_FINE : NUDGE_STEP;
@@ -2045,8 +2477,21 @@ function syncPartsIntoWorkingDef(): void {
   if (!propPartLog || !propPartLogOwnerId || !propPartLog.isDirty) return;
   const def = workingLibrary.find((d) => d.id === propPartLogOwnerId);
   if (!def) return;
-  const layer = propPartLog.toPropPartLayer();
-  if (layer.edits.length === 0 && layer.added.length === 0) delete def.parts;
+  // IDEA-062: MERGE onto the def's saved layer, never REPLACE it.
+  //
+  // This line used to read `def.parts = propPartLog.toPropPartLayer()`, and
+  // it was the worst bug the editor has had. The log's baselines are taken
+  // from a mesh makePropFromDef has ALREADY applied `def.parts` to, so
+  // toPropPartLayer() can only ever describe this session's deltas — and
+  // assigning those as the whole field deleted every previously-saved edit
+  // the instant you touched one part in a later session. The treehouse went
+  // from seven edits to one that way, in Nuno's own working tree.
+  //
+  // mergeIntoSaved() returns undefined for a genuinely empty result, which
+  // is what keeps the "the user undid everything" path (guarded by isDirty
+  // above) working exactly as its long comment describes.
+  const layer = propPartLog.mergeIntoSaved();
+  if (!layer) delete def.parts;
   else def.parts = layer;
 }
 
@@ -2070,6 +2515,11 @@ function rebuildPropsPreview(): void {
   // differently.
   const mesh = makePropFromDef(def, PREVIEW_INSTANCE_HASH);
   mesh.traverse((o) => { o.castShadow = true; });
+  // IDEA-062: hand every previously-SAVED added part its identity back
+  // BEFORE the tree is walked, so buildPartList sees `userData.editorAdded`
+  // and marks the row correctly. Doing it after the walk would leave the
+  // tree calling a user-added part a base part for the rest of the session.
+  tagSavedAddedParts(mesh, def.parts);
   propsPreviewRoot.add(mesh);
   propsPreview.currentMesh = mesh;
   // A genuinely NEW mesh — every part's authored pose/material must be
@@ -2080,7 +2530,69 @@ function rebuildPropsPreview(): void {
   propPartLog = new PropPartEditLog();
   propPartLogOwnerId = def.id; // this log now belongs to THIS def — see its own doc comment
   refreshPropParts();
-  propPartLog.snapshot(propPartNodes);
+  // IDEA-062: the saved layer goes IN with the snapshot — it is the thing the
+  // baselines were read through, and mergeIntoSaved has nothing to merge onto
+  // without it. Adoption must come AFTER, because snapshot() clears `added`.
+  propPartLog.snapshot(propPartNodes, def.parts);
+  adoptSavedAddedParts(propPartLog, propPartNodes, def.parts);
+}
+
+/** IDEA-062: re-tag the meshes board.ts's addPropPart rebuilt from a def's
+ *  saved `parts.added`, so the editor can tell them apart from base parts
+ *  again.
+ *
+ *  No shipped render change was needed for this: addPropPart already does
+ *  `mesh.name = added.id` (board.ts), and an AddedPropPart's `id` is
+ *  deliberately a stable, non-positional key — so a name match IS the
+ *  identity. Without this the editor treats a previously-added part as an
+ *  ordinary base node, which costs two things at once: editing it records a
+ *  path edit that applyPropParts will overwrite, and the log's `added` array
+ *  comes back empty so the merge would drop the part from the def entirely. */
+function tagSavedAddedParts(mesh: THREE.Object3D, parts: PropPartLayer | undefined): void {
+  if (!parts || parts.added.length === 0) return;
+  const byName = new Map<string, THREE.Object3D>();
+  mesh.traverse((o) => { if (o.name) byName.set(o.name, o); });
+  for (const saved of parts.added) {
+    const object = byName.get(saved.id);
+    if (!object) continue; // the factory's shape changed under it — degrade, never throw
+    object.userData.editorAdded = true;
+    object.userData.addedPropPartId = saved.id;
+  }
+}
+
+/** IDEA-062: rebuild a LiveAddedPropPart record for each saved added part and
+ *  hand it back to the log, so this session's merge carries them forward and
+ *  editing one updates its own record rather than emitting a path edit.
+ *
+ *  Reads the live mesh rather than the saved record for pose and colour, so
+ *  an added part that the factory's own transform happens to move stays
+ *  described by what is actually on screen (the same "live read is the truth"
+ *  reasoning toPropPartLayer already applies to added parts). */
+function adoptSavedAddedParts(
+  log: PropPartEditLog,
+  nodes: PartNode[],
+  parts: PropPartLayer | undefined,
+): void {
+  if (!parts || parts.added.length === 0) return;
+  const byId = new Map<string, PartNode>();
+  for (const node of nodes) {
+    const id = node.object.userData.addedPropPartId;
+    if (typeof id === "string") byId.set(id, node);
+  }
+  for (const saved of parts.added) {
+    const node = byId.get(saved.id);
+    if (!node || !(node.object instanceof THREE.Mesh)) continue;
+    const mat = Array.isArray(node.object.material) ? node.object.material[0] : node.object.material;
+    if (!(mat instanceof THREE.MeshToonMaterial)) continue; // board.ts builds these with toon()
+    log.adoptSaved({
+      id: saved.id,
+      parentPath: saved.parentPath,
+      kind: saved.kind,
+      object: node.object,
+      material: mat,
+      params: { ...saved.params },
+    });
+  }
 }
 
 // ===========================================================================
@@ -2168,6 +2680,7 @@ function selectPropPart(node: PartNode | null): void {
   propPartTree.setSelected(node ? [node.path] : []);
   highlighter.set(state.highlight && node ? [node] : []);
   propsPartInspector.setSelection(node, node ? propPartSelectionContext() : null);
+  syncGizmo(); // IDEA-062: a prop component is a gizmo target like any part
 }
 
 function propPartSelectionContext() {
@@ -2179,6 +2692,7 @@ function propPartSelectionContext() {
       if (selectedPropPart === node) highlighter.set(state.highlight ? [node] : []);
     },
     onDelete: deletePropPartNode,
+    onResetToFactory: (node: PartNode) => resetPropPartToFactory(node),
     onTransformCommitted: (node: PartNode, channel: PropTransformChannel, before: Vec3Tuple, after: Vec3Tuple) => {
       pushPropTransformHistory(node, channel, before, after);
     },
@@ -2216,6 +2730,43 @@ function propPartSelectionContext() {
       propHistory.push({ undo: apply(before), redo: apply(after), coalesceKey: `propparam:${record.id}:${key}` });
     },
   };
+}
+
+/** IDEA-062: discard one path's SAVED edit and rebuild the prop from the
+ *  factory shape — the counterweight to the save path now MERGING rather
+ *  than replacing (see syncPartsIntoWorkingDef).
+ *
+ *  Goes through the WORKING DEF, not just the log: the log's saved layer is
+ *  a snapshot for merging, but the preview is rebuilt from `def.parts`, so
+ *  clearing only the log would leave the part visibly unchanged until the
+ *  next save. Both are cleared, then the preview is rebuilt.
+ *
+ *  Undoable, because "reset to factory" on the wrong part is exactly the
+ *  kind of mistake a user makes once and needs to take back immediately.
+ *  The undo restores the def's whole `parts` field rather than the single
+ *  edit — a rebuild re-baselines the log anyway, so a finer-grained entry
+ *  would buy nothing and could disagree with what is on screen. */
+function resetPropPartToFactory(node: PartNode): void {
+  const def = propPartLogOwnerId ? workingLibrary.find((d) => d.id === propPartLogOwnerId) : undefined;
+  if (!def) return;
+  syncPartsIntoWorkingDef(); // fold any in-flight edits in first, so `before` is the whole truth
+  const before = clonePropPartLayer(def.parts);
+  const after = clonePropPartLayer(def.parts);
+  if (!after) return;
+  const edits = after.edits.filter((e: PropPartEdit) => e.path !== node.path);
+  if (edits.length === after.edits.length && after.added.length === 0) return; // nothing saved here
+
+  const apply = (layer: PropPartLayer | undefined) => (): void => {
+    const target = workingLibrary.find((d) => d.id === def.id);
+    if (!target) return;
+    const next = clonePropPartLayer(layer);
+    if (next) target.parts = next;
+    else delete target.parts;
+    propPartLog.clearSavedEdit(node.path); // keep the live log in step with the def
+    rebuildPropsPreview();
+  };
+  apply(edits.length === 0 && after.added.length === 0 ? undefined : { edits, added: after.added })();
+  propHistory.push({ undo: apply(before), redo: apply({ edits, added: after.added }) });
 }
 
 type PropTransformChannel = "position" | "rotation" | "scale";
@@ -2278,7 +2829,16 @@ function addPropPart(kind: PropPrimKind, rawName: string): void {
   const id = nextAddedPartId(kind);
   const displayName = sanitizePropPartName(rawName, kind);
   const params = { ...PROP_PART_GEOMETRY_DEFAULTS[kind] };
-  const material = new THREE.MeshStandardMaterial({ color: 0xe8a23d, roughness: 0.6 });
+  // IDEA-062: `toon()`, not `new THREE.MeshStandardMaterial(...)`.
+  //
+  // board.ts's addPropPart builds this same part with toon() when the game
+  // (or the editor's own next preview rebuild) reconstructs it from the
+  // saved record — so a standard material here meant the part you were
+  // looking at while placing it was shaded differently from the one that
+  // shipped, and it put a non-toon material into a scene the project's
+  // cel-shading rule says is toon throughout. `roughness` does not exist on
+  // a toon material, so it goes with it.
+  const material = toon({ color: 0xe8a23d });
   const geomMesh = new THREE.Mesh(buildPropPartPrimitiveGeometry(kind, params), material);
   geomMesh.name = displayName;
   geomMesh.castShadow = true;
@@ -2563,8 +3123,9 @@ const HINT_CHARACTER =
   "Ctrl = depth/roll) · Ctrl+Z undo · Esc deselect";
 const HINT_BOARD =
   "drag to orbit · scroll to zoom · click a highlighted slot to select/plant a prop · " +
+  "drag the gizmo to place it (W move · E rotate · T scale) · " +
   "arrows nudge offset · [ / ] rotate · - / = scale (Shift = big · Alt = fine) · " +
-  "Delete removes the selection";
+  "Ctrl+Z undo · Delete removes the selection";
 // IDEA-033: Props mode's own hint — click a COMPONENT (viewport or the
 // Components tree) rather than a "part" of a character, and Delete
 // hides/removes it instead of always deleting outright (a base part is
@@ -2573,6 +3134,7 @@ const HINT_BOARD =
 // HINT_CHARACTER's character-flavored wording the way this mode used to.
 const HINT_PROPS =
   "drag to orbit · scroll to zoom · click a component to select · " +
+  "drag the gizmo to transform (W move · E rotate · T scale · Q hide) · " +
   "arrows nudge position (hold S = scale · hold R = rotate · Shift = big · Alt = fine · " +
   "Ctrl = depth/roll) · Ctrl+Z undo · Delete hides/removes · Esc deselect";
 
@@ -2593,6 +3155,8 @@ function setMode(next: Mode): void {
   modePickupsBtn.classList.toggle("active", next === "pickups");
   modeBoardBtn.classList.toggle("active", next === "board");
   modePropsBtn.classList.toggle("active", next === "props");
+  modeBalanceBtn.classList.toggle("active", next === "balance");
+  modeWorldBtn.classList.toggle("active", next === "world");
   // Pickups is a character-shaped mode: it keeps the part tree, the lil-gui
   // pane and the bottom code panel. Only the registry and the source file
   // differ, so it deliberately does NOT get board/props's two-row layout.
@@ -2601,17 +3165,32 @@ function setMode(next: Mode): void {
   // (see editor.css's `#editorApp.mode-board, #editorApp.mode-props` rule) —
   // both classes are applied/removed together so either non-character mode
   // gets the two-row grid.
-  editorApp.classList.toggle("mode-board", next === "board");
   editorApp.classList.toggle("mode-props", next === "props");
-  treePaneTitle.textContent = meshMode ? "Parts" : next === "board" ? "Board slots" : "Prop library";
+  // IDEA-062 v4: Balance is the first tab with NO tree and NO viewport — it is
+  // a form over config.ts. Its own layout class, so editor.css can give the
+  // GUI pane the whole width instead of leaving two empty columns.
+  editorApp.classList.toggle("mode-balance", next === "balance");
+  // World reuses BOARD mode's layout and stage — it is tuning what the board
+  // draws, so it must be looking at a board.
+  editorApp.classList.toggle("mode-board", next === "board" || next === "world");
+  treePaneTitle.textContent = meshMode
+    ? "Parts"
+    : next === "board"
+      ? "Board slots"
+      : next === "balance"
+        ? "Balance"
+        : "Prop library";
   charGuiHost.hidden = !meshMode;
   boardGuiHost.hidden = next !== "board";
   propsGuiHost.hidden = next !== "props";
+  balanceGuiHost.hidden = next !== "balance";
+  worldGuiHost.hidden = next !== "world";
   byId<HTMLElement>("codePane").style.display = meshMode ? "" : "none";
-  // The gizmo drives the character `selected` only — board and props modes
-  // have their own selection stories and no gizmo yet, so the bar goes with
-  // it rather than sitting there wired to nothing (IDEA-041's rule).
-  gizmoBar.hidden = !meshMode;
+  // IDEA-062: the bar follows whether THIS mode has something to transform,
+  // not whether it is a mesh mode. Props parts and board placements are both
+  // real gizmo targets now; syncGizmo is called at the END of setMode (after
+  // each branch has established its selection) so the answer is computed from
+  // the mode we have actually arrived in.
   // The readout counts the CHARACTER group, which only exists in the mesh
   // modes — leaving it up in board/props would report a permanent 0.
   viewportInfo.hidden = !meshMode || !infoBtn.classList.contains("active");
@@ -2694,7 +3273,7 @@ function setMode(next: Mode): void {
     boardStage.setVisible(true);
     stage.setGroundVisible(false); // board.ts's own floor plane covers this job
     propsPreview.setVisible(false);
-    if (!board) loadBaseTheme(loadedBaseThemeId); // first entry into board mode
+    if (!board) loadBaseTheme(loadedBaseThemeId, false); // first entry into board mode
     boardTree.render();
     boardPlacement.setPickingEnabled(true); // the only mode where slot clicks matter
     setBoardCameraFraming();
@@ -2708,9 +3287,50 @@ function setMode(next: Mode): void {
     enterPropsMode();
     setCharacterCameraFraming(); // props are character-scale — reuse the exact same framing/orbit limits
   }
+
+  // IDEA-062 v5: World tunes what the BOARD draws (the fence's picket geometry
+  // and the ground dressing's scatter), so it borrows board mode's own stage
+  // rather than building a second one — what you tune is literally what the
+  // game renders. Board mode's lazy first build happens here too.
+  if (next === "world") {
+    select(null);
+    selectPropPart(null);
+    if (group) group.visible = false;
+    boardStage.setVisible(true);
+    stage.setGroundVisible(false);
+    propsPreview.setVisible(false);
+    // No slot markers: this tab is not about placements, and a click landing
+    // on one would plant a prop you did not ask for.
+    boardPlacement.setPickingEnabled(false);
+    if (!board) loadBaseTheme(loadedBaseThemeId, false);
+    worldInspector.rebuild();
+    setBoardCameraFraming();
+  }
+
+  // IDEA-062 v4: Balance has no scene of its own. Everything visual is hidden
+  // and the pane is a form — see balanceInspector.ts on why there is no
+  // preview here rather than an idle one.
+  if (next === "balance") {
+    select(null);
+    selectPropPart(null);
+    if (group) group.visible = false;
+    boardStage.setVisible(false);
+    propsPreview.setVisible(false);
+    boardPlacement.setPickingEnabled(false);
+    // Rebuilt on every entry so the sliders show what the FILE says — it may
+    // have been written by a save since you were last here, or hand-edited.
+    balanceInspector.rebuild();
+  }
+
+  // IDEA-062: LAST, after every branch above has settled its own selection —
+  // syncGizmo reads `mode` plus that mode's selection, so calling it earlier
+  // would answer for the mode we are leaving.
+  syncGizmo();
 }
 
 modeCharacterBtn.addEventListener("click", () => setMode("character"));
+modeBalanceBtn.addEventListener("click", () => setMode("balance"));
+modeWorldBtn.addEventListener("click", () => setMode("world"));
 modeBoardBtn.addEventListener("click", () => setMode("board"));
 modePropsBtn.addEventListener("click", () => setMode("props"));
 modePickupsBtn.addEventListener("click", () => setMode("pickups"));
@@ -2788,6 +3408,28 @@ declare global {
        *  scene traversal. Returns null for an out-of-range tile (shouldn't
        *  happen for any real apron/wall candidate). */
       markerState(tile: [number, number], mode: "apron" | "wall"): { opacity: number; color: number; scale: number } | null;
+      /** IDEA-062: the tile of the Nth existing apron placement, so a suite
+       *  can click a FILLED slot without hard-coding a theme's own layout. */
+      placementTile(index: number): [number, number] | null;
+      /** IDEA-062: which gizmo axis handles are currently shown, plus whether
+       *  the bar is up at all. A board placement cannot express free rotation
+       *  or a Y offset, so the handle is cut down to what the DATA holds —
+       *  this is how a suite proves that rather than eyeballing a render. */
+      gizmoAxes(): { x: boolean; y: boolean; z: boolean; mode: string; barVisible: boolean };
+      /** IDEA-062: the live placement values, for asserting that a gizmo drag
+       *  wrote what it should — and, for a TALL prop on a clamped row, that a
+       *  rotate drag did not quietly overwrite its authored scale. */
+      placementValues(index: number): { propId: string; offset: [number, number]; rotationY: number; scale: number } | null;
+      /** IDEA-062: board undo/redo depth, so a suite can prove a gesture
+       *  produced exactly ONE step rather than none or sixty. */
+      boardHistoryDepth(): { undo: number; redo: number };
+      /** IDEA-062: where the placement gizmo's proxy projects on screen, so a
+       *  suite can aim a real drag at its handles rather than guessing. */
+      proxyScreenXY(): { x: number; y: number } | null;
+      /** IDEA-062: which axis the gizmo is currently hovering/dragging (null
+       *  when none) — lets a suite FIND a handle by probing instead of
+       *  hard-coding pixel offsets that break with the camera. */
+      gizmoAxis(): string | null;
     };
   }
 }
@@ -2829,6 +3471,35 @@ window.__boardTestHook = {
     return { tile: [sel.tile[0], sel.tile[1]], propId: sel.existing?.propId ?? null };
   },
   markerState: (tile, mode) => boardPlacement.getMarkerState(tile, mode),
+  placementTile: (index) => {
+    const p = workingTheme.placements[index];
+    return p ? [p.tile[0], p.tile[1]] : null;
+  },
+  gizmoAxes: () => ({
+    x: gizmo.showsAxis("x"),
+    y: gizmo.showsAxis("y"),
+    z: gizmo.showsAxis("z"),
+    mode: gizmo.getMode(),
+    barVisible: !gizmoBar.hidden,
+  }),
+  placementValues: (index) => {
+    const p = workingTheme.placements[index];
+    if (!p) return null;
+    return { propId: p.propId, offset: [p.offset[0], p.offset[1]], rotationY: p.rotationY, scale: p.scale };
+  },
+  boardHistoryDepth: () => boardHistory.depth(),
+  proxyScreenXY: () => {
+    if (!placementGizmo.proxy.visible) return null;
+    const world = new THREE.Vector3();
+    placementGizmo.proxy.getWorldPosition(world);
+    const ndc = world.project(stage.camera);
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: ((ndc.x + 1) / 2) * rect.width + rect.left,
+      y: ((1 - ndc.y) / 2) * rect.height + rect.top,
+    };
+  },
+  gizmoAxis: () => gizmo.hoveredAxis(),
 };
 
 // TEST-SUPPORT ONLY: same rationale as __boardTestHook above, scoped to
@@ -2981,6 +3652,205 @@ window.__charTestHook = {
   animation: () => state.animation,
 };
 
+// ===========================================================================
+// --- IDEA-062 v5: the World tab (fence.ts + groundDetail.ts) ---
+//
+// The IDEA-060 garden machinery no theme palette can reach. Unlike Balance,
+// edits here apply LIVE — every number is judged by looking at the board, so
+// the feedback loop IS the point — and the params objects are mutated in place
+// (see fence.ts's FENCE_PARAMS note on why a mutable table beats threading an
+// override through three signatures for one dev-only pane).
+//
+// `worldBaseline` is what "Revert unsaved" restores to: the values as the
+// FILE has them, captured at load. Without it, reverting would need to
+// re-parse the source on every field, and a field whose file had since been
+// saved would revert to the wrong number.
+const WORLD_PARAM_OBJECTS: Record<string, Record<string, number>> = {
+  FENCE_PARAMS: FENCE_PARAMS as unknown as Record<string, number>,
+  GROUND_DETAIL_PARAMS: GROUND_DETAIL_PARAMS as unknown as Record<string, number>,
+};
+
+const worldBaseline = new Map<string, number>();
+for (const field of allWorldFields()) {
+  const obj = WORLD_PARAM_OBJECTS[String(field.path[0])];
+  if (obj) worldBaseline.set(field.path.join("."), obj[String(field.path[1])]);
+}
+
+function worldLiveValue(field: WorldField): number {
+  const obj = WORLD_PARAM_OBJECTS[String(field.path[0])];
+  return obj?.[String(field.path[1])] ?? 0;
+}
+
+const worldInspector = createWorldInspector(worldGuiHost, {
+  source: (file) => sourceTextFor(file),
+  liveValue: worldLiveValue,
+  onEdit: (field, value) => {
+    const obj = WORLD_PARAM_OBJECTS[String(field.path[0])];
+    if (!obj) return;
+    obj[String(field.path[1])] = value;
+    // The fence and the ground detail are both rebuilt by applyBoardTheme, so
+    // the existing board rebuild is the whole live-preview mechanism — no
+    // second path to drift from what the game does.
+    if (board) rebuildBoardFromWorkingTheme();
+    sessionDirty();
+  },
+  onRevert: () => {
+    for (const field of allWorldFields()) {
+      const obj = WORLD_PARAM_OBJECTS[String(field.path[0])];
+      const was = worldBaseline.get(field.path.join("."));
+      if (obj && was !== undefined) obj[String(field.path[1])] = was;
+    }
+    if (board) rebuildBoardFromWorkingTheme();
+  },
+  onSave: async () => {
+    // One write per FILE, with every field targeting that file batched into
+    // it — two saves to the same file would race the source store.
+    const byFile = new Map<SavableFile, ConfigEdit[]>();
+    for (const field of allWorldFields()) {
+      const list = byFile.get(field.file) ?? [];
+      list.push({ path: field.path, value: worldLiveValue(field) });
+      byFile.set(field.file, list);
+    }
+    let applied = 0;
+    const blocked: string[] = [];
+    for (const [file, edits] of byFile) {
+      const result = applyConfigEdits(sourceTextFor(file), edits);
+      for (const b of result.blocked) blocked.push(`${b.path.join(".")} — ${b.reason}`);
+      if (result.applied.length === 0) continue;
+      const saved = await saveEditorFile(file, result.src);
+      if (!saved.ok) return { ok: false, error: saved.error, applied, blocked };
+      applied += result.applied.length;
+      // What is on disk is the new baseline — reverting after a save must go
+      // back to what was SAVED, not to what shipped.
+      for (const path of result.applied) {
+        const field = allWorldFields().find((f) => f.path.join(".") === path.join("."));
+        if (field) worldBaseline.set(path.join("."), worldLiveValue(field));
+      }
+    }
+    return { ok: true, applied, blocked };
+  },
+});
+
+// ===========================================================================
+// --- IDEA-062 v4: the Balance tab (src/game/config.ts) ---
+//
+// The first tab that edits the GAME's numbers rather than its meshes, and the
+// only one whose mistakes are invisible locally: config.ts feeds the server's
+// plausibility bounds through `npm run sync`, so an unsynced change makes
+// honest runs start failing SCORE_ITEM_MISMATCH in production while
+// everything here still looks fine. The tab cannot enforce the sync, so it
+// makes it impossible to miss — see balanceInspector.ts's sync panel.
+//
+// Pending edits live in the inspector until Save; nothing is written to disk
+// per slider tick. That is the opposite of the other tabs (which mutate a
+// working copy live and rebuild a preview) and it is right here: there is no
+// preview to drive, and a half-dragged slider writing a real game number on
+// every frame would be the worst possible behaviour for a file this load-
+// bearing.
+const pendingConfigEdits = new Map<string, ConfigEdit>();
+
+const balanceInspector = createBalanceInspector(balanceGuiHost, {
+  source: () => sourceTextFor("src/game/config.ts"),
+  onEdit: (path, value) => {
+    pendingConfigEdits.set(path.join("."), { path, value });
+    sessionDirty();
+  },
+  onRevert: () => pendingConfigEdits.clear(),
+  onSave: async () => {
+    const edits = [...pendingConfigEdits.values()];
+    if (edits.length === 0) {
+      return { ok: false, error: "no changes to save", applied: 0, blocked: [] };
+    }
+    const result = applyConfigEdits(sourceTextFor("src/game/config.ts"), edits);
+    if (result.applied.length === 0) {
+      return { ok: false, error: "nothing could be written", applied: 0, blocked: result.blocked };
+    }
+    const saved = await saveEditorFile("src/game/config.ts", result.src);
+    if (!saved.ok) return { ok: false, error: saved.error, applied: 0, blocked: result.blocked };
+    pendingConfigEdits.clear();
+    return { ok: true, applied: result.applied.length, blocked: result.blocked };
+  },
+});
+
+// ===========================================================================
+// --- IDEA-062 v3: rolling autosave + the Restore / Discard bar ---
+//
+// Saves no longer reload the page (v1), but a reload is still one Ctrl+R, one
+// crashed tab, one hand-edit to a game file (which SHOULD still hot-reload —
+// the HMR suppression is deliberately narrow) or one stale-chip Reload click
+// away. Every one of those used to cost an afternoon of prop tuning silently.
+// See session.ts's header for exactly what is and is not stored, and why the
+// character EditLog is a follow-up rather than a half-measure here.
+const sessionRecorder = startSessionRecorder({
+  mode: () => mode,
+  props: () => (libraryLoaded ? { library: workingLibrary, selectedId: selectedPropId } : null),
+  board: () => (board ? { baseThemeId: loadedBaseThemeId, theme: workingTheme } : null),
+  character: () => ({ id: state.characterId }),
+});
+
+/** Marks the session dirty. Wired to every history's onChange plus the paths
+ *  that legitimately change state without pushing one (a mode switch, a prop
+ *  selection). Cheap — it only arms a trailing timer. */
+function sessionDirty(): void {
+  sessionRecorder.touch();
+}
+
+// Chain onto whatever each history already had rather than replacing it —
+// the history PANELS are driven by these, and silently stealing the hook
+// would blank them.
+for (const h of [history, propHistory, boardHistory]) {
+  const prev = h.onChange;
+  h.onChange = () => {
+    prev?.();
+    sessionDirty();
+  };
+}
+
+/** Applies a stored session. Deliberately does NOT touch the character
+ *  EditLog (see session.ts) — it selects the model and leaves it at that,
+ *  which the restore bar says out loud. */
+function applyStoredSession(stored: EditorSession): void {
+  if (stored.props) {
+    workingLibrary = stored.props.library;
+    libraryLoaded = true;
+    selectedPropId = stored.props.selectedId;
+  }
+  if (stored.board) {
+    loadedBaseThemeId = stored.board.baseThemeId;
+    workingTheme = stored.board.theme;
+    boardBaseline = cloneWorkingTheme(workingTheme);
+    // Board mode builds lazily on first entry; if it has already been built
+    // this page life, re-apply now so the restore is visible immediately.
+    if (board) {
+      rebuildBoardFromWorkingTheme();
+      if (boardMaterials) {
+        boardInspector.setTheme(workingTheme, loadedBaseThemeId, boardMaterials, boardStage.lights);
+      }
+      boardPlacement.syncFromTheme(workingTheme);
+    }
+  }
+  if (stored.character && CHARACTERS.some((d) => d.id === stored.character!.id)) {
+    state.characterId = stored.character.id;
+    inspector.setRegistry(CHARACTERS, state.characterId);
+    buildCharacter();
+  }
+  setMode(stored.mode);
+}
+
 // --- go ---
 buildCharacter();
 restorePendingSaveReport();
+
+// The offer goes up AFTER the editor has booted, so Restore lands on a live
+// page rather than racing module init.
+{
+  const stored = readStoredSession();
+  if (stored && sessionHasContent(stored)) {
+    showRestoreBar(
+      editorApp,
+      stored,
+      () => applyStoredSession(stored),
+      () => clearStoredSession(),
+    );
+  }
+}

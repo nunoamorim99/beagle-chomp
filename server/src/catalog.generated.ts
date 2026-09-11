@@ -125,11 +125,29 @@ export const MAZE_FACTS: readonly MazeFacts[] = [
   { biscuits: 191, bones: 4, fruitTiles: 2 },
   { biscuits: 190, bones: 4, fruitTiles: 2 },
   { biscuits: 193, bones: 4, fruitTiles: 2 },
-  { biscuits: 190, bones: 4, fruitTiles: 2 },
+  { biscuits: 194, bones: 4, fruitTiles: 2 },
   { biscuits: 186, bones: 4, fruitTiles: 2 },
+  { biscuits: 180, bones: 4, fruitTiles: 2 },
+  { biscuits: 188, bones: 4, fruitTiles: 2 },
+  { biscuits: 188, bones: 4, fruitTiles: 2 },
+  { biscuits: 194, bones: 4, fruitTiles: 2 },
+  { biscuits: 188, bones: 4, fruitTiles: 2 },
+  { biscuits: 192, bones: 4, fruitTiles: 2 },
+  { biscuits: 196, bones: 4, fruitTiles: 2 },
+  { biscuits: 180, bones: 4, fruitTiles: 2 },
+  { biscuits: 196, bones: 4, fruitTiles: 2 },
+  { biscuits: 204, bones: 4, fruitTiles: 2 },
+  { biscuits: 188, bones: 4, fruitTiles: 2 },
+  { biscuits: 192, bones: 4, fruitTiles: 2 },
+  { biscuits: 198, bones: 4, fruitTiles: 2 },
+  { biscuits: 196, bones: 4, fruitTiles: 2 },
+  { biscuits: 192, bones: 4, fruitTiles: 2 },
   { biscuits: 262, bones: 0, fruitTiles: 2 },
   { biscuits: 270, bones: 0, fruitTiles: 2 },
   { biscuits: 248, bones: 0, fruitTiles: 2 },
+  { biscuits: 239, bones: 0, fruitTiles: 2 },
+  { biscuits: 247, bones: 0, fruitTiles: 2 },
+  { biscuits: 259, bones: 0, fruitTiles: 2 },
 ];
 
 export const MAZE_COUNT = MAZE_FACTS.length;
@@ -175,14 +193,22 @@ export const CLASSIC_MODIFIERS: ChallengeLevelFacts = {
 // than a 3-ghost one. Sizing every level at 3 would reject honest runs.
 
 export const MAPS_PER_STAGE = 5;
-export const STAGE_COUNT = 3;
-export const LEVELS_PER_LAP = 18;
-export const MAPS_PER_LAP = 15;
-export const BONUS_MAZE_START = 15;
+export const STAGE_COUNT = 6;
+export const LEVELS_PER_LAP = 36;
+export const MAPS_PER_LAP = 30;
+export const BONUS_MAZE_START = 30;
 export const GHOSTS_STAGE_1_2 = 3;
-export const GHOSTS_STAGE_3 = 4;
+export const GHOSTS_STAGE_3_4 = 4;
+export const GHOSTS_STAGE_5_6 = 5;
 export const GHOSTS_BONUS_FIRST_LAP = 1;
 export const GHOSTS_BONUS_LATER_LAPS = 2;
+
+/** Enemies on a numbered map in the given 0-based stage, on lap 1. */
+export function ghostsForStage(stageIdx: number): number {
+  if (stageIdx >= 4) return GHOSTS_STAGE_5_6;
+  if (stageIdx >= 2) return GHOSTS_STAGE_3_4;
+  return GHOSTS_STAGE_1_2;
+}
 
 export interface LevelPlan {
   readonly mazeIdx: number;
@@ -218,9 +244,11 @@ export function planLevel(levelIdx: number): LevelPlan {
 
   return {
     mazeIdx: mapIdx,
-    ghostCount: lap > 1 || stageIdx === STAGE_COUNT - 1 ? GHOSTS_STAGE_3 : GHOSTS_STAGE_1_2,
+    ghostCount: lap > 1 ? GHOSTS_STAGE_5_6 : ghostsForStage(stageIdx),
     isBonus: false,
-    mapNumber: mapIdx + 1,
+    // IDEA-061: the RUNNING count, so lap 2's first map is Map 31. Never an
+    // index into anything — mazeIdx is what repeats.
+    mapNumber: (lap - 1) * MAPS_PER_LAP + mapIdx + 1,
     lap,
     stage: stageIdx + 1,
   };

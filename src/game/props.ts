@@ -426,6 +426,7 @@ export const PROP_LIBRARY: readonly PropDef[] = [
       { path: "1/12", scale: [1.02, 1, 1.04] },
       { path: "5/4", position: [-0.861, 0.662, -0.091] },
       { path: "6", rotation: [-0.048, -0.042, 1.049], scale: [1, 1.1, 1] },
+      { path: "0", scale: [1, 1.08, 1] },
     ],
       added: [],
     },

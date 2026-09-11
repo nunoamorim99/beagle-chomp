@@ -95,10 +95,41 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v7.
   `coins.ts` survives under its old name because bonus LIVES still use the same
   maths on `LIVES.milestonePoints` — that is the one points-milestone left, and
   it is fine because a life is not a currency: you can't bank or spend it.
-- **Pure logic** (`src/game/*`): `mazes.json`+`mazes.ts` (two **validated** mazes —
+- **Pure logic** (`src/game/*`): `mazes.json`+`mazes.ts` (**36 validated** mazes —
   connected, all pellets reachable, ghosts can leave the pen), `grid.ts` (tiles, tunnel
   wrap, walkability), `movement.ts` (tile-stepping model), `ghostAI.ts` (targeting with a
   dead-end-safe fallback), `state.ts` + `game.ts` (loop + state machine, the integration point).
+- **THE CYCLE IS 30 MAPS AND THE MAP NUMBER NEVER RESETS** (IDEA-061). Six stages
+  of five numbered maps, each closed by a bonus level: 36 mazes, 36 levels a lap.
+  `progression.ts` is still the one place difficulty is tuned. Five rules:
+  1. **Maps 1-15 are byte-for-byte the progression they always were** — same
+     maze, same enemy count (3 / 3 / 4). The new stages EXTEND the ramp to
+     4 / 5 / 5 rather than redistributing it, because fifteen maps players
+     already know must not change difficulty underneath them. Stages 5-6 field
+     the violet and leaf enemies, which classic mode had never used.
+  2. **`mapNumber` is a RUNNING COUNT, not a position** — lap 2's first map is
+     **Map 31**, not "Map 1 ·2", and the lap suffix is gone because the figure
+     now carries the lap. The MAZE repeats (Map 31 is maze 0 again); the count
+     does not, so `mapNumber` is never an index into anything.
+  3. **The three original bonus mazes MOVED from [15..17] to [30..32]** to make
+     room for maps 16-30. Invisible, because nothing stores a bonus maze by
+     index: a run's `mazeIdxSequence` is CHECKED against `planLevel()` rather
+     than compared with an older run's. Mazes 0-4 stay put, so challenge mode
+     (which hardcodes mazeIdx 0-4) is untouched.
+  4. **A bonus map has NO bones and its pen stands FREE** — no wall tile may
+     touch the ring around the pen, or the house reads as a lump fused to a
+     wall instead of sitting in a meadow. `test-progression.ts` enforces both;
+     all three new bonus maps failed the second rule on the first pass.
+  5. **The HUD figure is no longer one character wide.** Measured at 390px the
+     map chip runs 75.5px at "5" to 92.8 at "115", and "Bonus" is 94.9 — wider
+     than any of them — so a numbered map can never be what wraps that row. See
+     the note above `.hud-chip--tight .v` in `style.css`.
+  **Two bugs this turned up in code that had shipped**, both invisible to every
+  check that existed: **maze 10 and maze 14 were byte-identical** (a duplicate
+  is a perfectly valid maze, so nothing complained — `validate-maze.ts` and
+  `test-progression.ts` now both reject repeats), and **the validator never
+  asserted `REQUIRED_MAZE_COUNT`** although `progression.ts` had claimed it did
+  since IDEA-040.
 - **Render layer** (`src/render/*`): `scene.ts`, `board.ts`, `characters.ts`,
   `effects.ts`, plus `toon.ts` — the shared 3-step cel ramp.
 - **The whole scene is CEL-SHADED** (IDEA-024 v2): every lit surface is a
@@ -1069,12 +1100,245 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v7.
   does. Same white-material and `emissiveMap` rules as the board.
 - **Character editor tabs** (`/editor/`, dev-only): **Character** (characters.ts),
   **Pickups** (the maze items in board.ts — power bone, bonus-life bone, fruit,
-  coin), **Board & Themes**, **Props**. Character and Pickups are the SAME
+  coin), **Board & Themes**, **Props**, and **Balance** (IDEA-062 v4 —
+  src/game/config.ts's numbers). Character and Pickups are the SAME
   machinery over a different registry and source file: part tree, inspector,
   generated code, real-source panel and save-in-place all read `sourceFile`
   off the def rather than assuming one file. Adding a mesh tab means adding a
   registry entry — not a parallel copy of the editor.
+- **SAVING NO LONGER COSTS YOU WORK** (IDEA-062 v1). Three defects, one fix, and
+  they had to land together — fixing any one alone makes another WORSE. Read
+  this before touching any save path.
+  1. **A PART-EDIT SAVE MERGES; IT MUST NEVER REPLACE.** `def.parts = log
+     .toPropPartLayer()` was the single worst bug this editor has had. The log's
+     baselines are snapshotted from a mesh `makePropFromDef` has ALREADY run
+     `applyPropParts` over, so the layer it produces describes only THIS
+     session's deltas — and assigning that as the whole field deleted every
+     previously-saved edit. The `treehouse` def was found in the working tree
+     having gone from **seven part edits to one**. `PropPartEditLog` now holds
+     the def's saved layer (`snapshot(nodes, saved)`) and `mergeIntoSaved()`
+     folds the session onto it **per PATH and per CHANNEL** — a saved `scale`
+     survives a session that only moved `position`. `toPropPartLayer()` still
+     exists and is still correct at what it claims; it is simply not the value
+     `def.parts` may be set to.
+     Two corollaries: a previously-ADDED part is re-adopted by NAME
+     (`board.ts`'s `addPropPart` sets `mesh.name = added.id`, so no shipped
+     render change was needed) — without adoption the log's `added` comes back
+     empty and the merge would delete every added part. And because the merge
+     makes a saved edit sticky, **"reset to factory" is not a nicety**: dragging
+     a part back by hand only returns it to its SAVED pose, since the saved
+     value IS the baseline. `scripts/test-prop-part-merge.ts` is a PURE test in
+     `npm run test`, deliberately not a browser one — the defect only appears on
+     the SECOND session over a def, and no Playwright suite saved twice.
+  2. **AN EDITOR SAVE MUST NOT RELOAD THE PAGE.** Nothing in `src/` handles
+     `import.meta.hot`, so writing any file in the editor's module graph fell
+     back to Vite's `full-reload` — and a Props save therefore destroyed the
+     Board tab's unsaved placements, both undo stacks, the camera and the
+     selection. `vite.config.ts`'s `editorSaveFile` plugin now records a
+     **CONTENT HASH** of what it wrote and `handleHotUpdate` returns `[]` when
+     the file on disk matches it. Content, not a time window: under Docker the
+     watcher polls and its latency is unbounded, so a timestamp either expires
+     early (the reload comes back intermittently, which is worse than always)
+     or swallows a genuine hand-edit. **The acceptance test is that a HAND edit
+     still reloads** — suppression that is too broad looks exactly like success.
+     Every write also drops a one-generation `<file>.editorbak` sidecar
+     (gitignored).
+  3. **THE `?raw` SNAPSHOTS WERE FROZEN AT PAGE LOAD, AND ONLY THE RELOAD HID
+     IT.** Every save path splices into the file's EXISTING source. That source
+     came from `?raw` imports, which Vite resolves once. The reload used to
+     refresh them as a side effect — so the instant rule 2 landed, save #2 would
+     have spliced into text predating save #1 and silently reverted it. i.e.
+     fixing the reload ALONE would have made "saving deletes my previous change"
+     worse. **`src/editor/sourceStore.ts`** is the second half: one mutable
+     store, seeded from the `?raw` imports, advanced by `saveEditorFile` from
+     the exact bytes it POSTed (no round-trip read — the client already knows
+     what it sent). `sources.ts` is now a re-export of it; `boardCodegen.ts` and
+     `propsFileExport.ts` read through it.
+  The honest cost of rule 2, surfaced rather than hidden: for the MESH tabs the
+  imported module now lags the file on disk, so a character switch after a save
+  rebuilds from pre-save source. `rebaselineAfterSave()` does the work the
+  reload used to (clearing `userData.editorAdded` on saved parts is the part
+  that is silent when missed — `EditLog.touchTransform` early-returns on an
+  added node, so a part left flagged stops recording ANY further move), and the
+  **`#staleChip`** offers the reload as a choice. Board and Props need no
+  rebaseline: `workingTheme`/`workingLibrary` ARE the truth.
+- **THE GIZMO REACHES EVERY TAB, AND BOARD MODE HAS UNDO** (IDEA-062 v2).
+  `createGizmo` was always generic (`attach(objects[])`,
+  `onCommit(channel, changes)`); it was simply wired to `gizmoBar.hidden =
+  !meshMode`. That one line was most of why Board and Props read as a preview
+  rather than a workbench — both already had a selection AND a full
+  transform-commit path, and neither had a handle. `currentGizmoTarget()` +
+  `syncGizmo()` in `main.ts` are the single routing point; every selection
+  path and `setMode` call them, so no mode can drift onto its own attach path.
+  Four rules are load-bearing:
+  1. **A BOARD PLACEMENT IS DRIVEN THROUGH A PROXY, NEVER THE PROP MESH**
+     (`src/editor/placementGizmo.ts`). Two independent reasons, and the second
+     destroys data silently: the prop mesh does not survive an edit (every
+     placement change runs `rebuildBoardFromWorkingTheme`, disposing the very
+     object the gizmo holds), and **`buildProps` CLAMPS a `"tall"` prop's
+     scale** on the south row and the east/west columns
+     (`SOUTH_ROW_TALL_SCALE_CAP` / `EAST_WEST_TALL_SCALE_CAP`). Read the
+     transform back off the mesh and a placement authored at 1.8 comes back as
+     0.55 — on ANY drag, including a pure rotate — and nothing on screen
+     changes to tell you, because the mesh was already being drawn clamped.
+     The proxy is positioned FROM the data and every commit writes back through
+     the inspector's own clamps, then **snaps the proxy onto the stored value**
+     so the handle can never drift from what was saved.
+  2. **THE HANDLE SHOWS ONLY WHAT THE DATA CAN HOLD.** A `PropPlacement` is
+     `{ propId, tile, offset:[x,z], rotationY, scale }` and the wall-top
+     variant has **no `offset` at all** — so translate offers X/Z (nothing for
+     a wall placement), rotate offers Y only, and scale is one uniform number.
+     `Gizmo.setAxes` is the mechanism; IDEA-041's rule applied to a 3D handle.
+     Note `TransformControls` only draws its uniform (XYZE) handle when all
+     three `show*` flags are true (`TransformControls.js:1475` at r169), so a
+     uniform-scale target must pass all three and collapse the result itself.
+  3. **THE BAR STAYS UP; ONLY THE THREE TRANSFORM BUTTONS DIM.** Hiding the
+     whole strip when nothing is selected was the first attempt and it is
+     wrong: shading, the orientation cube, the scene readout and Focus all
+     control how you are LOOKING, not what is selected, so it took away five
+     working controls to hide three idle ones. Export/Ref DO go, in board and
+     props — they act on the character group, which those modes do not have.
+  4. **BOARD UNDO IS A COARSE `WorkingTheme` SNAPSHOT** — exactly the exit
+     `main.ts`'s own "UNDO DECISION" note proposed and declined. Both its
+     objections stand and are answered by the shape rather than argued with: a
+     structural edit and a base-theme swap are just two more snapshots.
+     `cloneWorkingTheme` was already the primitive, so `history.ts` gained no
+     new vocabulary. The one subtlety is `boardBaseline`: lil-gui binds
+     controllers straight to `workingTheme`, so by the time an `onChange`
+     arrives the pre-edit value is gone — carrying a baseline forward is what
+     lets undo work **without threading an onGestureStart/End pair through
+     every one of the inspector's several dozen controls**. `restoreWorkingTheme`
+     must reset it, or the next edit records a pair spanning the undo itself
+     and one Ctrl+Z jumps two steps. It also **re-selects the tile** after
+     restoring (`boardPlacement.reselect`) — `syncFromTheme` clears the
+     selection, which is right for a theme swap and maddening for an undo.
+  A theme snapshot is a palette plus ~50 small placement objects: a few kB, a
+  few hundred at the 200-entry cap. `scripts/test-editor-board.ts` drives a
+  REAL drag (probing outward from `proxyScreenXY()` for a handle rather than
+  hard-coding a pixel offset the camera framing would invalidate) and pins the
+  clamp-drift regression directly.
+- **THE EDITOR AUTOSAVES, AND OFFERS THE WORK BACK** (IDEA-062 v3,
+  `src/editor/session.ts`). v1 stopped SAVES from reloading the page, but a
+  reload is still one Ctrl+R, one crashed tab, one hand-edit to a game file
+  (which must still hot-reload — the HMR suppression is deliberately narrow)
+  or one stale-chip Reload away, and every one of those used to cost an
+  afternoon of prop tuning silently. A 1.5 s trailing debounce mirrors the
+  working state into `localStorage` (plus `pagehide`/`visibilitychange`), and
+  on load a Restore / Discard bar offers it back. Three rules:
+  1. **NOTHING IS APPLIED UNTIL RESTORE IS CLICKED.** An automatic restore is
+     fewer clicks and the wrong default — arriving at a fresh editor to find
+     yesterday's abandoned experiment already loaded over the real registry
+     values is the same class of surprise this whole pass exists to remove.
+  2. **THE CHARACTER `EditLog` IS DELIBERATELY NOT STORED**, and the bar says
+     so. It holds live `Object3D`/`Material` references and keys material
+     baselines by `uuid`, so restoring it means REPLAYING every record against
+     a freshly-built character — real work, registered as a follow-up rather
+     than half-done. It is also the least painful gap: character edits are
+     written into the real source by Save, whereas props and board work lives
+     only in memory until you save, which is where the losses actually hurt.
+  3. **`localStorage` here is the documented exception to the no-storage
+     rule**, which is about the GAME's state in a PWA. Every access is in a
+     `try/catch` that degrades to "no restore offer", never to an error — the
+     same idiom `stashSaveReport` already used for `sessionStorage`.
+  The recorder CHAINS onto each history's existing `onChange` rather than
+  replacing it; the history panels are driven by those hooks and stealing one
+  would silently blank a panel.
+- **THE BALANCE TAB EDITS `config.ts`, AND ITS MAIN FEATURE IS THE SYNC GATE**
+  (IDEA-062 v4). A fifth tab, and the first that edits the game's NUMBERS
+  rather than its meshes. Five things are load-bearing:
+  1. **A TOKEN SWAP, NEVER A REGENERATION.** `config.ts` is the most heavily
+     COMMENTED file in the game — most of its numbers carry a paragraph on why
+     they are that number and what happened when they were something else
+     (read `COINS` or `LIVES`). Regenerating it the way `boardCodegen`
+     regenerates a theme entry would throw all of that away. `configRewrite.ts`
+     finds the statement, walks to the value at a path and swaps the numeric
+     token: same line count, same bytes everywhere else.
+  2. **THE MASK MUST PRESERVE LENGTH.** Reusing `sourceRewrite.ts`'s
+     `stripCommentsAndStrings` was the first attempt and it silently resolved
+     every lookup to the wrong byte: it DELETES comment/string spans rather
+     than blanking them, so its indices do not line up with the original.
+     `maskNonCode` blanks to spaces instead. This matters here more than
+     anywhere — `config.ts` is mostly prose, and words like `pickupValue`
+     appear in that prose as well as in the code.
+  3. **THE LAST ELEMENT OF AN ARRAY IS THE ONE YOU ARE MOST LIKELY TO RETUNE**,
+     and it was unreachable for a while: `config.ts` writes its arrays with no
+     trailing comma, so the final element is delimited by `]` — and an early
+     `return null` on `]` fired before the closing branch could compare the
+     index.
+  4. **ONLY NUMBER LEAVES AT KNOWN PATHS.** Never adds or removes an array
+     element: a sixth fruit changes `FruitId`, `rollFruit`, five pickup
+     builders, `catalog.generated.ts` and the server's plausibility bounds.
+     That is a feature, not a slider. Anything it cannot write is REPORTED,
+     never approximated. `balanceFields.ts` is the hand-written catalogue —
+     same trap as `propsCodegen`'s field list, except `test-config-rewrite.ts`
+     resolves all 46 paths against the real `config.ts` AND checks every
+     shipped value sits inside its own slider range, so a rename fails the
+     build rather than rendering a control wired to nothing.
+  5. **THE SYNC PANEL DOES NOT AUTO-HIDE.** CLAUDE.md's rule is that changing
+     `config.ts` requires `cd server && npm run sync`, and the failure mode if
+     you forget is uniquely nasty: honest runs start being rejected with
+     `SCORE_ITEM_MISMATCH` in PRODUCTION while nothing fails locally. So the
+     save button says it before you click, and a successful save leaves a panel
+     up with the exact commands until you dismiss it. Editing `mazes.json` will
+     need the same gate.
+  No 3D preview, deliberately — these are values whose effect is only visible
+  by playing, and a viewport showing an idle beagle beside a "ghost speed"
+  slider would imply a feedback loop that does not exist. The tab is a form,
+  and `.mode-balance` gives the GUI pane the whole width rather than leaving
+  two empty columns. Edits are PENDING until Save (the other tabs mutate a
+  working copy live); a half-dragged slider writing a real game number every
+  frame would be the worst possible behaviour for a file this load-bearing.
+- **THE WORLD TAB REACHES THE GARDEN MACHINERY NO PALETTE CAN** (IDEA-062 v5).
+  A sixth tab over `fence.ts` and `groundDetail.ts` — the IDEA-060 numbers that
+  are neither a theme palette field nor a prop param. Four things:
+  1. **`FENCE_PARAMS` / `GROUND_DETAIL_PARAMS` are NAMED MUTABLE TABLES**, not
+     module `const`s. The alternative was threading a `params` argument through
+     `buildFence` → `buildPanelGeometry` → `picketShape`, which changes three
+     signatures so one dev-only pane can pass an override every shipped call
+     site would leave empty. The contract: production never writes them, the
+     editor does, and then writes the values back to THOSE literals so the file
+     stays the source of truth.
+  2. **IT BORROWS BOARD MODE'S STAGE.** Every number here is judged by looking
+     at the board, so it renders one — and because `applyBoardTheme` already
+     rebuilds both the fence and the ground detail, the existing board rebuild
+     IS the live-preview mechanism, with no second path to drift from what the
+     game draws. Slot picking is off: a click landing on a marker would plant
+     a prop nobody asked for. Edits apply LIVE here and are written on Save —
+     the opposite of Balance, and right for the same reason Balance is the
+     other way round.
+  3. **THE FENCE READOUT IS THE POINT, NOT DECORATION.** A wall face is ~25px
+     at the game camera, so a picket and its gap are single-digit pixel counts
+     and the CARTOON rule's floor is "nothing smaller than a couple of pixels".
+     `fenceReadability()` reports both while you drag. Its floor is **1.95px,
+     not 2.0**: the shipped fence (4 pickets, 0.17 wide) lands on exactly 2.0,
+     so a hard `>= 2` had the reference configuration flip in and out of "too
+     thin" on float noise alone — an instrument that cries wolf about the value
+     it is calibrated against teaches you to ignore it.
+  4. **`pickets` IS A CONSTRAINT, NOT A PREFERENCE.** `PITCH = TILE / pickets`
+     must divide the tile exactly or every tile boundary seams and a straight
+     run reads as a row of separate gates. It is an integer stepper and a typed
+     value is rounded.
+  **`foliage.ts` is deliberately ABSENT**, and this is the most useful thing
+  the tab's scoping records: `lobedFoliageGeometry` is already options-driven
+  so live tuning would be free — but all six `gardenProps.ts` call sites
+  override `lobes`/`sharpness`/`detail` explicitly, so a control bound to the
+  module defaults would change NOTHING. That is IDEA-041's rule violated in the
+  most misleading way available. Lifting those six into a named
+  `GARDEN_FOLIAGE` table is the prerequisite. `wallTexture.ts`/`floorTexture.ts`
+  are out for a blunter reason: ~1000 lines of hand-authored painters with no
+  parameter surface at all.
 - **Tests**: `scripts/validate-maze.ts`, `scripts/sim-logic.ts` — import the real modules.
+  **`sim-logic.ts`'s bot PATHFINDS as of IDEA-061, and the bar is a CLEARED BOARD.**
+  It used to pick whichever legal turn shortened the straight-line distance to the
+  nearest pellet, which in a maze is not a plan: measured, it wedged into a 3-to-17
+  tile loop in **every one of the eighteen shipped mazes** and differed only in how
+  long it wandered first, so `eaten > 50` was a coin-flip on geometry (maze 7 passed
+  with 59) that eight sound new mazes tripped. It now runs a BFS over
+  **(tile, incoming direction)** — the no-reverse rule belongs in the SEARCH, not in a
+  filter applied after the target is picked — and decides inside `onArrive` the way the
+  ghosts always have, because deciding in the outer tick plans from the tile being LEFT
+  and lands every turn one tile late. All 36 mazes now clear 100% in under 73s of a
+  180s budget, so "the bot eats everything" is a real reachability assertion.
   `scripts/test-cosmetics.ts` pins the enemy-skin REGISTRY — its count (now TEN), its order and
   the ghost's secret/free pair. Adding a skin means editing it, and that is the point: the list is a contract
   the server's `catalog.generated.ts` mirrors, so a silent addition is a client/server drift.

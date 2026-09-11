@@ -34,3 +34,7 @@ server/.env.*
 .img2threejs/renders/diag.png
 .img2threejs/detail-zones/
 *.ts.bak
+
+# IDEA-062: the editor writes a one-generation backup beside every file it
+# overwrites (vite.config.ts, dev-only). Never committed.
+*.editorbak

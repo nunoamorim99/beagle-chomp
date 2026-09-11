@@ -14,7 +14,7 @@ index.html ships the `.hud` stats (`#score`/`#level`/`#lives`) and an empty
 `#center` container; hud.ts injects banners/panels into `#center` at runtime.
 `game.ts` drives it purely through the `Hud` methods and never touches those nodes directly.
 
-## Character editor (dev-only, IDEA-025)
+## Editor (dev-only, IDEA-025 · overhauled IDEA-062)
 `editor/index.html` + `src/editor/*` is a workbench page served by `npm run dev`
 at `/editor/` (`npm run editor` opens it directly): pick a character, tweak its
 real meshes live (lil-gui), add primitive parts, and copy the generated three.js
@@ -25,6 +25,29 @@ reaches `dist/` or the PWA precache (see the note in vite.config.ts; never add
 it to `rollupOptions.input`). `src/editor/*` may import three (like
 `src/render/*`), imports read-only from render/game, and registers no service
 worker; no game module may import from `src/editor/*`.
+
+**Six tabs as of IDEA-062**: Character, Pickups, Board & Themes, Props,
+**Balance** (`src/game/config.ts`'s numbers) and **World** (`fence.ts` +
+`groundDetail.ts` — the IDEA-060 garden machinery no theme palette reaches).
+
+Three things about SAVING are load-bearing enough to state here; CLAUDE.md's
+editor section carries the full account:
+- **A save never reloads the page.** `vite.config.ts`'s `handleHotUpdate`
+  suppresses HMR for the editor's own writes (matched on a content hash), so
+  saving in one tab can no longer destroy unsaved work in another. A HAND edit
+  to the same file still hot-reloads, and that is the acceptance test.
+- **The source the save path splices into lives in `src/editor/sourceStore.ts`,
+  not in a `?raw` import.** A `?raw` import is frozen at page load, so with the
+  reload gone a second save would splice into pre-first-save text. The two
+  changes are one fix.
+- **A part-edit save MERGES onto the def's saved layer, per path and per
+  channel.** It used to replace it, which deleted every previously-saved edit
+  the moment you touched one part in a later session.
+
+The read-only direction still holds in one direction only: `src/render/fence.ts`
+and `src/render/groundDetail.ts` now export MUTABLE params objects that the
+World tab writes. Production never assigns them — the literals in those files
+are the authored values and the editor writes back to them.
 
 ## Cel shading (IDEA-024 v2)
 Every lit surface in the game is a `MeshToonMaterial` sharing ONE gradient

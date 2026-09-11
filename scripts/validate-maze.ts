@@ -3,6 +3,7 @@
 // from in-game rules. Run: npm run validate
 import { MAZES } from "../src/game/mazes";
 import { Grid, COLS, ROWS } from "../src/game/grid";
+import { REQUIRED_MAZE_COUNT } from "../src/game/progression";
 
 function flood(grid: Grid, start: { x: number; y: number }, forGhost: boolean): Set<string> {
   const seen = new Set<string>([`${start.x},${start.y}`]);
@@ -59,6 +60,30 @@ MAZES.forEach((rows, idx) => {
   console.log(`  biscuits: ${biscuits}, bones: ${bones}, unreachable: ${unreachable}`);
   console.log(ok ? "  VALID" : "  NEEDS FIXING");
   allOk = allOk && ok;
+});
+
+// The progression references mazes by index and wraps nothing, so a missing
+// maze would send a level to `undefined` rather than fail. progression.ts has
+// claimed this check lived here since IDEA-040; it did not, so it does now.
+if (MAZES.length < REQUIRED_MAZE_COUNT) {
+  console.log(`\n! ${MAZES.length} mazes, but the progression needs ${REQUIRED_MAZE_COUNT}`);
+  allOk = false;
+}
+
+// Two mazes being byte-identical is legal and passes every other check, so it
+// shipped: maze 10 and maze 14 were the same board from IDEA-040 until
+// IDEA-061. It is a maze LIST, and a repeat inside one lap is the one thing it
+// must not contain.
+const byShape = new Map<string, number>();
+MAZES.forEach((rows, idx) => {
+  const key = rows.join("\n");
+  const first = byShape.get(key);
+  if (first !== undefined) {
+    console.log(`\n! MAZE ${idx + 1} is identical to MAZE ${first + 1}`);
+    allOk = false;
+  } else {
+    byShape.set(key, idx);
+  }
 });
 
 console.log("\nALL MAZES VALID:", allOk);

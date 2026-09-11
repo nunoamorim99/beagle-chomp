@@ -26,7 +26,7 @@
 //  1. NOTHING SITS AT A TILE'S CENTRE. Biscuits do. A rock on the centre would
 //     sit under the pellet the player is tracking and, once eaten, leave
 //     something that still looks like a pickup. Every rock is pushed to
-//     `MIN_OFFSET`-`MAX_OFFSET` of a tile from the centre, which also reads
+//     `minOffset`-`maxOffset` of a tile from the centre, which also reads
 //     better: scattered stones in grass rather than a paved line.
 //
 //  2. ONE InstancedMesh, ONE DRAW CALL. Same construction as fence.ts. Tone
@@ -47,19 +47,39 @@ import { lobedFoliageGeometry } from "./foliage";
 /** Which loose ground dressing a theme scatters. */
 export type GroundDetailKind = "none" | "rocks";
 
-/** Fraction of eligible tiles that get one. Sparse on purpose — the corridor
- *  belongs to the biscuits. */
-const CHANCE = 0.22;
-/** …and rather more on the apron ring, which has no gameplay to protect and
- *  currently reads as bare lawn between the props. */
-const APRON_CHANCE = 0.3;
-/** How far from a tile's centre a rock is pushed, in tiles. See rule 1. */
-const MIN_OFFSET = 0.26;
-const MAX_OFFSET = 0.4;
-/** Base radius, before the per-instance scale. */
-const RADIUS = 0.2;
-/** Vertical squash — a rock is a slab, not a ball. */
-const FLATTEN = 0.44;
+/**
+ * IDEA-062 v5: the ground dressing's tunables as a NAMED, MUTABLE table —
+ * same contract as fence.ts's FENCE_PARAMS, and for the same reason (the
+ * editor's World tab needs to move one and see the board rebuild). Production
+ * never writes it; the editor does, and then writes the values back to THIS
+ * literal so the file stays the source of truth.
+ */
+export interface GroundDetailParams {
+  /** Fraction of eligible corridor tiles that get a rock. Sparse on purpose —
+   *  the corridor belongs to the biscuits. */
+  chance: number;
+  /** …and rather more on the apron ring, which has no gameplay to protect. */
+  apronChance: number;
+  /** How far from a tile's centre a rock is pushed, in tiles. Rule 1: NOTHING
+   *  sits at a tile CENTRE — biscuits do, and a rock there reads as a pickup
+   *  that will not go away. */
+  minOffset: number;
+  maxOffset: number;
+  /** Base radius, before the per-instance scale. Rule 2: stay under a fifth of
+   *  a tile tall or a corridor starts to look blocked. */
+  radius: number;
+  /** Vertical squash — a rock is a slab, not a ball. */
+  flatten: number;
+}
+
+export const GROUND_DETAIL_PARAMS: GroundDetailParams = {
+  chance: 0.22,
+  apronChance: 0.3,
+  minOffset: 0.26,
+  maxOffset: 0.4,
+  radius: 0.2,
+  flatten: 0.44,
+};
 
 /**
  * One rock, as a coarsely lobed and flattened solid.
@@ -72,12 +92,12 @@ const FLATTEN = 0.44;
  * is the goal.
  */
 function rockGeometry(): THREE.BufferGeometry {
-  return lobedFoliageGeometry(RADIUS, {
+  return lobedFoliageGeometry(GROUND_DETAIL_PARAMS.radius, {
     detail: 1,
     lobes: 6,
     sharpness: 6,
     amplitude: 0.26,
-    scale: [1, FLATTEN, 0.86],
+    scale: [1, GROUND_DETAIL_PARAMS.flatten, 0.86],
     seed: 31,
   });
 }
@@ -119,11 +139,13 @@ export function buildGroundDetail(
       // in the hedge.
       if (!onApron && grid.cells[ty][tx] === "#") continue;
       const roll = hash(tx, ty, 1);
-      if (roll > (onApron ? APRON_CHANCE : CHANCE)) continue;
+      if (roll > (onApron ? GROUND_DETAIL_PARAMS.apronChance : GROUND_DETAIL_PARAMS.chance)) continue;
       // Rule 1: never the centre. Polar placement, so the exclusion is a real
       // disc rather than a square with a hole cut in it.
       const a = hash(tx, ty, 2) * Math.PI * 2;
-      const d = MIN_OFFSET + hash(tx, ty, 3) * (MAX_OFFSET - MIN_OFFSET);
+      const d =
+        GROUND_DETAIL_PARAMS.minOffset +
+        hash(tx, ty, 3) * (GROUND_DETAIL_PARAMS.maxOffset - GROUND_DETAIL_PARAMS.minOffset);
       spots.push({
         x: worldX(tx) + Math.cos(a) * d,
         z: worldZ(ty) + Math.sin(a) * d,
@@ -150,7 +172,7 @@ export function buildGroundDetail(
   const tint = new THREE.Color();
   spots.forEach((s, i) => {
     const scale = 0.72 + s.h * 0.66;
-    dummy.position.set(s.x, RADIUS * FLATTEN * scale * 0.72, s.z);
+    dummy.position.set(s.x, GROUND_DETAIL_PARAMS.radius * GROUND_DETAIL_PARAMS.flatten * scale * 0.72, s.z);
     dummy.rotation.set((s.h - 0.5) * 0.3, s.h * Math.PI * 4, (hash(i, i, 5) - 0.5) * 0.3);
     dummy.scale.set(scale, scale * (0.8 + s.h * 0.5), scale);
     dummy.updateMatrix();

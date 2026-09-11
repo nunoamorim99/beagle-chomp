@@ -1,4 +1,4 @@
-// Headless tests for the classic-mode progression (IDEA-040).
+// Headless tests for the classic-mode progression (IDEA-040, IDEA-061).
 //   npx tsx scripts/test-progression.ts
 //
 // planLevel() decides which maze, how many enemies, and what the HUD says for
@@ -16,7 +16,8 @@ import {
   BONUS_MAZE_START,
   REQUIRED_MAZE_COUNT,
   GHOSTS_STAGE_1_2,
-  GHOSTS_STAGE_3,
+  GHOSTS_STAGE_3_4,
+  GHOSTS_STAGE_5_6,
   GHOSTS_BONUS_FIRST_LAP,
   GHOSTS_BONUS_LATER_LAPS,
 } from "../src/game/progression";
@@ -40,10 +41,11 @@ function section(title: string): void {
 }
 
 section("Shape of a lap");
-ok("a lap is 18 levels", LEVELS_PER_LAP === 18, LEVELS_PER_LAP);
-ok("15 numbered maps per lap", MAPS_PER_LAP === 15, MAPS_PER_LAP);
-ok("18 mazes required in total", REQUIRED_MAZE_COUNT === 18, REQUIRED_MAZE_COUNT);
-ok("bonus mazes start after the numbered ones", BONUS_MAZE_START === 15, BONUS_MAZE_START);
+ok("a lap is 36 levels", LEVELS_PER_LAP === 36, LEVELS_PER_LAP);
+ok("30 numbered maps per lap", MAPS_PER_LAP === 30, MAPS_PER_LAP);
+ok("36 mazes required in total", REQUIRED_MAZE_COUNT === 36, REQUIRED_MAZE_COUNT);
+ok("bonus mazes start after the numbered ones", BONUS_MAZE_START === 30, BONUS_MAZE_START);
+ok("mazes.json actually holds them", MAZES.length === REQUIRED_MAZE_COUNT, MAZES.length);
 
 section("Stage 1 — maps 1-5, three enemies");
 for (let i = 0; i < MAPS_PER_STAGE; i++) {
@@ -80,7 +82,7 @@ for (let i = 6; i <= 10; i++) {
   ok(`level ${i} still has ${GHOSTS_STAGE_1_2} enemies`,
     p.ghostCount === GHOSTS_STAGE_1_2, p.ghostCount);
 }
-ok("level 11 is the second bonus", planLevel(11).isBonus && planLevel(11).mazeIdx === 16,
+ok("level 11 is the second bonus", planLevel(11).isBonus && planLevel(11).mazeIdx === 31,
   planLevel(11).mazeIdx);
 
 section("Stage 3 — maps 11-15, the FOURTH enemy");
@@ -91,20 +93,81 @@ for (let i = 12; i <= 16; i++) {
   ok(`level ${i} is map ${expectedMap} on maze ${expectedMaze}`,
     p.mapNumber === expectedMap && p.mazeIdx === expectedMaze,
     `map=${p.mapNumber} maze=${p.mazeIdx}`);
-  ok(`level ${i} has ${GHOSTS_STAGE_3} enemies`, p.ghostCount === GHOSTS_STAGE_3, p.ghostCount);
+  ok(`level ${i} has ${GHOSTS_STAGE_3_4} enemies`,
+    p.ghostCount === GHOSTS_STAGE_3_4, p.ghostCount);
 }
-ok("level 17 is the third bonus", planLevel(17).isBonus && planLevel(17).mazeIdx === 17,
+ok("level 17 is the third bonus", planLevel(17).isBonus && planLevel(17).mazeIdx === 32,
   planLevel(17).mazeIdx);
-ok("the last numbered map of lap 1 is map 15", planLevel(16).mapNumber === 15,
+ok("map 15 is still the last map of stage 3", planLevel(16).mapNumber === 15,
   planLevel(16).mapNumber);
 
-section("Lap 2 onward — four enemies everywhere");
+// IDEA-061's central compatibility claim: maps 1-15 must be EXACTLY what they
+// were before the cycle doubled, on the same maze at the same enemy count.
+// Anything else changes the difficulty of fifteen maps players already know.
+section("IDEA-061 — maps 1-15 are untouched");
 {
-  const first = planLevel(LEVELS_PER_LAP); // 18 — map 1, lap 2
-  ok("level 18 wraps to map 1", first.mapNumber === 1, first.mapNumber);
-  ok("…on the same maze as lap 1", first.mazeIdx === 0, first.mazeIdx);
+  const before: Array<[number, number, number]> = [];
+  for (let i = 0; i <= 16; i++) {
+    const p = planLevel(i);
+    if (!p.isBonus) before.push([p.mapNumber!, p.mazeIdx, p.ghostCount]);
+  }
+  const expected = Array.from({ length: 15 }, (_, m): [number, number, number] =>
+    [m + 1, m, m < 10 ? GHOSTS_STAGE_1_2 : GHOSTS_STAGE_3_4]);
+  ok("maps 1-15 keep their maze and enemy count",
+    JSON.stringify(before) === JSON.stringify(expected), JSON.stringify(before));
+}
+
+section("Stage 4 — maps 16-20, four enemies on the new mazes");
+for (let i = 18; i <= 22; i++) {
+  const p = planLevel(i);
+  const expectedMap = i - 2; // level 18 -> map 16
+  const expectedMaze = i - 3; // maze 15..19
+  ok(`level ${i} is map ${expectedMap} on maze ${expectedMaze}`,
+    p.mapNumber === expectedMap && p.mazeIdx === expectedMaze,
+    `map=${p.mapNumber} maze=${p.mazeIdx}`);
+  ok(`level ${i} has ${GHOSTS_STAGE_3_4} enemies`,
+    p.ghostCount === GHOSTS_STAGE_3_4, p.ghostCount);
+}
+ok("level 23 is the fourth bonus", planLevel(23).isBonus && planLevel(23).mazeIdx === 33,
+  planLevel(23).mazeIdx);
+
+section("Stages 5 and 6 — maps 21-30, the FIFTH enemy");
+for (const i of [24, 25, 26, 27, 28, 30, 31, 32, 33, 34]) {
+  const p = planLevel(i);
+  ok(`level ${i} has ${GHOSTS_STAGE_5_6} enemies`,
+    p.ghostCount === GHOSTS_STAGE_5_6, p.ghostCount);
+  ok(`level ${i} is not a bonus`, !p.isBonus);
+}
+ok("level 29 is the fifth bonus", planLevel(29).isBonus && planLevel(29).mazeIdx === 34,
+  planLevel(29).mazeIdx);
+ok("level 35 is the sixth bonus", planLevel(35).isBonus && planLevel(35).mazeIdx === 35,
+  planLevel(35).mazeIdx);
+ok("the last numbered map of lap 1 is map 30", planLevel(34).mapNumber === 30,
+  planLevel(34).mapNumber);
+ok("…on the last numbered maze", planLevel(34).mazeIdx === 29, planLevel(34).mazeIdx);
+
+section("Lap 2 onward — five enemies everywhere, and the count keeps climbing");
+{
+  const first = planLevel(LEVELS_PER_LAP); // 36 — maze 0 again, but Map 31
+  ok("level 36 returns to the FIRST maze", first.mazeIdx === 0, first.mazeIdx);
+  ok("…but is called Map 31, not Map 1 (IDEA-061)", first.mapNumber === 31,
+    first.mapNumber);
   ok("…on lap 2", first.lap === 2, first.lap);
-  ok("…and now has 4 enemies", first.ghostCount === GHOSTS_STAGE_3, first.ghostCount);
+  ok("…and now has 5 enemies", first.ghostCount === GHOSTS_STAGE_5_6, first.ghostCount);
+
+  // The whole point of the change: the number NEVER goes backwards, however
+  // long the run lasts. A reset to "Map 1" reads as having lost the progress.
+  const seen: number[] = [];
+  for (let i = 0; i < LEVELS_PER_LAP * 3; i++) {
+    const n = planLevel(i).mapNumber;
+    if (n !== null) seen.push(n);
+  }
+  ok("map numbers strictly increase across three laps",
+    seen.every((n, idx) => idx === 0 || n === seen[idx - 1] + 1),
+    seen.slice(28, 34).join(","));
+  ok("…and reach 32-36 where Nuno expected them",
+    seen.slice(31, 36).join(",") === "32,33,34,35,36", seen.slice(31, 36).join(","));
+  ok("…with no map number ever repeating", new Set(seen).size === seen.length);
 
   // Every numbered map of lap 2 must be at max difficulty.
   const lap2Numbered = [];
@@ -112,8 +175,8 @@ section("Lap 2 onward — four enemies everywhere");
     const p = planLevel(i);
     if (!p.isBonus) lap2Numbered.push(p.ghostCount);
   }
-  ok("all 15 numbered maps on lap 2 have 4 enemies",
-    lap2Numbered.length === 15 && lap2Numbered.every((g) => g === GHOSTS_STAGE_3),
+  ok("all 30 numbered maps on lap 2 have 5 enemies",
+    lap2Numbered.length === 30 && lap2Numbered.every((g) => g === GHOSTS_STAGE_5_6),
     JSON.stringify(lap2Numbered));
 
   const bonusLap2 = planLevel(LEVELS_PER_LAP + 5);
@@ -133,19 +196,19 @@ section("Every level in a lap is accounted for");
     else numbered++;
     mazesUsed.add(p.mazeIdx);
   }
-  ok("15 numbered + 3 bonus", numbered === 15 && bonuses === 3, `${numbered}/${bonuses}`);
-  ok("a lap uses 18 DISTINCT mazes (no repeats within a lap)", mazesUsed.size === 18,
+  ok("30 numbered + 6 bonus", numbered === 30 && bonuses === 6, `${numbered}/${bonuses}`);
+  ok("a lap uses 36 DISTINCT mazes (no repeats within a lap)", mazesUsed.size === 36,
     mazesUsed.size);
 
-  // Map numbers must run 1..15 exactly once, in order — a duplicate or gap
+  // Map numbers must run 1..30 exactly once, in order — a duplicate or gap
   // would show the player "Map 7" twice.
   const numbers = [];
   for (let i = 0; i < LEVELS_PER_LAP; i++) {
     const n = planLevel(i).mapNumber;
     if (n !== null) numbers.push(n);
   }
-  ok("map numbers are 1..15 in order",
-    numbers.join(",") === Array.from({ length: 15 }, (_, i) => i + 1).join(","),
+  ok("map numbers are 1..30 in order",
+    numbers.join(",") === Array.from({ length: 30 }, (_, i) => i + 1).join(","),
     numbers.join(","));
 }
 
@@ -153,8 +216,18 @@ section("HUD labels");
 ok('level 0 reads "Map 1"', levelLabel(0) === "Map 1", levelLabel(0));
 ok('level 5 reads "Bonus"', levelLabel(5) === "Bonus", levelLabel(5));
 ok('level 16 reads "Map 15"', levelLabel(16) === "Map 15", levelLabel(16));
-ok('level 18 reads "Map 1 ·2"', levelLabel(18) === "Map 1 ·2", levelLabel(18));
-ok('level 23 reads "Bonus ·2"', levelLabel(23) === "Bonus ·2", levelLabel(23));
+ok('level 34 reads "Map 30"', levelLabel(34) === "Map 30", levelLabel(34));
+// The lap suffix is gone: the number carries the lap now (IDEA-061).
+ok('level 36 reads "Map 31", not "Map 1 ·2"', levelLabel(36) === "Map 31", levelLabel(36));
+ok('level 41 reads "Bonus", with no lap mark', levelLabel(41) === "Bonus", levelLabel(41));
+ok("no label ever carries a lap suffix",
+  !Array.from({ length: LEVELS_PER_LAP * 3 }, (_, i) => levelLabel(i)).some((l) => l.includes("·")));
+// hud.setLevel splits a leading "Map " into an eyebrow and shows the rest as
+// the figure, so a two-digit number must still arrive in that exact shape.
+ok("a numbered label is always `Map <n>`",
+  Array.from({ length: LEVELS_PER_LAP * 2 }, (_, i) => i)
+    .filter((i) => !planLevel(i).isBonus)
+    .every((i) => /^Map \d+$/.test(levelLabel(i))));
 
 section("The completion achievement");
 ok("lap 1 never completes max difficulty",
@@ -167,7 +240,7 @@ section("Defensive input");
 ok("a negative index falls back to level 0", planLevel(-5).mapNumber === 1);
 ok("a fractional index floors", planLevel(3.7).mapNumber === 4, planLevel(3.7).mapNumber);
 ok("NaN falls back to level 0", planLevel(Number.NaN).mapNumber === 1);
-ok("a very deep level still resolves", planLevel(10_000).ghostCount === GHOSTS_STAGE_3);
+ok("a very deep level still resolves", planLevel(10_000).ghostCount === GHOSTS_STAGE_5_6);
 
 section("Every maze shares one identical ghost pen");
 // A ghost may walk '=', '-' and 'G'. If the pen is not sealed on every side
@@ -193,7 +266,7 @@ section("Every maze shares one identical ghost pen");
   });
 
   ok(
-    "all 18 mazes carry the identical pen block",
+    "all 36 mazes carry the identical pen block",
     offenders.length === 0,
     offenders.slice(0, 3).join(" | "),
   );
@@ -217,11 +290,11 @@ section("Bonus maps carry no bones");
 // enemy for a free life on top of an already generous point haul. The golden
 // bone (a life pickup) already covers earning a life there.
 {
-  const bonusMazes = [15, 16, 17];
+  const bonusMazes = [30, 31, 32, 33, 34, 35];
   const withBones = bonusMazes.filter((i) => MAZES[i].join("").includes("o"));
   ok("no bonus map contains a white bone", withBones.length === 0, withBones.join(","));
 
-  const numbered = Array.from({ length: 15 }, (_, i) => i);
+  const numbered = Array.from({ length: 30 }, (_, i) => i);
   const wrongCount = numbered.filter(
     (i) => (MAZES[i].join("").match(/o/g) ?? []).length !== 4,
   );
@@ -229,9 +302,9 @@ section("Bonus maps carry no bones");
 
   // planLevel must actually route bonus levels to those mazes, or the rule
   // above protects the wrong maps.
-  const bonusPlanned = [5, 11, 17].map((idx) => planLevel(idx).mazeIdx);
-  ok("bonus levels map to mazes 15/16/17",
-    bonusPlanned.join(",") === "15,16,17", bonusPlanned.join(","));
+  const bonusPlanned = [5, 11, 17, 23, 29, 35].map((idx) => planLevel(idx).mazeIdx);
+  ok("bonus levels map to mazes 30-35",
+    bonusPlanned.join(",") === "30,31,32,33,34,35", bonusPlanned.join(","));
 
   // On a bonus map the pen sits alone in an open field, so any wall tile
   // touching it reads as a lump fused to the side of the house rather than
@@ -249,6 +322,22 @@ section("Bonus maps carry no bones");
     }
   }
   ok("the pen stands free on every bonus map", stubs.length === 0, stubs.join(" "));
+}
+
+section("No maze is a copy of another");
+// Maze 10 and maze 14 were byte-identical from IDEA-040 until IDEA-061 — every
+// other check passed, because a duplicate is a perfectly valid maze. It is a
+// maze LIST, and the one thing it must not contain is the same board twice.
+{
+  const first = new Map<string, number>();
+  const repeats: string[] = [];
+  MAZES.forEach((rows, i) => {
+    const key = rows.join("\n");
+    const seenAt = first.get(key);
+    if (seenAt !== undefined) repeats.push(`maze ${i} == maze ${seenAt}`);
+    else first.set(key, i);
+  });
+  ok("every maze is a distinct layout", repeats.length === 0, repeats.join(" | "));
 }
 
 console.log(`\n${"-".repeat(60)}`);

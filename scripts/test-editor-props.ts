@@ -969,6 +969,41 @@ async function run(): Promise<void> {
     }
 
     // -------------------------------------------------------------------
+    // IDEA-062: Props mode gained the transform gizmo. It already had a
+    // viewport picker, a per-part inspector and its own undo stack — the only
+    // thing missing was the handle, which is most of why this tab read as a
+    // preview rather than a workbench.
+    console.log("\n=== IDEA-062: the gizmo reaches prop components ===");
+    {
+      await page.click("#modePropsBtn");
+      await page.waitForTimeout(600);
+      const rows = await page.$$("#partTree .tree-row");
+      await rows[0].click();
+      await page.waitForTimeout(600);
+
+      check("the gizmo bar is up in Props mode", await page.isVisible("#gizmoBar"));
+
+      const comps = await page.$$("#propsPartTree .tree-row");
+      check("the prop has components to select", comps.length > 1);
+      await comps[1].click();
+      await page.waitForTimeout(400);
+
+
+      // The mode keys are shared with the character workbench on purpose —
+      // W/E/T, not the reference editor's W/E/R (R and S are held modifiers
+      // in this project).
+      await page.keyboard.press("e");
+      await page.waitForTimeout(200);
+      const rotateActive = await page.$eval(
+        '.gizmo-btn[data-gizmo="rotate"]',
+        (b) => b.className.includes("active"),
+      );
+      check("'E' switches the gizmo to rotate here too", rotateActive);
+      await page.keyboard.press("w");
+      await page.waitForTimeout(200);
+    }
+
+    // -------------------------------------------------------------------
     console.log("\n=== switching to another mode and back is clean ===");
     {
       await page.click("#modeCharacterBtn");
@@ -1033,32 +1068,31 @@ async function run(): Promise<void> {
       const propsFilePath = resolve(process.cwd(), "src/game/props.ts");
       const originalContents = readFileSync(propsFilePath, "utf-8");
       try {
-        // Race the flash-label read against the reload it triggers: the
-        // button's ✓ label appears essentially the instant the fetch
-        // resolves (well under 100ms locally), while Vite's own reload
-        // follows shortly after once its file watcher notices the write —
-        // reading with NO artificial delay (a single microtask-queue drain
-        // via a 0ms timeout) reliably wins that race; waiting even 150ms
-        // risks losing it, which is exactly what an earlier version of this
-        // assertion did (the flash read back `null` because the reload had
-        // already begun tearing down the DOM).
+        // IDEA-062: a save no longer reloads the page, so there is no race
+        // left to run. This assertion used to read the flash label inside a
+        // single requestAnimationFrame specifically to beat Vite's reload to
+        // the DOM; that reload was destroying every unsaved edit in every
+        // other tab, and vite.config.ts's handleHotUpdate now suppresses it
+        // for the editor's own writes. Mark the window so we can prove that.
         await page.evaluate(() => {
+          (window as unknown as { __bcAlive?: string }).__bcAlive = "alive";
           document.querySelector<HTMLButtonElement>("#savePropsFileBtn")?.click();
         });
+        await page.waitForTimeout(800);
         const flashed = await page.evaluate(
-          () => new Promise<string | null>((res) => {
-            requestAnimationFrame(() => res(document.querySelector("#savePropsFileBtn")?.textContent ?? null));
-          }),
+          () => document.querySelector("#savePropsFileBtn")?.textContent ?? null,
         );
         check("save button flashes a success label", flashed?.includes("Saved") === true);
 
-        // Now let Vite's reload actually happen and settle — proves the
-        // editor boots cleanly again immediately after saving over its own
-        // running module graph, which is the realistic end-to-end scenario
-        // (not just "the file changed on disk").
-        await page.waitForLoadState("load");
+        // THE regression this whole pass exists for. A live marker means the
+        // page was never torn down — so a Props save can no longer take the
+        // Board tab's unsaved placements, both undo stacks, the camera and
+        // the selection with it.
+        const aliveAfterSave = await page.evaluate(
+          () => (window as unknown as { __bcAlive?: string }).__bcAlive ?? "GONE",
+        );
+        check("the page SURVIVES its own save (no HMR full-reload)", aliveAfterSave === "alive");
         await page.waitForSelector(".tree-row");
-        await page.waitForTimeout(300);
 
         const written = readFileSync(propsFilePath, "utf-8");
         check("props.ts on disk changed (a real write happened)", written !== originalContents);
@@ -1081,13 +1115,55 @@ async function run(): Promise<void> {
         const freshModule = (await import(importUrl)) as { PROP_LIBRARY: unknown[] };
         check("the written props.ts re-imports cleanly and PROP_LIBRARY is an array", Array.isArray(freshModule.PROP_LIBRARY));
 
-        // After Vite's forced reload, the app re-booted from a truly FRESH
-        // module load — proves the reload itself didn't leave the page in a
-        // broken state (blank canvas, missing tree, etc.).
-        await page.click("#modePropsBtn");
-        await page.waitForTimeout(500);
-        const rowsAfterReload = await treeRows(page);
-        check("editor re-boots cleanly after the save-triggered reload (Props tree renders again)", rowsAfterReload.length > 0);
+        const rowsAfterSave = await treeRows(page);
+        check("the Props library list is still rendered after the save", rowsAfterSave.length > 0);
+
+        // IDEA-062, the OTHER half: a SECOND save in the SAME page life.
+        //
+        // This is the case no editor suite used to cover, and it is exactly
+        // what Nuno reported. Every save path splices into the file's
+        // existing source, which came from a `?raw` import frozen at page
+        // load. The reload used to refresh that snapshot as a side effect —
+        // so the moment the reload went away, save #2 would have spliced
+        // into text predating save #1 and silently reverted it.
+        // sourceStore.ts is what makes this pass.
+        const afterFirstSave = readFileSync(propsFilePath, "utf-8");
+        // Nudge whatever the currently-selected def's first numeric param
+        // is — which def that happens to be is not the point here, only that
+        // a SECOND distinct write goes through the same page.
+        const nudged = await page.evaluate(() => {
+          const guis = [...document.querySelectorAll("#propsGuiHost .lil-gui")];
+          const sel = guis.find((g) =>
+            g.querySelector(":scope > .lil-title")?.textContent?.startsWith("Selected: "),
+          );
+          if (!sel) return "no Selected folder";
+          const ctrl = [...sel.querySelectorAll(":scope > .lil-children > .lil-controller.lil-number")][0];
+          if (!ctrl) return "no numeric control";
+          const el = (ctrl.querySelector('input[type="range"]') ??
+            ctrl.querySelector('input:not([type="range"])')) as HTMLInputElement | null;
+          if (!el) return "no input";
+          el.value = String(Number(el.value) + 0.21);
+          el.dispatchEvent(new Event("input", { bubbles: true }));
+          el.dispatchEvent(new Event("change", { bubbles: true }));
+          return null;
+        });
+        check("a second edit was made before the second save", nudged === null);
+        await page.waitForTimeout(300);
+        await page.evaluate(() => {
+          document.querySelector<HTMLButtonElement>("#savePropsFileBtn")?.click();
+        });
+        await page.waitForTimeout(900);
+        const afterSecondSave = readFileSync(propsFilePath, "utf-8");
+        check("a second save in the same session writes again", afterSecondSave !== afterFirstSave);
+        check(
+          "the second save did NOT revert the first (the frozen-?raw regression)",
+          afterSecondSave.includes("export const PROP_SHAPE_FIELDS") &&
+            /id: "palm",[\s\S]{0,400}parts: \{/.test(afterSecondSave),
+        );
+        const stillAlive = await page.evaluate(
+          () => (window as unknown as { __bcAlive?: string }).__bcAlive ?? "GONE",
+        );
+        check("and the page is STILL alive after the second save", stillAlive === "alive");
       } finally {
         writeFileSync(propsFilePath, originalContents, "utf-8");
         const restored = readFileSync(propsFilePath, "utf-8");

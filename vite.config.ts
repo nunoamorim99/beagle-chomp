@@ -1,6 +1,7 @@
 import { defineConfig, type Plugin } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
-import { writeFileSync } from "node:fs";
+import { writeFileSync, readFileSync, existsSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { resolve, normalize } from "node:path";
 
 // NOTE: the character editor (editor/index.html + src/editor/*) is DEV-ONLY by
@@ -25,13 +26,104 @@ const EDITOR_SAVABLE_FILES = [
   "src/render/board.ts",
   "src/game/themes.ts",
   "src/game/props.ts",
+  // IDEA-062 v4: the Balance tab. config.ts is game-critical in a way the
+  // others are not — it feeds the SERVER's plausibility bounds through
+  // `npm run sync`, so a change here that is not synced makes honest runs
+  // start failing SCORE_ITEM_MISMATCH in production. The editor cannot make
+  // that impossible, so it makes it loud: the save button says so, and the
+  // panel that follows a successful save gives the exact commands.
+  "src/game/config.ts",
+  // IDEA-062 v5: the World tab. The IDEA-060 garden machinery that no theme
+  // palette can reach — the fence's picket geometry and the ground dressing's
+  // scatter. Both expose a plain exported params object that the editor
+  // rewrites in place, so the file stays the source of truth.
+  "src/render/fence.ts",
+  "src/render/groundDetail.ts",
 ] as const;
+
+// IDEA-062: the editor's own writes must NOT trigger an HMR full reload.
+//
+// Every file above is in the editor page's own module graph, and nothing in
+// src/ handles `import.meta.hot` — so Vite's fallback for a change to any of
+// them is `full-reload`. That meant clicking Save in the Props tab silently
+// destroyed every unsaved edit in the Board tab, both undo stacks, the
+// camera and the selection. It is the single thing that made the editor feel
+// like it was eating work, and it was doing exactly that.
+//
+// `handleHotUpdate` returning `[]` is Vite's documented "I handled this"
+// signal: no modules to update, therefore no update and no reload.
+//
+// Keyed on CONTENT HASH rather than on a time window, deliberately. Under
+// Docker the watcher polls at 250 ms (see `server.watch` below) and its
+// latency is unbounded, so a timestamp either expires before the event
+// arrives (the reload comes back and the bug is only intermittent, which is
+// worse than always) or lingers long enough to swallow a genuine hand-edit.
+// A hash is exact: it suppresses if and only if what is on disk is precisely
+// what the editor just wrote.
+//
+// The cost, stated plainly: a hand-edit made in the window between the
+// editor's write and the watcher's event would also be suppressed. That
+// needs the two to collide within milliseconds on the same file, and the
+// `[editor-save]` log line makes every suppression visible.
+const EDITOR_WRITE_TTL_MS = 60_000;
+
+function sha(text: string): string {
+  return createHash("sha256").update(text).digest("hex");
+}
 
 function editorSaveFile(): Plugin {
   const projectRoot = normalize(resolve());
+  /** absolute path -> the hashes of the RECENT writes we made to it.
+   *
+   *  A LIST, not one entry, and that is load-bearing: two saves close together
+   *  (a second save while the first write's watcher event is still in flight)
+   *  would otherwise have the second overwrite the first's hash, and the
+   *  late-arriving first event would match nothing and reload the page —
+   *  exactly the data loss this plugin exists to prevent, made intermittent
+   *  and therefore harder to trust than if it never worked at all. Entries are
+   *  consumed on match and swept on TTL, so a write whose watcher event never
+   *  arrives (an ignored path, a stopped watcher) cannot leak. */
+  const editorWrites = new Map<string, { hash: string; at: number }[]>();
+
+  function sweep(): void {
+    const cutoff = Date.now() - EDITOR_WRITE_TTL_MS;
+    for (const [key, recs] of editorWrites) {
+      const live = recs.filter((r) => r.at >= cutoff);
+      if (live.length === 0) editorWrites.delete(key);
+      else editorWrites.set(key, live);
+    }
+  }
+
   return {
     name: "editor-save-file",
     apply: "serve", // dev server only — never in `vite build`
+    handleHotUpdate(ctx) {
+      sweep();
+      const key = normalize(ctx.file);
+      const recs = editorWrites.get(key);
+      if (!recs || recs.length === 0) return undefined; // not ours — Vite's normal behaviour, untouched
+      let onDisk: string;
+      try {
+        onDisk = readFileSync(key, "utf-8");
+      } catch {
+        return undefined; // can't confirm it's ours, so don't suppress
+      }
+      const hash = sha(onDisk);
+      const idx = recs.findIndex((r) => r.hash === hash);
+      if (idx === -1) return undefined; // content is none of ours — a real hand edit
+      // Drop this hash AND every older one: the file's current content is the
+      // newer write, so any still-pending event for an earlier write of ours
+      // can only ever re-observe this same content.
+      editorWrites.set(key, recs.slice(idx + 1));
+      ctx.server.config.logger.info(`[editor-save] HMR suppressed for ${ctx.file}`);
+      // Tell the editor page the write landed, so it can update its own
+      // "saved to disk" chrome without a reload. Purely informational — the
+      // editor already updated its in-memory source store from the bytes it
+      // POSTed (src/editor/sourceStore.ts), so correctness does not depend
+      // on this arriving.
+      ctx.server.ws.send({ type: "custom", event: "editor:file-saved", data: { file: ctx.file } });
+      return []; // no modules to update -> no HMR update, no full reload
+    },
     configureServer(server) {
       server.middlewares.use("/__save-file", (req, res) => {
         if (req.method !== "POST") {
@@ -58,7 +150,25 @@ function editorSaveFile(): Plugin {
               res.end("path not allowed");
               return;
             }
+            // IDEA-062: keep ONE generation of backup beside every file the
+            // editor overwrites. The editor has destroyed real work twice in
+            // this project's history (the pasted-over beagle, and the prop
+            // part edits that prompted this whole pass), and a sidecar costs
+            // nothing on a dev box. It is deliberately NOT rotated: the
+            // useful question is always "what did it look like before the
+            // save I just regretted", and git answers everything older.
+            if (existsSync(abs)) {
+              try {
+                writeFileSync(`${abs}.editorbak`, readFileSync(abs, "utf-8"), "utf-8");
+              } catch {
+                // A failed backup must never block the save the user asked
+                // for — it is insurance, not a gate.
+              }
+            }
             writeFileSync(abs, contents, "utf-8");
+            // Record what we wrote so handleHotUpdate can recognise its own
+            // echo and suppress the reload (see the note above the plugin).
+            editorWrites.set(abs, [...(editorWrites.get(abs) ?? []), { hash: sha(contents), at: Date.now() }]);
             res.statusCode = 200;
             res.setHeader("content-type", "application/json");
             res.end(JSON.stringify({ ok: true, path: relPath }));

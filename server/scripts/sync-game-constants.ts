@@ -415,7 +415,8 @@ function progressionConst(name: string): number {
 const MAPS_PER_STAGE = progressionConst("MAPS_PER_STAGE");
 const STAGE_COUNT = progressionConst("STAGE_COUNT");
 const GHOSTS_STAGE_1_2 = progressionConst("GHOSTS_STAGE_1_2");
-const GHOSTS_STAGE_3 = progressionConst("GHOSTS_STAGE_3");
+const GHOSTS_STAGE_3_4 = progressionConst("GHOSTS_STAGE_3_4");
+const GHOSTS_STAGE_5_6 = progressionConst("GHOSTS_STAGE_5_6");
 const GHOSTS_BONUS_FIRST_LAP = progressionConst("GHOSTS_BONUS_FIRST_LAP");
 const GHOSTS_BONUS_LATER_LAPS = progressionConst("GHOSTS_BONUS_LATER_LAPS");
 
@@ -568,9 +569,17 @@ export const LEVELS_PER_LAP = ${STAGE_COUNT * (MAPS_PER_STAGE + 1)};
 export const MAPS_PER_LAP = ${STAGE_COUNT * MAPS_PER_STAGE};
 export const BONUS_MAZE_START = ${STAGE_COUNT * MAPS_PER_STAGE};
 export const GHOSTS_STAGE_1_2 = ${GHOSTS_STAGE_1_2};
-export const GHOSTS_STAGE_3 = ${GHOSTS_STAGE_3};
+export const GHOSTS_STAGE_3_4 = ${GHOSTS_STAGE_3_4};
+export const GHOSTS_STAGE_5_6 = ${GHOSTS_STAGE_5_6};
 export const GHOSTS_BONUS_FIRST_LAP = ${GHOSTS_BONUS_FIRST_LAP};
 export const GHOSTS_BONUS_LATER_LAPS = ${GHOSTS_BONUS_LATER_LAPS};
+
+/** Enemies on a numbered map in the given 0-based stage, on lap 1. */
+export function ghostsForStage(stageIdx: number): number {
+  if (stageIdx >= 4) return GHOSTS_STAGE_5_6;
+  if (stageIdx >= 2) return GHOSTS_STAGE_3_4;
+  return GHOSTS_STAGE_1_2;
+}
 
 export interface LevelPlan {
   readonly mazeIdx: number;
@@ -606,9 +615,11 @@ export function planLevel(levelIdx: number): LevelPlan {
 
   return {
     mazeIdx: mapIdx,
-    ghostCount: lap > 1 || stageIdx === STAGE_COUNT - 1 ? GHOSTS_STAGE_3 : GHOSTS_STAGE_1_2,
+    ghostCount: lap > 1 ? GHOSTS_STAGE_5_6 : ghostsForStage(stageIdx),
     isBonus: false,
-    mapNumber: mapIdx + 1,
+    // IDEA-061: the RUNNING count, so lap 2's first map is Map 31. Never an
+    // index into anything — mazeIdx is what repeats.
+    mapNumber: (lap - 1) * MAPS_PER_LAP + mapIdx + 1,
     lap,
     stage: stageIdx + 1,
   };

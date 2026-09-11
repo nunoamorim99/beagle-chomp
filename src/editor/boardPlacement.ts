@@ -224,6 +224,10 @@ export interface BoardPlacementController {
   /** Programmatically clears the selection (e.g. leaving board mode
    *  entirely) without touching any marker's filled/empty state. */
   clearSelection(): void;
+  /** IDEA-062: re-select `tile` after a wholesale theme replacement (a board
+   *  undo/redo), if it still carries a placement. Returns false when it does
+   *  not — the caller must not fake a selection on an empty slot. */
+  reselect(subMode: PlacementSubMode, tile: readonly [number, number]): boolean;
   /** Assigns `propId` to the CURRENT selection — the inspector's "prop"
    *  dropdown's onChange calls this to swap which library prop an already-
    *  selected placement uses. (An empty-slot click never reaches this path
@@ -403,7 +407,13 @@ const ROTATION_MAX = Math.PI * 2;
 const SCALE_MIN = 0.4;
 const SCALE_MAX = 2;
 
-function clampOffset(v: number): number {
+/** IDEA-062: exported for placementGizmo.ts, which must apply the EXACT same
+ *  bounds a slider or a keyboard nudge would — a gizmo drag that could put a
+ *  placement outside the range the inspector can represent would be a value
+ *  you could see but never edit again. Still the canonical copy; see the
+ *  note above on why these are duplicated from boardInspector rather than
+ *  imported. */
+export function clampOffset(v: number): number {
   return Math.max(OFFSET_MIN, Math.min(OFFSET_MAX, v));
 }
 
@@ -414,12 +424,12 @@ function clampOffset(v: number): number {
  *  (unlike offset/scale, rotation is naturally circular — wrapping, not
  *  clamping, is the correct behavior: nudging past 2π should land just past
  *  0, not get stuck at the ceiling). */
-function wrapRotation(v: number): number {
+export function wrapRotation(v: number): number {
   const twoPi = ROTATION_MAX;
   return ((v % twoPi) + twoPi) % twoPi;
 }
 
-function clampScale(v: number): number {
+export function clampScale(v: number): number {
   return Math.max(SCALE_MIN, Math.min(SCALE_MAX, v));
 }
 
@@ -723,6 +733,24 @@ export function createBoardPlacement(
     },
     clearSelection(): void {
       setSelection(null);
+    },
+    reselect(subModeWanted: PlacementSubMode, tile: readonly [number, number]): boolean {
+      // IDEA-062: re-select a tile after the theme was replaced wholesale —
+      // i.e. after a board undo/redo.
+      //
+      // syncFromTheme deliberately clears the selection (the old theme's
+      // selected placement may simply not exist in the new one), which is
+      // right for a base-theme SWAP and wrong for an undo: undoing one nudge
+      // and being dropped back to nothing selected means you cannot carry on
+      // adjusting the thing you were adjusting. So the caller re-selects, and
+      // this returns false when the tile genuinely has nothing on it any more
+      // (undoing the creation of a placement, say) rather than selecting an
+      // empty slot the user did not click.
+      if (!currentTheme || subModeWanted !== subMode) return false;
+      const existing = findPlacement(currentTheme, subModeWanted, tile[0], tile[1]);
+      if (!existing) return false;
+      setSelection({ subMode: subModeWanted, tile: [tile[0], tile[1]], existing });
+      return true;
     },
     assignProp(propId: string) {
       if (!selection || !currentTheme) throw new Error("boardPlacement: assignProp called with no selection");

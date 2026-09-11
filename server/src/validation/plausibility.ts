@@ -35,7 +35,7 @@ import {
   POWERUP_IDS,
   POWERUP_MULTIPLIER,
   SCORE_DOUBLING_POWERUPS,
-  GHOSTS_STAGE_3,
+  GHOSTS_STAGE_5_6,
   type ChallengeLevelFacts,
 } from "../catalog.generated.js";
 
@@ -59,12 +59,16 @@ export type RejectionReason =
  * MAX/MIN_FRUIT_POINTS are derived on the client: a hardcoded number here
  * would price a rejection, and the day a sixth enemy is added it would start
  * refusing honest runs with MALFORMED_SUBMISSION — the worse of the two
- * failure modes. The widest of classic, the stage-3 count, and every challenge
- * level is the true ceiling.
+ * failure modes. The widest of classic, the deepest classic stage, and every
+ * challenge level is the true ceiling.
+ *
+ * IDEA-061 is that day arriving in miniature: classic stages 5-6 raised the
+ * count from 4 to 5, and because this reads the constant rather than a literal,
+ * it followed on its own.
  */
 const MAX_ENEMY_SLOTS = Math.max(
   CLASSIC_MODIFIERS.ghostCount,
-  GHOSTS_STAGE_3,
+  GHOSTS_STAGE_5_6,
   ...CHALLENGE_LEVELS.map((level) => level.ghostCount),
 );
 

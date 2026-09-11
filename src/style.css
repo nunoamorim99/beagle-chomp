@@ -129,9 +129,18 @@ html,body{height:100%;overflow:hidden;background:var(--bc-ink);color:var(--bc-te
   line-height:1;color:var(--bc-cream);font-variant-numeric:tabular-nums;
   white-space:nowrap}
 /* Map is a single figure with an inline label rather than a stacked block —
-   it is one character wide and a stacked label would make the chip twice the
-   height it needs. The label is hidden (not emptied) for labels that already
-   name themselves, so "Bonus" and "C5" never read as "MAP Bonus". */
+   a stacked label would make the chip twice the height it needs. The label is
+   hidden (not emptied) for labels that already name themselves, so "Bonus" and
+   "C5" never read as "MAP Bonus".
+
+   The figure is NOT one character wide any more (IDEA-061): the map number is a
+   running count that never resets, so it is two digits for most of a long run
+   and three past Map 99. Measured at 390px — chip 75.5px at "5", 88.7 at "30",
+   92.8 at "115" — and the row keeps all of them on one line. "Bonus" is 94.9px,
+   wider than any of them, so a numbered map can never be what wraps this row.
+   Below 390 a three-digit figure wraps, which is the same fallback "Bonus" has
+   always taken there (see .hud-row). scripts/test-progression-ui.ts asserts the
+   390px case. */
 .hud-chip--tight .k{font-family:var(--bc-font-mono);font-size:10px;letter-spacing:.2em;
   text-transform:uppercase;color:rgba(255,247,232,.65)}
 .hud-chip--tight .v{font-family:var(--bc-font-display);font-weight:800;font-size:22px;

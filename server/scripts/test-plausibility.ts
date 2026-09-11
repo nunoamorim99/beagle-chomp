@@ -26,6 +26,9 @@ import { readSubmission } from "../src/validation/wire.js";
 import {
   planLevel,
   MAZE_FACTS,
+  MAPS_PER_LAP,
+  BONUS_MAZE_START,
+  STAGE_COUNT,
   SCORING,
   CHALLENGE_LEVELS,
   FRUIT_THRESHOLDS,
@@ -140,27 +143,36 @@ ok("maze 0 has 175 biscuits", MAZE_FACTS[0].biscuits === 175, MAZE_FACTS[0].bisc
 ok("maze 2 has 200 biscuits (the biggest)", MAZE_FACTS[2].biscuits === 200, MAZE_FACTS[2].biscuits);
 ok("maze 3 has 198 biscuits", MAZE_FACTS[3].biscuits === 198, MAZE_FACTS[3].biscuits);
 ok("maze 4 has 176 biscuits", MAZE_FACTS[4].biscuits === 176, MAZE_FACTS[4].biscuits);
-// IDEA-040: every NUMBERED map has 4 bones; the three BONUS maps have none.
+// IDEA-040/061: every NUMBERED map has 4 bones; the BONUS maps have none.
 // A bone opens a fright window, and on a bonus level that means eating the
 // lone enemy for a free life on top of an already generous point haul — the
 // golden bone already covers "earn a life here". With 0 bones the ceiling
 // loses all ghost points there, which is exactly right.
+//
+// Counted off BONUS_MAZE_START rather than a literal 15, so the next time the
+// cycle grows this states the rule instead of restating the old size.
 ok(
-  "the 15 numbered maps have exactly 4 bones",
-  MAZE_FACTS.slice(0, 15).every((f) => f.bones === 4),
-  MAZE_FACTS.slice(0, 15).map((f) => f.bones).join(","),
+  `the ${MAPS_PER_LAP} numbered maps have exactly 4 bones`,
+  MAZE_FACTS.slice(0, BONUS_MAZE_START).every((f) => f.bones === 4),
+  MAZE_FACTS.slice(0, BONUS_MAZE_START).map((f) => f.bones).join(","),
 );
 ok(
-  "the 3 bonus maps have NO bones",
-  MAZE_FACTS.slice(15).every((f) => f.bones === 0),
-  MAZE_FACTS.slice(15).map((f) => f.bones).join(","),
+  `the ${STAGE_COUNT} bonus maps have NO bones`,
+  MAZE_FACTS.slice(BONUS_MAZE_START).every((f) => f.bones === 0),
+  MAZE_FACTS.slice(BONUS_MAZE_START).map((f) => f.bones).join(","),
+);
+ok(
+  "the bonus maps are exactly the tail of MAZE_FACTS",
+  MAZE_FACTS.length === BONUS_MAZE_START + STAGE_COUNT,
+  `${MAZE_FACTS.length} mazes, expected ${BONUS_MAZE_START + STAGE_COUNT}`,
 );
 // A bonus level therefore has no reachable ghost points at all.
 ok(
   "a bonus level's ceiling contains no ghost points",
-  maxLevelScore(15, 1) ===
-    MAZE_FACTS[15].biscuits * SCORING.biscuit + FRUIT_THRESHOLDS.length * MAX_FRUIT_POINTS,
-  maxLevelScore(15, 1),
+  maxLevelScore(BONUS_MAZE_START, 1) ===
+    MAZE_FACTS[BONUS_MAZE_START].biscuits * SCORING.biscuit +
+      FRUIT_THRESHOLDS.length * MAX_FRUIT_POINTS,
+  maxLevelScore(BONUS_MAZE_START, 1),
 );
 // Still true, and still worth pinning — but note it is NOT what bounds fruit
 // per level any more (IDEA-045). Only one fruit is on the board at a time and

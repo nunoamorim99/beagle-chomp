@@ -94,6 +94,30 @@ export interface Gizmo {
   isEnabled(): boolean;
   setSpace(space: "local" | "world"): void;
   setSnap(on: boolean): void;
+  /**
+   * IDEA-062: restrict which axis handles are shown.
+   *
+   * Exists for BOARD placements, whose data model cannot hold what a free
+   * gizmo offers: a `PropPlacement` stores an in-tile `offset` in X/Z (and a
+   * wall-top one stores none at all), a single `rotationY`, and ONE uniform
+   * scale. Showing a Y translate arrow or an X rotation ring there would let
+   * a drag look like it worked and then be silently discarded on commit —
+   * IDEA-041's "no control wired to nothing" rule, applied to a 3D handle.
+   *
+   * Note for scale: TransformControls only draws its uniform (XYZE) handle
+   * when all three flags are true (TransformControls.js:1475 at r169), so a
+   * uniform-scale target must pass all three and collapse the result itself.
+   */
+  setAxes(axes: { x: boolean; y: boolean; z: boolean }): void;
+  /** Whether one axis handle is currently shown — the read side of setAxes,
+   *  so a test can prove a board placement's handle really was cut down to
+   *  what its data can hold rather than trusting the call went through. */
+  showsAxis(axis: "x" | "y" | "z"): boolean;
+  /** The axis handle currently under the pointer (or being dragged), null for
+   *  none. Test support: a suite aiming a real drag needs to know it found a
+   *  handle before pressing, rather than hard-coding pixel offsets that break
+   *  the moment the camera framing changes. */
+  hoveredAxis(): string | null;
   /** True while a drag is in flight OR the pointer is over an axis handle.
    *  picking.ts consults this so releasing the gizmo never re-picks the part
    *  behind it — the reference editor has no equivalent guard and suffers
@@ -275,6 +299,17 @@ export function createGizmo(opts: GizmoOptions): Gizmo {
     setSnap(on: boolean): void {
       snapOn = on;
       applySnap();
+    },
+    setAxes(axes: { x: boolean; y: boolean; z: boolean }): void {
+      controls.showX = axes.x;
+      controls.showY = axes.y;
+      controls.showZ = axes.z;
+    },
+    showsAxis(axis: "x" | "y" | "z"): boolean {
+      return axis === "x" ? controls.showX : axis === "y" ? controls.showY : controls.showZ;
+    },
+    hoveredAxis(): string | null {
+      return controls.axis;
     },
     isBlocking(): boolean {
       return dragging || (enabled && targets.length > 0 && controls.axis !== null);

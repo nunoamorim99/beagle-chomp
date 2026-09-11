@@ -57,10 +57,20 @@ async function gotoLevel(page: Page, levelIdx: number) {
     if (!g) return null;
     (g as unknown as { startLevel: (i: number) => void })["startLevel"](idx);
     const ghosts = (g as unknown as { ghosts: unknown[] }).ghosts;
+    const chip = document.getElementById("levelChip");
+    const lives = document.getElementById("lives");
+    const row = chip?.parentElement;
+    const r = (el: Element | null | undefined) => {
+      const b = el?.getBoundingClientRect();
+      return b ? { w: Math.round(b.width), top: Math.round(b.top), bottom: Math.round(b.bottom) } : null;
+    };
     return {
       label: document.getElementById("level")?.textContent ?? "",
       ghostCount: Array.isArray(ghosts) ? ghosts.length : -1,
       banner: document.querySelector("#center .banner")?.textContent ?? "",
+      chip: r(chip),
+      lives: r(lives),
+      row: r(row),
     };
   }, levelIdx);
 }
@@ -119,17 +129,66 @@ async function main(): Promise<void> {
     ok(`level ${idx} spawns 4 enemies`, r?.ghostCount === 4, r?.ghostCount);
   }
 
-  section("Lap 2 — four enemies everywhere");
+  section("Stages 4-6 — the new maps, and the FIFTH enemy (IDEA-061)");
   {
-    const r = await gotoLevel(page, 18);
+    const s4 = await gotoLevel(page, 18);
     await page.waitForTimeout(400);
-    ok('level 18 shows "Map 1 ·2"', r?.label === "Map 1 ·2", r?.label);
-    ok("level 18 spawns 4 enemies", r?.ghostCount === 4, r?.ghostCount);
+    ok('level 18 shows "Map 16"', s4?.label === "16", s4?.label);
+    ok("level 18 spawns 4 enemies", s4?.ghostCount === 4, s4?.ghostCount);
 
-    const bonus = await gotoLevel(page, 23);
+    const s5 = await gotoLevel(page, 24);
     await page.waitForTimeout(400);
-    ok('level 23 shows "Bonus ·2"', bonus?.label === "Bonus ·2", bonus?.label);
+    ok('level 24 shows "Map 21"', s5?.label === "21", s5?.label);
+    ok("level 24 spawns 5 enemies", s5?.ghostCount === 5, s5?.ghostCount);
+
+    const last = await gotoLevel(page, 34);
+    await page.waitForTimeout(400);
+    ok('level 34 shows "Map 30"', last?.label === "30", last?.label);
+    ok("level 34 spawns 5 enemies", last?.ghostCount === 5, last?.ghostCount);
+  }
+
+  section("Lap 2 — the map number keeps counting");
+  {
+    const r = await gotoLevel(page, 36);
+    await page.waitForTimeout(400);
+    ok('level 36 shows "Map 31", not "Map 1"', r?.label === "31", r?.label);
+    ok("level 36 spawns 5 enemies", r?.ghostCount === 5, r?.ghostCount);
+
+    const bonus = await gotoLevel(page, 41);
+    await page.waitForTimeout(400);
+    ok('level 41 shows "Bonus" with no lap mark', bonus?.label === "Bonus", bonus?.label);
     ok("lap-2 bonus spawns 2 enemies", bonus?.ghostCount === 2, bonus?.ghostCount);
+  }
+
+  // IDEA-061's one LAYOUT consequence. style.css's right column was written
+  // around a map figure "one character wide", and the number is now two digits
+  // for most of a long run and three for a very long one (Map 115 is lap 4).
+  //
+  // MEASURED at 390x844 rather than reasoned about: the chip goes 75.5px at
+  // "5" to 88.7 at "30" to 92.8 at "115", and the row holds all of them on one
+  // line — the existing "Bonus" label is already wider (94.9) than any of them,
+  // so a numbered map can never be the thing that wraps this row. Below 390 a
+  // three-digit figure does wrap, which is the SAME fallback "Bonus" has always
+  // taken there and which .hud-row's flex-wrap exists to provide.
+  section("The HUD row survives a wide map number");
+  {
+    const widest = [
+      ["Map 5", 4],
+      ["Map 30", 34],
+      ["Map 31", 36],
+      // Lap 4, map 25 — the first THREE-digit figure a real run can reach.
+      ["Map 115", 36 * 3 + 28],
+    ] as const;
+    for (const [name, idx] of widest) {
+      const r = await gotoLevel(page, idx);
+      await page.waitForTimeout(300);
+      if (!r?.chip || !r.lives) { ok(`${name}: HUD row measurable`, false); continue; }
+      ok(
+        `${name} (figure "${r.label}", chip ${r.chip.w}px): map and lives stay on ONE line at 390px`,
+        Math.abs(r.chip.top - r.lives.top) < 4,
+        `chip top=${r.chip.top} lives top=${r.lives.top} — the row wrapped`,
+      );
+    }
   }
 
   ok("no console errors during the sweep", errors.length === 0, errors.slice(0, 2).join(" | "));

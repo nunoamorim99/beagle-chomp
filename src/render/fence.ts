@@ -58,25 +58,68 @@ export type FenceKind = "none" | "picket";
  *  reference: 110px of fence on a 363px wall = 0.303. */
 export const FENCE_H = 0.3;
 
-/** Pickets per tile. See rule 3 — this is a readability number, not the
- *  reference's. */
-const PICKETS = 4;
-const PITCH = TILE / PICKETS;
-const PICKET_W = 0.17;
-const PICKET_T = 0.05;
-/** How far the fence stands proud of the wall face. Enough that the pickets
- *  are unambiguously IN FRONT of the hedge and cast onto it, small enough that
- *  the fence never eats into a corridor the beagle has to fit down (a corridor
- *  is one tile and the beagle is ~0.6 across, so the two panels facing each
- *  other across it take 0.16 of the 0.4 clearance). */
-const PROUD = 0.04;
+/**
+ * IDEA-062 v5: the fence's tunables as a NAMED, MUTABLE table.
+ *
+ * They were module-level `const`s, which is fine for shipping and useless for
+ * tuning: the editor's World tab needs to move one and see the board rebuild.
+ * Threading a `params` argument through buildFence -> buildPanelGeometry ->
+ * picketShape was the alternative and it is worse here — three signatures
+ * changed so one dev-only pane can pass an override, when every shipped call
+ * site would pass nothing.
+ *
+ * The contract: production NEVER writes this. The values below are the
+ * authored ones, the builders read them at call time, and the only thing that
+ * assigns is the dev-only editor (which then writes them back to THIS literal
+ * via src/editor/constRewrite.ts, so the file stays the source of truth).
+ *
+ * `pickets` is a CONSTRAINT, not a slider: PITCH = TILE / pickets must divide
+ * the tile exactly or every tile boundary shows a seam and a straight run
+ * reads as a row of separate gates (rule 4 above). It must stay a positive
+ * INTEGER — the editor enforces that, and so does constRewrite.
+ */
+export interface FenceParams {
+  /** Pickets per tile. Integer. See rule 4 — the pitch must divide the tile. */
+  pickets: number;
+  /** Picket width, in tiles. See rule 3 — a readability number, not the
+   *  reference's: at ~25px a tile the GAP is what has to survive. */
+  picketWidth: number;
+  /** Picket thickness (depth away from the wall face). */
+  picketThickness: number;
+  /** How far the fence stands proud of the wall face. Enough that the pickets
+   *  are unambiguously IN FRONT of the hedge and cast onto it, small enough
+   *  that the fence never eats into a corridor the beagle has to fit down (a
+   *  corridor is one tile and the beagle is ~0.6 across, so the two panels
+   *  facing each other take 0.16 of the 0.4 clearance). */
+  proud: number;
+  /** The two horizontal rails' heights, as a fraction of FENCE_H. */
+  railLow: number;
+  railHigh: number;
+  /** Rail half-height and thickness. */
+  railHeight: number;
+  railThickness: number;
+  /** How much darker the rails are than the pickets. Rule 2: a gap only reads
+   *  as a gap if something steps across it — same brown behind the pickets and
+   *  the whole fence renders as a skirting board. */
+  railShade: number;
+}
 
-/** The two horizontal rails, as a fraction of FENCE_H. */
-const RAIL_YS = [0.3, 0.78] as const;
-const RAIL_H = 0.055;
-const RAIL_T = 0.035;
-/** How much darker the rails are than the pickets — see buildPanelGeometry. */
-const RAIL_SHADE = 0.5;
+export const FENCE_PARAMS: FenceParams = {
+  pickets: 4,
+  picketWidth: 0.17,
+  picketThickness: 0.05,
+  proud: 0.04,
+  railLow: 0.3,
+  railHigh: 0.78,
+  railHeight: 0.055,
+  railThickness: 0.035,
+  railShade: 0.5,
+};
+
+/** The picket pitch. Derived, never stored — it must follow `pickets`. */
+function pitch(): number {
+  return TILE / FENCE_PARAMS.pickets;
+}
 
 /**
  * One picket's front silhouette: a plank with a rounded head.
@@ -88,12 +131,12 @@ const RAIL_SHADE = 0.5;
  * SILHOUETTE rather than adding a mark inside it.
  *
  * Extruded with `bevelEnabled: false` on purpose: ExtrudeGeometry's bevel
- * grows OUTWARD, so a bevelled picket would be wider than PICKET_W and the
+ * grows OUTWARD, so a bevelled picket would be wider than picketWidth and the
  * pitch arithmetic in rule 4 would quietly stop dividing the tile
  * (IDEA-057 rule 4, which cost the nigiri three systems at once).
  */
 function picketShape(): THREE.Shape {
-  const w = PICKET_W / 2;
+  const w = FENCE_PARAMS.picketWidth / 2;
   const h = FENCE_H;
   // The head is a dome `w` tall, so the straight flank runs to h - w.
   const shoulder = h - w;
@@ -118,7 +161,7 @@ function buildPanelGeometry(): THREE.BufferGeometry {
   const parts: { geo: THREE.BufferGeometry; shade: number }[] = [];
 
   const picket = new THREE.ExtrudeGeometry(picketShape(), {
-    depth: PICKET_T,
+    depth: FENCE_PARAMS.picketThickness,
     bevelEnabled: false,
     // THREE arc segments, and this is a budget decision with a number behind
     // it. A panel is instanced once per exposed wall face and a real maze has
@@ -130,11 +173,11 @@ function buildPanelGeometry(): THREE.BufferGeometry {
     curveSegments: 3,
   });
   // ExtrudeGeometry builds along +Z from z = 0, so the plank's own front face
-  // is at PICKET_T. Pull it back to straddle the origin.
-  picket.translate(0, 0, -PICKET_T / 2);
+  // is at picketThickness. Pull it back to straddle the origin.
+  picket.translate(0, 0, -FENCE_PARAMS.picketThickness / 2);
 
-  for (let i = 0; i < PICKETS; i++) {
-    const x = (i - (PICKETS - 1) / 2) * PITCH;
+  for (let i = 0; i < FENCE_PARAMS.pickets; i++) {
+    const x = (i - (FENCE_PARAMS.pickets - 1) / 2) * pitch();
     const g = picket.clone();
     g.translate(x, 0, 0);
     parts.push({ geo: g, shade: 1 });
@@ -152,10 +195,10 @@ function buildPanelGeometry(): THREE.BufferGeometry {
   // feature the thing exists for. A gap only reads as a gap if there is a
   // tonal step across it. (A second material would cost a second draw call per
   // maze; a vertex attribute costs nothing and keeps the fence at one.)
-  for (const f of RAIL_YS) {
-    const rail = new THREE.BoxGeometry(TILE, FENCE_H * RAIL_H * 2, RAIL_T);
-    rail.translate(0, FENCE_H * f, -PICKET_T / 2 - RAIL_T / 2);
-    parts.push({ geo: rail, shade: RAIL_SHADE });
+  for (const f of [FENCE_PARAMS.railLow, FENCE_PARAMS.railHigh]) {
+    const rail = new THREE.BoxGeometry(TILE, FENCE_H * FENCE_PARAMS.railHeight * 2, FENCE_PARAMS.railThickness);
+    rail.translate(0, FENCE_H * f, -FENCE_PARAMS.picketThickness / 2 - FENCE_PARAMS.railThickness / 2);
+    parts.push({ geo: rail, shade: FENCE_PARAMS.railShade });
   }
 
   return mergeGeometries(parts);
@@ -268,9 +311,9 @@ export function buildFence(
       for (const s of SIDES) {
         if (isWall(grid, x + s.dx, y + s.dy)) continue;
         dummy.position.set(
-          worldX(x) + s.dx * (TILE / 2 + PROUD),
+          worldX(x) + s.dx * (TILE / 2 + FENCE_PARAMS.proud),
           0,
-          worldZ(y) + s.dy * (TILE / 2 + PROUD),
+          worldZ(y) + s.dy * (TILE / 2 + FENCE_PARAMS.proud),
         );
         dummy.rotation.set(0, s.rot, 0);
         dummy.updateMatrix();
