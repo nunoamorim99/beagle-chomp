@@ -427,6 +427,8 @@ export const PROP_LIBRARY: readonly PropDef[] = [
       { path: "5/4", position: [-0.861, 0.662, -0.091] },
       { path: "6", rotation: [-0.048, -0.042, 1.049], scale: [1, 1.1, 1] },
       { path: "0", scale: [1, 1.08, 1] },
+      { path: "4", position: [0.494, 0.459, 0.078], rotation: [0, 0, 1.881], scale: [1, 1.245, 1] },
+      { path: "3", position: [0.828, -0.03, 0.087] },
     ],
       added: [],
     },
@@ -451,6 +453,8 @@ export const PROP_LIBRARY: readonly PropDef[] = [
       height: 1,
       width: 1,
       flowerKind: "daisy",
+      petalColor: 0xfaf6ec,
+      centerColor: 0xf2b632,
     },
   },
   {
@@ -461,6 +465,8 @@ export const PROP_LIBRARY: readonly PropDef[] = [
       height: 1,
       width: 1,
       flowerKind: "sunflower",
+      petalColor: 0xfaf6ec,
+      centerColor: 0xf2b632,
     },
   },
   {
