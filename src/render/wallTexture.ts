@@ -207,20 +207,27 @@ function daisy(
  *     the face. The same call as the burger's sesame (IDEA-059 rule 6) and
  *     the hedge's own "fewer, bigger clusters" note above.
  *
- *  2. THEY ARE COUNTED, NOT SCATTERED BY CHANCE, AND THE COUNT IS SIX. A
- *     per-pixel probability would give one face three and its neighbour
- *     fourteen, and the maze would look blighted in patches.
+ *  2. THEY ARE COUNTED, NOT SCATTERED BY CHANCE, AND THE COUNT IS FOUR. A
+ *     per-pixel probability would give one face two and its neighbour ten,
+ *     and the maze would look blighted in patches.
  *
- *     Six, not the reference's own density. This was the one real defect in
- *     the first build and the game camera is what found it: at fourteen a
- *     face the maze rendered as WHITE STATIC over green — every wall top, the
- *     largest and most-seen surface on the board, carrying a fine dense
- *     stipple. The reference gets away with ~7 flowers per hedge-tile because
- *     it shows ONE face of a hedge at 363px; this texture wraps all six sides
- *     of every one of 200 boxes, and the sum is a pattern rather than a
- *     scatter. Ink is conserved by making them BIGGER and FEWER, which is
- *     wallTexture's own "fewer, bigger clusters" note and floorTexture's
- *     "fewer/bigger grass tufts" arriving at the same answer a third time.
+ *     Four, against the reference's own density of roughly seven per
+ *     hedge-tile. The count has come down twice and both times for the same
+ *     reason, which is worth stating plainly: THE REFERENCE SHOWS ONE FACE OF
+ *     ONE HEDGE, while this texture wraps all six sides of every one of ~200
+ *     boxes — and the sum of that is a pattern rather than a scatter. At
+ *     fourteen the maze rendered as white STATIC over green, a fine dense
+ *     stipple across the wall tops, which are the largest and most-seen
+ *     surface on the board. Six read as real flowers and was still busier than
+ *     a garden wants. Ink is conserved by making them BIGGER and FEWER, which
+ *     is this module's own "fewer, bigger clusters" note and floorTexture's
+ *     "fewer/bigger grass tufts" reaching the same answer for a third time.
+ *
+ *     There is no longer a second layer of flowers in front of this one. The
+ *     garden's wall tops carried 29 hand-placed flower PROPS as well, and
+ *     those went when this count came down — two flowering layers on one
+ *     surface is one too many, and the texture is the one that covers every
+ *     wall rather than 34 of them.
  *
  * The petal white is NOT pure white: the hedge's own lit band already reaches
  * 1.26x the base green, and a flower has to sit ABOVE that to read as a
@@ -234,7 +241,7 @@ function drawHedgeFlower(ctx: CanvasRenderingContext2D, base: RGB): void {
   // Its own seed, deliberately not the hedge's: sharing one would place every
   // daisy at a cluster centre, since both would consume the same sequence.
   const r = rng(0xda151e5);
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 4; i++) {
     daisy(ctx, r() * SIZE, r() * SIZE, SIZE * 0.085, petal, eye, r);
   }
 }

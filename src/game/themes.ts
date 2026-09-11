@@ -155,8 +155,20 @@ export interface MazeTheme {
   name: string;
   /** One line for the shop — see cosmetics.ts's BeagleSkin.blurb. */
   blurb: string;
+  /**
+   * IDEA-064: hidden from the shop until the player has earned the right to
+   * see it. Mirrors EnemySkin.secret exactly, including the rule that
+   * ownership is still the real gate — this only controls LISTING, so a secret
+   * theme somebody already bought stays visible to them.
+   *
+   * Only Arcade Night carries it, and it is revealed by the same purchase that
+   * reveals the Ghost: the two tributes to the arcade game this one descends
+   * from are unlocked together, by the coat that is a tribute to it.
+   */
+  secret?: boolean;
   /** Shop price in coins (IDEA-026). 0 means "owned from the start, never
-   *  purchasable" — true only for the default garden theme. */
+   *  purchasable" — the default garden theme, and (IDEA-064) Arcade Night,
+   *  which is not bought at all but GRANTED by the Pac-Beagle coat. */
   price: number;
   palette: ThemePalette;
   /** IDEA-030: explicit apron prop placements (was IDEA-026's `props`
@@ -242,41 +254,17 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
       { propId: "garden-tree", tile: [19, 3], offset: [-0.131, 0.085], rotationY: 4.418, scale: 1.097 },
       { propId: "treehouse", tile: [19, -1], offset: [0, 0], rotationY: 5.807363914339822, scale: 1 },
     ],
+    // IDEA-060 v3: BIRDHOUSES ONLY — the 29 flower props that used to stand up
+    // here went when the wall itself became a flowering hedge. It must not
+    // become EMPTY: that would switch the palette's density blooms back on.
+    // See board.ts's buildWallTopDecor. (Notes here do not survive a save from
+    // the board editor; the durable copy is there and in test-garden-props.ts.)
     wallDecor: [
-      { propId: "flower-daisy", tile: [5, 0], rotationY: 6.19, scale: 0.932 },
-      { propId: "flower-blossom", tile: [12, 0], rotationY: 3.47, scale: 0.941 },
-      { propId: "flower-tulip", tile: [15, 0], rotationY: 0.451, scale: 1.086 },
       { propId: "birdhouse", tile: [2, 2], rotationY: 2.628, scale: 0.62 },
-      { propId: "flower-rose", tile: [7, 2], rotationY: 4.35, scale: 1.149 },
-      { propId: "flower-daisy", tile: [18, 2], rotationY: 2.914, scale: 0.935 },
-      { propId: "flower-blossom", tile: [0, 4], rotationY: 1.839, scale: 1.023 },
-      { propId: "flower-tulip", tile: [5, 4], rotationY: 0.683, scale: 0.949 },
-      { propId: "flower-sunflower", tile: [9, 4], rotationY: 5.178, scale: 0.915 },
-      { propId: "flower-rose", tile: [12, 4], rotationY: 1.248, scale: 1.037 },
       { propId: "birdhouse", tile: [2, 6], rotationY: 6.132, scale: 0.62 },
-      { propId: "flower-blossom", tile: [15, 6], rotationY: 2.676, scale: 0.959 },
-      { propId: "flower-tulip", tile: [18, 6], rotationY: 2.077, scale: 1.083 },
-      { propId: "flower-sunflower", tile: [5, 7], rotationY: 5.227, scale: 0.963 },
-      { propId: "flower-rose", tile: [10, 8], rotationY: 3.475, scale: 1.086 },
-      { propId: "flower-daisy", tile: [13, 8], rotationY: 6.024, scale: 1.185 },
-      { propId: "flower-blossom", tile: [2, 10], rotationY: 2.448, scale: 1.119 },
       { propId: "birdhouse", tile: [8, 10], rotationY: 4.406, scale: 0.62 },
-      { propId: "flower-sunflower", tile: [16, 10], rotationY: 4.985, scale: 1.118 },
-      { propId: "flower-rose", tile: [0, 12], rotationY: 1.575, scale: 1.125 },
-      { propId: "flower-daisy", tile: [5, 12], rotationY: 1.137, scale: 0.917 },
-      { propId: "flower-blossom", tile: [10, 12], rotationY: 5.066, scale: 1.138 },
-      { propId: "flower-tulip", tile: [13, 12], rotationY: 1.198, scale: 0.972 },
-      { propId: "flower-sunflower", tile: [15, 14], rotationY: 1.032, scale: 1.068 },
       { propId: "birdhouse", tile: [0, 15], rotationY: 3.208, scale: 0.62 },
-      { propId: "flower-daisy", tile: [5, 16], rotationY: 2.538, scale: 1.054 },
-      { propId: "flower-blossom", tile: [9, 16], rotationY: 2.904, scale: 0.942 },
-      { propId: "flower-tulip", tile: [7, 18], rotationY: 4.877, scale: 0.93 },
-      { propId: "flower-sunflower", tile: [13, 18], rotationY: 1.112, scale: 0.956 },
-      { propId: "flower-rose", tile: [16, 18], rotationY: 6.089, scale: 0.966 },
-      { propId: "flower-daisy", tile: [0, 20], rotationY: 4.098, scale: 1.2 },
       { propId: "birdhouse", tile: [3, 20], rotationY: 0.088, scale: 0.62 },
-      { propId: "flower-tulip", tile: [9, 20], rotationY: 6.28, scale: 1.166 },
-      { propId: "flower-sunflower", tile: [18, 20], rotationY: 2.551, scale: 0.871 },
     ],
   },
 
@@ -291,7 +279,19 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
     // emissive intensity the hedges had before the daylight retune (0.72)
     // and the cool lavender/indigo light rig the garden pass replaced.
     // No blooms: the classic board is clean neon walls, nothing planted.
-    price: 50,
+    //
+    // IDEA-064: no longer a 50-coin theme on the shelf. It is the Pac-Beagle's
+    // other half — the arcade coat unlocks the arcade enemy and the arcade
+    // BOARD, and a tribute you can assemble by buying its three pieces
+    // separately is not much of a tribute. Free and secret, granted by
+    // profileStore.buyBeagleSkin exactly the way the Ghost is, which needs no
+    // special purchase path: price 0 means the ordinary buy always succeeds and
+    // the server's own catalog agrees with it.
+    //
+    // Anyone who already paid 50 for it keeps it and keeps seeing it —
+    // visibleMazeThemes lists a secret theme the player owns.
+    secret: true,
+    price: 0,
     palette: {
       bg: 0x0b0b16,
       backdropTop: 0x232348,
@@ -700,6 +700,32 @@ function getDefaultMazeTheme(): MazeTheme {
     throw new Error("themes: DEFAULT_MAZE_THEME_ID has no matching entry in MAZE_THEMES");
   }
   return found;
+}
+
+/**
+ * IDEA-064: the theme the tribute coat unlocks.
+ *
+ * Held here, next to the registry it names, for the same reason
+ * cosmetics.ts's TRIBUTE_ENEMY_SKIN_ID is held next to that one: "owning X
+ * grants Y" has to hold however the purchase was made, and the shop is only
+ * one caller. profileStore.buyBeagleSkin does the granting; ui/shop.ts does the
+ * revealing.
+ */
+export const TRIBUTE_MAZE_THEME_ID = "classic";
+
+/**
+ * The maze themes a player can SEE, given what they own.
+ *
+ * Mirrors cosmetics.ts's visibleEnemySkins field for field, including the
+ * second clause: a secret theme the player already owns stays listed, which is
+ * what stops a 50-coin Arcade Night bought before IDEA-064 from looking as
+ * though it had been taken away.
+ */
+export function visibleMazeThemes(
+  ownsTributeCoat: boolean,
+  isOwned: (id: string) => boolean,
+): readonly MazeTheme[] {
+  return MAZE_THEMES.filter((t) => !t.secret || ownsTributeCoat || isOwned(t.id));
 }
 
 // ---------------------------------------------------------------------------

@@ -30,6 +30,8 @@ import {
   GHOSTS_BONUS_FIRST_LAP,
   GHOSTS_BONUS_LATER_LAPS,
   planLevel as serverPlanLevel,
+  BEAGLE_PERK_BY_SKIN,
+  BEAGLE_PERKS,
   type CatalogItem,
 } from "../src/catalog.generated.js";
 
@@ -48,20 +50,56 @@ function ok(label: string, condition: boolean, detail?: unknown): void {
   }
 }
 
-/** Read the price the GAME declares for an id, straight from source. Finds the
- *  id, then the first `price:` after it — the same shape the generator relies
- *  on, but implemented independently so a bug in one is unlikely to be mirrored
- *  in the other. */
-function gamePriceFor(source: string, id: string): number | null {
+/** The text of ONE registry entry: from the named id forward to the closing
+ *  brace of the object that id belongs to.
+ *
+ *  It used to stop at the next `id: "` instead, which is simpler and was
+ *  correct right up until an entry contained a NESTED object with an id of its
+ *  own — IDEA-064 gave every coat a `perk: { id: "..." }`, the scope was cut
+ *  short before reaching `price:`, and all five beagle skins reported "not
+ *  found in the game source". Counting depth ignores nesting entirely: a
+ *  nested `{` lifts the depth and its `}` puts it back, and only the ENTRY's
+ *  own closing brace takes it below zero.
+ *
+ *  The generator brace-matches now too, which weakens — but does not remove —
+ *  the independence this file trades on: they are still separate
+ *  implementations over different shapes, and it is still the VALUES being
+ *  compared rather than the parsers. */
+function gameEntryScope(source: string, id: string): string | null {
   const idIdx = source.indexOf(`id: "${id}"`);
   if (idIdx === -1) return null;
 
-  const after = source.slice(idIdx);
-  const nextId = after.indexOf('id: "', 5);
-  const scope = nextId === -1 ? after : after.slice(0, nextId);
+  let depth = 0;
+  for (let i = idIdx; i < source.length; i++) {
+    const ch = source[i];
+    if (ch === "{") depth++;
+    else if (ch === "}") {
+      if (depth === 0) return source.slice(idIdx, i);
+      depth--;
+    }
+  }
+  return source.slice(idIdx);
+}
 
+/** Read the price the GAME declares for an id, straight from source. */
+function gamePriceFor(source: string, id: string): number | null {
+  const scope = gameEntryScope(source, id);
+  if (scope === null) return null;
   const m = /\bprice:\s*(\d+)/.exec(scope);
   return m ? Number(m[1]) : null;
+}
+
+/** IDEA-064: read the PERK the game declares for a coat. Same scope, different
+ *  field — and the same reason for existing as the price check above: the
+ *  validator sizes three of its bounds from this mapping, so a perk re-pointed
+ *  in cosmetics.ts without `npm run sync` would have the server allow for the
+ *  wrong bonus and start rejecting honest runs in production while nothing
+ *  failed locally. */
+function gamePerkFor(source: string, id: string): string | null {
+  const scope = gameEntryScope(source, id);
+  if (scope === null) return null;
+  const m = /\bperk:\s*\{\s*id:\s*"([a-zA-Z]+)"/.exec(scope);
+  return m ? m[1] : null;
 }
 
 function checkGroup(
@@ -106,6 +144,57 @@ const themesSrc = readFileSync(join(GAME_DIR, "themes.ts"), "utf-8");
 checkGroup("Beagle skins", BEAGLE_SKINS, cosmeticsSrc, DEFAULT_BEAGLE_SKIN_ID);
 checkGroup("Enemy skins", ENEMY_SKINS, cosmeticsSrc, DEFAULT_ENEMY_SKIN_ID);
 checkGroup("Maze themes", MAZE_THEMES, themesSrc, DEFAULT_MAZE_THEME_ID);
+
+// IDEA-064: the perk mapping, both directions.
+//
+// This is the single most consequential drift in the file. A price that drifts
+// produces a refused PURCHASE — annoying, visible, and recoverable. A perk that
+// drifts produces refused RUNS: the validator allows for the wrong bonus, honest
+// players lose their best scores, and nothing fails locally because the game
+// itself is working perfectly.
+console.log("\nBeagle perks — the mapping the validator sizes its bounds from");
+{
+  for (const item of BEAGLE_SKINS) {
+    const gamePerk = gamePerkFor(cosmeticsSrc, item.id);
+    ok(
+      `${item.id}: the game declares a perk`,
+      gamePerk !== null,
+      "no `perk: { id: ... }` found — every coat must carry one",
+    );
+    ok(
+      `${item.id}: catalog perk matches the game`,
+      BEAGLE_PERK_BY_SKIN[item.id] === gamePerk,
+      `server=${BEAGLE_PERK_BY_SKIN[item.id]} game=${gamePerk} — regenerate with \`npm run sync\``,
+    );
+  }
+
+  // No coat left out, and none invented: the validator falls back to the
+  // DEFAULT coat's perk for an id it does not know, so a missing entry does not
+  // throw — it silently prices the run as some other coat.
+  ok(
+    "the catalog names a perk for every coat and no others",
+    Object.keys(BEAGLE_PERK_BY_SKIN).sort().join(",") ===
+      BEAGLE_SKINS.map((i) => i.id).sort().join(","),
+    Object.keys(BEAGLE_PERK_BY_SKIN).join(","),
+  );
+
+  // The magnitudes, against config.ts itself. Same argument as the mapping:
+  // BEAGLE_PERKS.fruitBonusPoints drifting by so much as 10 means every fruit a
+  // Pepper run eats is priced wrong and the run is rejected.
+  const configSrc = readFileSync(join(GAME_DIR, "config.ts"), "utf-8");
+  const perkBlock = /export const BEAGLE_PERKS = \{([\s\S]*?)\n\} as const;/.exec(configSrc);
+  ok("config.ts declares BEAGLE_PERKS", perkBlock !== null);
+  if (perkBlock) {
+    for (const [field, value] of Object.entries(BEAGLE_PERKS)) {
+      const m = new RegExp(`\\b${field}:\\s*(\\d+)`).exec(perkBlock[1]);
+      ok(
+        `BEAGLE_PERKS.${field} === ${value} in the game`,
+        m !== null && Number(m[1]) === value,
+        `server=${value} game=${m?.[1]} — regenerate with \`npm run sync\``,
+      );
+    }
+  }
+}
 
 // Catch the other drift direction: the game gained an item and nobody ran
 // `npm run sync`, so the server would reject buying something the shop shows.

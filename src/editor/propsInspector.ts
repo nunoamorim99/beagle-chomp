@@ -99,12 +99,34 @@ const FIELD_SEED_DEFAULT: Partial<Record<keyof PropParams, number>> = {
   glowColor: 0xf4d060,
   glowIntensity: 0.9,
   signBoardColor: 0x33333c,
-  // IDEA-060. The three flower colours seed to the DAISY's, since that is
-  // `flowerKind`'s own default — turning "petal color" on should not repaint
-  // the flower you are looking at into a different one.
-  petalColor: 0xfaf6ec,
-  centerColor: 0xf2b632,
+  // IDEA-060. `birdColor` has one right answer; the two FLOWER colours do not
+  // and are deliberately absent from this table — see FLOWER_SEED_COLORS.
   birdColor: 0x3f9ede,
+};
+
+/**
+ * Seed colours for `petalColor`/`centerColor`, PER FLOWER KIND.
+ *
+ * These cannot live in FIELD_SEED_DEFAULT above, which is a flat
+ * field-to-number map, and trying anyway shipped a real defect: the table
+ * seeded both fields to the DAISY's cream and gold whatever flower was
+ * selected, so opening "petal color" on the Sunflower silently turned it into
+ * a large cream daisy and wrote that into props.ts on the next save. The
+ * comment there even claimed the opposite — "turning petal color on should not
+ * repaint the flower you are looking at" — which was true only for the one
+ * kind whose colours it held.
+ *
+ * The rule generalises past this one field: A SEED DEFAULT THAT DEPENDS ON
+ * ANOTHER FIELD'S VALUE CANNOT BE A CONSTANT. Mirrors
+ * gardenProps.ts's FLOWER_DEFAULTS, which is what the factory actually reads
+ * when a def leaves these unset.
+ */
+const FLOWER_SEED_COLORS: Record<string, { petalColor: number; centerColor: number }> = {
+  daisy: { petalColor: 0xfaf6ec, centerColor: 0xf2b632 },
+  sunflower: { petalColor: 0xf5c518, centerColor: 0x6b4526 },
+  rose: { petalColor: 0xd8384a, centerColor: 0x9c2333 },
+  tulip: { petalColor: 0xd42f4c, centerColor: 0xf09aa8 },
+  blossom: { petalColor: 0xb289de, centerColor: 0xf3e46a },
 };
 
 const FIELD_LABEL: Partial<Record<keyof PropParams, string>> = {
@@ -249,7 +271,14 @@ export function createPropsInspector(
 
   function buildSingleColorField(folder: GUI, def: WorkingPropDef, key: keyof PropParams): void {
     const label = FIELD_LABEL[key] ?? key;
-    const seed = FIELD_SEED_DEFAULT[key] ?? 0xffffff;
+    // The two flower colours seed from the def's OWN `flowerKind`, not from a
+    // constant — see FLOWER_SEED_COLORS for the defect that came of treating
+    // them like every other colour field.
+    let seed = FIELD_SEED_DEFAULT[key] ?? 0xffffff;
+    if (key === "petalColor" || key === "centerColor") {
+      const kind = (def.params.flowerKind ?? "daisy") as string;
+      seed = (FLOWER_SEED_COLORS[kind] ?? FLOWER_SEED_COLORS.daisy)[key];
+    }
     if (def.params[key] === undefined) (def.params as Record<string, unknown>)[key] = seed;
     folder
       .addColor(

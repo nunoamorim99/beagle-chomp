@@ -713,6 +713,15 @@ body.map-open #mainMenu{display:none}
    spend 150 coins on it. */
 .shop-hero-blurb{font-family:var(--bc-font-mono);font-size:12px;line-height:1.4;
   color:var(--bc-text-mute);margin-top:3px}
+/* IDEA-064: the coat's PERK, under its blurb. Information, not an action, so
+   it stays off amber (§04 gives amber to the one next action, which is the
+   buy/equip button beside it) and reads in the biscuit tone with a bolt in
+   front of it. Body font rather than the blurb's mono: this is a sentence
+   about what the dog does, not a spec line. */
+.shop-hero-perk{display:flex;align-items:center;gap:6px;margin-top:5px;
+  font-family:var(--bc-font-body);font-weight:700;font-size:12px;line-height:1.3;
+  color:var(--bc-biscuit)}
+.shop-hero-perk .bc-i{font-size:16px;flex:0 0 auto}
 .shop-hero-action{flex:0 0 auto;font-size:17px;padding:12px 20px}
 .shop-hero-action.equipped{background:var(--bc-go);color:var(--bc-cream);
   border-bottom-color:var(--bc-go-edge)}
@@ -1011,13 +1020,17 @@ body.map-open #mainMenu{display:none}
    Both rings use an SVG `stroke` on the <circle>, NOT box-shadow —
    box-shadow is computed but does NOT PAINT on bare SVG shape elements in
    Chromium/Firefox, so it would be an invisible ring here. */
+/* Every stone is interactive, LOCKED INCLUDED (IDEA-063 v2) — tapping one
+   shows its details in the panel even though Play stays disabled, so a new
+   player can read what is ahead instead of facing a wall of padlocks. So no
+   `cursor:default` on the locked variant any more, and the hover lift below
+   applies to all three states. */
 .map-node{cursor:pointer;pointer-events:auto;outline:none}
-.map-node-locked{cursor:default}
 .map-node-stone{stroke:var(--bc-outline);stroke-width:3;
   transition:transform var(--bc-d-press) var(--bc-ease),
              stroke var(--bc-d-state) var(--bc-ease),
              stroke-width var(--bc-d-state) var(--bc-ease)}
-.map-node:not(.map-node-locked):hover .map-node-stone{transform:scale(1.06)}
+.map-node:hover .map-node-stone{transform:scale(1.06)}
 .map-node:focus-visible .map-node-stone{stroke:var(--bc-amber);stroke-width:5}
 
 .map-node-cleared .map-node-stone{fill:var(--bc-go)}

@@ -73,6 +73,19 @@ if (existsSync(THEMES_BACKUP)) {
   rmSync(THEMES_BACKUP);
 }
 
+// IDEA-060 v3: the garden's own counts, read from the registry rather than
+// pinned as literals. They have moved three times in two sessions (a treehouse
+// added, 29 flower props taken off the wall tops) and each move broke a dozen
+// assertions here — but what these checks are FOR is that board mode loads
+// what the registry holds, not how many things a theme happens to plant.
+const GARDEN = MAZE_THEMES.find((t) => t.id === "garden");
+if (!GARDEN) throw new Error("no garden theme in MAZE_THEMES");
+const GARDEN_PLACEMENTS = GARDEN.placements.length;
+const GARDEN_WALL_DECOR = GARDEN.wallDecor.length;
+const GARDEN_PLANTED = GARDEN.placements.filter(
+  (pl) => pl.propId === "garden-shrub" || pl.propId === "garden-tree",
+).length;
+
 let failures = 0;
 function check(label: string, cond: boolean): void {
   if (cond) {
@@ -457,16 +470,15 @@ async function run(): Promise<void> {
       }
       check("no 'Placement' folder yet (nothing selected on first entry)", !folderTitles.some((t) => t.startsWith("Placement")));
 
-      // Garden (the board-mode default) authors 30 apron placements (IDEA-060
-      // added the treehouse landmark to the 29 shrubs and trees) and
+      // Garden (the board-mode default) authors its apron placements and
       // empty wallDecor (see src/game/themes.ts) — asserting these exact
       // numbers on the very FIRST board-mode entry proves buildBoard's own
       // buildProps call (not just applyBoardTheme's re-apply path) seeded
       // board.props correctly from the real registry data.
-      check("garden's working theme starts with 30 placements", snap.placementsLength === 30);
+      check(`garden's working theme starts with ${GARDEN_PLACEMENTS} placements`, snap.placementsLength === GARDEN_PLACEMENTS);
       // IDEA-060: 34 hand-placed wall-top pieces, where it used to have none and
       // relied on the palette's density blooms instead.
-      check("garden's working theme starts with 34 wallDecor entries", snap.wallDecorLength === 34);
+      check(`garden's working theme starts with ${GARDEN_WALL_DECOR} wallDecor entries`, snap.wallDecorLength === GARDEN_WALL_DECOR);
       check("garden's live apron prop mesh count is > 0 on first board-mode entry", snap.propMeshCount > 0);
       check("garden's sub-mode defaults to apron", snap.placementSubMode === "apron");
     }
@@ -541,7 +553,7 @@ async function run(): Promise<void> {
       await clickPlacementButton(page, "remove this placement 🗑");
       await page.waitForTimeout(300);
       const cleaned = await boardSnapshot(page);
-      check("removing it drops placementsLength back to garden's original 30", cleaned.placementsLength === before.placementsLength);
+      check("removing it drops placementsLength back to garden's original count", cleaned.placementsLength === before.placementsLength);
       check("removing it drops the live mesh count back down", cleaned.propMeshCount === before.propMeshCount);
     }
 
@@ -555,7 +567,7 @@ async function run(): Promise<void> {
       await page.waitForTimeout(300);
 
       const snap = await boardSnapshot(page);
-      check("clicking a filled slot does NOT add a new placement", snap.placementsLength === 30);
+      check("clicking a filled slot does NOT add a new placement", snap.placementsLength === GARDEN_PLACEMENTS);
       // IDEA-060 repointed the garden's 23 shrubs to the reference-built shape.
       check("the selection reports the existing shrub", snap.placementSelection?.propId === "garden-shrub");
       check(
@@ -644,9 +656,9 @@ async function run(): Promise<void> {
       // themes.ts to fix.)
       const wallTile: [number, number] = [9, 6];
       const before = await boardSnapshot(page);
-      // IDEA-060: the garden now hand-places 34 wall-top pieces (five flowers
-      // and a birdhouse), where it used to rely on the palette's density blooms.
-      check("garden starts with 34 wallDecor entries", before.wallDecorLength === 34);
+      // IDEA-060: the garden hand-places its wall-top pieces, where it used to
+      // rely on the palette's density blooms.
+      check(`garden starts with ${GARDEN_WALL_DECOR} wallDecor entries`, before.wallDecorLength === GARDEN_WALL_DECOR);
 
       await clickTile(page, wallTile, "wall");
       await page.waitForTimeout(300);
@@ -682,7 +694,7 @@ async function run(): Promise<void> {
     {
       const gardenWall = await folderColorSwatch(page, "Walls", 0);
       check("garden (default) wall swatch matches src/game/themes.ts", gardenWall === "#3f8f3a");
-      check("garden reloads with 30 placements", (await boardSnapshot(page)).placementsLength === 30);
+      check(`garden reloads with ${GARDEN_PLACEMENTS} placements`, (await boardSnapshot(page)).placementsLength === GARDEN_PLACEMENTS);
 
       await selectBaseTheme(page, "Arcade Night");
       await page.waitForTimeout(300);
@@ -747,8 +759,8 @@ async function run(): Promise<void> {
       await page.waitForTimeout(300);
       const backToGarden = await folderColorSwatch(page, "Walls", 0);
       check("re-selecting The Garden restores its wall swatch", backToGarden === "#3f8f3a");
-      check("re-selecting The Garden restores its 30 placements", (await boardSnapshot(page)).placementsLength === 30);
-      check("re-selecting The Garden restores its 34 wallDecor entries", (await boardSnapshot(page)).wallDecorLength === 34);
+      check(`re-selecting The Garden restores its ${GARDEN_PLACEMENTS} placements`, (await boardSnapshot(page)).placementsLength === GARDEN_PLACEMENTS);
+      check(`re-selecting The Garden restores its ${GARDEN_WALL_DECOR} wallDecor entries`, (await boardSnapshot(page)).wallDecorLength === GARDEN_WALL_DECOR);
     }
 
     // -------------------------------------------------------------------
@@ -894,7 +906,7 @@ async function run(): Promise<void> {
     console.log("\n=== IDEA-034: empty vs filled slot markers read differently (strong highlighting) ===");
     {
       // (-1, 6) is a genuinely empty garden apron slot (not one of garden's
-      // 30 authored tiles — cross-checked against src/game/themes.ts's
+      // its authored tiles — cross-checked against src/game/themes.ts's
       // garden.placements list, which has no [-1,6] entry) — an EMPTY marker
       // to contrast against a FILLED one below.
       const emptyTile: [number, number] = [-1, 6];
@@ -940,10 +952,10 @@ async function run(): Promise<void> {
       check("a selected marker's opacity is fully solid (1.0 — no pulse while selected)", selectedState?.opacity === 1);
 
       // Clean up: remove the just-created placement so it doesn't leak into
-      // later sections' placementsLength assumptions (garden's authored 30).
+      // later sections' placementsLength assumptions.
       await clickPlacementButton(page, "remove this placement 🗑");
       await page.waitForTimeout(300);
-      check("cleanup: placementsLength back to garden's 30 after removing the test placement", (await boardSnapshot(page)).placementsLength === 30);
+      check(`cleanup: placementsLength back to garden's ${GARDEN_PLACEMENTS} after removing the test placement`, (await boardSnapshot(page)).placementsLength === GARDEN_PLACEMENTS);
     }
 
     // -------------------------------------------------------------------
@@ -1008,7 +1020,7 @@ async function run(): Promise<void> {
       // Clean up the wall placement.
       await clickPlacementButton(page, "remove this placement 🗑");
       await page.waitForTimeout(300);
-      check("cleanup: wallDecorLength back to 34 after removing the test wall placement", (await boardSnapshot(page)).wallDecorLength === 34);
+      check(`cleanup: wallDecorLength back to ${GARDEN_WALL_DECOR} after removing the test wall placement`, (await boardSnapshot(page)).wallDecorLength === GARDEN_WALL_DECOR);
       await clickTreeRow(page, "Props (apron)");
       await page.waitForTimeout(150);
     }
@@ -1184,7 +1196,7 @@ async function run(): Promise<void> {
         check("saved file still contains garden's own id", /id: "garden",/.test(savedContents));
         check("saved file still contains every OTHER theme's id (Arcade Night/Deep Forest/Sunny Beach/City Park/Night City)", ["classic", "forest", "beach", "park", "city"].every((id) => savedContents.includes(`id: ${JSON.stringify(id)},`)));
         check("saved file preserves Night City's own hand-authored prose comment", savedContents.includes("Identity note (two tuning passes)"));
-        check("saved file's garden entry keeps its own 29 shrub/tree placements (round-trips the CURRENT working theme, not a stale one)", (savedContents.match(/propId: "(garden-shrub|garden-tree)"/g) ?? []).length >= 29);
+        check(`saved file's garden entry keeps its own ${GARDEN_PLANTED} shrub/tree placements (round-trips the CURRENT working theme, not a stale one)`, (savedContents.match(/propId: "(garden-shrub|garden-tree)"/g) ?? []).length >= GARDEN_PLANTED);
 
         // Brace/bracket balance as a structural sanity check that the splice
         // didn't truncate or duplicate anything.
@@ -1300,13 +1312,13 @@ async function run(): Promise<void> {
       // base-theme dropdown pick does that — see loadBaseTheme's own doc
       // comment). The underlying DATA is still garden's (only `.id` was
       // free-text-edited, not the palette/placements), so placementsLength
-      // stays 30.
+      // is unchanged.
       await page.click("#modeBoardBtn");
       await page.waitForTimeout(400);
       const backSnap = await boardSnapshot(page);
       check(
-        "re-entering board mode keeps the exact same working theme (id + 30 placements survive the round trip)",
-        backSnap.workingThemeId === "my-custom-theme" && backSnap.placementsLength === 30,
+        "re-entering board mode keeps the exact same working theme (id + placements survive the round trip)",
+        backSnap.workingThemeId === "my-custom-theme" && backSnap.placementsLength === GARDEN_PLACEMENTS,
       );
       check("re-entering board mode has picking enabled again", true); // implicit: the NEXT section's click succeeds
     }

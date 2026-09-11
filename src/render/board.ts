@@ -2027,6 +2027,18 @@ export function buildBoard(scene: THREE.Object3D, grid: Grid): Board {
  * whether the entry is an InstancedMesh or this one wall-decor Group).
  */
 function buildWallTopDecor(scene: THREE.Object3D, grid: Grid, theme: MazeTheme): THREE.Object3D[] {
+  // IDEA-060 v3, and the reason this dispatch is worth knowing about rather
+  // than just correct: EMPTYING A THEME'S `wallDecor` DOES NOT REMOVE ITS
+  // WALL-TOP DECORATION, it swaps it for the palette's density blooms. The
+  // garden's flower props were taken off the walls because the wall texture
+  // now carries daisies of its own and two flowering layers was too much —
+  // deleting the last entry as well would have put ~40 scattered bloom
+  // spheres back up there, which is the opposite of what was wanted. Its
+  // birdhouses are what hold this branch, as well as being wanted in
+  // their own right.
+  //
+  // The note lives here because themes.ts cannot keep one: the board editor's
+  // Save regenerates the edited theme's entry and strips its comments.
   if (theme.wallDecor.length > 0) {
     const group = buildWallDecor(scene, theme, grid);
     return group ? [group] : [];

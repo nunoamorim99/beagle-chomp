@@ -71,7 +71,12 @@ export interface StartSessionResult {
  * analytics matter most — the malformed ones.
  */
 function buildRunStats(
-  session: { id: string; mode: "classic" | "challenge"; challenge_idx: number | null },
+  session: {
+    id: string;
+    mode: "classic" | "challenge";
+    challenge_idx: number | null;
+    beagle_skin_id: string;
+  },
   user: UserRow,
   submission: ReturnType<typeof readSubmission>,
   elapsedServerSeconds: number,
@@ -112,7 +117,13 @@ function buildRunStats(
     deathsByGhost: submission.deathsByGhost?.map(int) ?? null,
     playSeconds: int(submission.playSeconds),
 
-    beagleSkinId: user.equipped_beagle_skin_id,
+    // IDEA-064: from the SESSION, not from `user`. The other three are still
+    // read at finish time (nothing prices a run on them, and a coat is the only
+    // one that was snapshotted), but the beagle has to be the one the run was
+    // actually PLAYED in — that is the coat the validator priced it against, so
+    // recording a different one would make the analytics disagree with the
+    // verdict sitting beside it.
+    beagleSkinId: session.beagle_skin_id,
     enemySkinId: user.equipped_enemy_skin_id,
     mazeThemeId: user.equipped_maze_theme_id,
     controlScheme: user.control_scheme,
@@ -163,7 +174,15 @@ export async function startSession(
     await sessionsRepo.abandonOldestOpenSession(user.id);
   }
 
-  const session = await sessionsRepo.createSession(user.id, mode, challengeIdx);
+  // IDEA-064: the coat is snapshotted HERE, from the server's own copy of the
+  // player's profile — never from the request body. A client that could name
+  // its own coat could name the one with the best perk for the run it just had.
+  const session = await sessionsRepo.createSession(
+    user.id,
+    mode,
+    challengeIdx,
+    user.equipped_beagle_skin_id,
+  );
 
   return {
     sessionId: session.id,
@@ -266,6 +285,10 @@ export async function finishSession(
       mode: session.mode,
       challengeIdx: session.challenge_idx,
       currentChallengeProgress: user.challenge_progress,
+      // IDEA-064: from the SESSION, not from `user` — the row records which
+      // coat was worn when the run began, and equipping is free and instant.
+      // See migration 011.
+      beagleSkinId: session.beagle_skin_id,
     });
 
     // IDEA-050: built for BOTH verdicts. A table that only knows about accepted

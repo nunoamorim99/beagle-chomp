@@ -34,7 +34,12 @@ import {
   type BeagleSkin,
   type EnemySkin,
 } from "../game/cosmetics";
-import { MAZE_THEMES, getEquippedMazeThemeId, type MazeTheme } from "../game/themes";
+import {
+  MAZE_THEMES,
+  getEquippedMazeThemeId,
+  visibleMazeThemes,
+  type MazeTheme,
+} from "../game/themes";
 import { ICON, iconHtml, plateHtml } from "./icons";
 import {
   getCoins,
@@ -229,7 +234,11 @@ export function attachShop(root: ParentNode, callbacks: ShopCallbacks = {}): Sho
     if (tab === "enemy") {
       return visibleEnemySkins(isBeagleSkinOwned(TRIBUTE_BEAGLE_SKIN_ID), isEnemySkinOwned);
     }
-    return MAZE_THEMES;
+    // IDEA-064: and not MAZE_THEMES either — Arcade Night is the Ghost's other
+    // half and is hidden by the same rule, revealed by the same purchase, and
+    // asked fresh here for the same reason: buy the coat on the Beagle tab and
+    // both are waiting when you switch tabs.
+    return visibleMazeThemes(isBeagleSkinOwned(TRIBUTE_BEAGLE_SKIN_ID), isMazeThemeOwned);
   }
 
   function currentEquippedId(): string {
@@ -442,8 +451,33 @@ export function attachShop(root: ParentNode, callbacks: ShopCallbacks = {}): Sho
       '<div class="shop-hero-body">' +
       `<div class="shop-hero-name">${item.name}</div>` +
       `<div class="shop-hero-blurb">${item.blurb}</div>` +
+      perkLine(item) +
       "</div>" +
       actionHtml +
+      "</div>"
+    );
+  }
+
+  /**
+   * IDEA-064: what this beagle DOES, under what it looks like.
+   *
+   * Beagle tab only — an enemy skin and a theme have no perk, and printing an
+   * empty row for them would make the panel jump height on every tab switch.
+   *
+   * NOT amber: §04 reserves amber for the single next action on a screen, and
+   * that is the buy/equip button two lines below this. A perk is information,
+   * not a call to act, so it takes the biscuit tone and leans on the bolt plate
+   * to be noticed. The bolt (ICON.power) is already in the font subset — adding
+   * a new glyph means re-cutting it (see tokens.css), and a name that is not in
+   * the file renders as that word.
+   */
+  function perkLine(item: ShopItem): string {
+    if (tab !== "beagle") return "";
+    const { perk } = item as BeagleSkin;
+    return (
+      '<div class="shop-hero-perk">' +
+      iconHtml(ICON.power) +
+      `<span>${perk.label}</span>` +
       "</div>"
     );
   }

@@ -558,12 +558,34 @@ function renderNode(level: ChallengeLevel, idx: number, state: LevelNodeState, s
   // two-digit case takes a modifier class rather than a smaller size for
   // everything — a single-digit stone should not pay for the ones that need it.
   const numClass = idx + 1 >= 10 ? "map-node-num map-node-num--wide" : "map-node-num";
+  // VERTICAL CENTRING IS A MEASURED `dy`, NOT `dominant-baseline` (Nuno: the
+  // padlocks are not in the middle of their dots).
+  //
+  // `dominant-baseline="middle"` offsets by half the X-HEIGHT, which is a Latin
+  // typography notion that an ICON font has no opinion about. Baloo 2's digits
+  // happened to land within a third of a pixel of centre that way, so the
+  // numbers looked fine and the construction looked correct; the padlock, whose
+  // ink spans nearly the whole em box, came out about 4px high on a 40px stone.
+  //
+  // `scripts/_scratch-glyph-center.ts` draws each glyph into a 2D canvas and
+  // scans the alpha channel for its real ink box: the padlock runs -0.985em to
+  // -0.055em from the baseline and the digits -0.605em to +0.005em, so the `dy`
+  // that centres each is half its own span. Expressed in EM so it tracks the
+  // font-size rather than pinning the markup to a number in style.css — which
+  // matters, since a two-digit stone already renders at a smaller size.
+  const NUM_DY = "0.3025em";
+  const GLYPH_DY = "0.52em";
   const face = locked
-    ? `<text class="map-node-glyph" x="0" y="1" text-anchor="middle" dominant-baseline="middle">${ICON.lock}</text>`
-    : `<text class="${numClass}" x="0" y="1" text-anchor="middle" dominant-baseline="middle">${idx + 1}</text>`;
+    ? `<text class="map-node-glyph" x="0" y="0" dy="${GLYPH_DY}" text-anchor="middle">${ICON.lock}</text>`
+    : `<text class="${numClass}" x="0" y="0" dy="${NUM_DY}" text-anchor="middle">${idx + 1}</text>`;
+  // Every stone is a real, focusable control — including a locked one, which is
+  // activatable (it selects) even though it cannot be played. `aria-disabled`
+  // is therefore gone: it would say "this does nothing" about a control that
+  // does something. What the stone cannot do is stated on the Play button,
+  // which IS disabled, and in the label below.
   return (
     `<g class="${classes.join(" ")}" transform="translate(${x},${y})" data-node-idx="${idx}" ` +
-    `role="button" tabindex="${locked ? "-1" : "0"}" aria-disabled="${locked}" aria-label="${label}">` +
+    `role="button" tabindex="0" aria-label="${label}">` +
     (state === "current" ? '<circle class="map-node-glow" r="26"></circle>' : "") +
     '<circle class="map-node-stone" r="20"></circle>' +
     face +
@@ -630,8 +652,12 @@ export function attachLevelMap(root: ParentNode, callbacks: LevelMapCallbacks = 
   }
 
   function selectNode(idx: number): void {
-    const state = levelNodeState(idx, progress);
-    if (state === "locked") return;
+    // A LOCKED STONE IS SELECTABLE (Nuno, IDEA-063 v2). It used to early-return,
+    // so the thirty-nine levels a new player has not reached were a wall of
+    // padlocks with nothing behind them — on a screen whose whole job is now
+    // showing the player what the game contains. Tapping one fills the panel
+    // with its name, blurb, theme and twists; only playSelected() still
+    // refuses, and the Play button says so.
     if (selectedIdx === idx) return;
     selectedIdx = idx;
     // render() scrolls the selected node into view, so the chapter in view is
@@ -769,10 +795,16 @@ export function attachLevelMap(root: ParentNode, callbacks: LevelMapCallbacks = 
     // remember which of eight they had selected — a real question on a trail
     // where tapping a stone only moves a highlight.
     const stone = selectedIdx + 1;
+    // A locked stone's button says WHAT UNLOCKS IT, not just that it is locked.
+    // Unlocking is strictly sequential, so the stone the player has to clear
+    // next is always `progress + 1` — which is the one fact a disabled button
+    // reading "Play stone 27" leaves them to work out for themselves.
     const playLabel =
-      state === "cleared"
-        ? `${iconHtml(ICON.replay)}Replay stone ${stone}`
-        : `${iconHtml(ICON.play)}Play stone ${stone}`;
+      state === "locked"
+        ? `${iconHtml(ICON.lock)}Clear stone ${progress + 1} first`
+        : state === "cleared"
+          ? `${iconHtml(ICON.replay)}Replay stone ${stone}`
+          : `${iconHtml(ICON.play)}Play stone ${stone}`;
     const mazeName = MAZE_NAMES[level.mazeIdx] ?? MAZE_NAMES[0];
     // getMazeTheme falls back to the default for an unknown id rather than
     // throwing, so a typo in challenges.ts shows the wrong name here instead of

@@ -76,6 +76,8 @@ import {
   getEquippedMazeThemeId,
   getEquippedMazeTheme,
   setEquippedMazeThemeId,
+  visibleMazeThemes,
+  TRIBUTE_MAZE_THEME_ID,
 } from "../src/game/themes";
 import { coinsDueFromScore } from "../src/game/coins";
 import { shouldFireThreshold } from "../src/game/pickups";
@@ -217,7 +219,11 @@ console.log("\n=== cosmetics.ts (IDEA-012 shop prices) ===");
   check("getBeagleSkinPrice('cookie') === 25", getBeagleSkinPrice("cookie") === 25);
   check("getBeagleSkinPrice(unknown) === 0 (falls back to default's price)", getBeagleSkinPrice("nope") === 0);
 
-  check("beetle.price === 0 (default, free)", getEnemySkin("beetle").price === 0);
+  // IDEA-064: the flea took the free-default slot from the beetle, so the
+  // beetle now carries a sibling's price. Both are pinned: the pair swapping
+  // is exactly the kind of change that must fail here rather than in the shop.
+  check("flea.price === 0 (default, free)", getEnemySkin("flea").price === 0);
+  check("beetle.price === 25 (no longer the free one)", getEnemySkin("beetle").price === 25);
   check("ghost.price === 0 (the free easter-egg unlock)", getEnemySkin("ghost").price === 0);
   check("bee.price === 25", getEnemySkin("bee").price === 25);
   check("ladybug.price === 25", getEnemySkin("ladybug").price === 25);
@@ -230,12 +236,11 @@ console.log("\n=== cosmetics.ts (IDEA-009 enemy skins) ===");
 
 check("exactly 11 enemy skins", ENEMY_SKINS.length === 11);
 check(
-  "enemy skin ids are beetle, bee, ladybug, flea, crab, mosquito, maki, nigiri, pizza, burger, ghost in order",
-  ENEMY_SKINS.map((s) => s.id).join(",") ===
-    "beetle,bee,ladybug,flea,crab,mosquito,maki,nigiri,pizza,burger,ghost",
+  "enemy skin ids are flea, beetle, bee, ladybug, crab, mosquito, maki, nigiri, pizza, burger, ghost in order",
+  ENEMY_SKINS.map((s) => s.id).join(",") === "flea,beetle,bee,ladybug,crab,mosquito,maki,nigiri,pizza,burger,ghost",
 );
-check("beetle is ENEMY_SKINS[0]", ENEMY_SKINS[0].id === "beetle");
-check("DEFAULT_ENEMY_SKIN_ID is beetle", DEFAULT_ENEMY_SKIN_ID === "beetle");
+check("flea is ENEMY_SKINS[0]", ENEMY_SKINS[0].id === "flea");
+check("DEFAULT_ENEMY_SKIN_ID is flea", DEFAULT_ENEMY_SKIN_ID === "flea");
 
 // The easter egg. The ghost is FREE but SECRET: free is what lets the unlock
 // go through the ordinary purchase path (buyCosmetic refuses on
@@ -265,19 +270,16 @@ check("DEFAULT_ENEMY_SKIN_ID is beetle", DEFAULT_ENEMY_SKIN_ID === "beetle");
   const owns = (id: string): boolean => id === "ghost";
 
   check(
-    "a fresh player is shown 8 enemy skins, and not the ghost",
-    visibleEnemySkins(false, none).map((s) => s.id).join(",") ===
-      "beetle,bee,ladybug,flea,crab,mosquito,maki,nigiri,pizza,burger",
+    "a fresh player is shown 10 enemy skins, and not the ghost",
+    visibleEnemySkins(false, none).map((s) => s.id).join(",") === "flea,beetle,bee,ladybug,crab,mosquito,maki,nigiri,pizza,burger",
   );
   check(
     "owning the tribute coat reveals the ghost",
-    visibleEnemySkins(true, none).map((s) => s.id).join(",") ===
-      "beetle,bee,ladybug,flea,crab,mosquito,maki,nigiri,pizza,burger,ghost",
+    visibleEnemySkins(true, none).map((s) => s.id).join(",") === "flea,beetle,bee,ladybug,crab,mosquito,maki,nigiri,pizza,burger,ghost",
   );
   check(
     "a legacy account that already owns the ghost still sees it without the coat",
-    visibleEnemySkins(false, owns).map((s) => s.id).join(",") ===
-      "beetle,bee,ladybug,flea,crab,mosquito,maki,nigiri,pizza,burger,ghost",
+    visibleEnemySkins(false, owns).map((s) => s.id).join(",") === "flea,beetle,bee,ladybug,crab,mosquito,maki,nigiri,pizza,burger,ghost",
   );
   check(
     "revealing never reorders or drops the ordinary skins",
@@ -288,7 +290,7 @@ check("DEFAULT_ENEMY_SKIN_ID is beetle", DEFAULT_ENEMY_SKIN_ID === "beetle");
 
 // getEnemySkin(unknown) -> default, never throws.
 const unknownEnemy = getEnemySkin("does-not-exist");
-check("getEnemySkin(unknown) falls back to default (beetle)", unknownEnemy.id === DEFAULT_ENEMY_SKIN_ID);
+check("getEnemySkin(unknown) falls back to default (flea)", unknownEnemy.id === DEFAULT_ENEMY_SKIN_ID);
 
 // cycleEnemySkinId wraps around through both skins and back to ghost.
 {
@@ -299,9 +301,8 @@ check("getEnemySkin(unknown) falls back to default (beetle)", unknownEnemy.id ==
     seen.push(id);
   }
   check(
-    `enemy cycle visits all 9 skins then wraps to ${DEFAULT_ENEMY_SKIN_ID}`,
-    seen.join(",") ===
-      "beetle,bee,ladybug,flea,crab,mosquito,maki,nigiri,pizza,burger,ghost,beetle",
+    `enemy cycle visits all 11 skins then wraps to ${DEFAULT_ENEMY_SKIN_ID}`,
+    seen.join(",") === "flea,beetle,bee,ladybug,crab,mosquito,maki,nigiri,pizza,burger,ghost,flea",
   );
   check("cycleEnemySkinId(unknown) returns the first skin's id", cycleEnemySkinId("nope") === ENEMY_SKINS[0].id);
 }
@@ -309,15 +310,87 @@ check("getEnemySkin(unknown) falls back to default (beetle)", unknownEnemy.id ==
 // setEquippedEnemySkinId ignores unknown ids (clamps to default) and a known
 // id round-trips through getEquippedEnemySkinId/getEquippedEnemySkin.
 {
-  setEquippedEnemySkinId("beetle");
-  check("equip known enemy id -> getEquippedEnemySkinId reflects it", getEquippedEnemySkinId() === "beetle");
-  check("equip known enemy id -> getEquippedEnemySkin reflects it", getEquippedEnemySkin().id === "beetle");
+  setEquippedEnemySkinId("bee");
+  check("equip known enemy id -> getEquippedEnemySkinId reflects it", getEquippedEnemySkinId() === "bee");
+  check("equip known enemy id -> getEquippedEnemySkin reflects it", getEquippedEnemySkin().id === "bee");
 
   setEquippedEnemySkinId("totally-bogus");
   check("equip unknown enemy id clamps to default", getEquippedEnemySkinId() === DEFAULT_ENEMY_SKIN_ID);
 
   // restore default state for any later test that might run in this process
   setEquippedEnemySkinId(DEFAULT_ENEMY_SKIN_ID);
+}
+
+// IDEA-064: every coat carries a perk, and the registry is a CONTRACT — the
+// server mirrors the id->perk mapping in catalog.generated.ts and prices three
+// of the four, so a perk added, removed or re-pointed here without `npm run
+// sync` in server/ starts rejecting honest runs with SCORE_ITEM_MISMATCH. This
+// is the check that makes that a failing build rather than a live incident.
+console.log("\n=== cosmetics.ts (IDEA-064 beagle perks) ===");
+{
+  check(
+    "every beagle skin carries a perk",
+    BEAGLE_SKINS.every((s) => typeof s.perk?.id === "string" && s.perk.id.length > 0),
+  );
+  check(
+    "every perk carries a player-facing label",
+    BEAGLE_SKINS.every((s) => typeof s.perk?.label === "string" && s.perk.label.length > 0),
+  );
+  check(
+    "the five perks are distinct — no two coats do the same thing",
+    new Set(BEAGLE_SKINS.map((s) => s.perk.id)).size === BEAGLE_SKINS.length,
+  );
+  check("bagel -> startShield", getBeagleSkin("bagel").perk.id === "startShield");
+  check("cookie -> extraLifePerMap", getBeagleSkin("cookie").perk.id === "extraLifePerMap");
+  check("muffin -> doubleCoins", getBeagleSkin("muffin").perk.id === "doubleCoins");
+  check("pepper -> fruitBonus", getBeagleSkin("pepper").perk.id === "fruitBonus");
+  check("pacbeagle -> unlocksTribute", getBeagleSkin("pacbeagle").perk.id === "unlocksTribute");
+  // The FREE coat having a real perk is the point, not an accident: it is the
+  // one every player starts on, and a blank slot there would make "beagles have
+  // powers" something you only find out after spending 25 coins.
+  check(
+    "the default coat's perk is not a placeholder",
+    getBeagleSkin(DEFAULT_BEAGLE_SKIN_ID).perk.id === "startShield",
+  );
+}
+
+// IDEA-064: the arcade board is hidden by exactly the rule the ghost is, and
+// revealed by exactly the same purchase. Checked here rather than in the shop
+// so it needs no browser — same reasoning as visibleEnemySkins above.
+console.log("\n=== themes.ts (IDEA-064 the arcade board is a tribute unlock) ===");
+{
+  const noneOwned = (): boolean => false;
+  const ownsArcade = (id: string): boolean => id === TRIBUTE_MAZE_THEME_ID;
+  const visibleIds = (coat: boolean, owned: (id: string) => boolean): string =>
+    visibleMazeThemes(coat, owned).map((t) => t.id).join(",");
+
+  check(
+    "TRIBUTE_MAZE_THEME_ID names a real theme",
+    MAZE_THEMES.some((t) => t.id === TRIBUTE_MAZE_THEME_ID),
+  );
+  check("the arcade theme is secret", getMazeTheme(TRIBUTE_MAZE_THEME_ID).secret === true);
+  check(
+    "it is the ONLY secret theme",
+    MAZE_THEMES.filter((t) => t.secret).map((t) => t.id).join(",") === TRIBUTE_MAZE_THEME_ID,
+  );
+  check("the default theme is not secret", getMazeTheme(DEFAULT_MAZE_THEME_ID).secret !== true);
+  check(
+    "a fresh player is shown 5 themes, and not the arcade",
+    visibleIds(false, noneOwned) === "garden,forest,beach,park,city",
+  );
+  check(
+    "owning the tribute coat reveals the arcade board",
+    visibleIds(true, noneOwned) === "garden,classic,forest,beach,park,city",
+  );
+  check(
+    "a legacy account that already bought it still sees it without the coat",
+    visibleIds(false, ownsArcade) === "garden,classic,forest,beach,park,city",
+  );
+  check(
+    "revealing never reorders or drops the ordinary themes",
+    visibleMazeThemes(true, noneOwned).filter((t) => !t.secret).map((t) => t.id).join(",") ===
+      MAZE_THEMES.filter((t) => !t.secret).map((t) => t.id).join(","),
+  );
 }
 
 console.log("\n=== themes.ts (IDEA-026 maze themes registry) ===");
@@ -334,17 +407,21 @@ console.log("\n=== themes.ts (IDEA-026 maze themes registry) ===");
   check("garden is MAZE_THEMES[0]", MAZE_THEMES[0].id === "garden");
   check("DEFAULT_MAZE_THEME_ID is garden", DEFAULT_MAZE_THEME_ID === "garden");
   check("garden.price === 0 (default, free)", getMazeTheme("garden").price === 0);
+  // IDEA-064: Arcade Night is no longer for sale. It is the Pac-Beagle's other
+  // half, granted free by the coat exactly as the Ghost is — and the grant only
+  // works because the price is 0 (buyCosmetic refuses on `coins < price`).
+  check("classic.price === 0 (granted by the tribute coat, never bought)", getMazeTheme("classic").price === 0);
   check(
     "every non-garden theme is priced > 0 (never free/default)",
-    MAZE_THEMES.filter((t) => t.id !== "garden").every((t) => t.price > 0),
+    MAZE_THEMES.filter((t) => t.id !== "garden" && !t.secret).every((t) => t.price > 0),
   );
-  check("classic.price === 50", getMazeTheme("classic").price === 50);
   check("forest.price === 50", getMazeTheme("forest").price === 50);
   check("beach.price === 50", getMazeTheme("beach").price === 50);
   check("park.price === 50", getMazeTheme("park").price === 50);
   check("city.price === 50", getMazeTheme("city").price === 50);
   check("getMazeThemePrice('garden') === 0", getMazeThemePrice("garden") === 0);
-  check("getMazeThemePrice('classic') === 50", getMazeThemePrice("classic") === 50);
+  check("getMazeThemePrice('classic') === 0", getMazeThemePrice("classic") === 0);
+  check("getMazeThemePrice('forest') === 50", getMazeThemePrice("forest") === 50);
   check("getMazeThemePrice(unknown) === 0 (falls back to default's price)", getMazeThemePrice("nope") === 0);
 
   // Every theme's every palette color slot is a valid 24-bit hex number
@@ -704,8 +781,8 @@ console.log("\n=== profileStore.ts ownership defaults (Node, no window/localStor
     profile.ownedBeagleSkinIds.length === 1 && profile.ownedBeagleSkinIds[0] === "bagel",
   );
   check(
-    "fresh profile owns exactly ['beetle'] (the default, which is no longer the ghost)",
-    profile.ownedEnemySkinIds.length === 1 && profile.ownedEnemySkinIds[0] === "beetle",
+    "fresh profile owns exactly ['flea'] (the default, which is no longer the beetle)",
+    profile.ownedEnemySkinIds.length === 1 && profile.ownedEnemySkinIds[0] === "flea",
   );
   check(
     "a fresh profile does NOT own the secret ghost",
@@ -722,15 +799,15 @@ console.log("\n=== profileStore.ts ownership defaults (Node, no window/localStor
   );
 
   check("getOwnedBeagleSkinIds() matches loadProfile()", getOwnedBeagleSkinIds().join(",") === "bagel");
-  check("getOwnedEnemySkinIds() matches loadProfile()", getOwnedEnemySkinIds().join(",") === "beetle");
+  check("getOwnedEnemySkinIds() matches loadProfile()", getOwnedEnemySkinIds().join(",") === "flea");
   check("getOwnedMazeThemeIds() matches loadProfile()", getOwnedMazeThemeIds().join(",") === "garden");
 
   check("isBeagleSkinOwned('bagel') === true (default always owned)", isBeagleSkinOwned("bagel") === true);
   check("isBeagleSkinOwned('cookie') === false initially", isBeagleSkinOwned("cookie") === false);
-  check("isEnemySkinOwned('beetle') === true (default always owned)", isEnemySkinOwned("beetle") === true);
+  check("isEnemySkinOwned('flea') === true (default always owned)", isEnemySkinOwned("flea") === true);
   check("isEnemySkinOwned('ghost') === false initially (it is the easter egg)", isEnemySkinOwned("ghost") === false);
   check("isMazeThemeOwned('garden') === true (default always owned)", isMazeThemeOwned("garden") === true);
-  check("isMazeThemeOwned('classic') === false initially", isMazeThemeOwned("classic") === false);
+  check("isMazeThemeOwned('forest') === false initially", isMazeThemeOwned("forest") === false);
 }
 
 console.log("\n=== profileStore.ts loadProfile defensive ownership sanitizing ===");
@@ -840,16 +917,18 @@ console.log("\n=== profileStore.ts buy operations (fresh hydrated cache) ===");
   check("buyEnemySkin('bee') with 0 coins -> insufficient-coins", enemyResult.ok === false && enemyResult.reason === "insufficient-coins");
   check("failed enemy buy leaves ownership unchanged", isEnemySkinOwned("bee") === false);
 
-  const themeResult = buyMazeTheme("classic");
-  check("buyMazeTheme('classic') with 0 coins -> insufficient-coins", themeResult.ok === false && themeResult.reason === "insufficient-coins");
-  check("failed theme buy leaves ownership unchanged", isMazeThemeOwned("classic") === false);
+  // 'forest' rather than 'classic' since IDEA-064: the arcade theme is free
+  // now, and a free item can never produce insufficient-coins.
+  const themeResult = buyMazeTheme("forest");
+  check("buyMazeTheme('forest') with 0 coins -> insufficient-coins", themeResult.ok === false && themeResult.reason === "insufficient-coins");
+  check("failed theme buy leaves ownership unchanged", isMazeThemeOwned("forest") === false);
 
   // Buying the already-owned default is refused (never double-charges),
   // regardless of wallet balance.
   const alreadyOwned = buyBeagleSkin("bagel");
   check("buyBeagleSkin('bagel') (already owned) -> already-owned, no charge", alreadyOwned.ok === false && alreadyOwned.reason === "already-owned");
-  const alreadyOwnedEnemy = buyEnemySkin("beetle");
-  check("buyEnemySkin('beetle') (already owned) -> already-owned, no charge", alreadyOwnedEnemy.ok === false && alreadyOwnedEnemy.reason === "already-owned");
+  const alreadyOwnedEnemy = buyEnemySkin("flea");
+  check("buyEnemySkin('flea') (already owned) -> already-owned, no charge", alreadyOwnedEnemy.ok === false && alreadyOwnedEnemy.reason === "already-owned");
 
   // THE EASTER EGG, end to end. The ghost is free but not owned, so buying it
   // outright would work — that is fine, it is the grant path; what must hold is
@@ -890,7 +969,7 @@ console.log("\n=== profileStore.ts buy success + atomicity (pure, in-process pro
   // Wallet derived from the real prices (+7 change) so the arithmetic below
   // stays valid across rebalances — IDEA-012 v2 moved skins 5 -> 25 and themes
   // to 50, which broke a hardcoded 12.
-  const scenarioCoins = Math.max(getBeagleSkinPrice("cookie"), getMazeThemePrice("classic")) + 7;
+  const scenarioCoins = Math.max(getBeagleSkinPrice("cookie"), getMazeThemePrice("forest")) + 7;
 
   const profile: StoredProfile = {
     equippedBeagleSkinId: "bagel",
@@ -945,8 +1024,8 @@ console.log("\n=== profileStore.ts buy success + atomicity (pure, in-process pro
   // maze theme purchase — proves buyMazeTheme's internal shape (identical to
   // buyBeagleSkin/buyEnemySkin's) also lands the coin-deduct and owned-add
   // together, and leaves the beagle/enemy fields untouched.
-  const themePrice = getMazeThemePrice("classic");
-  check("classic theme has a non-zero price for this scenario", themePrice > 0);
+  const themePrice = getMazeThemePrice("forest");
+  check("forest theme has a non-zero price for this scenario", themePrice > 0);
 
   const themeNewCoins = trySpend(profile.coins, themePrice);
   check("the wallet affords the theme and change is exact", themeNewCoins === profile.coins - themePrice);
@@ -954,10 +1033,10 @@ console.log("\n=== profileStore.ts buy success + atomicity (pure, in-process pro
   const afterThemeBuy: StoredProfile = {
     ...profile,
     coins: themeNewCoins as number,
-    ownedMazeThemeIds: [...profile.ownedMazeThemeIds, "classic"],
+    ownedMazeThemeIds: [...profile.ownedMazeThemeIds, "forest"],
   };
   check("theme buy atomicity: coins reduced by price", afterThemeBuy.coins === profile.coins - themePrice);
-  check("theme buy atomicity: id now owned in the SAME resulting object", afterThemeBuy.ownedMazeThemeIds.includes("classic"));
+  check("theme buy atomicity: id now owned in the SAME resulting object", afterThemeBuy.ownedMazeThemeIds.includes("forest"));
   check(
     "theme buy preserves the beagle/enemy owned lists untouched",
     afterThemeBuy.ownedBeagleSkinIds.length === 1 &&
@@ -998,12 +1077,12 @@ console.log("\n=== profileStore.ts equip gating (fresh hydrated cache) ===");
   const refusedSecret = equipEnemySkin("ghost");
   check("equipEnemySkin(unowned secret 'ghost') is refused (returns false)", refusedSecret === false);
 
-  const allowedEnemyDefault = equipEnemySkin("beetle");
-  check("equipEnemySkin(owned default 'beetle') succeeds (returns true)", allowedEnemyDefault === true);
+  const allowedEnemyDefault = equipEnemySkin("flea");
+  check("equipEnemySkin(owned default 'flea') succeeds (returns true)", allowedEnemyDefault === true);
 
   // IDEA-026: mirrors the beagle/enemy gating above exactly, for maze themes.
-  const refusedTheme = equipMazeTheme("classic");
-  check("equipMazeTheme(unowned 'classic') is refused (returns false)", refusedTheme === false);
+  const refusedTheme = equipMazeTheme("forest");
+  check("equipMazeTheme(unowned 'forest') is refused (returns false)", refusedTheme === false);
   check("equipMazeTheme(unowned) does not change the equipped id", getEquippedMazeThemeId() === DEFAULT_MAZE_THEME_ID);
 
   const allowedThemeDefault = equipMazeTheme("garden");

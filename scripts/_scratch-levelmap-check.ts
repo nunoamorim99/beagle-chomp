@@ -119,6 +119,34 @@ async function report(page: Page, tag: string): Promise<void> {
 
   await openMap(page);
   await report(page, "phone-top");
+
+  // A LOCKED stone must be selectable and must fill the panel (IDEA-063 v2).
+  // With progress 0 every stone but the first is locked.
+  await page.click('[data-node-idx="4"]');
+  await page.waitForTimeout(400);
+  const lockedPanel = await page.evaluate(() => ({
+    title: document.querySelector(".map-footer-title")?.textContent,
+    blurb: document.querySelector(".map-footer-blurb")?.textContent?.slice(0, 40),
+    theme: document.querySelector(".map-theme-tag")?.textContent?.trim(),
+    play: document.querySelector("#mapPlayBtn")?.textContent?.trim(),
+    playDisabled: (document.querySelector("#mapPlayBtn") as HTMLButtonElement | null)?.disabled,
+    selected: document.querySelector(".map-node-selected")?.getAttribute("data-node-idx"),
+  }));
+  console.log("locked panel:", JSON.stringify(lockedPanel));
+  await page.screenshot({ path: `${SHOTS}/levelmap-locked-panel.png` });
+
+  // Zoomed crops so the glyph CENTRING is judgeable: a padlock stone and a
+  // numbered one, side by side at the same scale.
+  for (const [tag, sel] of [["lock", '[data-node-idx="3"]'], ["num", '[data-node-idx="0"]']] as const) {
+    const box = await page.locator(sel).boundingBox();
+    if (!box) continue;
+    const pad = 12;
+    await page.screenshot({
+      path: `${SHOTS}/levelmap-stone-${tag}.png`,
+      clip: { x: box.x - pad, y: box.y - pad, width: box.width + pad * 2, height: box.height + pad * 2 },
+    });
+  }
+
   await page.click("#mapBackBtn");
   await page.waitForSelector("#mainMenu:not(.hidden)");
 
@@ -127,8 +155,11 @@ async function report(page: Page, tag: string): Promise<void> {
   // goto rather than reload: the PWA service worker makes reload() flaky about
   // ever firing domcontentloaded here, and a fresh navigation re-hydrates the
   // profile cache just the same.
-  await page.goto(BASE_URL, { waitUntil: "domcontentloaded", timeout: 60_000 });
-  await page.waitForSelector("#mainMenu:not(.hidden)", { timeout: 20_000 });
+  // `waitUntil: "commit"` rather than "domcontentloaded": with the PWA service
+  // worker in play this navigation intermittently never fires DOMContentLoaded
+  // for Playwright, and the thing actually being waited for is #mainMenu below.
+  await page.goto(BASE_URL, { waitUntil: "commit", timeout: 60_000 });
+  await page.waitForSelector("#mainMenu:not(.hidden)", { timeout: 30_000 });
   await openMap(page);
 
   // Jump to the twists chapter, then SELECT a twist level — the panel's two-tag

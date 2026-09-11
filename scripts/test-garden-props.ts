@@ -323,17 +323,54 @@ ok(
   MAZE_THEMES.filter((t) => t.id === "forest" || t.id === "park")
     .some((t) => t.placements.some((p) => p.propId === "shrub" || p.propId === "oak")),
 );
-ok("exactly one treehouse, and it is the board's landmark",
-   garden.placements.filter((p) => p.propId === "treehouse").length === 1);
-const th = garden.placements.find((p) => p.propId === "treehouse");
-// buildProps caps a "tall" prop hard anywhere but the north row, so a
-// treehouse placed south or east would be scaled to 0.55 and there would have
-// been no point building it.
-ok("…on the north apron row, where a tall prop is not scale-capped",
-   th !== undefined && th.tile[1] === -1, th ? `tile ${th.tile}` : "missing");
-ok("all five flowers are actually planted",
-   ["daisy", "sunflower", "rose", "tulip", "blossom"].every((k) =>
-     garden.wallDecor.some((p) => p.propId === `flower-${k}`)));
+const houses = garden.placements.filter((p) => p.propId === "treehouse");
+ok("the garden plants at least one treehouse landmark", houses.length >= 1);
+// The COUNT is not the rule — Nuno added a second one at the opposite north
+// corner, and there is no reason a board should not have two. The rule is
+// WHERE: buildProps caps a "tall" prop hard anywhere but the north row, so a
+// treehouse placed south or east is silently scaled to 0.55 and there would
+// have been no point building it at this size.
+for (const h of houses) {
+  ok(
+    `…on the north apron row, where a tall prop is not scale-capped (${h.tile})`,
+    h.tile[1] === -1,
+  );
+}
+// IDEA-060 v3. The wall tops used to carry 29 flower props; they went when the
+// wall TEXTURE became a flowering hedge, because two flowering layers on one
+// surface is one too many. The defs stay in the library — this was a placement
+// decision, not a deletion.
+ok(
+  "no flower props stand on the wall tops any more",
+  !garden.wallDecor.some((p) => p.propId.startsWith("flower-")),
+);
+ok(
+  "…but all five flowers are still in the library, buildable",
+  ["daisy", "sunflower", "rose", "tulip", "blossom"].every(
+    (k) => PROP_LIBRARY.some((d) => d.id === `flower-${k}`),
+  ),
+);
+// THE LOAD-BEARING ONE. board.ts's buildWallTopDecor gives a theme ONE
+// wall-top mechanism or the other and never both, so emptying this array does
+// not remove the garden's wall-top decoration — it swaps it for the palette's
+// ~40 density bloom spheres, which is the opposite of what taking the flowers
+// off was for. The birdhouses are what hold the branch.
+ok("the garden's wallDecor is not EMPTY", garden.wallDecor.length > 0);
+ok("…and it is the birdhouses holding it", garden.wallDecor.every((p) => p.propId === "birdhouse"));
+ok("the garden still has density blooms available as a palette fallback",
+   garden.palette.bloomColors.length > 0 && garden.palette.bloomChance > 0,
+   "so the swap above is real, not theoretical");
+// A def should never carry a colour override that just restates another
+// field's own default — and the editor put the DAISY's colours on the
+// sunflower by seeding from a flat table. Caught after it had been saved.
+for (const kind of ["sunflower", "rose", "tulip", "blossom"]) {
+  const def = PROP_LIBRARY.find((d) => d.id === `flower-${kind}`);
+  ok(
+    `flower-${kind} does not carry the daisy's petal colour`,
+    def?.params.petalColor !== 0xfaf6ec,
+    "the editor's colour seed must follow flowerKind, not a constant",
+  );
+}
 ok("every wall-top piece is a shape allowed on a wall top",
    garden.wallDecor.every((p) => WALL_TOP_SHAPES.includes(getPropDef(p.propId).shape)));
 ok(

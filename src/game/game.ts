@@ -157,9 +157,19 @@ import {
 } from "./profileStore";
 import {
   getEquippedEnemySkinId,
+  getEquippedBeagleSkinId,
   getEquippedBeagleSkin,
   getBeagleSkin,
 } from "./cosmetics";
+// IDEA-064: what the equipped beagle DOES. Every read goes through this module
+// — it is the one place the coat-to-number mapping and the CLASSIC-ONLY rule
+// live, and a second copy of either here is how they drift.
+import {
+  perkStartShields,
+  perkExtraLivesPerMap,
+  perkCoinMultiplier,
+  perkFruitBonusPoints,
+} from "./perks";
 import { getEquippedMazeThemeId, getEquippedMazeTheme, getMazeTheme, type MazeTheme } from "./themes";
 
 /**
@@ -1059,6 +1069,14 @@ export class Game {
     recordLevelStarted(this.telemetry, plan.mazeIdx, idx);
     this.hud.setLevel(levelLabel(idx));
 
+    // IDEA-064: Cookie's perk — a life at the start of EVERY map, this one
+    // included, so map 1 opens the run on START_LIVES + 1. Routed through
+    // grantLife() like every other bonus life, which is what keeps the
+    // LIVES.max cap, the HUD and the sound in step; at the cap it is simply
+    // wasted, exactly as a golden bone is.
+    const perkLives = perkExtraLivesPerMap(getEquippedBeagleSkinId(), this.gameKind);
+    for (let i = 0; i < perkLives; i++) this.grantLife();
+
     this.resetActors();
     this.mode = "ready";
     this.stateTimer = TIMING.readySeconds;
@@ -1349,7 +1367,13 @@ export class Game {
     // telling the player the ladder is real — a flat "+100" over a mango would
     // make the whole feature invisible.
     if (this.fruitTile && this.fruitTile.x === tx && this.fruitTile.y === ty) {
-      const points = this.fruitKind.points;
+      // IDEA-064: Pepper's perk rides on top of the ladder's own value, so the
+      // popup shows the real number (600 over a mango) rather than the ladder's
+      // — the popup is the only thing that tells a player either feature is
+      // real. recordFruit is given the SAME total, which is what the server
+      // recomputes from fruitKindCounts plus the perk.
+      const points =
+        this.fruitKind.points + perkFruitBonusPoints(getEquippedBeagleSkinId(), this.gameKind);
       // IDEA-050: read the KIND's index before despawnFruit() clears the tile,
       // so the rewind can name a favourite fruit and the server can price the
       // fruit contribution exactly instead of over a 100..500 band.
@@ -1372,7 +1396,13 @@ export class Game {
     // stale countdown left running against whatever coin spawns next.
     if (this.coinTile && this.coinTile.x === tx && this.coinTile.y === ty) {
       this.despawnCoin();
-      addCoins(COINS.pickupValue);
+      // IDEA-064: Muffin's perk multiplies what a pickup is WORTH, never how
+      // many pickups happened — the telemetry below still records ONE coin,
+      // because that is the fact the server checks against the board (five per
+      // map) and then prices itself using the same perk. Recording two would
+      // make an honest Muffin run look like it grabbed coins that were never
+      // there.
+      addCoins(COINS.pickupValue * perkCoinMultiplier(getEquippedBeagleSkinId(), this.gameKind));
       recordCoin(this.telemetry);
       this.hud.setCoins(getCoins());
       this.effects.pelletEaten(worldX(tx), worldZ(ty), "biscuit");
@@ -2074,6 +2104,28 @@ export class Game {
     this.livesAwardedFromScore = 0;
     this.hud.setScore(this.score);
     this.hud.setLives(this.lives);
+
+    // IDEA-046: power-ups are RUN-scoped, so a fresh run starts with none. It
+    // has always been effectively true here (losing the last life clears them
+    // via powerupsOnDeath), but it was never STATED on this path, and IDEA-064
+    // now grants one immediately below — which must never land on top of the
+    // previous run's holdings.
+    this.powerups = createPowerupState();
+    this.shieldGrace = 0;
+
+    // IDEA-064: Bagel's perk. "classic" is passed as a literal rather than
+    // read off this.gameKind because gameKind is only set to classic further
+    // down the call chain (startLevel), so at this point it may still say
+    // "challenge" from the run before — and this method IS the one way a
+    // classic run begins.
+    //
+    // Granted through powerups.ts's own collect() so a perk shield is a shield
+    // in every respect, and deliberately NOT passed to recordPowerup: it was
+    // not picked up off the floor, it cannot add a point, and a run reporting a
+    // power-up it never collected is one the server has to price for one.
+    const shields = perkStartShields(getEquippedBeagleSkinId(), "classic");
+    for (let i = 0; i < shields; i++) collectPowerup(this.powerups, "shield");
+    this.syncPowerupHud();
 
     // beginRunSession also resets telemetry — the other half of what the old
     // replay path skipped, which left the new run counting the old one's

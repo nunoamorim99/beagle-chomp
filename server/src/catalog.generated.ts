@@ -20,10 +20,10 @@ export const BEAGLE_SKINS: readonly CatalogItem[] = [
 ];
 
 export const ENEMY_SKINS: readonly CatalogItem[] = [
-  { id: "beetle", price: 0 },
+  { id: "flea", price: 0 },
+  { id: "beetle", price: 25 },
   { id: "bee", price: 25 },
   { id: "ladybug", price: 25 },
-  { id: "flea", price: 25 },
   { id: "crab", price: 25 },
   { id: "mosquito", price: 25 },
   { id: "maki", price: 25 },
@@ -35,7 +35,7 @@ export const ENEMY_SKINS: readonly CatalogItem[] = [
 
 export const MAZE_THEMES: readonly CatalogItem[] = [
   { id: "garden", price: 0 },
-  { id: "classic", price: 50 },
+  { id: "classic", price: 0 },
   { id: "forest", price: 50 },
   { id: "beach", price: 50 },
   { id: "park", price: 50 },
@@ -43,7 +43,7 @@ export const MAZE_THEMES: readonly CatalogItem[] = [
 ];
 
 export const DEFAULT_BEAGLE_SKIN_ID = "bagel";
-export const DEFAULT_ENEMY_SKIN_ID = "beetle";
+export const DEFAULT_ENEMY_SKIN_ID = "flea";
 export const DEFAULT_MAZE_THEME_ID = "garden";
 
 /** Challenge level count — the upper bound on users.challenge_progress.
@@ -101,6 +101,31 @@ export const POWERUP_THRESHOLDS = [30,70,105,145] as const;
 export const POWERUP_IDS = ["doubleBiscuit","doubleGhost","slowGhosts","star","shield"] as const;
 export const POWERUP_MULTIPLIER = 2;
 export const SCORE_DOUBLING_POWERUPS = { biscuit: "doubleBiscuit", ghost: "doubleGhost" } as const;
+
+/** IDEA-064: BEAGLE PERKS — which coat carries which, and what each is worth.
+ *
+ *  Split across two constants because the game splits it across two files for
+ *  a reason: the MAPPING is an identity of the coat (cosmetics.ts) and the
+ *  MAGNITUDE is a balance number (config.ts). Joining them is the validator's
+ *  job, exactly as it is src/game/perks.ts's job on the client.
+ *
+ *  CLASSIC ONLY. The validator must apply none of these to a challenge run —
+ *  every challenge score already on the board was set without them, and the
+ *  client enforces the same rule from its side. If the two ever disagree, an
+ *  honest run is rejected rather than quietly mis-scored. */
+export const BEAGLE_PERK_BY_SKIN: Readonly<Record<string, string>> = {
+  "bagel": "startShield",
+  "cookie": "extraLifePerMap",
+  "muffin": "doubleCoins",
+  "pacbeagle": "unlocksTribute",
+  "pepper": "fruitBonus"
+};
+export const BEAGLE_PERKS = {
+  "startShields": 1,
+  "extraLivesPerMap": 1,
+  "coinMultiplier": 2,
+  "fruitBonusPoints": 100
+} as const;
 
 /** What each maze actually CONTAINS, derived from mazes.json rather than
  *  hand-copied. These are the hard ceilings the validator rests on: a run

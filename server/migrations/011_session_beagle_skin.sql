@@ -1,0 +1,31 @@
+-- IDEA-064: beagle perks.
+--
+-- Which coat a run was played in, SNAPSHOTTED WHEN THE RUN STARTS.
+--
+-- Three of the five perks move numbers the server validates — Muffin doubles
+-- the coin award, Cookie widens the LIVES_IMPOSSIBLE bound, Pepper moves the
+-- exact fruit total the score is priced against — so the validator has to know
+-- which coat was worn. It could read users.equipped_beagle_skin_id at FINISH
+-- time instead, and that is the version this column exists to avoid: equipping
+-- is free and instant, so a player could play the whole run as Bagel (a free
+-- shield), swap to Muffin on the menu before the score posts, and collect two
+-- perks from one run. Every other perk is strictly beneficial, so nothing else
+-- about the swap is worth doing — which is exactly why closing this one hole
+-- closes the whole class.
+--
+-- Same reasoning as challenge_idx, which is likewise written at START and
+-- judged at finish: what the run was is decided when the run begins.
+--
+-- NOT a foreign key and NOT constrained to the catalog. A coat can be renamed
+-- or retired, and a two-year-old session row naming a skin that no longer
+-- exists must stay readable — the validator resolves an unknown id to the
+-- default coat's perk (perkIdOf's own fallback), which is the safe direction:
+-- the default's perk cannot inflate a score.
+ALTER TABLE game_sessions
+  ADD COLUMN beagle_skin_id text NOT NULL DEFAULT 'bagel';
+
+-- Every EXISTING row keeps 'bagel', and that is correct rather than merely
+-- convenient: those runs were played before perks existed, so none of them was
+-- earning one. 'bagel' happens to carry the start-shield perk now, but a shield
+-- cannot add a point and is never reported, so nothing about an old row is
+-- re-priced by this default.

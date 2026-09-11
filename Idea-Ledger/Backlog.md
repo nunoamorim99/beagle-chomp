@@ -19,7 +19,7 @@ Living backlog of ideas. Two purposes:
 _(empty — nothing to triage)_
 
 ## Backlog (open ideas)
-> New registered ideas go here. Next free ID: IDEA-064
+> New registered ideas go here. Next free ID: IDEA-065
 > (054 went to the crab and 055 to the mosquito — built in parallel by two sessions, which is
 > why the ids were split up front rather than both taking the next free one. 056 and 057 are the
 > sushi pair, registered together because neither is buildable without the other as its
@@ -28,7 +28,8 @@ _(empty — nothing to triage)_
 > maps and makes the map number a running count. 062 is the editor overhaul, registered from a
 > second session while 061 was in flight — the ids were deconflicted up front, as with 054/055.
 > 063 grows challenge mode to 40 levels: a thirty-level tour of every playable maze in front of
-> the original eight twists.)
+> the original eight twists. 064 gives every beagle a power and turns the shop's "skins" into
+> BEAGLES, which is what makes room for real cosmetic skins — pirate, football kit — later.)
 
 ### IDEA-028 — Challenge twist: moving walls / maze changes mid-level 💡
 - **Priority:** 🟢
@@ -44,6 +45,31 @@ _(empty — nothing to triage)_
 - **Dependencies:** —
 
 ## In progress 🔨
+
+### IDEA-064 - Every beagle has a power ✅
+- **Priority:** 🔴
+- **Area:** gameplay
+- **Registered:** 2026-09-11
+- **Description:** a beagle is no longer a colour swap. Each of the five carries one power that
+  changes how a run plays, so choosing which dog to take in is a real decision. Nuno: "the color
+  pattern beagle the skins are not the best way because in the future I really want to add skins
+  like pirate, football player things like that" - so the shop sells BEAGLES now, and a cosmetic
+  SKIN layer on top of them is a later idea.
+- **Notes:** `src/game/perks.ts` (new, pure) is the only place the coat-to-number mapping and the
+  classic-only rule live. Server-side this reaches `plausibility.ts`, `catalog.generated.ts` and
+  two migrations. Carries the Ghost/Arcade-Night gating fix Nuno reported in the same breath.
+- **Dependencies:** [[IDEA-010]], [[IDEA-012]], [[IDEA-026]], [[IDEA-046]]
+- **History:**
+  - **v1** (2026-09-11) - the five powers, the tribute bundle, and the database bug underneath
+    the reported one. Bagel starts every run shielded; Cookie grants a life at the start of every
+    map; Muffin doubles every coin; Pepper adds 100 to every fruit; the Pac-Beagle unlocks the
+    Ghost AND the Arcade Night board (which dropped from 50 coins to free - it is granted, not
+    sold). The flea replaced the beetle as the free default enemy. **The reported bug turned out
+    to be in Postgres, not in the game**: `001_init.sql` still defaulted every new account's
+    enemy skin to `'ghost'`, written back when the ghost WAS the default and never moved when the
+    beetle took over or when the flea did - so every account ever created owned it, and
+    `visibleEnemySkins`' be-kind-to-legacy-accounts clause then matched everybody. The client
+    gate had been correct and unreachable the whole time.
 
 ### IDEA-062 — An editor you can actually finish a thing in 🔨
 - **Priority:** 🔴
@@ -213,6 +239,30 @@ _(empty — nothing to triage)_
     `groundDetail.ts`, `gardenProps.ts`, `floorTexture.ts`, `themes.ts`,
     `board.ts`, `game.ts`, `boardCodegen.ts`, `boardInspector.ts`,
     `test-garden-props.ts` (180 checks), `test-editor-board.ts`.
+  - **v3** (2026-09-11) — Nuno's second review pass: fewer flowers. "lets remove
+    the flower from the props wall, they are perfect but since the ownshrub
+    fence has the flower is to much... the shrub fence lets make that a less
+    flower to." So the garden's 29 hand-placed flower props come off the wall
+    tops and the hedge texture's daisies go from six a face to **four**. The
+    five flower defs stay in PROP_LIBRARY untouched — a placement decision, not
+    a deletion. The **birdhouses stay, and that turns out to be load-bearing**:
+    board.ts gives a theme one wall-top mechanism or the other, so emptying
+    `wallDecor` would have switched the palette's ~40 density bloom spheres
+    back on — the opposite of the ask. That rule now lives in
+    `buildWallTopDecor` and in a test, because themes.ts cannot keep a comment.
+    Two things fixed along the way. **The editor's colour seeding was wrong**:
+    it seeded `petalColor`/`centerColor` from a flat table, so opening "petal
+    color" on the Sunflower repainted it in the daisy's cream and gold — which
+    had already been saved into props.ts. Seeds now follow `flowerKind`, and
+    the stray override is removed. **And saving a theme from the board editor
+    deletes ALL of that theme's comments**, not just the ones inside
+    `palette: {}` as v2 recorded — the writer rebuilds the edited entry from
+    data, and only OTHER themes are spliced through verbatim. The board-editor
+    suite also stopped pinning the garden's prop counts as literals (they have
+    moved three times in two sessions) and reads them from MAZE_THEMES.
+    `themes.ts`, `wallTexture.ts`, `board.ts`, `props.ts`,
+    `propsInspector.ts`, `test-garden-props.ts` (161 checks),
+    `test-editor-board.ts` (171 checks).
 
 ### IDEA-050 — Persist the run: what actually happened, not just the score 🔨
 - **Priority:** 🔴
@@ -2378,6 +2428,19 @@ _(empty — nothing to triage)_
     `server/migrations/010_challenge_levels_40.sql` (new), `sync-game-constants.ts`,
     `catalog.generated.ts`, `test-cosmetics.ts`, `test-plausibility.ts`,
     `scripts/_scratch-levelmap-check.ts` + `_scratch-challenge-theme.ts` (new), `CLAUDE.md`.
+  - **v2** (2026-09-11) — **you can read a locked level, and the padlocks sit in the middle of
+    their dots** (Nuno). `selectNode` early-returned on a locked stone, so for a new player
+    thirty-nine of the forty were padlocks with nothing behind them — on the screen whose whole job
+    this release made "show the player what the game contains". Tapping one now fills the panel with
+    its name, blurb, theme and twists; only playing is refused, and the disabled button says
+    **"Clear stone N first"** rather than leaving them to work out which one. The stone is a real
+    focusable control again (no `aria-disabled`, no `tabindex="-1"`), and it hovers like the others.
+    The padlock was ~4px high on a 40px stone because `dominant-baseline="middle"` offsets by half
+    the X-HEIGHT — a Latin typography notion an icon font has no opinion about. Baloo 2's digits
+    happened to land within a third of a pixel that way, so the numbers looked right and the
+    construction looked correct. Both faces now use a `dy` MEASURED off the glyph's real ink box
+    (`scripts/_scratch-glyph-center.ts`, new: draws each glyph into a 2D canvas and scans the alpha
+    channel), in em so it tracks font-size. `levelMap.ts`, `style.css`, `CLAUDE.md`.
 
 ### IDEA-014 — Level map / level select for challenge mode ✅
 - **Priority:** 🟢

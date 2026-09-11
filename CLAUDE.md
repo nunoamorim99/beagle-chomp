@@ -86,6 +86,78 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v8.
   actually REPORTS collecting; the score FLOOR is deliberately left
   un-multiplied, since a doubler collected late means most pellets were eaten
   at face value.
+- **EVERY BEAGLE HAS A POWER, AND THE SHOP SELLS BEAGLES RATHER THAN SKINS**
+  (IDEA-064). A coat is no longer a colour swap: `BeagleSkin.perk` is
+  REQUIRED, the five are distinct, and the mapping is an identity of the coat
+  (`cosmetics.ts`) while the magnitudes are balance numbers
+  (`config.ts`'s `BEAGLE_PERKS`). **`src/game/perks.ts` is the only thing
+  allowed to join them** — Bagel opens each RUN holding a shield, Cookie grants
+  a life at the start of every MAP, Muffin doubles every coin pickup, Pepper
+  adds 100 to every fruit, and the Pac-Beagle's perk is paid at the till (it
+  unlocks the Ghost and the Arcade Night board). Seven rules:
+  1. **PERKS ARE CLASSIC ONLY, and that rule lives in ONE function.** Every
+     accessor in `perks.ts` takes the run's `kind` and returns the NEUTRAL
+     value for a challenge run — there is no way to ask without saying which
+     mode is running. Same reasoning as power-ups (IDEA-046): every challenge
+     score already on the board was set without them.
+  2. **THE SERVER PRICES THREE OF THE FOUR, SO A PERK IS A `npm run sync`.**
+     Muffin doubles the coin AWARD (`plausibility.ts` is the authority on
+     coins; the client's add is optimistic and reconciled), Cookie widens
+     `LIVES_IMPOSSIBLE` by one per level PLAYED, and Pepper moves the EXACT
+     fruit total a score is checked against — `fruitKindCounts` collapses the
+     band to a single number, so a bonus the server does not add is an honest
+     run REJECTED. `catalog.generated.ts` carries `BEAGLE_PERK_BY_SKIN` and
+     `BEAGLE_PERKS`, both generated; `test-catalog.ts` fails on drift.
+  3. **THE COAT IS SNAPSHOTTED WHEN THE RUN STARTS**
+     (`game_sessions.beagle_skin_id`, migration 011), never read off the user
+     row at finish. Equipping is free and instant, so reading it late would let
+     a player take Bagel's shield through the run and swap to Muffin on the
+     menu before the score posts — two perks from one run. Same shape as
+     `challenge_idx`: what a run IS gets decided when it begins. An unknown id
+     resolves to the default coat's perk, which cannot inflate anything.
+  4. **BAGEL'S SHIELD IS NEVER REPORTED AS A COLLECTED POWER-UP.** It is
+     granted through `powerups.ts`'s own `collect` so it behaves as a shield in
+     every respect, and deliberately not passed to `recordPowerup` — it was not
+     picked up off the floor, it cannot add a point, and a challenge run
+     reporting a power-up is rejected outright.
+  5. **THE FREE COAT HAS A REAL PERK ON PURPOSE.** Bagel is what every player
+     starts on; a blank slot there would make "beagles have powers" something
+     you only discover after spending 25 coins.
+  6. **THE FLEA IS THE DEFAULT ENEMY SKIN** and the beetle is now a 25-coin
+     sibling. The enemy a player meets before buying anything should say what
+     THIS game is, and a flea belongs on the dog in a way a beetle in a garden
+     does not.
+  7. **CHANGING `DEFAULT_ENEMY_SKIN_ID` IS A MIGRATION, and it was missed
+     twice.** `001_init.sql` still defaulted `equipped_enemy_skin_id` and
+     `owned_enemy_skin_ids` to **`'ghost'`** — written when the ghost WAS the
+     default, and never moved when the beetle took over or when the flea did.
+     So the server handed the Ghost to every account it ever created, owned and
+     equipped, and **`visibleEnemySkins`' kind-to-legacy-accounts clause
+     (`|| isOwned(id)`) then matched literally everybody** — "buy the
+     Pac-Beagle to unlock the Ghost" was unreachable copy for a thing every
+     player already had, and the client gate was working exactly as written the
+     whole time. `012_default_enemy_skin_flea.sql` moves the defaults, revokes
+     the Ghost from accounts that do not own the tribute coat (nobody chose it
+     — it arrived as a column default), and re-points anyone left equipped to
+     something they no longer own. **Arcade Night needs no equivalent**: it was
+     never a default and could only be reached by paying 50 coins, so everyone
+     who owns it bought it.
+  **THE ARCADE NIGHT BOARD IS NOW THE GHOST'S OTHER HALF.** `MazeTheme.secret`
+  + `TRIBUTE_MAZE_THEME_ID` + `visibleMazeThemes` mirror the enemy-skin rule
+  field for field, and the theme's price dropped from 50 to **0** — it is
+  GRANTED by `buyBeagleSkin`, not bought, which needs no special path because
+  `buyCosmetic` refuses on `coins < price` and the server's catalog agrees.
+  `initProfileFromCache` BACKFILLS both tributes for anyone who bought the coat
+  before the board joined the bundle; without that they would own the coat and
+  be shown a price for something it advertises as unlocking.
+  **The perk is shown in the shop's hero info** (`.shop-hero-perk`, beagle tab
+  only) on `ICON.power` — already in the font subset — and deliberately NOT in
+  amber, which §04 reserves for the one next action on a screen.
+  `scripts/test-perks.ts` covers the pure rules, `server/scripts/test-catalog.ts`
+  the drift, `server/scripts/test-plausibility.ts` each perk in both directions,
+  and **`scripts/test-beagle-perks-ui.ts` (`npm run test:perks-ui`) drives the
+  REAL app** — which is what found the database defaults: no pure test can see
+  a column default, and every rule in `cosmetics.ts` was correct.
 - **COINS COME FROM THE MAZE, AND ONLY THE MAZE** (IDEA-016 v2): the
   points-to-coins conversion is gone — no "every N points banks a coin". The
   five coin pickups per level are the entire economy, which is what makes them
@@ -204,11 +276,35 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v8.
   tour stages of five — matching classic's own `MAPS_PER_STAGE`, so "stage 4"
   means the same five mazes in both modes — plus one twist chapter of ten.
   Four things:
+  - **A LOCKED STONE IS SELECTABLE** (v2, Nuno). `selectNode` used to
+    early-return on one, so for a new player thirty-nine of the forty levels
+    were padlocks with nothing behind them — on the screen whose whole job is
+    now showing what the game contains. Tapping one fills the panel with its
+    name, blurb, theme and twists; only `playSelected` still refuses. It is
+    therefore NOT `aria-disabled` (it is a control that does something) and NOT
+    `tabindex="-1"`; what it cannot do is said on the disabled Play button,
+    which reads **"Clear stone N first"** — unlocking is strictly sequential, so
+    `progress + 1` is the one fact a disabled "Play stone 27" leaves the player
+    to work out for themselves.
   - **The rail SCROLLS, it never SELECTS.** Selection arms the Play button, and
     a chip that did both would let a player tap "jump to stage 4" then "Play
     stone 16" without ever having looked at stone 16. Looking ahead at a locked
     chapter is exactly what the screen is for, so a locked chip is dimmed by
     PAINT and still clickable.
+  - **A STONE'S FACE IS CENTRED BY A MEASURED `dy`, NEVER BY
+    `dominant-baseline`** (v2, Nuno: the padlocks are not in the middle of their
+    dots). `dominant-baseline="middle"` offsets by half the X-HEIGHT, a Latin
+    typography notion an ICON font has no opinion about. Baloo 2's digits landed
+    within a third of a pixel of centre that way, so the numbers looked right and
+    the construction looked correct — while the padlock, whose ink spans nearly
+    the whole em box, sat ~4px high on a 40px stone. `scripts/_scratch-glyph-center.ts`
+    draws each glyph into a 2D canvas and scans the alpha channel for its real
+    ink box: the padlock runs -0.985em to -0.055em off the baseline (so
+    `dy="0.52em"`) and the digits -0.605em to +0.005em (`dy="0.3025em"`). In EM
+    so it tracks font-size — a two-digit stone already renders smaller. That
+    script also carries its own cautionary tale: `parseFloat("700 200px ...")`
+    returns the WEIGHT, and the first run reported a full-em glyph as 0.27em
+    with four decimal places of confidence.
   - **A chip click must NOT call `render()`.** `render()` ends by scrolling the
     SELECTED node into view, so re-rendering scrolls the trail straight back and
     the jump looks like a dead button. Only the lit chip is written to the DOM.
@@ -1072,10 +1168,21 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v8.
   first STRING either has ever had, and unquoted it emitted `flowerKind: daisy,`
   — a props.ts that does not compile. `test-garden-props.ts` now guards the
   props writer the way `test-board-surfaces.ts` guards the palette one.
-  **AND SAVING A THEME FROM THE EDITOR DELETES THAT THEME'S OWN COMMENTS.**
-  `boardCodegen` regenerates the edited theme's entry, so prose inside
-  `palette: {}` does not survive — other themes are spliced through verbatim,
-  which is why only the edited one loses anything. Put notes ABOVE `palette:`.
+  **AND SAVING A THEME FROM THE EDITOR DELETES THAT THEME'S OWN COMMENTS —
+  ALL OF THEM.** `boardCodegen` regenerates the edited theme's WHOLE entry, so
+  nothing written anywhere inside it survives: not inside `palette: {}`, and
+  not above it either. (An earlier version of this note said prose above
+  `palette:` was safe. It is not — that was inferred from the suite's
+  "preserves Night City's own prose" check, which passes because Night City is
+  a theme the save did NOT edit. Other themes are spliced through verbatim;
+  the edited one is rebuilt from data.) **So themes.ts cannot hold
+  documentation about a theme at all.** Anything load-bearing goes in the code
+  that enforces it or in a test — the garden's "wallDecor must never be empty
+  or the density blooms come back" rule lives in board.ts's buildWallTopDecor
+  and in test-garden-props.ts for exactly this reason. Anything pinning a
+  theme's numbers has the same problem from the other side: a count literal in
+  a test breaks every time someone plants a prop, so read it from
+  MAZE_THEMES instead.
   Worse, `test-editor-board.ts` edits the REAL `src/game/themes.ts` and
   restores it in a `finally` — which covers a failed assertion but NOT the
   process being killed, and piping that suite through `head` or `tail` closes
@@ -1102,6 +1209,25 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v8.
   endpoints. That branch was invisible twice before it worked — first routed
   straight through the house body, then buried between the trunk's flare and
   the leaves — which is the birdhouse's own buried-plate defect twice more.
+  **v3 THINNED THE FLOWERS, AND THE RULE IS ABOUT LAYERS.** The wall tops
+  carried 29 hand-placed flower props AND the hedge texture carried six
+  daisies a face. Nuno: "they are perfect but since the ownshrub fence has the
+  flower is to much." The props came off and the texture went to FOUR. Which
+  layer survives is not a toss-up: the texture is the wall's own identity (the
+  reference is a shrub IN BLOOM) and it dresses all ~200 walls, where the
+  props only ever reached 34 tiles. Note the count has now come down twice for
+  one reason worth keeping — THE REFERENCE SHOWS ONE FACE OF ONE HEDGE, while
+  the texture wraps six sides of 200 boxes, so matching its density produces a
+  pattern rather than a scatter. Taking the flowers off is also what surfaced
+  the buildWallTopDecor trap above: emptying `wallDecor` entirely would have
+  switched ~40 density bloom spheres back ON.
+  **A SEED DEFAULT THAT DEPENDS ON ANOTHER FIELD CANNOT BE A CONSTANT.** The
+  props editor seeds a field's first value from a flat field-to-number table,
+  and IDEA-060 put `petalColor`/`centerColor` in it — so opening "petal color"
+  on the Sunflower silently repainted it in the DAISY's cream and gold and
+  wrote that into props.ts on the next save. Caught after it had shipped into
+  the library. They now seed per `flowerKind` (`FLOWER_SEED_COLORS`), and
+  test-garden-props.ts asserts no flower def carries the daisy's petal colour.
   **WHAT THE CLAY RENDER SAYS, AND IT IS WORTH KNOWING**: with every map
   stripped (`/preview-board/?flat=1`), the fence and the wall-top flowers are
   still there as real silhouettes — and the HEDGE IS STILL A PLAIN BOX. All of

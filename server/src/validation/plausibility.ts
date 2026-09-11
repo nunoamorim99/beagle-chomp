@@ -36,6 +36,9 @@ import {
   POWERUP_MULTIPLIER,
   SCORE_DOUBLING_POWERUPS,
   GHOSTS_STAGE_5_6,
+  BEAGLE_PERK_BY_SKIN,
+  BEAGLE_PERKS,
+  DEFAULT_BEAGLE_SKIN_ID,
   type ChallengeLevelFacts,
 } from "../catalog.generated.js";
 
@@ -179,6 +182,23 @@ export interface RunContext {
   /** The player's current challenge_progress, to reject clears for levels they
    *  haven't unlocked. */
   currentChallengeProgress: number;
+  /**
+   * IDEA-064: which beagle the run was played in, read off the SESSION row
+   * (game_sessions.beagle_skin_id), which snapshots it when the run starts.
+   *
+   * REQUIRED, not optional, and that is the whole point of the field. Three of
+   * the five coats move numbers checked below — Muffin doubles the coin award,
+   * Cookie widens the lives bound, Pepper moves the exact fruit total — so a
+   * caller that forgot to pass one would have the validator refuse to allow for
+   * a bonus the game really paid out, and every honest run in that coat would
+   * be REJECTED. An optional field with a safe-looking default is exactly how
+   * that ships unnoticed; a required one cannot.
+   *
+   * An unknown id (a coat renamed or retired since the run) resolves to the
+   * default coat's perk — see perkOf. That is the safe direction: the default's
+   * perk cannot inflate a score.
+   */
+  beagleSkinId: string;
 }
 
 export type ValidationResult =
@@ -231,8 +251,10 @@ export function maxLevelScore(
   mazeIdx: number,
   ghostCount: number,
   /** IDEA-046: multipliers the run's collected power-ups permit. Both default
-   *  to 1, so every existing caller keeps the pre-power-up ceiling exactly. */
-  mult: { biscuit?: number; ghost?: number } = {},
+   *  to 1, so every existing caller keeps the pre-power-up ceiling exactly.
+   *  IDEA-064 adds `fruitBonus` — points the equipped coat adds to EACH fruit
+   *  (Pepper), defaulting to 0 for the same reason. */
+  mult: { biscuit?: number; ghost?: number; fruitBonus?: number } = {},
 ): number {
   const facts = MAZE_FACTS[mazeIdx];
   if (!facts) return 0;
@@ -256,7 +278,10 @@ export function maxLevelScore(
     // just happened to equal the threshold count back when both were 2. At four
     // thresholds and two tiles, the old `Math.min` would have capped an honest
     // level at two fruits and rejected anyone who ate four.
-    FRUIT_THRESHOLDS.length * MAX_FRUIT_POINTS +
+    // IDEA-064: Pepper's bonus rides on top of the ladder, so the dearest a
+    // fruit can be is the mango PLUS the bonus. Added per fruit rather than
+    // per level — it is paid on every one of them.
+    FRUIT_THRESHOLDS.length * (MAX_FRUIT_POINTS + (mult.fruitBonus ?? 0)) +
     maxGhostPointsPerLevel(facts.bones, ghostCount) * ghostMult
   );
 }
@@ -285,6 +310,51 @@ export function minLevelSeconds(mazeIdx: number, speedMult: number): number {
   );
 }
 
+/**
+ * IDEA-064: what the run's coat is allowed to have paid out.
+ *
+ * CLASSIC ONLY — the neutral values come back for a challenge run, because
+ * every challenge score already on the board was set without perks, exactly as
+ * it was set without power-ups. src/game/perks.ts enforces the identical rule
+ * on the client and the two MUST agree: if the client paid a bonus this refused
+ * to allow, the honest run is rejected as SCORE_ITEM_MISMATCH.
+ *
+ * Neutral means 1 for the multiplier and 0 for the addends, so every use site
+ * below can multiply and add unconditionally rather than branching on the coat.
+ *
+ * Bagel's start shield is deliberately absent: it absorbs a hit, cannot add a
+ * point, and is never reported as a collected power-up, so there is nothing
+ * here for it to widen. A perk that costs the validator nothing should not
+ * appear in the validator.
+ */
+function perksFor(ctx: RunContext): {
+  extraLivesPerMap: number;
+  coinMultiplier: number;
+  fruitBonusPoints: number;
+} {
+  const neutral = { extraLivesPerMap: 0, coinMultiplier: 1, fruitBonusPoints: 0 };
+  if (ctx.mode !== "classic") return neutral;
+
+  const perk =
+    BEAGLE_PERK_BY_SKIN[ctx.beagleSkinId] ?? BEAGLE_PERK_BY_SKIN[DEFAULT_BEAGLE_SKIN_ID];
+  switch (perk) {
+    case "extraLifePerMap":
+      return { ...neutral, extraLivesPerMap: BEAGLE_PERKS.extraLivesPerMap };
+    case "doubleCoins":
+      return { ...neutral, coinMultiplier: BEAGLE_PERKS.coinMultiplier };
+    case "fruitBonus":
+      return { ...neutral, fruitBonusPoints: BEAGLE_PERKS.fruitBonusPoints };
+    default:
+      // startShield, unlocksTribute, and anything a future catalog adds that
+      // this server has not been taught. Falling through to neutral is the safe
+      // direction for an UNKNOWN perk in a way it is not for a known one: it
+      // tightens the bounds rather than loosening them, so the failure is a
+      // rejected honest run (loud, and visible in the rejection rate the
+      // portal already watches) rather than a score nobody can explain.
+      return neutral;
+  }
+}
+
 function modifiersFor(ctx: RunContext): ChallengeLevelFacts {
   if (ctx.mode === "challenge" && ctx.challengeIdx !== null) {
     return CHALLENGE_LEVELS[ctx.challengeIdx] ?? CLASSIC_MODIFIERS;
@@ -305,6 +375,10 @@ function isNonNegativeInt(value: unknown): value is number {
  */
 export function validateRun(input: RunSubmission, ctx: RunContext): ValidationResult {
   const mods = modifiersFor(ctx);
+  // IDEA-064: resolved ONCE, here, and read from four places below. Resolving
+  // it at each use site would mean four chances to forget the classic-only
+  // rule, which is the same argument perks.ts makes on the client.
+  const perks = perksFor(ctx);
   const detail: Record<string, unknown> = { input, ctx };
 
   // --- shape ---------------------------------------------------------------
@@ -505,6 +579,10 @@ export function validateRun(input: RunSubmission, ctx: RunContext): ValidationRe
   const powerupMult = {
     biscuit: powerupIds.includes(SCORE_DOUBLING_POWERUPS.biscuit) ? POWERUP_MULTIPLIER : 1,
     ghost: powerupIds.includes(SCORE_DOUBLING_POWERUPS.ghost) ? POWERUP_MULTIPLIER : 1,
+    // IDEA-064: not a power-up, but it belongs in the same bag — this object is
+    // "everything that raises what a level can be worth", and the ceiling has
+    // to carry all of it or the run that earned it is refused.
+    fruitBonus: perks.fruitBonusPoints,
   };
 
   // --- MAX-1: per-level score ceiling ---------------------------------------
@@ -571,8 +649,14 @@ export function validateRun(input: RunSubmission, ctx: RunContext): ValidationRe
         detail: { ...detail, field: "fruitPoints" },
       };
     }
-    let maxFruitPoints = input.fruitEaten * MAX_FRUIT_POINTS;
-    let minFruitPoints = input.fruitEaten * MIN_FRUIT_POINTS;
+    // IDEA-064: Pepper pays its bonus on EVERY fruit, so the whole band moves
+    // up by the same amount — both ends. Moving only the ceiling would leave a
+    // Pepper run's true total sitting above a floor computed for a coat it was
+    // not wearing, which is fine; moving only the floor would reject it. Moving
+    // both keeps the band exactly as tight as it was.
+    const perkFruitBonus = input.fruitEaten * perks.fruitBonusPoints;
+    let maxFruitPoints = input.fruitEaten * MAX_FRUIT_POINTS + perkFruitBonus;
+    let minFruitPoints = input.fruitEaten * MIN_FRUIT_POINTS + perkFruitBonus;
 
     // IDEA-050: if the run named WHICH fruits it ate, the band collapses to a
     // single exact number. This is the analytics field paying for itself — the
@@ -604,8 +688,11 @@ export function validateRun(input: RunSubmission, ctx: RunContext): ValidationRe
           },
         };
       }
-      // Exact, both sides — no band left at all.
-      const exact = counts.reduce((sum, n, i) => sum + n * FRUIT_VALUES[i], 0);
+      // Exact, both sides — no band left at all. The perk bonus is part of
+      // that exact number: the client reports the total it actually scored, so
+      // a Pepper run naming four apples reports 800, not 400.
+      const exact =
+        counts.reduce((sum, n, i) => sum + n * FRUIT_VALUES[i], 0) + perkFruitBonus;
       maxFruitPoints = exact;
       minFruitPoints = exact;
     }
@@ -665,6 +752,12 @@ export function validateRun(input: RunSubmission, ctx: RunContext): ValidationRe
     SCORING.startLives +
     Math.floor(input.score / SCORING.livesMilestonePoints) +
     LIFE_THRESHOLDS.length * levelsPlayed +
+    // IDEA-064: Cookie grants one at the start of every map, the first
+    // included — so the allowance is per level PLAYED, not per level cleared.
+    // Uncapped here on purpose, like every other term: LIVES.max bounds what
+    // the game will actually hand out, and a validator bound that tries to
+    // model a cap is a validator bound that eventually rejects a real run.
+    perks.extraLivesPerMap * levelsPlayed +
     input.bonesEaten; // a perfect fright (all ghosts in one bone) grants a life
   if (input.livesLost > maxLives) {
     return {
@@ -681,8 +774,14 @@ export function validateRun(input: RunSubmission, ctx: RunContext): ValidationRe
   // the widest the ladder allows — cheapest for the floor, dearest for the
   // ceiling. A pre-IDEA-045 client only ever ate 100-point fruit, so it lands
   // comfortably inside that window rather than being rejected for being old.
-  const fruitFloor = input.fruitPoints ?? input.fruitEaten * MIN_FRUIT_POINTS;
-  const fruitCeiling = input.fruitPoints ?? input.fruitEaten * MAX_FRUIT_POINTS;
+  //
+  // IDEA-064: when the client did NOT report an exact total, the fallback band
+  // has to carry Pepper's bonus at both ends for the same reason MAX-4c does.
+  // When it DID, input.fruitPoints already includes it and nothing is added.
+  const fruitFloor =
+    input.fruitPoints ?? input.fruitEaten * (MIN_FRUIT_POINTS + perks.fruitBonusPoints);
+  const fruitCeiling =
+    input.fruitPoints ?? input.fruitEaten * (MAX_FRUIT_POINTS + perks.fruitBonusPoints);
   //
   // IDEA-046: the FLOOR stays un-multiplied and the CEILING is multiplied. That
   // asymmetry is deliberate. A doubler can be collected part-way through a run,
@@ -758,7 +857,14 @@ export function validateRun(input: RunSubmission, ctx: RunContext): ValidationRe
   //
   // Note this also makes the award independent of `score` entirely, so a run
   // that scores nothing but grabs coins still earns them.
-  const coinsAwarded = input.coinsCollected * SCORING.coinPickupValue;
+  //
+  // IDEA-064: and Muffin's multiplier is applied HERE, on the server's own
+  // recomputation, because this is the authority on coins — the client's add is
+  // optimistic and is reconciled to whatever comes back. The run reports how
+  // many pickups it took, never what they were worth, so a client cannot claim
+  // the perk: the coat comes off the session row.
+  const coinsAwarded =
+    input.coinsCollected * SCORING.coinPickupValue * perks.coinMultiplier;
 
   return { accepted: true, coinsAwarded, detail: { ...detail, scoreCeiling } };
 }

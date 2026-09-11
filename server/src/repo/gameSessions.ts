@@ -25,23 +25,28 @@ export interface GameSessionRow {
   status: SessionStatus;
   reported_score: number | null;
   accepted_score: number | null;
+  /** IDEA-064: which beagle the run was played in, snapshotted at START.
+   *  Read at finish time to decide which perks the validator must allow for —
+   *  see migration 011 for why this is a snapshot and not a lookup. */
+  beagle_skin_id: string;
 }
 
 const SESSION_COLUMNS = `
   id, user_id, mode, challenge_idx, started_at, finished_at,
-  status, reported_score, accepted_score
+  status, reported_score, accepted_score, beagle_skin_id
 `;
 
 export async function createSession(
   userId: string,
   mode: SessionMode,
   challengeIdx: number | null,
+  beagleSkinId: string,
 ): Promise<GameSessionRow> {
   const { rows } = await query<GameSessionRow>(
-    `INSERT INTO game_sessions (user_id, mode, challenge_idx)
-     VALUES ($1, $2, $3)
+    `INSERT INTO game_sessions (user_id, mode, challenge_idx, beagle_skin_id)
+     VALUES ($1, $2, $3, $4)
      RETURNING ${SESSION_COLUMNS}`,
-    [userId, mode, challengeIdx],
+    [userId, mode, challengeIdx, beagleSkinId],
   );
   return rows[0];
 }

@@ -16,6 +16,24 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
 > lines here roll up into the numbered version below and this section is cleared (hold a line back
 > only if you explicitly choose to).
 
+- **[[IDEA-064]] v1** (2026-09-11) - **every beagle has a power now, and the shop sells
+  beagles rather than paint.** Bagel starts every run holding a shield. Cookie hands you an extra
+  life at the start of every map. Muffin makes every coin you grab worth two. Pepper adds 100
+  points to every fruit you eat - a mango pays 600. And the Pac-Beagle unlocks both arcade
+  tributes at once: the Ghost enemy and the **Arcade Night board**, which is no longer for sale
+  at all, because the coat is what buys it. The card in the shop tells you what each dog does
+  before you spend anything. Classic mode only - challenge scores stay set on the same terms
+  they always were. The **Flea** is the enemy you start with now, and the Beetle joins its
+  siblings at 25 coins.
+
+  **Two bugs came out with it.** The Ghost was supposed to be a secret you unlock, and it was
+  showing up in everyone's shop - the cause was in the database rather than the game: new
+  accounts had been handed the Ghost by a default that was written when the Ghost WAS the
+  starting enemy, and never moved after. It is now revoked from anyone who did not earn it with
+  the Pac-Beagle coat, and anyone who bought the Arcade Night board keeps it. And players who
+  had already bought the Pac-Beagle are given the Arcade Night board on their next sign-in,
+  rather than being shown a price for something their coat is advertised as unlocking.
+
 - **[[IDEA-063]] v1** (2026-09-11) — **challenge mode is forty levels now, and the first thirty
   are a tour of every board in the game.** One level per playable maze, in order, played exactly
   the way classic plays — three enemies, normal speed, the same fruit and golden bones, no twists
@@ -30,6 +48,11 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
   challenge progress goes back to zero** — the ladder was rebuilt underneath the number, and
   leaving it would quietly relabel eight hard twist clears as eight easy ones. High scores, coins
   and cosmetics are untouched.
+
+- **[[IDEA-063]] v2** (2026-09-11) — **you can read a locked challenge before you reach it.**
+  Tapping a padlocked stone now shows what that level is — its name, the board, the theme it is
+  dressed in and any twists — instead of doing nothing; the button tells you which stone to clear
+  to get there. And the padlocks are centred in their dots now, which they were not.
 
 - **[[IDEA-061]] v1** (2026-09-11) — **thirty maps, and a map number that never resets.** The
   classic cycle doubled: 15 new numbered maps and 3 new bonus maps, hand-authored and validated,

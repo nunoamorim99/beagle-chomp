@@ -51,6 +51,7 @@ import {
   DEFAULT_MAZE_THEME_ID,
   setEquippedMazeThemeId,
   getMazeThemePrice,
+  TRIBUTE_MAZE_THEME_ID,
 } from "./themes";
 import {
   getProfileCache,
@@ -342,7 +343,13 @@ export function buyBeagleSkin(id: string): BuyResult {
   // Its result is deliberately ignored: an account that already owns the ghost
   // — every account from before it became secret — gets "already-owned" back,
   // which is the correct outcome, not a failure.
-  if (result.ok && id === TRIBUTE_BEAGLE_SKIN_ID) buyEnemySkin(TRIBUTE_ENEMY_SKIN_ID);
+  // IDEA-064: and the Arcade Night board with it. Both are price 0, so both
+  // are ordinary purchases of free items — no special path, and the server's
+  // own catalog agrees on both prices.
+  if (result.ok && id === TRIBUTE_BEAGLE_SKIN_ID) {
+    buyEnemySkin(TRIBUTE_ENEMY_SKIN_ID);
+    buyMazeTheme(TRIBUTE_MAZE_THEME_ID);
+  }
   return result;
 }
 
@@ -406,6 +413,19 @@ export function initProfileFromCache(): void {
   // and the server would then refuse the equip.
   if (!isEnemySkinOwned(DEFAULT_ENEMY_SKIN_ID)) buyEnemySkin(DEFAULT_ENEMY_SKIN_ID);
   if (!isBeagleSkinOwned(DEFAULT_BEAGLE_SKIN_ID)) buyBeagleSkin(DEFAULT_BEAGLE_SKIN_ID);
+
+  // IDEA-064: the same self-heal for the TRIBUTE pair, and it is not optional.
+  // buyBeagleSkin grants the Ghost and the Arcade Night board at the moment the
+  // Pac-Beagle is bought — which does nothing at all for the players who bought
+  // the coat BEFORE the board was part of the bundle. Without this they would
+  // own the coat, see the theme listed (visibleMazeThemes reveals it on the
+  // coat, not on the theme), and be told to pay for something the coat is
+  // advertised as unlocking. Both grants are free, so both are no-ops for
+  // anyone who already has them.
+  if (isBeagleSkinOwned(TRIBUTE_BEAGLE_SKIN_ID)) {
+    if (!isEnemySkinOwned(TRIBUTE_ENEMY_SKIN_ID)) buyEnemySkin(TRIBUTE_ENEMY_SKIN_ID);
+    if (!isMazeThemeOwned(TRIBUTE_MAZE_THEME_ID)) buyMazeTheme(TRIBUTE_MAZE_THEME_ID);
+  }
 
   const profile = getProfileCache();
 

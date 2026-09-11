@@ -465,8 +465,6 @@ export const PROP_LIBRARY: readonly PropDef[] = [
       height: 1,
       width: 1,
       flowerKind: "sunflower",
-      petalColor: 0xfaf6ec,
-      centerColor: 0xf2b632,
     },
   },
   {
