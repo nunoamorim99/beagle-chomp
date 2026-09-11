@@ -869,7 +869,7 @@ body.map-open #mainMenu{display:none}
    `.shop-stage` structure/naming intentionally. */
 .map-stage{flex:1 1 auto;display:flex;flex-direction:column;min-height:0;gap:var(--bc-s3)}
 
-.map-header{pointer-events:auto;display:flex;align-items:center;gap:var(--bc-s3);
+.map-header{pointer-events:auto;display:flex;flex-wrap:wrap;align-items:center;gap:var(--bc-s3);
   padding:var(--bc-s2) var(--bc-s3);border-radius:var(--bc-r-card);flex:0 0 auto;
   background:var(--bc-scrim);border:var(--bc-line) solid var(--bc-outline)}
 /* Left-aligned now: with an icon-only back button there is no second
@@ -888,6 +888,79 @@ body.map-open #mainMenu{display:none}
   transition:width var(--bc-d-state) var(--bc-ease)}
 .map-progress-count{flex:0 0 auto;font-family:var(--bc-font-mono);font-size:11px;
   color:var(--bc-biscuit)}
+
+/* --- IDEA-063: the chapter jump rail ------------------------------------
+   Seven chips under the title, on their OWN header row. `.map-header` is a
+   flex row and the rail carries `flex:1 0 100%`, so it wraps below the back
+   button and the title block rather than competing with them for the same
+   ~358px — at 390px seven chips beside a title is about 210px of chips in
+   roughly 90px of space, i.e. not a layout at all.
+
+   Chips are `flex:1 1 0` so the seven of them SHARE the row: ~44px each at
+   390px, which is the touch-target floor rather than a coincidence. Do not
+   give them a fixed width — an eighth chapter would then overflow silently
+   instead of getting narrower. */
+/* No margin-top: `.map-header` is a wrapping flex row with `gap:var(--bc-s3)`,
+   which is already the ROW gap between the title row and this one. */
+.map-chapter-rail{flex:1 0 100%;display:flex;gap:6px}
+.map-chapter-chip{flex:1 1 0;min-width:0;height:32px;padding:0;
+  display:inline-flex;align-items:center;justify-content:center;
+  font-family:var(--bc-font-display);font-weight:800;font-size:14px;
+  color:var(--bc-text-soft);background:var(--bc-ink);
+  border:2px solid var(--bc-outline);border-bottom-width:var(--bc-edge-chip);
+  border-radius:var(--bc-r-chip);cursor:pointer;
+  transition:background var(--bc-d-state) var(--bc-ease),
+             color var(--bc-d-state) var(--bc-ease)}
+.map-chapter-chip .bc-i{font-size:16px}
+.map-chapter-chip:active{border-bottom-width:2px;transform:translateY(2px)}
+/* The chapter currently IN VIEW — not the one holding the selected level. The
+   two are the same until a chip is tapped, and keeping them the same would
+   make the rail feel dead: you tap the star, the trail moves, and the "1" chip
+   stays lit. Hedge-green, not amber: amber is this screen's single action
+   colour (the Play button), and a "where am I" marker must not compete with
+   it (§08). */
+.map-chapter-chip--on{background:var(--bc-hedge);color:var(--bc-cream);
+  border-color:var(--bc-outline)}
+/* Dimmed by PAINT, never opacity (§03) — this chip sits over the page's own
+   sky gradient and a translucent one turns blue-grey. Still clickable: seeing
+   what is ahead is exactly what a locked chapter is for. */
+.map-chapter-chip--locked{background:#241D16;color:var(--bc-text-mute)}
+.map-chapter-chip--locked.map-chapter-chip--on{background:var(--bc-hedge);color:var(--bc-cream)}
+
+/* --- IDEA-063: chapter banners on the trail ------------------------------
+   A signpost the path runs past. Bark plate, ink outline, cream lettering —
+   the same three-part construction as every other board on the screen, drawn
+   in SVG because it has to scroll with the trail (the hills' own lesson). */
+.map-chapter-plate{fill:var(--bc-bark);stroke:var(--bc-outline);stroke-width:3}
+.map-chapter-label{font-family:var(--bc-font-display);font-weight:800;
+  font-size:14px;fill:var(--bc-cream);letter-spacing:.02em}
+/* The twists are not a numbered stage, and the banner says so before you
+   reach the first stone: a warm rim where the six tour banners have an ink
+   one. */
+.map-chapter--twist .map-chapter-plate{stroke:var(--bc-amber)}
+.map-chapter--twist .map-chapter-label{fill:var(--bc-amber)}
+
+/* Two digits in a 20px-radius disc. The display font at 16px overflows the
+   circle's usable inner width at "40"; 13.5px with a tighter track fits with
+   room to spare, and only the stones that need it pay for it. */
+.map-node-num--wide{font-size:13.5px;letter-spacing:-.04em}
+
+/* --- IDEA-063: the tag row ----------------------------------------------
+   A tour level carries ONE tag (its theme) and a twist level carries two, so
+   the row wraps rather than assuming a count. `min-height` holds the panel's
+   height steady as the selection moves between the two chapters — the thing
+   the old "quiet variant instead of no tag" rule existed to protect. */
+.map-tag-row{display:flex;flex-wrap:wrap;gap:6px;align-items:center;
+  margin-top:var(--bc-s2);min-height:26px}
+.map-tag-row .map-twist-tag{margin-top:0}
+/* The theme tag. Hedge-green rather than the twist tag's warning orange,
+   because a forced theme is not a warning — it is the tour telling you which
+   of the shop's six looks you are about to be shown, owned or not. */
+.map-theme-tag{display:inline-flex;align-items:center;gap:6px;
+  background:var(--bc-ink);border:2px solid var(--bc-enemy-green);
+  border-radius:var(--bc-r-pill);padding:4px 11px;
+  font-family:var(--bc-font-mono);font-size:11px;color:var(--bc-enemy-green)}
+.map-theme-tag .bc-i{font-size:14px}
 
 
 /* Body region: the scrollable path. #levelMap itself is pointer-events:none
@@ -1009,15 +1082,18 @@ body.map-open #mainMenu{display:none}
 
 /* The twist TAG. Warning-orange, the same colour a power-up wears in its
    last three seconds — both say "this changes what you expect". A level
-   with no twists gets the quiet variant rather than no tag at all, so the
-   panel does not change height as the selection moves. */
+   IDEA-063 removed the "quiet variant" this tag used to fall back to on a
+   level with no twists. It existed to hold the panel's height steady, and the
+   thing that does that now is `.map-tag-row`'s own min-height — while a
+   warning-orange tag reading "Classic pace" on all thirty tour levels was a
+   warning about nothing, which is the fastest way to teach a player to stop
+   reading it. A tour level shows only its theme tag. */
 .map-twist-tag{display:inline-flex;align-items:center;gap:6px;
   align-self:flex-start;margin-top:var(--bc-s2);
   background:var(--bc-ink);border:2px solid var(--bc-expiring);
   border-radius:var(--bc-r-pill);padding:4px 11px;
   font-family:var(--bc-font-mono);font-size:11px;color:var(--bc-expiring)}
 .map-twist-tag .bc-i{font-size:14px}
-.map-twist-tag--none{border-color:var(--bc-outline);color:var(--bc-text-mute)}
 .map-footer-blurb{color:var(--bc-text-soft);font-size:13px;line-height:1.5}
 
 /* .map-panel-extra: the richer desktop-only content (full twist LIST, maze
@@ -1061,10 +1137,27 @@ body.map-open #mainMenu{display:none}
      fully OPAQUE bark rather than the mobile scrim, and sits above the
      trail's own (unpositioned, stacking-order-only) SVG content. */
   .map-header{position:sticky;top:0;z-index:5;background:var(--bc-bark)}
+  /* IDEA-063: `.map-page` must size to its CONTENT here, not to the viewport.
+     A sticky element cannot leave its own containing block, and `.map-page` is
+     a `flex:1 1 auto` child of a fixed-height `#levelMap` — so it was exactly
+     one viewport tall while the trail overflowed it. At 8 stones the trail was
+     ~700px and the page barely scrolled, so nothing ever tested it; at 40 it is
+     ~4 000px, and past the first screen the sticky header and the sticky side
+     panel BOTH hit the bottom of that box and scrolled away with it, leaving a
+     bare trail on bare sky with no back button and no Play. `flex:0 0 auto`
+     makes the box as tall as the trail, which is what both sticky elements
+     need to travel the whole scroll. */
+  .map-page{flex:0 0 auto}
   .map-stage{flex-direction:row;align-items:flex-start;gap:var(--bc-s4)}
   .map-body{overflow:visible;flex:1 1 auto;min-width:0;display:flex;justify-content:center}
   .map-path-scroll{max-width:520px;width:100%}
-  .map-panel-info{flex:0 0 340px;position:sticky;top:calc(72px + env(safe-area-inset-top));
+  /* Sticks BELOW the sticky header, whatever height that is — levelMap.ts
+     measures the header after every render and publishes it as
+     `--map-header-h` on #levelMap. The fallback is the pre-IDEA-063 literal,
+     so a render that somehow never measured degrades to the old behaviour
+     rather than to zero (a panel stuck under the header). */
+  .map-panel-info{flex:0 0 340px;position:sticky;
+    top:calc(var(--map-header-h,72px) + var(--bc-s3) + env(safe-area-inset-top));
     align-self:flex-start;flex-direction:column;align-items:stretch;gap:var(--bc-s4);
     padding:20px calc(18px + env(safe-area-inset-right)) 18px 18px}
   .map-panel-info-body{flex:0 0 auto}

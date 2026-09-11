@@ -16,6 +16,21 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
 > lines here roll up into the numbered version below and this section is cleared (hold a line back
 > only if you explicitly choose to).
 
+- **[[IDEA-063]] v1** (2026-09-11) — **challenge mode is forty levels now, and the first thirty
+  are a tour of every board in the game.** One level per playable maze, in order, played exactly
+  the way classic plays — three enemies, normal speed, the same fruit and golden bones, no twists
+  at all — because most players will never meet maze 23 through classic's own progression. Each
+  one is **dressed in one of the shop's six themes whether you own it or not**, cycling so every
+  theme is shown five times: the quickest way to want the Deep Forest is to play a level in it.
+  Behind them, the original eight twist levels are exactly as they were, joined by two new ones —
+  **Dream Walk**, the only level in the game that runs in slow motion, with five ghosts drifting
+  after you and a bone that frightens them for twelve seconds; and **Last Dog Standing**, the
+  fastest thing here, on the tour's final board. The level map became a real trail: forty stones,
+  a signpost between each stage, and a row of chapter buttons to jump down it. **Everyone's
+  challenge progress goes back to zero** — the ladder was rebuilt underneath the number, and
+  leaving it would quietly relabel eight hard twist clears as eight easy ones. High scores, coins
+  and cosmetics are untouched.
+
 - **[[IDEA-061]] v1** (2026-09-11) — **thirty maps, and a map number that never resets.** The
   classic cycle doubled: 15 new numbered maps and 3 new bonus maps, hand-authored and validated,
   taking the game to **36 mazes and six stages of five**. The enemy count now ramps 3 / 3 / 4 / 4 /

@@ -19,14 +19,16 @@ Living backlog of ideas. Two purposes:
 _(empty — nothing to triage)_
 
 ## Backlog (open ideas)
-> New registered ideas go here. Next free ID: IDEA-063
+> New registered ideas go here. Next free ID: IDEA-064
 > (054 went to the crab and 055 to the mosquito — built in parallel by two sessions, which is
 > why the ids were split up front rather than both taking the next free one. 056 and 057 are the
 > sushi pair, registered together because neither is buildable without the other as its
 > foil. 058 is the pizza mascot and 059 the burger. 060 turns the img2threejs pipeline on the
 > BOARD instead of the cast, starting with the garden. 061 doubles the classic cycle to 30
 > maps and makes the map number a running count. 062 is the editor overhaul, registered from a
-> second session while 061 was in flight — the ids were deconflicted up front, as with 054/055.)
+> second session while 061 was in flight — the ids were deconflicted up front, as with 054/055.
+> 063 grows challenge mode to 40 levels: a thirty-level tour of every playable maze in front of
+> the original eight twists.)
 
 ### IDEA-028 — Challenge twist: moving walls / maze changes mid-level 💡
 - **Priority:** 🟢
@@ -2317,6 +2319,65 @@ _(empty — nothing to triage)_
 - **History:**
   - **v1** (2026-07-12) — the "Board & Themes" workbench, second item of v4.0 "New Territory". The /editor/ page gains a mode toggle: pick any of the 6 themes as a base and see a REAL validated maze (built by the actual `buildBoard`) under that theme's own atmosphere, orbit-framed via scene.ts's real fit math. EVERYTHING edits live through lil-gui — Atmosphere/Walls/Floor/Biscuits/Blooms/Specks folders plus a PROPS panel (Nuno's ask: add/remove/tune the shrub/building/streetlight/umbrella/... populations per theme — kind dropdown, density, scale band, up to 4 colors) — all applying through the real `applyBoardTheme` so the preview is honest. "Copy theme code" emits a paste-ready `MAZE_THEMES` entry (id/name/price editable, so brand-new themes can be authored, not just tuned); format byte-compatible with themes.ts, round-trip verified. Switching back to Character restores the workbench exactly (nothing torn down). Board mode ships without undo by design (the base-theme dropdown is the reset; documented). New committed Playwright suite `scripts/test-editor-board.ts` (86 checks incl. live prop-mesh-count assertions); `npm run test:editor` now runs character (40) + board (86). Dev-only boundary verified (dist/ greps clean). `src/editor/board*.ts` (4 new), `main.ts`, `stage.ts`, `editor/index.html`, `editor.css`, `package.json`. _(9fba958, 17f722c)_
 
+
+### IDEA-063 — Challenge mode: the grand tour (40 levels, one per maze, a theme each) ✅
+- **Priority:** 🔴
+- **Area:** modes · ux
+- **Registered:** 2026-09-11
+- **Description:** (Nuno) classic mode can be a bit of a slog and nobody comes back for it every
+  day — challenge mode is the quick distraction. Grow it from 8 levels to 40: the first **30 are
+  one per playable maze** (excluding the bonus ones), the **simplest possible** — 3 enemies, the
+  normal pace, the normal fruit and golden bone, no conditions at all — so a player actually gets
+  to see every board the game has. Give each one **a theme, unlocked or not**, cycling through all
+  six, so players meet the themes they have not bought and want them. Keep power-ups out of
+  challenge mode (a future twist will hand them out itself). Then the existing 8 twist levels
+  follow, plus 2 new ones, for 40.
+- **Notes:** the 30 tour levels are a CONTENT surface, not a mechanics one, and that is the whole
+  point — they layer nothing on the engine. What they do change is the ladder's length, which is a
+  DB migration in two places, a text-parsed catalog on the server, and a level map that was built
+  for eight stones. Follows [[IDEA-013]] (the modifier layer) and [[IDEA-014]] (the level map);
+  uses [[IDEA-061]]'s thirty playable mazes and [[IDEA-026]]'s six themes. [[IDEA-028]]
+  (moving walls) is still the open twist and now has an obvious home — a level 41.
+- **Dependencies:** [[IDEA-013]], [[IDEA-014]], [[IDEA-061]], [[IDEA-026]]
+- **History:**
+  - **v1** (2026-09-11) — **forty challenge levels in two chapters.** Levels 1-30 are THE GRAND
+    TOUR: one level per playable maze, in maze order, every one of them field-for-field
+    `CLASSIC_MODIFIERS` — three enemies, classic pace, full fright, the same fruit and golden
+    bones. Each is named after the board it shows (`MAZE_NAMES` grew from 5 placeholder-ish names
+    to all 36, and index 1's "Garden Two" is gone), and each FORCES one of the shop's six themes
+    whether the player owns it or not, on `THEME_CYCLE[idx % 6]` — so every theme is shown exactly
+    five times. Levels 31-40 are THE TWISTS: IDEA-013's eight byte-for-byte (same names, mazes and
+    dials — they are what every challenge score on the board was set on), plus **"Dream Walk"**,
+    the only level in the game below classic pace (0.7x) and the only fright window longer than
+    classic's (12s), and **"Last Dog Standing"**, the new ceiling at 2.2x with five enemies and a
+    1.5s fright on maze 29. No power-ups in either chapter, unchanged.
+    **The level map is a chapter trail now**: 40 stones, banners between the six tour stages and
+    the twists, and a 7-chip jump rail in the header that scrolls but deliberately never SELECTS
+    (a chip that did both would arm Play with a stone nobody had looked at). The panel gained a
+    theme tag and dropped the amber "Classic pace" warning-about-nothing that thirty tour levels
+    would otherwise have worn.
+    **Three bugs, each only reachable at this scale.** The desktop layout's sticky header AND
+    sticky side panel both scrolled away past the first screen — `.map-page` was `flex:1 1 auto`
+    inside a fixed-height `#levelMap`, so it was one viewport tall while the trail overflowed it,
+    and a sticky box cannot leave its containing block; at 8 stones the trail was ~700px and
+    nothing ever tested it. The panel's sticky offset was the literal `72px` (a one-row header),
+    so the rail's second row slid the panel's own title underneath — it is measured now and
+    published as `--map-header-h`. And `game_sessions.challenge_idx CHECK (BETWEEN 0 AND 7)` would
+    have failed at run START, so tapping Play on stone 9 would do nothing with the error nowhere
+    near the level map.
+    Also fixed: `sync-game-constants.ts`'s challenge-level count guard was the literal `!== 8` —
+    the one check protecting a regex parse was a hand-copy of the thing it checked; it now counts
+    the array's own entries and asserts the two agree. And `profile.ts` still read "/ 8 unlocked".
+    **Every account's `challenge_progress` resets to 0** (Nuno's call): the number means "levels of
+    the ladder cleared" and the ladder was rebuilt underneath it, so leaving it would relabel eight
+    hard-won twist clears as eight easy tour ones. High scores, coins and cosmetics are untouched.
+    Verified: full game suite, 110 plausibility, 77 catalog, 79 session, 96 auth-DB, 65 analytics,
+    typecheck and production build; plus browser review at 390x844 and 1280x800, and a live
+    forced-theme run photographed on Arcade Night from an account that owns only the garden.
+    `challenges.ts` (rewritten), `game.ts`, `levelMap.ts`, `profile.ts`, `style.css`,
+    `server/migrations/010_challenge_levels_40.sql` (new), `sync-game-constants.ts`,
+    `catalog.generated.ts`, `test-cosmetics.ts`, `test-plausibility.ts`,
+    `scripts/_scratch-levelmap-check.ts` + `_scratch-challenge-theme.ts` (new), `CLAUDE.md`.
 
 ### IDEA-014 — Level map / level select for challenge mode ✅
 - **Priority:** 🟢

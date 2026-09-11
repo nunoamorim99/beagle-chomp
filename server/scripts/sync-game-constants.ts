@@ -311,8 +311,20 @@ const configFrightSeconds = numberField(configSrc, "TIMING", "frightSeconds");
 // Parse ENTRY BY ENTRY. A single regex spanning the whole array is greedy
 // across entries and silently merges levels — the count guard below caught
 // exactly that. Each entry is `mazeIdx: N` followed by its own `modifiers: {…}`.
+const challengesArraySrc = sliceArray(challengesSrc, "CHALLENGE_LEVELS");
+
+// How many entries the array CLAIMS to have, counted independently of the
+// modifier parse below. IDEA-063 took this from 8 to 40 and the old guard was
+// the literal `!== 8`, which would have had to be hand-edited to the new
+// number — i.e. the one check protecting this parse was itself a copy of the
+// thing it was checking, and a wrong copy is a silently short catalog. Counting
+// `name:` in the sliced array and comparing it against the number of
+// `mazeIdx: N` / `modifiers: {...}` pairs actually found asserts the two agree,
+// whatever the count happens to be.
+const declaredLevelCount = [...challengesArraySrc.matchAll(/^\s*name:\s*"/gm)].length;
+
 const challengeLevels = [
-  ...challengesSrc.matchAll(/mazeIdx:\s*(\d+),\s*\n\s*modifiers:\s*\{([^}]*)\}/g),
+  ...challengesArraySrc.matchAll(/mazeIdx:\s*(\d+),\s*\n\s*modifiers:\s*\{([^}]*)\}/g),
 ].map((m) => {
   const mazeIdx = Number(m[1]);
   const mods = m[2];
@@ -336,10 +348,12 @@ const challengeLevels = [
   };
 });
 
-if (challengeLevels.length !== 8) {
+if (declaredLevelCount === 0 || challengeLevels.length !== declaredLevelCount) {
   console.error(
-    `[sync] extracted ${challengeLevels.length} challenge levels, expected 8 — ` +
-      `the CHALLENGE_LEVELS format probably changed.`,
+    `[sync] extracted ${challengeLevels.length} challenge levels but CHALLENGE_LEVELS ` +
+      `declares ${declaredLevelCount} — the entry format probably changed. Every entry ` +
+      `must keep "mazeIdx: N" on its own line immediately followed by ` +
+      `"modifiers: { ... }" on ONE line (see challenges.ts's own note).`,
   );
   process.exit(1);
 }

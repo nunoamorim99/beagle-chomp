@@ -48,7 +48,7 @@ export const DEFAULT_MAZE_THEME_ID = "garden";
 
 /** Challenge level count — the upper bound on users.challenge_progress.
  *  The sentinel value itself (== this number) means "all levels cleared". */
-export const CHALLENGE_LEVEL_COUNT = 8;
+export const CHALLENGE_LEVEL_COUNT = 40;
 
 // ---------------------------------------------------------------------------
 // Scoring + timing constants, mirrored from src/game/config.ts (and
@@ -164,6 +164,36 @@ export interface ChallengeLevelFacts {
 
 export const CHALLENGE_LEVELS: readonly ChallengeLevelFacts[] = [
   { mazeIdx: 0, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 1, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 2, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 3, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 4, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 5, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 6, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 7, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 8, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 9, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 10, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 11, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 12, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 13, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 14, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 15, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 16, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 17, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 18, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 19, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 20, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 21, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 22, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 23, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 24, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 25, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 26, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 27, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 28, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 29, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
+  { mazeIdx: 0, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
   { mazeIdx: 1, speedMult: 1.3, ghostCount: 3, frightSeconds: 7 },
   { mazeIdx: 2, speedMult: 1, ghostCount: 4, frightSeconds: 7 },
   { mazeIdx: 3, speedMult: 1.5, ghostCount: 3, frightSeconds: 3 },
@@ -171,6 +201,8 @@ export const CHALLENGE_LEVELS: readonly ChallengeLevelFacts[] = [
   { mazeIdx: 2, speedMult: 1, ghostCount: 5, frightSeconds: 3 },
   { mazeIdx: 3, speedMult: 1.8, ghostCount: 4, frightSeconds: 7 },
   { mazeIdx: 4, speedMult: 2, ghostCount: 5, frightSeconds: 3 },
+  { mazeIdx: 13, speedMult: 0.7, ghostCount: 5, frightSeconds: 12 },
+  { mazeIdx: 29, speedMult: 2.2, ghostCount: 5, frightSeconds: 1.5 },
 ];
 
 /** Classic mode's baseline — the explicit modifiers game.ts uses for a classic

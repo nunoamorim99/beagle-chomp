@@ -25,13 +25,16 @@
 // getChallengeProgress() — this module holds no state of its own across opens
 // besides which node is currently *selected* within one open session.
 import {
+  CHALLENGE_CHAPTERS,
   CHALLENGE_LEVELS,
   CHALLENGE_LEVEL_COUNT,
   CLASSIC_MODIFIERS,
   MAZE_NAMES,
+  chapterForLevel,
   type ChallengeLevel,
 } from "../game/challenges";
 import { getChallengeProgress } from "../game/profileStore";
+import { getMazeTheme } from "../game/themes";
 import { ICON, iconHtml } from "./icons";
 
 export type LevelNodeState = "cleared" | "current" | "locked";
@@ -172,26 +175,27 @@ function resolveDefaultSelection(progress: number): number {
 
 /** Layout constants for the inline SVG trail — a tall, narrow viewBox (the
  *  page scrolls vertically, so the SVG's own height just needs to be tall
- *  enough to comfortably space 8 nodes, not fit a fixed viewport). Nodes
+ *  enough to comfortably space every node, not fit a fixed viewport). Nodes
  *  alternate between LEFT_X and RIGHT_X for the S-curve feel; the path
  *  string is built by visiting each node's anchor in order (bottom to top,
- *  since C1 is index 0 and belongs at the BOTTOM of the trail — the task
- *  brief: "from bottom (C1) to top (C8)").
+ *  since level 1 is index 0 and belongs at the BOTTOM of the trail).
  *
  *  NODE_SPACING_Y (composition pass, coordinator review): was 148 — with a
  *  ~500-640px tall .map-body viewport (desktop 1100x750 / phone 390x844)
- *  that showed only ~3 (desktop) / ~5 (phone) of the 8 stones at once, too
- *  sparse for a map whose whole charm is seeing the journey. Tightened ~38%
- *  to 92, which lands ~5-6 visible on desktop and ~6-7 on phone (the trail
- *  still scrolls for the rest) while keeping node circles themselves
- *  untouched (r=20, i.e. a 40px/CSS-px stone — the ~44px tap target comes
- *  from the stone plus its own hit area, unchanged by this pass) and the
- *  left/right S-curve alternation intact. SVG_TOP/BOTTOM_MARGIN shrunk
- *  proportionally (70 -> 46) so the trail's end-caps don't silently re-add
- *  back most of the compression just removed from the node rhythm; the
- *  bottom margin still leaves just enough room for the ground hill (drawn
- *  IN the SVG itself now, behind C1 — see buildGroundHill) and the top
- *  margin for the small summit hill behind C8 (buildSummitHill). */
+ *  that showed only ~3 (desktop) / ~5 (phone) stones at once, too sparse for
+ *  a map whose whole charm is seeing the journey. Tightened ~38% to 92, which
+ *  lands ~5-6 visible on desktop and ~6-7 on phone (the trail still scrolls
+ *  for the rest) while keeping node circles themselves untouched (r=20, i.e.
+ *  a 40px/CSS-px stone — the ~44px tap target comes from the stone plus its
+ *  own hit area, unchanged by this pass).
+ *
+ *  IDEA-063 did NOT tighten it further for the jump from 8 stones to 40. It
+ *  was tempting: at 92 the trail is roughly 4 000 SVG units tall. But the
+ *  rhythm is what makes it read as a garden path rather than a list, and the
+ *  navigation problem a long trail actually has is "I cannot get to stage 5",
+ *  which compressing the spacing does not solve and the header's chapter jump
+ *  rail does. See CHAPTER_GAP below.
+ */
 const SVG_WIDTH = 320;
 const NODE_SPACING_Y = 92;
 const SVG_TOP_MARGIN = 46;
@@ -200,26 +204,68 @@ const LEFT_X = 96;
 const RIGHT_X = 224;
 const CENTER_X = SVG_WIDTH / 2;
 
-function svgHeight(): number {
-  return SVG_TOP_MARGIN + NODE_SPACING_Y * (CHALLENGE_LEVEL_COUNT - 1) + SVG_BOTTOM_MARGIN;
+/** Extra vertical room inserted BEFORE each chapter's first stone (every
+ *  chapter but the first), where its banner is drawn. Wide enough that the
+ *  banner is clearly between two chapters rather than attached to either. */
+const CHAPTER_GAP = 74;
+
+/** Every node's y, resolved once at module load.
+ *
+ *  Computed as a TABLE rather than by the old `svgHeight() - idx * spacing`
+ *  arithmetic because the chapter gaps make the spacing non-uniform, and a
+ *  formula that has to ask "how many chapter boundaries are below me" at every
+ *  call site is the kind of thing that ends up disagreeing with itself between
+ *  the node, the trail path and the banner. One array, three readers.
+ *
+ *  Index 0 sits at the BOTTOM (largest y) and the last level at the TOP, so
+ *  the trail reads bottom-to-top as the level number increases. */
+const NODE_Y: readonly number[] = buildNodeYs();
+
+/** The SVG's own logical height. NODE_Y[0] is the BOTTOM-most stone (level 1),
+ *  so the box ends one bottom margin below it — and buildNodeYs starts the
+ *  top-most stone exactly one top margin down, so both margins are honoured by
+ *  construction rather than by a second piece of arithmetic that could drift
+ *  from the table. */
+const SVG_HEIGHT = NODE_Y[0] + SVG_BOTTOM_MARGIN;
+
+function buildNodeYs(): number[] {
+  // Build downward from the top of the box, then the array is reversed into
+  // bottom-up order — going top-down is the only direction in which "add a
+  // gap before this chapter" is a plain running sum.
+  const chapterStarts = new Set(CHALLENGE_CHAPTERS.map((c) => c.from));
+  const ys: number[] = [];
+  let y = SVG_TOP_MARGIN;
+
+  // Walk levels from the LAST (top of the trail) down to the first.
+  for (let i = CHALLENGE_LEVEL_COUNT - 1; i >= 0; i--) {
+    ys.push(y);
+    // The gap belongs BELOW a chapter's first stone, i.e. between it and the
+    // last stone of the chapter before it — so it is added after placing that
+    // first stone, as we continue downward.
+    y += NODE_SPACING_Y + (chapterStarts.has(i) && i > 0 ? CHAPTER_GAP : 0);
+  }
+
+  ys.reverse(); // now index 0 is the first level, at the largest y
+  return ys;
 }
 
-/** The (x,y) anchor for node `idx` (0-based) — y counts DOWN from the top of
- *  the SVG per normal SVG convention, but idx 0 (C1) is placed at the BOTTOM
- *  (largest y) and idx COUNT-1 (C8) at the TOP (smallest y), so the trail
- *  reads bottom-to-top as the level number increases. x alternates
- *  left/right, starting left for C1. */
+function svgHeight(): number {
+  return SVG_HEIGHT;
+}
+
+/** The (x,y) anchor for node `idx` (0-based). x alternates left/right,
+ *  starting left for level 1. */
 function nodeAnchor(idx: number): { x: number; y: number } {
-  const rowFromBottom = idx; // 0 = bottom row
-  const y = svgHeight() - SVG_BOTTOM_MARGIN - rowFromBottom * NODE_SPACING_Y;
-  const x = idx % 2 === 0 ? LEFT_X : RIGHT_X;
-  return { x, y };
+  const clamped = Math.max(0, Math.min(idx, CHALLENGE_LEVEL_COUNT - 1));
+  return { x: clamped % 2 === 0 ? LEFT_X : RIGHT_X, y: NODE_Y[clamped] };
 }
 
 /** A smooth-ish winding path string through every node's anchor, using a
- *  quadratic bezier per segment with the control point pulled toward the
- *  shared center X so consecutive left/right anchors curve through the
- *  middle rather than zig-zagging with sharp corners. */
+ *  cubic bezier per segment with both control points pulled to the shared
+ *  center X so consecutive left/right anchors curve through the middle rather
+ *  than zig-zagging with sharp corners. Across a chapter gap the same curve
+ *  simply spans further, which is what makes the banner sit ON the path
+ *  instead of interrupting it. */
 function buildTrailPath(): string {
   const anchors = Array.from({ length: CHALLENGE_LEVEL_COUNT }, (_, i) => nodeAnchor(i));
   let d = `M ${anchors[0].x} ${anchors[0].y}`;
@@ -400,6 +446,41 @@ function buildSummitHill(): string {
   );
 }
 
+/** The chapter banners drawn between chapters (IDEA-063).
+ *
+ *  A stroked plaque straddling the trail at the midpoint of the CHAPTER_GAP,
+ *  so it reads as a signpost the path runs past rather than as a break in it.
+ *  The first chapter gets none: the ground hill and level 1 already say where
+ *  the trail starts, and a banner under the very first stone would push the
+ *  whole journey down a screen for no information.
+ *
+ *  Width is measured from the title's own length rather than fixed, because
+ *  "Stage 1" and "The Twists" differ by three characters and a plaque sized
+ *  for the longer one has a lot of empty board on the shorter. The estimate is
+ *  deliberately generous (the display font is wide) — a plaque slightly too
+ *  big is invisible; one too small clips its own text, and there is no layout
+ *  engine inside an SVG <text> to catch it.
+ *
+ *  `aria-hidden`: every level's own node already announces its name and state,
+ *  and the header's jump rail names all seven chapters as real buttons, so a
+ *  screen reader reading these too would be a third copy. */
+function buildChapterBanners(): string {
+  let out = "";
+  for (const ch of CHALLENGE_CHAPTERS) {
+    if (ch.from === 0) continue;
+    const below = nodeAnchor(ch.from - 1).y;
+    const above = nodeAnchor(ch.from).y;
+    const y = (below + above) / 2;
+    const w = Math.max(124, ch.title.length * 10 + 40);
+    out +=
+      `<g class="map-chapter map-chapter--${ch.kind}" aria-hidden="true">` +
+      `<rect class="map-chapter-plate" x="${CENTER_X - w / 2}" y="${y - 15}" width="${w}" height="30" rx="10"></rect>` +
+      `<text class="map-chapter-label" x="${CENTER_X}" y="${y + 1}" text-anchor="middle" dominant-baseline="middle">${ch.title}</text>` +
+      "</g>";
+  }
+  return out;
+}
+
 /** A handful of small decorative flower dots scattered along the trail edges
  *  (purely cosmetic — see the task brief's "small flower dots along the trail
  *  edges ... tasteful, not busy"). Positions are DETERMINISTIC (not random)
@@ -408,10 +489,16 @@ function buildSummitHill(): string {
  *  read as trailside accents rather than crowding the stones themselves. */
 const FLOWER_COLORS = ["#f4efe6", "#f2d43a", "#e8709a"] as const;
 
+/** How many stones apart the flower clusters sit. At 8 levels every stone got
+ *  a pair and that read as "tasteful, not busy"; at 40 the same rule is 80
+ *  dots down a single trail, which reads as ground cover and competes with the
+ *  stones themselves. Every third stone keeps the accent without the carpet. */
+const FLOWER_EVERY = 3;
+
 function buildFlowers(): string {
   let out = "";
   let colorIdx = 0;
-  for (let i = 0; i < CHALLENGE_LEVEL_COUNT; i++) {
+  for (let i = 0; i < CHALLENGE_LEVEL_COUNT; i += FLOWER_EVERY) {
     const { x, y } = nodeAnchor(i);
     const side = x < CENTER_X ? 1 : -1; // flower sits on the FAR side from center
     const offsets: Array<[number, number]> = [
@@ -465,9 +552,15 @@ function renderNode(level: ChallengeLevel, idx: number, state: LevelNodeState, s
   // (amber), so the badge was a third signal for a fact two were already
   // carrying, and it hung half off the stone's edge to do it.
   const label = `Level ${idx + 1}: ${level.name} — ${state}`;
+  // IDEA-063: the ladder runs to 40, so a stone's face is now one OR TWO
+  // characters on a disc whose radius did not change. The display font at 16px
+  // overflows a 20px-radius circle's inner width at two digits, so the
+  // two-digit case takes a modifier class rather than a smaller size for
+  // everything — a single-digit stone should not pay for the ones that need it.
+  const numClass = idx + 1 >= 10 ? "map-node-num map-node-num--wide" : "map-node-num";
   const face = locked
     ? `<text class="map-node-glyph" x="0" y="1" text-anchor="middle" dominant-baseline="middle">${ICON.lock}</text>`
-    : `<text class="map-node-num" x="0" y="1" text-anchor="middle" dominant-baseline="middle">${idx + 1}</text>`;
+    : `<text class="${numClass}" x="0" y="1" text-anchor="middle" dominant-baseline="middle">${idx + 1}</text>`;
   return (
     `<g class="${classes.join(" ")}" transform="translate(${x},${y})" data-node-idx="${idx}" ` +
     `role="button" tabindex="${locked ? "-1" : "0"}" aria-disabled="${locked}" aria-label="${label}">` +
@@ -500,11 +593,17 @@ export function attachLevelMap(root: ParentNode, callbacks: LevelMapCallbacks = 
   let isOpenState = false;
   let progress = 0;
   let selectedIdx = 0;
+  // Which chapter the trail is SCROLLED to — not which one holds the selected
+  // level. The two start equal and diverge the moment a jump chip is tapped,
+  // which is the whole point of the rail: looking ahead at a chapter you have
+  // not reached must not disturb what Play is armed with.
+  let viewChapterFrom = 0;
 
   function open(): void {
     isOpenState = true;
     progress = getChallengeProgress();
     selectedIdx = resolveDefaultSelection(progress);
+    viewChapterFrom = chapterForLevel(selectedIdx).from;
     // Un-hide BEFORE render(): render()'s own scroll-to-selected-node call
     // (see the bottom of render()) needs the page to already be laid out
     // (non `display:none`) for scrollIntoView's geometry math to mean
@@ -535,6 +634,9 @@ export function attachLevelMap(root: ParentNode, callbacks: LevelMapCallbacks = 
     if (state === "locked") return;
     if (selectedIdx === idx) return;
     selectedIdx = idx;
+    // render() scrolls the selected node into view, so the chapter in view is
+    // about to be this stone's chapter whether the rail says so or not.
+    viewChapterFrom = chapterForLevel(idx).from;
     render();
   }
 
@@ -568,8 +670,43 @@ export function attachLevelMap(root: ParentNode, callbacks: LevelMapCallbacks = 
       `<div class="map-progress-count">${cleared}/${CHALLENGE_LEVEL_COUNT}</div>` +
       "</div>" +
       "</div>" +
+      renderChapterRail() +
       "</div>"
     );
+  }
+
+  /** The chapter jump rail (IDEA-063) — one chip per chapter, in the header.
+   *
+   *  Forty stones at NODE_SPACING_Y is about 4 000 SVG units of trail. Walking
+   *  it is the point; being unable to GET anywhere on it is not, and the
+   *  existing scroll-to-selected only ever lands you where you already are.
+   *  Each chip scrolls the trail to that chapter's first stone.
+   *
+   *  It deliberately does NOT select anything. Selection drives the Play
+   *  button, and a chip that both moved the view and re-armed Play would let a
+   *  player tap "jump to stage 4" and then "Play stone 16" without ever having
+   *  looked at stone 16. Scrolling is a way of LOOKING (the same split the
+   *  editor's viewport furniture is built on).
+   *
+   *  A chip whose whole chapter is still locked is dimmed but NOT disabled —
+   *  seeing what is ahead is exactly what a locked chapter is for, and this
+   *  screen's job in IDEA-063 is showing the player what the game contains. */
+  function renderChapterRail(): string {
+    const chips = CHALLENGE_CHAPTERS.map((ch) => {
+      const classes = ["map-chapter-chip"];
+      if (ch.from === viewChapterFrom) classes.push("map-chapter-chip--on");
+      if (ch.from > progress) classes.push("map-chapter-chip--locked");
+      // The twists chapter is not a numbered stage, so its chip is not a
+      // figure — it is the one place in the rail that reads as a different
+      // KIND of destination. `short` stays on the chapter as the text
+      // fallback for a font subset that has gone stale.
+      const face = ch.kind === "twist" ? iconHtml(ICON.star) : ch.short;
+      return (
+        `<button type="button" class="${classes.join(" ")}" data-chapter-from="${ch.from}" ` +
+        `aria-label="Jump to ${ch.title}">${face}</button>`
+      );
+    }).join("");
+    return `<div class="map-chapter-rail" role="group" aria-label="Jump to a chapter">${chips}</div>`;
   }
 
   function renderPath(): string {
@@ -589,6 +726,10 @@ export function attachLevelMap(root: ParentNode, callbacks: LevelMapCallbacks = 
       '<path class="map-trail" ' +
       `d="${buildTrailPath()}"></path>` +
       buildFlowers() +
+      // Banners paint BEFORE the nodes for the same painter's-model reason the
+      // hills do: a stone that happens to sit near a chapter boundary must be
+      // on top of the plaque, never under it.
+      buildChapterBanners() +
       nodes +
       "</svg>" +
       "</div>"
@@ -620,7 +761,7 @@ export function attachLevelMap(root: ParentNode, callbacks: LevelMapCallbacks = 
     const parts = twistParts(level);
     const twistListHtml = parts.length
       ? parts.map((p) => `<div class="map-panel-twist-line">${p}</div>`).join("")
-      : '<div class="map-panel-twist-line">Classic pace — no twists</div>';
+      : '<div class="map-panel-twist-line">Classic pace — 3 enemies, full fright</div>';
     const disabled = state === "locked" ? "disabled" : "";
     // §05: the primary action always carries an icon. Replay reads as a
     // different act from Play, so it takes a different one.
@@ -633,6 +774,11 @@ export function attachLevelMap(root: ParentNode, callbacks: LevelMapCallbacks = 
         ? `${iconHtml(ICON.replay)}Replay stone ${stone}`
         : `${iconHtml(ICON.play)}Play stone ${stone}`;
     const mazeName = MAZE_NAMES[level.mazeIdx] ?? MAZE_NAMES[0];
+    // getMazeTheme falls back to the default for an unknown id rather than
+    // throwing, so a typo in challenges.ts shows the wrong name here instead of
+    // taking the page down — and scripts/test-cosmetics.ts fails the build.
+    const themeName = getMazeTheme(level.themeId).name;
+    const chapter = chapterForLevel(selectedIdx);
     return (
       '<div class="map-panel-info">' +
       '<div class="map-panel-info-body">' +
@@ -649,14 +795,29 @@ export function attachLevelMap(root: ParentNode, callbacks: LevelMapCallbacks = 
       // level differs, and it should read as a label on the level, not as more
       // prose. Warning-orange, the same colour a power-up uses for its last
       // three seconds — both mean "this changes what you expect".
-      (parts.length
-        ? `<div class="map-twist-tag">${iconHtml(ICON.error)}${compactTwistLine}</div>`
-        : '<div class="map-twist-tag map-twist-tag--none">Classic pace</div>') +
+      // Two tags, and which ones appear says which CHAPTER you are in.
+      //
+      // The theme tag is the one IDEA-063 added and it is not decoration: a
+      // challenge level forces its theme whether or not the player owns it, so
+      // this is the only place the game tells them that the board they are
+      // about to play is dressed in something from the shop. On a tour level
+      // it is the ONLY tag, which is correct — a tour level has no twists, and
+      // an amber warning tag saying "Classic pace" was a warning about
+      // nothing.
+      `<div class="map-tag-row">` +
+      `<div class="map-theme-tag">${iconHtml(ICON.themes)}${themeName}</div>` +
+      (parts.length ? `<div class="map-twist-tag">${iconHtml(ICON.error)}${compactTwistLine}</div>` : "") +
+      "</div>" +
       // Desktop-only richer block (hidden on mobile via CSS): full twist
       // list, maze name, explicit state label — see the function doc comment.
       '<div class="map-panel-extra">' +
       `<div class="map-panel-twist-list">${twistListHtml}</div>` +
-      `<div class="map-panel-maze">on ${mazeName}</div>` +
+      // A tour level IS its maze, so its name and the maze's name are the same
+      // string and printing "on The Pergola" under a title already reading
+      // "The Pergola" is a line that says nothing. The twists reuse mazes the
+      // tour already named, so there the line is real information.
+      (level.kind === "twist" ? `<div class="map-panel-maze">on ${mazeName}</div>` : "") +
+      `<div class="map-panel-maze">${chapter.title}, level ${selectedIdx + 1} of ${CHALLENGE_LEVEL_COUNT}</div>` +
       `<div class="map-panel-state">${stateLabel(state)}</div>` +
       "</div>" +
       "</div>" +
@@ -701,6 +862,24 @@ export function attachLevelMap(root: ParentNode, callbacks: LevelMapCallbacks = 
     const playBtn = mapRoot.querySelector<HTMLButtonElement>("#mapPlayBtn");
     playBtn?.addEventListener("click", playSelected);
 
+    // Chapter jump chips: scroll only, never select — see renderChapterRail.
+    mapRoot.querySelectorAll<HTMLButtonElement>("[data-chapter-from]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const from = Number(btn.dataset.chapterFrom);
+        viewChapterFrom = from;
+        // Deliberately NOT render(): render() ends by scrolling the SELECTED
+        // node into view, so re-rendering here would scroll the trail straight
+        // back to where it was and the jump would look like a dead button.
+        // The only thing that changed is which chip is lit, so that is the only
+        // thing written to the DOM.
+        mapRoot.querySelectorAll<HTMLButtonElement>("[data-chapter-from]").forEach((other) => {
+          other.classList.toggle("map-chapter-chip--on", Number(other.dataset.chapterFrom) === from);
+        });
+        const node = mapRoot.querySelector<SVGGElement>(`[data-node-idx="${from}"]`);
+        node?.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+      });
+    });
+
     mapRoot.querySelectorAll<SVGGElement>("[data-node-idx]").forEach((g) => {
       const idx = Number(g.dataset.nodeIdx);
       g.addEventListener("click", () => selectNode(idx));
@@ -723,6 +902,21 @@ export function attachLevelMap(root: ParentNode, callbacks: LevelMapCallbacks = 
     // tick as the innerHTML write measures against not-yet-computed geometry
     // and silently no-ops.
     requestAnimationFrame(() => {
+      // IDEA-063: publish the header's MEASURED height so the desktop side
+      // panel can stick below it.
+      //
+      // The panel's sticky offset used to be the literal `72px` — the height of
+      // a header that was one row of title over a progress bar. The chapter
+      // jump rail added a second row and the panel's own head (its number plate
+      // and the level name) slid underneath the header, which looks exactly
+      // like a panel that forgot to render its title. Measuring is the fix
+      // rather than a bigger literal: the header also grows if the title wraps,
+      // which it does at narrower desktop widths and in any longer translation.
+      const headerEl = mapRoot.querySelector<HTMLElement>(".map-header");
+      if (headerEl) {
+        mapRoot.style.setProperty("--map-header-h", `${Math.round(headerEl.getBoundingClientRect().height)}px`);
+      }
+
       const selectedNode = mapRoot.querySelector<SVGGElement>(".map-node-selected");
       selectedNode?.scrollIntoView({ block: "center", inline: "nearest" });
     });

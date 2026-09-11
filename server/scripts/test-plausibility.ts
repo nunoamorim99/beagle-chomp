@@ -253,10 +253,20 @@ expectAccept(
   classicCtx({ elapsedServerSeconds: 300 }),
 );
 
+// IDEA-063 moved "Top Dog" — the 5-ghost, 2x-speed finale this case exists to
+// price — from index 7 to index 37: the ladder gained thirty CLASSIC-pace tour
+// levels in front of the eight twists. Resolved by NAME rather than re-typed as
+// 37, so the next reshuffle moves it again on its own. Index 7 is now a 3-ghost
+// tour level, which is why this case failed with ITEM_COUNT_IMPOSSIBLE rather
+// than with anything to do with the validator: 18 ghosts eaten off 4 bones is
+// impossible with three of them, and entirely ordinary with five.
+const TOP_DOG_IDX = CHALLENGE_LEVELS.findIndex((l) => l.ghostCount === 5 && l.speedMult === 2);
+if (TOP_DOG_IDX < 0) throw new Error("test-plausibility: no 5-ghost 2x-speed challenge level in the catalog");
+
 expectAccept(
-  "a challenge L8 clear (5 ghosts, x2 speed)",
+  "a challenge Top Dog clear (5 ghosts, x2 speed)",
   makeRun({
-    mazeIdxSequence: [CHALLENGE_LEVELS[7].mazeIdx],
+    mazeIdxSequence: [CHALLENGE_LEVELS[TOP_DOG_IDX].mazeIdx],
     levelsCleared: 1,
     pelletsEaten: 176,
     bonesEaten: 4,
@@ -264,7 +274,12 @@ expectAccept(
     ghostsEaten: 18,
     livesLost: 2,
   }),
-  classicCtx({ mode: "challenge", challengeIdx: 7, currentChallengeProgress: 7, elapsedServerSeconds: 200 }),
+  classicCtx({
+    mode: "challenge",
+    challengeIdx: TOP_DOG_IDX,
+    currentChallengeProgress: TOP_DOG_IDX,
+    elapsedServerSeconds: 200,
+  }),
 );
 
 expectAccept(

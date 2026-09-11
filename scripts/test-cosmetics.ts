@@ -81,10 +81,16 @@ import { coinsDueFromScore } from "../src/game/coins";
 import { shouldFireThreshold } from "../src/game/pickups";
 import {
   CLASSIC_MODIFIERS,
+  CHALLENGE_CHAPTERS,
   CHALLENGE_LEVELS,
   CHALLENGE_LEVEL_COUNT,
+  MAZE_NAMES,
+  THEME_CYCLE,
+  TOUR_LEVEL_COUNT,
+  chapterForLevel,
   getChallengeLevel,
 } from "../src/game/challenges";
+import { BONUS_MAZE_START, MAPS_PER_STAGE } from "../src/game/progression";
 import { MAZE_COUNT, MAZES } from "../src/game/mazes";
 import { Grid, COLS } from "../src/game/grid";
 import { makeEntity, stepEntity, entityWorld, reverseEntity } from "../src/game/movement";
@@ -1027,14 +1033,51 @@ console.log("\n=== profileStore.ts equip gating (fresh hydrated cache) ===");
   setEquippedMazeThemeId(DEFAULT_MAZE_THEME_ID);
 }
 
-console.log("\n=== challenges.ts (IDEA-013 Challenge Mode) ===");
+console.log("\n=== challenges.ts (IDEA-013 Challenge Mode · IDEA-063 the 40-level ladder) ===");
 {
-  check("exactly 8 challenge levels", CHALLENGE_LEVELS.length === 8);
-  check("CHALLENGE_LEVEL_COUNT === 8", CHALLENGE_LEVEL_COUNT === 8);
+  check("exactly 40 challenge levels", CHALLENGE_LEVELS.length === 40);
+  check("CHALLENGE_LEVEL_COUNT === 40", CHALLENGE_LEVEL_COUNT === 40);
+  check("TOUR_LEVEL_COUNT === 30", TOUR_LEVEL_COUNT === 30);
 
-  // Every level's mazeIdx must be a valid index into the real MAZES pool
-  // (mazes.ts's MAZE_COUNT, 5 today) — challenge levels reuse the validated
-  // maze pool, never invent their own.
+  // The whole point of the tour chapter: one level per PLAYABLE maze, in maze
+  // order, covering every one of them exactly once. If this drifts, the mode
+  // silently stops doing the job it exists for — a maze nobody can reach from
+  // the level map is a maze most players will never see.
+  const tour = CHALLENGE_LEVELS.filter((l) => l.kind === "tour");
+  const twists = CHALLENGE_LEVELS.filter((l) => l.kind === "twist");
+  check("30 tour levels", tour.length === TOUR_LEVEL_COUNT);
+  check("10 twist levels", twists.length === 10);
+  check(
+    "the tour levels come FIRST, contiguously",
+    CHALLENGE_LEVELS.slice(0, TOUR_LEVEL_COUNT).every((l) => l.kind === "tour"),
+  );
+  check(
+    "tour level N plays maze N (every playable maze, in order, exactly once)",
+    tour.every((l, i) => l.mazeIdx === i),
+  );
+
+  // The six BONUS mazes are classic's between-stage reward boards — wide open,
+  // one enemy. A challenge level of one would be a level with nothing in it,
+  // so no level may reference an index at or past BONUS_MAZE_START.
+  check(
+    "no challenge level uses a BONUS maze",
+    CHALLENGE_LEVELS.every((l) => l.mazeIdx < BONUS_MAZE_START),
+  );
+  check(
+    "MAZE_NAMES covers every maze in the pool",
+    MAZE_NAMES.length === MAZE_COUNT && MAZE_NAMES.every((n) => n.trim().length > 0),
+  );
+  check(
+    "every MAZE_NAME is distinct (two boards with one name is a naming bug)",
+    new Set(MAZE_NAMES).size === MAZE_NAMES.length,
+  );
+  check(
+    "a tour level is NAMED after the maze it shows",
+    tour.every((l) => l.name === MAZE_NAMES[l.mazeIdx]),
+  );
+
+  // Every level's mazeIdx must be a valid index into the real MAZES pool —
+  // challenge levels reuse the validated maze pool, never invent their own.
   CHALLENGE_LEVELS.forEach((lvl, i) => {
     check(
       `L${i + 1} (${lvl.name}) mazeIdx ${lvl.mazeIdx} is within [0, MAZE_COUNT-1]`,
@@ -1042,11 +1085,29 @@ console.log("\n=== challenges.ts (IDEA-013 Challenge Mode) ===");
     );
   });
 
-  // Modifiers stay within sane, documented bounds for every level.
+  // THE TOUR IS CLASSIC, FIELD FOR FIELD. This is the chapter's entire design
+  // (see challenges.ts's module comment) and the thing most likely to be
+  // "improved" by a well-meaning later edit adding one twist to one level.
+  tour.forEach((lvl, i) => {
+    const m = lvl.modifiers;
+    check(
+      `tour L${i + 1} (${lvl.name}) is field-for-field CLASSIC_MODIFIERS`,
+      m.speedMult === CLASSIC_MODIFIERS.speedMult &&
+        m.ghostSpeedMult === CLASSIC_MODIFIERS.ghostSpeedMult &&
+        m.ghostCount === CLASSIC_MODIFIERS.ghostCount &&
+        m.frightSeconds === CLASSIC_MODIFIERS.frightSeconds,
+    );
+  });
+
+  // Modifiers stay within sane, documented bounds for every level. The speed
+  // range is [0.7, 2.2] rather than IDEA-013's [1, 2] because L39 is
+  // deliberately the first level ever to run BELOW classic pace — see its own
+  // comment. The bound is here to catch a typo'd 20 or 0.02, not to police the
+  // design space.
   CHALLENGE_LEVELS.forEach((lvl, i) => {
     const m = lvl.modifiers;
-    check(`L${i + 1} speedMult in [1, 2]`, m.speedMult >= 1 && m.speedMult <= 2);
-    check(`L${i + 1} ghostSpeedMult in [1, 2]`, m.ghostSpeedMult >= 1 && m.ghostSpeedMult <= 2);
+    check(`L${i + 1} speedMult in [0.7, 2.2]`, m.speedMult >= 0.7 && m.speedMult <= 2.2);
+    check(`L${i + 1} ghostSpeedMult in [0.7, 2.2]`, m.ghostSpeedMult >= 0.7 && m.ghostSpeedMult <= 2.2);
     check(`L${i + 1} ghostCount is 3, 4, or 5`, m.ghostCount === 3 || m.ghostCount === 4 || m.ghostCount === 5);
     check(`L${i + 1} frightSeconds > 0`, m.frightSeconds > 0);
     // Documented invariant: ghostSpeedMult tracks speedMult 1:1 on every
@@ -1055,20 +1116,28 @@ console.log("\n=== challenges.ts (IDEA-013 Challenge Mode) ===");
     check(`L${i + 1} ghostSpeedMult === speedMult (ratio stays fair)`, m.ghostSpeedMult === m.speedMult);
   });
 
-  // L1 must be a byte-for-byte match of CLASSIC_MODIFIERS — the very first
-  // challenge level is a warm-up that plays identically to classic.
-  const l1 = CHALLENGE_LEVELS[0];
-  check("L1 name is Warm-Up Walkies", l1.name === "Warm-Up Walkies");
-  check("L1.modifiers.speedMult === CLASSIC_MODIFIERS.speedMult", l1.modifiers.speedMult === CLASSIC_MODIFIERS.speedMult);
+  // THE FORCED THEME (IDEA-063). Every level names a real theme, and the tour
+  // walks the rotation evenly — six themes over thirty levels is five each, and
+  // an uneven spread would mean one of the six the shop sells is under-shown by
+  // exactly the screen built to show them off.
   check(
-    "L1.modifiers.ghostSpeedMult === CLASSIC_MODIFIERS.ghostSpeedMult",
-    l1.modifiers.ghostSpeedMult === CLASSIC_MODIFIERS.ghostSpeedMult,
+    "THEME_CYCLE is MAZE_THEMES' own id order",
+    THEME_CYCLE.join(",") === MAZE_THEMES.map((t) => t.id).join(","),
   );
-  check("L1.modifiers.ghostCount === CLASSIC_MODIFIERS.ghostCount", l1.modifiers.ghostCount === CLASSIC_MODIFIERS.ghostCount);
   check(
-    "L1.modifiers.frightSeconds === CLASSIC_MODIFIERS.frightSeconds",
-    l1.modifiers.frightSeconds === CLASSIC_MODIFIERS.frightSeconds,
+    "every level's themeId resolves against MAZE_THEMES",
+    CHALLENGE_LEVELS.every((l) => MAZE_THEMES.some((t) => t.id === l.themeId)),
   );
+  check(
+    "every level follows THEME_CYCLE[idx % 6] — no hand-typed exception",
+    CHALLENGE_LEVELS.every((l, i) => l.themeId === THEME_CYCLE[i % THEME_CYCLE.length]),
+  );
+  MAZE_THEMES.forEach((t) => {
+    check(
+      `the tour shows "${t.id}" exactly 5 times`,
+      tour.filter((l) => l.themeId === t.id).length === 5,
+    );
+  });
 
   // CLASSIC_MODIFIERS itself is the documented "no change" baseline, and its
   // frightSeconds is READ from config.ts's TIMING.frightSeconds (not a
@@ -1078,23 +1147,47 @@ console.log("\n=== challenges.ts (IDEA-013 Challenge Mode) ===");
   check("CLASSIC_MODIFIERS.ghostCount === 3", CLASSIC_MODIFIERS.ghostCount === 3);
   check("CLASSIC_MODIFIERS.frightSeconds === TIMING.frightSeconds", CLASSIC_MODIFIERS.frightSeconds === TIMING.frightSeconds);
 
-  // L8 (the finale) stacks every twist at max: 2x speed, 5 ghosts, short fright.
-  const l8 = CHALLENGE_LEVELS[7];
-  check("L8 name is Top Dog", l8.name === "Top Dog");
-  check("L8 speedMult === 2.0", l8.modifiers.speedMult === 2.0);
-  check("L8 ghostCount === 5", l8.modifiers.ghostCount === 5);
-  check("L8 frightSeconds < TIMING.frightSeconds (short fuse)", l8.modifiers.frightSeconds < TIMING.frightSeconds);
+  // The eight IDEA-013 levels are still here, in their original order, with
+  // their original dials — they are what every challenge score already on the
+  // board was set on, and the server prices a submission against them.
+  const ORIGINAL_EIGHT = [
+    "Warm-Up Walkies",
+    "Squirrel Sprint",
+    "Pack Mentality",
+    "Short Fuse",
+    "Four on the Floor",
+    "Full House",
+    "Hound Dash",
+    "Top Dog",
+  ];
+  check(
+    "the original eight twists open the twist chapter, in order",
+    ORIGINAL_EIGHT.every((name, i) => CHALLENGE_LEVELS[TOUR_LEVEL_COUNT + i].name === name),
+  );
+  const topDog = CHALLENGE_LEVELS[TOUR_LEVEL_COUNT + 7];
+  check("Top Dog still runs 2.0 speed", topDog.modifiers.speedMult === 2.0);
+  check("Top Dog still fields 5 ghosts", topDog.modifiers.ghostCount === 5);
+  check("Top Dog still shortens the fright", topDog.modifiers.frightSeconds < TIMING.frightSeconds);
+  check(
+    "the original eight still use mazes 0-4",
+    ORIGINAL_EIGHT.every((_, i) => CHALLENGE_LEVELS[TOUR_LEVEL_COUNT + i].mazeIdx <= 4),
+  );
 
   // Every level has a non-empty name and blurb (player-facing content, not
-  // placeholder/empty strings).
+  // placeholder/empty strings), and no two levels share a name — forty stones
+  // on one trail is exactly where a duplicate stops being noticeable.
   CHALLENGE_LEVELS.forEach((lvl, i) => {
     check(`L${i + 1} has a non-empty name`, lvl.name.trim().length > 0);
     check(`L${i + 1} has a non-empty blurb`, lvl.blurb.trim().length > 0);
   });
+  check(
+    "every challenge level name is distinct",
+    new Set(CHALLENGE_LEVELS.map((l) => l.name)).size === CHALLENGE_LEVEL_COUNT,
+  );
 
-  // At least one level of each twist category exists, so the "8 levels,
-  // difficulty arc" scope is actually represented (not, say, every level
-  // being ghostCount 3 with only speed varying).
+  // The twist chapter still represents every twist category — the scope of
+  // IDEA-013, now with IDEA-063's two new directions (below-classic pace and a
+  // LONGER-than-classic fright) asserted alongside them.
   check("at least one level has ghostCount 4", CHALLENGE_LEVELS.some((l) => l.modifiers.ghostCount === 4));
   check("at least one level has ghostCount 5", CHALLENGE_LEVELS.some((l) => l.modifiers.ghostCount === 5));
   check(
@@ -1102,6 +1195,19 @@ console.log("\n=== challenges.ts (IDEA-013 Challenge Mode) ===");
     CHALLENGE_LEVELS.some((l) => l.modifiers.frightSeconds < TIMING.frightSeconds),
   );
   check("at least one level has speedMult > 1", CHALLENGE_LEVELS.some((l) => l.modifiers.speedMult > 1));
+  check("at least one level runs BELOW classic pace", CHALLENGE_LEVELS.some((l) => l.modifiers.speedMult < 1));
+  check(
+    "at least one level has a LONGER fright than classic",
+    CHALLENGE_LEVELS.some((l) => l.modifiers.frightSeconds > TIMING.frightSeconds),
+  );
+  check(
+    "only twist levels turn any dial",
+    CHALLENGE_LEVELS.every(
+      (l) =>
+        l.kind === "twist" ||
+        (l.modifiers.speedMult === 1 && l.modifiers.ghostCount === 3 && l.modifiers.frightSeconds === TIMING.frightSeconds),
+    ),
+  );
 
   // Sanity: SPEEDS.beagle/ghost imported and finite, so a future SPEEDS edit
   // that broke the base numbers this module scales would show up here too
@@ -1109,15 +1215,64 @@ console.log("\n=== challenges.ts (IDEA-013 Challenge Mode) ===");
   check("SPEEDS.beagle and SPEEDS.ghost are positive finite numbers", SPEEDS.beagle > 0 && SPEEDS.ghost > 0);
 }
 
+console.log("\n=== challenges.ts chapters (IDEA-063) ===");
+{
+  // Seven chapters: six tour stages of five (matching classic's own
+  // MAPS_PER_STAGE, so "stage 4" means the same five mazes in both modes) and
+  // one twist chapter of ten.
+  check("7 chapters", CHALLENGE_CHAPTERS.length === 7);
+  check(
+    "the six tour chapters are five levels each",
+    CHALLENGE_CHAPTERS.slice(0, 6).every((c) => c.count === MAPS_PER_STAGE && c.kind === "tour"),
+  );
+  const last = CHALLENGE_CHAPTERS[6];
+  check("the last chapter is the twists", last.kind === "twist" && last.title === "The Twists");
+  check("the twist chapter holds 10 levels", last.count === 10);
+
+  // The chapters must TILE the ladder: contiguous, no gap, no overlap, and the
+  // last one ending exactly on the last level. A stone with no chapter has no
+  // banner above it and no chip that reaches it — invisible on the level map
+  // and invisible in every assertion that only checks counts.
+  let cursor = 0;
+  let tiles = true;
+  for (const c of CHALLENGE_CHAPTERS) {
+    if (c.from !== cursor || c.count <= 0) tiles = false;
+    cursor += c.count;
+  }
+  check("chapters tile the ladder with no gap or overlap", tiles);
+  check("chapters cover every level", cursor === CHALLENGE_LEVEL_COUNT);
+
+  // chapterForLevel agrees with the table for EVERY index, and clamps rather
+  // than returning undefined for garbage — the level map renders from a
+  // possibly-stale selection.
+  let agrees = true;
+  for (let i = 0; i < CHALLENGE_LEVEL_COUNT; i++) {
+    const c = chapterForLevel(i);
+    if (i < c.from || i >= c.from + c.count) agrees = false;
+  }
+  check("chapterForLevel(idx) returns the chapter that contains idx, for all 40", agrees);
+  check("chapterForLevel(-1) clamps to the first chapter", chapterForLevel(-1).from === 0);
+  check("chapterForLevel(999) clamps to the last chapter", chapterForLevel(999).from === last.from);
+  check("chapterForLevel(NaN) degrades to the first chapter", chapterForLevel(NaN).from === 0);
+  check(
+    "every chapter has a non-empty title and a short label for its chip",
+    CHALLENGE_CHAPTERS.every((c) => c.title.trim().length > 0 && c.short.trim().length > 0),
+  );
+}
+
 console.log("\n=== challenges.ts getChallengeLevel clamping ===");
 {
+  const LAST = CHALLENGE_LEVEL_COUNT - 1;
   check("getChallengeLevel(0) is L1", getChallengeLevel(0).name === CHALLENGE_LEVELS[0].name);
-  check("getChallengeLevel(7) is L8 (last)", getChallengeLevel(7).name === CHALLENGE_LEVELS[7].name);
+  check("getChallengeLevel(LAST) is the last level", getChallengeLevel(LAST).name === CHALLENGE_LEVELS[LAST].name);
   check("getChallengeLevel(3) is L4", getChallengeLevel(3).name === CHALLENGE_LEVELS[3].name);
 
   // Out-of-range / garbage indices clamp rather than throwing or returning undefined.
-  check("getChallengeLevel(8) clamps to the last level (one past the end)", getChallengeLevel(8).name === CHALLENGE_LEVELS[7].name);
-  check("getChallengeLevel(999) clamps to the last level", getChallengeLevel(999).name === CHALLENGE_LEVELS[7].name);
+  check(
+    "getChallengeLevel(COUNT) clamps to the last level (one past the end)",
+    getChallengeLevel(CHALLENGE_LEVEL_COUNT).name === CHALLENGE_LEVELS[LAST].name,
+  );
+  check("getChallengeLevel(999) clamps to the last level", getChallengeLevel(999).name === CHALLENGE_LEVELS[LAST].name);
   check("getChallengeLevel(-1) clamps to the first level", getChallengeLevel(-1).name === CHALLENGE_LEVELS[0].name);
   check("getChallengeLevel(-50) clamps to the first level", getChallengeLevel(-50).name === CHALLENGE_LEVELS[0].name);
   check("getChallengeLevel(NaN) clamps to the first level", getChallengeLevel(NaN).name === CHALLENGE_LEVELS[0].name);

@@ -160,7 +160,7 @@ import {
   getEquippedBeagleSkin,
   getBeagleSkin,
 } from "./cosmetics";
-import { getEquippedMazeThemeId } from "./themes";
+import { getEquippedMazeThemeId, getEquippedMazeTheme, getMazeTheme, type MazeTheme } from "./themes";
 
 /**
  * Swap the HUD pause button between "pause" and "resume".
@@ -363,6 +363,22 @@ export class Game {
   private gameKind: "classic" | "challenge" = "classic";
   private challengeIdx = 0;
   private activeModifiers: ChallengeModifiers = CLASSIC_MODIFIERS;
+
+  // IDEA-063: which theme the SCENE ATMOSPHERE (sky, fog, backdrop dome,
+  // lights) is currently painted with — NOT which theme is equipped.
+  //
+  // The two are the same thing right up until a challenge level forces one the
+  // player does not own (the whole point of the grand tour: the shop sells six
+  // themes and a player who bought one has never seen the other five). The
+  // board is rebuilt from scratch for every level, so it re-themes for free;
+  // the atmosphere is mutated in place by rig.applySceneTheme and has no such
+  // rebuild, so without tracking it a challenge run on Night City would leave
+  // the sky black for the next classic run and every menu behind it.
+  //
+  // Seeded from the equipped theme because that is exactly what makeRig()
+  // painted the scene with at construction (scene.ts reads
+  // getEquippedMazeTheme() as it builds).
+  private sceneThemeId: string = getEquippedMazeThemeId();
 
   // Boots idle on the Start panel ("start" — see state.ts for why this is
   // distinct from "ready") and only ever leaves it via the Start button's
@@ -630,6 +646,10 @@ export class Game {
       // game's welcome-mat branding, not part of the themed world.
       onThemeChanged: (theme) => {
         this.rig.applySceneTheme(theme);
+        // IDEA-063: the atmosphere now shows this theme, so a later level that
+        // wants the same one must not re-apply it (and one that wants a
+        // different one must).
+        this.sceneThemeId = theme.id;
         applyBoardTheme(this.level.board, this.rig.scene, this.level.grid, theme);
         // IDEA-037: re-tint the MENU showcase too. The shop sits over the
         // full-screen menu, so equipping a theme should change the vignette
@@ -788,8 +808,31 @@ export class Game {
    * #mainMenu — the frame loop (tick()) is what actually switches which
    * scene/camera gets rendered while mode==="start" (see below).
    */
+  /** Re-dresses the live world in the EQUIPPED theme, if it isn't already.
+   *
+   *  The counterpart to buildLevel's forced-theme branch, and deliberately
+   *  cheap to call from anywhere: both halves are guarded, so on the common
+   *  path (a classic run, or a menu reached from one) this does nothing at
+   *  all. The board half compares against the board's own last applied theme
+   *  via the scene tracker rather than re-applying blindly, because
+   *  applyBoardTheme rebuilds hedge decor and props. */
+  private restoreEquippedTheme(): void {
+    const equipped = getEquippedMazeTheme();
+    if (this.sceneThemeId === equipped.id) return;
+    this.rig.applySceneTheme(equipped);
+    applyBoardTheme(this.level.board, this.rig.scene, this.level.grid, equipped);
+    this.sceneThemeId = equipped.id;
+  }
+
   private showMenu(): void {
     this.hud.hideCenter();
+    // IDEA-063: put the world back in the player's OWN theme before the menu
+    // shows. A challenge level forces its own (owned or not), and the full-
+    // screen menu is translucent enough that the board and the sky behind it
+    // are part of the picture — backing out of a Night City challenge and
+    // finding the menu sitting under a black sky reads as the theme having
+    // been silently changed in the shop.
+    this.restoreEquippedTheme();
     document.body.classList.add("menu-open");
     // §10: birds and distant traffic, under the menu ONLY. A run has its own
     // layer, and the bed would sit under a chase where nothing should.
@@ -862,9 +905,29 @@ export class Game {
    * builder serves both modes and neither can accidentally inherit the
    * other's level maths.
    */
-  private buildLevel(mazeIdx: number): LevelAssets {
+  private buildLevel(mazeIdx: number, forcedTheme?: MazeTheme): LevelAssets {
     const grid = new Grid(MAZES[mazeIdx]);
     const board = buildBoard(this.rig.scene, grid);
+
+    // IDEA-063: a challenge level is dressed by its OWN theme, owned or not.
+    //
+    // buildBoard reads getEquippedMazeTheme() internally, so the board always
+    // comes out of it wearing whatever is equipped. Re-theming it here is a
+    // no-op for classic (no forcedTheme, and the guard below never fires) and
+    // one applyBoardTheme call for a challenge level, which is the same call
+    // the shop already makes on a mid-run equip — materials in place, hedge
+    // decor and props rebuilt, nothing reconstructed from the grid.
+    const theme = forcedTheme ?? getEquippedMazeTheme();
+    if (theme.id !== getEquippedMazeThemeId()) {
+      applyBoardTheme(board, this.rig.scene, grid, theme);
+    }
+    // The atmosphere, unlike the board, is not rebuilt per level — see
+    // sceneThemeId's own comment. This is what puts the sky back after a
+    // challenge run on a theme the player does not own.
+    if (this.sceneThemeId !== theme.id) {
+      this.rig.applySceneTheme(theme);
+      this.sceneThemeId = theme.id;
+    }
 
     const pellets = new Set<string>();
     const fruitTiles: Vec2[] = [];
@@ -1076,7 +1139,9 @@ export class Game {
     this.hud.setLives(this.lives);
 
     this.disposeLevel(this.level);
-    this.level = this.buildLevel(level.mazeIdx);
+    // IDEA-063: forced theme — see buildLevel. A tour level's whole second job
+    // is showing the player a theme they have not bought.
+    this.level = this.buildLevel(level.mazeIdx, getMazeTheme(level.themeId));
     recordLevelStarted(this.telemetry, level.mazeIdx);
 
     // Small, readable challenge-level HUD label (e.g. "C3") — distinct from

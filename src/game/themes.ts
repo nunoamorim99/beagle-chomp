@@ -176,22 +176,7 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
     id: "garden",
     name: "The Garden",
     blurb: "Hedges and lawn · a bright afternoon",
-    // Default theme: free and always owned (see profileStore.ts's
-    // defaultProfile()).
     price: 0,
-    // The daytime-garden look. Its colour/lighting values still match the
-    // constants the render layer used before themes existed, so equipping the
-    // default theme is a visual no-op — guarded by scripts/test-cosmetics.ts.
-    // IDEA-060 changed only the three slots that are about SURFACE and
-    // DRESSING: `wallTexture` gained the daisies, `fence` puts a wooden picket
-    // railing in front of the hedge, and `groundDetail` scatters real rock
-    // meshes over the lawn.
-    //
-    // WRITE NOTES LIKE THIS ONE HERE, NEVER INSIDE `palette: {}`. The board
-    // editor's Save regenerates the edited theme's palette field by field
-    // (src/editor/boardCodegen.ts), so any comment inside that object is
-    // silently deleted the first time someone saves — which is exactly what
-    // happened to this block's first draft.
     palette: {
       bg: 0x9ecbe8,
       backdropTop: 0xcfe9f7,
@@ -255,6 +240,7 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
       { propId: "garden-tree", tile: [19, 2], offset: [0.178, -0.196], rotationY: 4.689, scale: 1.092 },
       { propId: "garden-tree", tile: [-1, 3], offset: [-0.001, 0.245], rotationY: 1.083, scale: 1.068 },
       { propId: "garden-tree", tile: [19, 3], offset: [-0.131, 0.085], rotationY: 4.418, scale: 1.097 },
+      { propId: "treehouse", tile: [19, -1], offset: [0, 0], rotationY: 5.807363914339822, scale: 1 },
     ],
     wallDecor: [
       { propId: "flower-daisy", tile: [5, 0], rotationY: 6.19, scale: 0.932 },
@@ -293,6 +279,7 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
       { propId: "flower-sunflower", tile: [18, 20], rotationY: 2.551, scale: 0.871 },
     ],
   },
+
 
   {
     id: "classic",

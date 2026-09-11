@@ -43,6 +43,8 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v8.
   Its constants are GENERATED from the real game modules by `server/scripts/sync-game-constants.ts`
   — so **after changing `config.ts`, `mazes.json` or `challenges.ts`, run `npm run sync` in
   `server/`**, or honest runs will start being rejected. `npm run test:catalog` fails on drift.
+  `challenges.ts` is parsed as TEXT, so its entry FORMAT is part of that contract — see the
+  40-level ladder note below.
 - **The API measures itself** (IDEA-039): every request is timed by the outermost middleware and a
   p95-per-route table goes to the container log every 10 minutes, with `GET /metrics` for the JSON
   form (only exists when `METRICS_TOKEN` is set). Route labels are Hono's matched PATTERN, never
@@ -115,7 +117,9 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v8.
      room for maps 16-30. Invisible, because nothing stores a bonus maze by
      index: a run's `mazeIdxSequence` is CHECKED against `planLevel()` rather
      than compared with an older run's. Mazes 0-4 stay put, so challenge mode
-     (which hardcodes mazeIdx 0-4) is untouched.
+     was untouched — it hardcoded mazeIdx 0-4 at the time. IDEA-063 extended it
+     to all thirty PLAYABLE mazes (never the bonus ones), so the exclusion of
+     [30..35] is now load-bearing in two places rather than one.
   4. **A bonus map has NO bones and its pen stands FREE** — no wall tile may
      touch the ring around the pen, or the house reads as a lump fused to a
      wall instead of sitting in a meadow. `test-progression.ts` enforces both;
@@ -130,6 +134,107 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v8.
   `test-progression.ts` now both reject repeats), and **the validator never
   asserted `REQUIRED_MAZE_COUNT`** although `progression.ts` had claimed it did
   since IDEA-040.
+- **CHALLENGE MODE IS 40 LEVELS IN TWO CHAPTERS, AND THE FIRST THIRTY HAVE NO
+  TWISTS** (IDEA-063). `challenges.ts` is still the one place a challenge level
+  is defined, and classic mode still never consults it. Seven rules:
+  1. **Levels 1-30 are THE GRAND TOUR: one level per PLAYABLE maze, in maze
+     order, at literally `CLASSIC_MODIFIERS`.** Three enemies, classic pace, the
+     full fright window, the same fruit and golden bones classic has. They exist
+     because classic only ever shows a player the maps its progression hands
+     out, so most players will never meet maze 23 — the tour is how you meet all
+     thirty, one short self-contained run at a time. **Do not "improve" one of
+     them with a twist**: the chapter's value is that it is the same game thirty
+     times, so the BOARD is the only variable. `test-cosmetics.ts` asserts it
+     field-for-field.
+  2. **The six BONUS mazes are excluded** (indices 30-35, `BONUS_MAZE_START`). A
+     bonus board is a wide-open one-enemy point farm designed as a reward
+     between classic stages; a whole challenge level of one is a level with
+     nothing in it.
+  3. **EVERY LEVEL FORCES A THEME, OWNED OR NOT** — `themeId` on
+     `ChallengeLevel`, `THEME_CYCLE[idx % 6]` with no hand-typed exception, so
+     across the thirty tour levels each of the shop's six themes appears exactly
+     five times. That is the tour's second job: a player who bought one theme
+     has never seen the other five. `buildLevel(mazeIdx, forcedTheme?)` applies
+     it. **The board re-themes for free and the ATMOSPHERE does not** — the
+     board is rebuilt per level, while sky/fog/backdrop/lights are mutated in
+     place by `rig.applySceneTheme`, so `Game.sceneThemeId` tracks what the
+     scene currently WEARS (not what is equipped) and `restoreEquippedTheme()`
+     puts it back in `showMenu()`. Without that, one Night City challenge leaves
+     the menu sitting under a black sky, which reads as the shop having been
+     changed behind the player's back.
+  4. **Levels 31-40 are THE TWISTS**: IDEA-013's eight, byte-for-byte, plus two
+     new. The eight are what every challenge score already on the board was set
+     on and what the server prices a submission against, so they keep their
+     names, mazes and dials; the test pins them by NAME. The two new ones go in
+     the only directions the original eight never used — **L39 "Dream Walk" is
+     the only level below classic pace (0.7x) and the only fright window LONGER
+     than classic's (12s)**, and L40 "Last Dog Standing" is the new ceiling
+     (2.2x, five enemies, a 1.5s fright) on maze 29, the tour's last board.
+     With three dials and eight levels already spent on "faster, and more of
+     them", turning one the other way is the honest way to add a ninth.
+  5. **NO POWER-UPS, IN EITHER CHAPTER** — unchanged. `maybeSpawnPowerup`
+     refuses outside classic and `plausibility.ts` rejects a challenge run
+     reporting one. The dial a future twist would turn is a power-up GRANTED by
+     the level, never one lying on the floor.
+  6. **`CHALLENGE_LEVELS` IS FORTY LITERAL ENTRIES BECAUSE THE SERVER PARSES
+     THIS FILE AS TEXT.** `sync-game-constants.ts` cannot import across the
+     frontend's bundler moduleResolution boundary, so it regexes
+     `mazeIdx: N` + `modifiers: { ... }` out of the source. A generated array
+     regexes to nothing, the catalog ships zero challenge levels, and every
+     honest challenge run starts failing validation. Its count guard used to be
+     the literal `!== 8` — i.e. the one check protecting the parse was a hand-
+     copy of the thing it checked; it now counts `name:` in the sliced array and
+     asserts the two agree, whatever the number is. **Changing this file still
+     means `npm run sync` in `server/`.**
+  7. **GOING PAST 8 LEVELS IS A MIGRATION, AND TWO COLUMNS BOUND IT** —
+     `users.challenge_progress` (CHECK 0..8) and, the dangerous one,
+     `game_sessions.challenge_idx` (CHECK 0..7), which is checked when a run
+     STARTS: without it, tapping Play on stone 9 fails at `beginRunSession` with
+     the error nowhere near the level map that produced the index.
+     `010_challenge_levels_40.sql` widens both, dropping the old CHECKs by
+     LOOKUP (005's reasoning) while deliberately sparing the NAMED
+     `challenge_idx_matches_mode`, which mentions the same column and says
+     something else entirely. It also **resets every account's
+     `challenge_progress` to 0** (Nuno's call): the stored number means "levels
+     of the ladder cleared" and the ladder was rebuilt underneath it, so leaving
+     it would relabel eight hard-won twist clears as eight easy tour ones.
+  **THE LEVEL MAP GREW A CHAPTER RAIL, AND ONE OLD BUG ONLY 40 STONES COULD
+  FIND.** `CHALLENGE_CHAPTERS` (in `challenges.ts`, DERIVED from
+  `TOUR_LEVEL_COUNT` so a new maze cannot leave a stone with no chapter) is six
+  tour stages of five — matching classic's own `MAPS_PER_STAGE`, so "stage 4"
+  means the same five mazes in both modes — plus one twist chapter of ten.
+  Four things:
+  - **The rail SCROLLS, it never SELECTS.** Selection arms the Play button, and
+    a chip that did both would let a player tap "jump to stage 4" then "Play
+    stone 16" without ever having looked at stone 16. Looking ahead at a locked
+    chapter is exactly what the screen is for, so a locked chip is dimmed by
+    PAINT and still clickable.
+  - **A chip click must NOT call `render()`.** `render()` ends by scrolling the
+    SELECTED node into view, so re-rendering scrolls the trail straight back and
+    the jump looks like a dead button. Only the lit chip is written to the DOM.
+  - **`.map-page` had to become `flex:0 0 auto` on desktop.** It was
+    `flex:1 1 auto` inside a fixed-height `#levelMap`, i.e. exactly one viewport
+    tall while the trail overflowed it — and a sticky element cannot leave its
+    containing block, so past the first screen the sticky header AND the sticky
+    side panel both scrolled away, leaving a bare trail with no back button and
+    no Play. At 8 stones the trail was ~700px and the page barely scrolled, so
+    nothing ever tested it; at 40 it is ~4 000px.
+  - **The side panel's sticky offset is MEASURED, not a literal.** It was `72px`
+    — the height of a one-row header — and the rail's second row slid the
+    panel's own title under it. `levelMap.ts` publishes the header's measured
+    height as `--map-header-h` after every render; the header also grows when
+    the title wraps.
+  Node y positions are one precomputed TABLE (`NODE_Y`), not
+  `height - idx * spacing`, because the chapter gaps make the spacing
+  non-uniform and three readers (node, trail path, banner) must not each answer
+  "how many boundaries are below me" for themselves. `scripts/_scratch-levelmap-check.ts`
+  measures the rail, stones and panel at 390x844 and 1280x800;
+  `scripts/_scratch-challenge-theme.ts` unlocks the ladder straight in the dev
+  DB and photographs a forced-theme run — **it carries no canvas colour probe on
+  purpose**: the renderer runs without `preserveDrawingBuffer`, so reading a
+  pixel out of band returns a cleared buffer and every such comparison is two
+  blacks, which is how the first version confidently reported that a working
+  feature did not work.
 - **Render layer** (`src/render/*`): `scene.ts`, `board.ts`, `characters.ts`,
   `effects.ts`, plus `toon.ts` — the shared 3-step cel ramp.
 - **The whole scene is CEL-SHADED** (IDEA-024 v2): every lit surface is a
