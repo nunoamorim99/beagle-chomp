@@ -17,6 +17,8 @@
 
 import { buildSlides, type TutorialSlide, type DeviceInput } from "./tutorialSlides";
 import { escapeHtml } from "./escape";
+import { getBeagleSkin } from "../game/cosmetics";
+import { beagleSwatchHtml } from "./swatches";
 
 export interface TutorialCarouselHandle {
   open: (opts?: { onDone?: () => void }) => void;
@@ -98,6 +100,38 @@ function diagramHtml(kind: NonNullable<TutorialSlide["diagram"]>): string {
   );
 }
 
+/**
+ * The coat list (IDEA-064): a paw in each coat's own colours, its name, and the
+ * one line the shop prints for its perk.
+ *
+ * The paw is `beagleSwatchHtml` — the SHOP's paw, not a copy of it — so the row
+ * a player reads here is the row they will be looking for two taps later, down
+ * to the sole on the Pac-Beagle's boots. Extracting it to swatches.ts was the
+ * whole point; a second 24x24 SVG in this file would have looked identical
+ * right up until someone retuned one of them.
+ *
+ * No icon and no amber on the rows: the paw is already the mark, and §04
+ * reserves amber for the single next action on a screen — which on this slide
+ * is the "Got it" button.
+ */
+function perksHtml(rows: NonNullable<TutorialSlide["perks"]>): string {
+  return (
+    '<ul class="tut-perks">' +
+    rows
+      .map(
+        (row) =>
+          '<li class="tut-perk">' +
+          beagleSwatchHtml(getBeagleSkin(row.skinId), "tut-perk-paw") +
+          '<span class="tut-perk-text">' +
+          `<b class="tut-perk-name">${escapeHtml(row.name)}</b>` +
+          `<span class="tut-perk-label">${escapeHtml(row.label)}</span>` +
+          "</span></li>",
+      )
+      .join("") +
+    "</ul>"
+  );
+}
+
 export function attachTutorialCarousel(
   callbacks: TutorialCarouselCallbacks,
 ): TutorialCarouselHandle {
@@ -122,6 +156,7 @@ export function attachTutorialCarousel(
       (slide.diagram ? diagramHtml(slide.diagram) : "") +
       `<h2 class="tut-title">${escapeHtml(slide.title)}</h2>` +
       `<p class="tut-body">${escapeHtml(slide.body)}</p>` +
+      (slide.perks ? perksHtml(slide.perks) : "") +
       '<div class="tut-dots" role="tablist" aria-label="Tutorial progress">' +
       slides
         .map(

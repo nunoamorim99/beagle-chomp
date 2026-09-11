@@ -82,6 +82,19 @@ _(empty — nothing to triage)_
     those glyphs were never in the font subset, and `test-icon-font.ts` could not catch it
     because it builds its list from `ICON` too. That suite now refuses a raw snake_case literal
     in any module that draws icons; verified by re-injecting the original bug.
+  - **v3** (2026-09-11) - **the tutorial was still describing a game where the beagle you pick
+    changes nothing.** It gained a seventh and final slide - "Every beagle has a power" - which
+    lists all five coats, each with a paw in its own colours and the one line the shop prints for
+    its perk. The list is DERIVED from `BEAGLE_SKINS`, so a sixth coat or a reworded perk updates
+    the tutorial by existing; `test-tutorial-carousel.ts` asserts every coat appears, in shop
+    order, with its label VERBATIM. The slide also carries the two facts the perks make load-
+    bearing and nothing else said: perks are classic only, and coins come from the maze and
+    nowhere else (IDEA-016 v2 removed the points conversion and nothing ever told the player).
+    `beagleSwatchHtml` moved out of `shop.ts`'s closure into `src/ui/swatches.ts` so the paw is
+    shared rather than copied. **And measuring the card in landscape found an older bug on five
+    of the seven slides**: `#tutorial` justified its column to `flex-end`, so a card taller than
+    the screen overflowed at the TOP, where a scroll container cannot reach it - the title and
+    the copy were simply gone. It now overflows downward and scrolls.
 
 ### IDEA-062 — An editor you can actually finish a thing in 🔨
 - **Priority:** 🔴

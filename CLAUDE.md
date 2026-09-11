@@ -203,6 +203,32 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v8.
   and **`scripts/test-beagle-perks-ui.ts` (`npm run test:perks-ui`) drives the
   REAL app** — which is what found the database defaults: no pure test can see
   a column default, and every rule in `cosmetics.ts` was correct.
+  **THE TUTORIAL TEACHES THE FIVE POWERS, AND ITS LIST IS DERIVED** (v3). The
+  carousel's seventh and last slide is the coat list, and every line in it is
+  `BeagleSkin.perk.label` read off `cosmetics.ts` — the SAME string the shop
+  card prints, never a paraphrase. `test-tutorial-carousel.ts` asserts every
+  coat appears, in `BEAGLE_SKINS` order, with its label verbatim, so a sixth
+  coat or a reworded perk updates the tutorial by existing. It is last because
+  every line leans on a slide above it (a shield, a life, a fruit, a coin), and
+  it carries the two facts the perks make load-bearing and nothing else in the
+  game ever said: **perks are classic only**, and **coins come from the maze and
+  nowhere else** (IDEA-016 v2 removed the points conversion silently). The paw
+  beside each row is `src/ui/swatches.ts`'s `beagleSwatchHtml` — lifted out of
+  `shop.ts`'s closure so there is ONE paw, not two that look alike until someone
+  retunes one.
+  **AND `#tutorial` OVERFLOWS DOWNWARD, NOT UPWARD.** It justified its flex
+  column to `flex-end`, which overflows at the START — and overflow at the start
+  of a scroll container cannot be reached, so a card taller than the screen lost
+  its title and its copy off the top with no way to scroll back. Measured at
+  844x390 the deck runs 312 / 335 / 268 / 313 / 358 / 290 / 451 against 390px of
+  viewport: **five of the seven slides were already doing it**, and the coat
+  list (451) is only the one that made it impossible to miss. Now
+  `justify-content:flex-start` + `overflow-y:auto`, with the stage's own
+  flex-grow putting the card in the same place whenever there is room — the
+  `margin:auto` rule in §08, applied to an overlay.
+  `scripts/test-tutorial-ui.ts` (`npm run test:tutorial-ui`) MEASURES the card
+  at both framings; it is also where the slide count now comes from the DOTS
+  rather than a literal, which had read `five` since IDEA-046 made it six.
 - **COINS COME FROM THE MAZE, AND ONLY THE MAZE** (IDEA-016 v2): the
   points-to-coins conversion is gone — no "every N points banks a coin". The
   five coin pickups per level are the entire economy, which is what makes them

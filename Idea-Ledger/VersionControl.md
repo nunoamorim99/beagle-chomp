@@ -16,6 +16,17 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
 > lines here roll up into the numbered version below and this section is cleared (hold a line back
 > only if you explicitly choose to).
 
+- **[[IDEA-064]] v3** (2026-09-11) - **the tutorial now explains what each beagle DOES.** A
+  seventh and last slide lists all five dogs, each with a paw painted in its own coat, and says
+  what that one gives you - Bagel's shield, Cookie's extra life every map, Muffin's doubled
+  coins, Pepper's +100 fruit, and the Pac-Beagle's two arcade unlocks. It also says the two
+  things nothing in the game had ever told a new player: powers are classic-mode only, and coins
+  come from the maze and nowhere else, so grab them before they vanish.
+
+  **A long-standing bug turned up while measuring it**: held sideways, the tutorial card was
+  taller than the screen on five of the seven slides, and the part that fell off was the TOP -
+  the title and the explanation - with no way to scroll up to it. Fixed for every slide.
+
 - **[[IDEA-064]] v2** (2026-09-11) - **the shop cards, redrawn.** Each beagle now shows a
   PAW painted in its own coat - Bagel's tricolour, Cookie's chocolate, Pepper's cool grey, and
   the Pac-Beagle's yellow paw on red boots - instead of four colour dots. The Pac-Beagle moved

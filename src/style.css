@@ -807,7 +807,8 @@ body.map-open #mainMenu{display:none}
   width:56px;height:56px;border-radius:var(--bc-r-chip);background:var(--bc-ink);padding:6px}
 .swatch-dot{width:14px;height:14px;border-radius:50%;border:2px solid var(--bc-outline)}
 /* IDEA-064 v2: the beagle swatch is a PAW painted in the coat's colours rather
-   than four dots (see shop.ts's beagleSwatch). The tile loses its padding — the
+   than four dots (see swatches.ts's beagleSwatchHtml, shared with the tutorial's
+   coat list). The tile loses its padding — the
    paw is drawn to its own margins inside the viewBox, and 6px on top of that
    left it floating in a box instead of filling the chip. */
 .skin-swatch-paw{padding:3px}
@@ -2109,7 +2110,25 @@ body.paused .stick{display:none}
   display:flex;
   flex-direction:column;
   align-items:center;
-  justify-content:flex-end;
+  /* NOT flex-end, and it is load-bearing. A flex column justified to flex-end
+     overflows at the START, and overflow at the start of a scroll container is
+     UNREACHABLE — you cannot scroll up to it. So the card is pushed down by the
+     stage's own flex-grow instead, which puts it in exactly the same place
+     whenever there is room and lets it overflow DOWNWARD, where `overflow-y:
+     auto` can reach it when there is not. Same family as the `margin:auto` note
+     in §08.
+
+     IDEA-064's five-row coat list is what exposed this (measured at 844x390:
+     the card ran 117px off the TOP of the screen, taking the title and the copy
+     with it) — but measuring the rest of the deck afterwards showed the
+     overflow was never new. Card heights at 844x390 against 390px of viewport:
+     312 / 335 / 268 / 313 / 358 / 290 / 451. FIVE of the seven slides were
+     already taller than the screen in landscape, and every one of them was
+     losing its top to an un-scrollable container. The coat list is only the
+     slide that made it impossible to miss. */
+  justify-content:flex-start;
+  overflow-y:auto;
+  overscroll-behavior:contain;
   gap:var(--bc-s3);
   padding:calc(var(--bc-s3) + env(safe-area-inset-top)) var(--bc-gutter)
           calc(var(--bc-s4) + env(safe-area-inset-bottom));
@@ -2145,6 +2164,28 @@ body.paused .stick{display:none}
   margin:0 0 var(--bc-s2);font-size:clamp(19px,4.6vw,23px)}
 .tut-body{margin:0;font-size:14.5px;line-height:1.55;color:var(--bc-text-soft)}
 
+/* IDEA-064: the coat list on the last slide. Five rows, each a paw in that
+   coat's own colours + the line the shop prints for its perk.
+
+   LEFT-ALIGNED inside a centred card, deliberately: five centred rows of
+   different lengths have no common edge to run your eye down, which is the one
+   thing a list is for. The paw is the shop's own swatch (swatches.ts) at list
+   size — the SVG is unitless, so this is a width and nothing else. */
+.tut-perks{
+  list-style:none;margin:var(--bc-s3) 0 0;padding:0;
+  display:flex;flex-direction:column;gap:7px;text-align:left;
+}
+.tut-perk{display:flex;align-items:flex-start;gap:9px}
+/* The list paw keeps `.skin-swatch`'s fixed BOX, which is what makes the five
+   names start on one x. Its dark well is all but invisible against the card's
+   scrim at this size and that is fine — five paws in five different coats are
+   already five distinct marks, and a visible chip round each would out-weigh
+   the name it is labelling. */
+.tut-perk .skin-swatch.tut-perk-paw{width:26px;height:26px;padding:2px;border-radius:7px}
+.tut-perk-text{font-size:12.8px;line-height:1.32;color:var(--bc-text-soft);padding-top:2px}
+.tut-perk-name{font-family:var(--bc-font-display);font-weight:700;color:var(--bc-text)}
+.tut-perk-label{margin-left:6px}
+
 .tut-dots{display:flex;justify-content:center;gap:var(--bc-s2);margin:var(--bc-s4) 0 var(--bc-s3)}
 .tut-dot{
   width:11px;height:11px;padding:0;min-height:0;border-radius:50%;cursor:pointer;
@@ -2158,6 +2199,20 @@ body.paused .stick{display:none}
 .tut-actions{display:flex;gap:10px;justify-content:center}
 .tut-actions .tut-back,.tut-actions .tut-next{min-width:112px}
 .tut-skip{display:block;margin:var(--bc-s3) auto 0;font-size:13px}
+
+/* A phone held sideways has 390px of height for a stage, a title, a paragraph,
+   five coat rows and three controls. The overlay scrolls rather than clips
+   (see #tutorial above), but a tutorial you have to scroll is a tutorial people
+   skip — so the short-viewport case trims the two things that cost the most and
+   carry the least: the window onto the 3D, and the air around the list. */
+@media (max-height:560px){
+  .tut-stage{min-height:52px}
+  .tut-card{padding:14px 18px var(--bc-s3)}
+  .tut-perks{margin-top:var(--bc-s2);gap:5px}
+  .tut-perk-text{font-size:12.2px}
+  .tut-dots{margin:var(--bc-s3) 0 var(--bc-s2)}
+  .tut-skip{margin-top:var(--bc-s2)}
+}
 
 /* --- the input diagrams (the one thing 3D cannot show: a gesture) --- */
 
