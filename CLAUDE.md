@@ -1299,24 +1299,55 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v8.
   wrote that into props.ts on the next save. Caught after it had shipped into
   the library. They now seed per `flowerKind` (`FLOWER_SEED_COLORS`), and
   test-garden-props.ts asserts no flower def carries the daisy's petal colour.
-  **v4 MADE THE TREEHOUSE VISIBLE, AND THE ARITHMETIC IS WORTH KEEPING.** A
-  PROP'S VISIBLE HEIGHT IS `height * scale - WALL_H`, NOT `height * scale`.
-  Every apron placement stands one tile BEHIND a row of hedge from the fixed
-  camera and the hedge is a solid box 1 unit tall, so the first world unit of
-  any apron prop is occluded however large it is. The treehouse measures 2.478
-  tall, so at the scale 1 it shipped with a player saw 1.478 units of it at the
-  FAR edge of a 59-degree camera and it read as a speck (Nuno: "the treehouse
-  are to small"). Nothing was clamping it — the north apron row is exempt from
-  both caps by design, because it IS the skyline row. The useful consequence is
-  that scale is SUPER-LINEAR here: 1 -> 1.8 is 1.8x the model and 2.3x the
-  visible silhouette, which is why a landmark that looked hopeless needed a
-  number changed rather than a rebuild. The same arithmetic is what makes
-  `SOUTH_ROW_TALL_SCALE_CAP` (0.55) bite so hard in the other direction — a
-  tall prop capped there has a NEGATIVE visible height, i.e. it is entirely
-  behind the hedge, which is exactly the promise that cap exists to make. The
-  editor's scale slider went 2 -> 3 to leave room past 1.8; that bound is an
-  authoring convenience and is duplicated in `boardInspector.ts` and
-  `boardPlacement.ts`, which must stay in lockstep.
+  **v4/v5 RESIZED THE PROPS, AND THE FIRST EXPLANATION FOR WHY THEY WERE SMALL
+  WAS WRONG.** Nuno: "the treehouse are to small", then "the birdhouse is to
+  small to. The trees should be bigger to". v4 claimed an apron prop's visible
+  height was `height * scale - WALL_H` and that the treehouse was therefore
+  showing 1.478 of its 2.478 units. That is the answer for a camera LEVEL with
+  the hedge crown. This one looks DOWN, and the portrait fit dollies it to
+  y = 49.9 / z = 29.1 rather than BASE_POS's 27 / 15.5 — so the grazing ray
+  over the occluding wall's far top edge passes **y = 0.382** at the apron
+  tile, and the treehouse was **85% visible at scale 1**. It was not occluded;
+  it was simply too small on a 390px screen at the far edge of a 46-degree
+  frustum. `scripts/_scratch-apron-sightline.ts` reads the real camera off the
+  running page and solves it; do that rather than reasoning from BASE_POS,
+  which is not where the camera ends up.
+  **THE FOUR APRON ZONES ARE NOT EQUIVALENT, AND THAT IS THE USEFUL PART.**
+  NORTH (ty = -1) is the only occluded one (visible above 0.382); SOUTH
+  (ty = ROWS) is unoccluded and NEAREST the camera, which is why it carries the
+  hardest cap; EAST/WEST columns stand beside the board in profile, unoccluded;
+  wall tops sit ON the crown at y = 1.08 and are capped by nothing. So the
+  garden's shrubs are the real occlusion case — 0.446 tall means only 0.064 of
+  each NORTH-row one cleared the sight line at scale 1, a green smudge, against
+  siblings on the other rows that were merely small. They ship at ~2.1x on the
+  north row and 1.35x elsewhere; the trees at 1.6x, the wall-top birdhouses at
+  2.1x (0.62 -> 1.3), the treehouse at 1.8.
+  **RETUNE A ROW BY MULTIPLYING, NEVER BY ASSIGNING.** Every placement carries
+  its own hand-authored jitter (the shrubs run 0.81..1.21) so a row does not
+  read as clones. A flat assignment looks right in the diff, right in the
+  average, and turns twelve bushes into twelve copies of one bush.
+  The editor's scale slider runs 0.4..3 (raised from 2 so 1.8 is not against
+  the ceiling) and covers apron AND wall-top placements — they share one
+  Placement folder. It is duplicated in `boardInspector.ts` and
+  `boardPlacement.ts`, which must stay in lockstep; the real camera-safety
+  limits are `SOUTH_ROW_TALL_SCALE_CAP` (0.55) and `EAST_WEST_TALL_SCALE_CAP`
+  (1.0), enforced at render time in `buildProps`.
+  **AND SIZING A PROP IN THE PROPS TAB DID NOTHING ON THE BOARD.** A part edit
+  at path `""` is an edit to the prop's ROOT, and `makePropFromDef` applies it
+  before returning — then `buildProps` and `buildWallDecor` both wrote
+  `mesh.scale.setScalar(placement.scale)` over the top of it. So a def-level
+  resize was discarded the moment the prop was placed, while looking perfectly
+  correct in the tab that authored it. Found because Nuno had done it TWICE
+  trying to fix this very complaint: the treehouse def carried
+  `{ path: "", scale: [3,3,3] }` and the birdhouse `[1.5,1.5,1.5]`, both inert.
+  Both builders now `multiplyScalar`, and `buildProps` applies the two
+  height-safety caps to the PRODUCT rather than to the placement's own factor —
+  otherwise a def with a root scale walks straight through a cap whose whole
+  job is bounding how big the thing ends up in front of the camera. The two
+  dead root edits were folded into their placements rather than kept: per-def
+  sizing already has a home in `params.height`/`width`, and a hidden 3x inside
+  a def while the slider reads 0.6 is worse than either lever alone.
+  `test-garden-props.ts` pins the multiply and both caps.
   **AND A TEST MUST NOT PIN A NUMBER THE EDITOR NOW EXPOSES AS A DIAL.**
   `test-garden-props.ts` asserted the rock scatter was `> 40 && < 400`,
   calibrated when `chance` was 0.22 — then IDEA-062 v5's World tab made

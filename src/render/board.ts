@@ -3049,32 +3049,48 @@ const PROP_INSTANCE_HASH_SEED = 201;
  * exclude — so buildProps depends only on the theme's own placements data.
  */
 /**
- * IDEA-060 v4 — A PROP'S VISIBLE HEIGHT IS `height * scale - WALL_H`, NOT
- * `height * scale`, AND THAT IS WHY AN APRON LANDMARK READS SMALLER THAN ITS
- * NUMBERS SAY.
+ * IDEA-060 v5 — WHERE AN APRON PROP STANDS DECIDES HOW MUCH OF IT IS SEEN, AND
+ * THE FOUR ZONES ARE NOT CLOSE TO EQUIVALENT. Measured with
+ * scripts/_scratch-apron-sightline.ts, which reads the REAL game camera off the
+ * running page rather than BASE_POS — the portrait fit dollies it back to
+ * y = 49.9, z = 29.1, far higher and further than the authored 27/15.5.
  *
- * Every apron placement stands one tile BEHIND a row of hedge from the fixed
- * camera, and the hedge is a solid box WALL_H (= 1) tall — so the first world
- * unit of any apron prop is occluded no matter how large it is, and only what
- * clears the wall crown reaches the player. The treehouse measures 2.478 tall
- * (scripts/_scratch-prop-measure.ts), so at the scale 1 it shipped with, a
- * player saw 1.478 units of it at the FAR edge of a 59-degree camera — Nuno:
- * "the treehouse are to small". Nothing was clamping it: the north apron row
- * is exempt from both caps below, by design, precisely because it is the
- * skyline row.
+ *  - NORTH row (ty = -1) is behind the board, so the wall row at ty = 0
+ *    occludes its base. The camera looks down steeply enough to see past the
+ *    crown, though: the grazing ray over that wall's far top edge passes
+ *    y = 0.382 at the apron tile, so everything ABOVE 0.382 is visible. Not
+ *    y = WALL_H — an earlier version of this note said the visible height was
+ *    `height * scale - WALL_H`, which is the answer for a camera LEVEL with
+ *    the crown and roughly triples the occlusion this camera actually has.
+ *  - SOUTH row (ty = ROWS) is in FRONT of everything, nearest the camera, and
+ *    is not occluded at all — which is exactly why it is the dangerous one and
+ *    carries the hardest cap below.
+ *  - EAST/WEST columns stand beside the board in profile: also unoccluded.
+ *  - WALL TOPS (buildWallDecor, not this function) sit ON the crown at
+ *    y = 1.08, fully visible, and are capped by nothing.
  *
- * The useful consequence is that scale is SUPER-LINEAR in what it buys here.
- * Going 1 -> 1.8 is 1.8x the model and 3.46 / 1.478 = 2.3x the visible
- * silhouette, which is why a landmark that looked hopeless at 1 is a clear
- * read at 1.8 rather than needing to be rebuilt. The same arithmetic is what
- * makes the two caps below bite so hard in the other direction: a "tall" prop
- * capped to 0.55 on the south row has a NEGATIVE visible height by this
- * measure — it is entirely behind the hedge from the camera, which is exactly
- * the promise that cap exists to make.
+ * So the garden's props were small for two different reasons and only one of
+ * them was occlusion. The treehouse was 85% VISIBLE at scale 1 and still read
+ * as a speck — it was simply too small on a 390px screen at the far edge of a
+ * 46-degree frustum, and it now ships at 1.8 (Nuno: "the treehouse are to
+ * small"). The shrubs on the NORTH row are the genuine occlusion case: 0.446
+ * tall, so at scale 1 only 0.064 of each one cleared the sight line — 14%, a
+ * green smudge on the hedge top — and they ship at ~2.1x for that reason while
+ * their south and east/west siblings only needed 1.35x.
  *
- * The editor's scale slider runs to 3 (boardInspector.ts's SCALE_MAX) for the
- * same reason; that bound is an authoring convenience and these two are the
- * real safety limits.
+ * The two caps below are the same arithmetic pointed the other way. A "tall"
+ * prop capped to 0.55 on the south row is standing UNOCCLUDED in front of the
+ * board, so the cap is the only thing between it and the play area.
+ *
+ * Scale is authored per placement and the editor's slider runs 0.4..3
+ * (boardInspector.ts's SCALE_MAX) — for apron props AND wall-top ones, which
+ * share that one folder. These two caps are the real safety limits; that bound
+ * is an authoring convenience.
+ *
+ * When retuning a row, MULTIPLY the authored scales rather than assigning one
+ * number to all of them: each placement carries its own jitter (the shrubs run
+ * 0.81..1.21) so a row does not read as clones, and a flat assignment throws
+ * that away while looking correct in the diff.
  */
 const SOUTH_ROW_TALL_SCALE_CAP = 0.55;
 const EAST_WEST_TALL_SCALE_CAP = 1.0;
@@ -3095,15 +3111,36 @@ export function buildProps(scene: THREE.Object3D, theme: MazeTheme): THREE.Group
     const onSouthRow = ty === ROWS;
     const onEastWestCol = (tx === -1 || tx === COLS) && ty >= 0 && ty < ROWS;
 
-    let scale = placement.scale;
-    if (heightClass === "tall") {
-      if (onSouthRow) scale = Math.min(scale, SOUTH_ROW_TALL_SCALE_CAP);
-      else if (onEastWestCol) scale = Math.min(scale, EAST_WEST_TALL_SCALE_CAP);
-    }
-
     mesh.position.set(worldX(tx) + placement.offset[0], 0, worldZ(ty) + placement.offset[1]);
     mesh.rotation.y = placement.rotationY;
-    mesh.scale.setScalar(scale);
+
+    // MULTIPLY, don't assign. `makePropFromDef` has already run
+    // `applyPropParts` over this group, and a part edit at path "" is an edit
+    // to the ROOT — so `setScalar` here silently threw away a def-level resize
+    // the moment the prop was placed. That is not hypothetical: the birdhouse
+    // def in props.ts carries `{ path: "", scale: [1.5, 1.5, 1.5] }`, authored
+    // in the editor's Props tab, and it did nothing whatsoever on the board
+    // while looking perfectly correct in the tab that authored it. Sizing a
+    // prop has three legitimate routes (`params.height`/`width`, a root part
+    // edit, and the placement's own scale) and they are meant to compose.
+    mesh.scale.multiplyScalar(placement.scale);
+
+    // The height-safety caps are a promise about how big the prop ENDS UP in
+    // front of the camera, not about the placement's own factor — so they are
+    // applied to the PRODUCT, after the multiply. Identical to the old
+    // `Math.min(placement.scale, cap)` for any def whose root is still 1,
+    // which is every def but one.
+    if (heightClass === "tall") {
+      const cap = onSouthRow
+        ? SOUTH_ROW_TALL_SCALE_CAP
+        : onEastWestCol
+          ? EAST_WEST_TALL_SCALE_CAP
+          : null;
+      if (cap !== null) {
+        const worst = Math.max(mesh.scale.x, mesh.scale.y, mesh.scale.z);
+        if (worst > cap) mesh.scale.multiplyScalar(cap / worst);
+      }
+    }
     mesh.traverse((o) => {
       o.castShadow = true;
       o.receiveShadow = false;
@@ -3197,7 +3234,10 @@ export function buildWallDecor(
     const mesh = makePropFromDef(def, instanceHash);
     mesh.position.set(worldX(tx), WALL_H + WALL_DECOR_Y_OFFSET, worldZ(ty));
     mesh.rotation.y = placement.rotationY;
-    mesh.scale.setScalar(placement.scale);
+    // MULTIPLY rather than assign, for buildProps' reason above — a def-level
+    // root part edit must survive being placed. No cap to re-apply here: every
+    // wall-top shape is "low" by construction (props.ts's WALL_TOP_SHAPES).
+    mesh.scale.multiplyScalar(placement.scale);
     mesh.traverse((o) => {
       o.castShadow = true;
       o.receiveShadow = false;

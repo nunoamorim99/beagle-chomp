@@ -290,24 +290,60 @@ _(empty — nothing to triage)_
     `test-editor-board.ts` (171 checks).
   - **v4** (2026-09-12) — the treehouse becomes a landmark you can actually
     see. Nuno: "the treehouse are to small... should be bigger to be more
-    visible". Nothing was shrinking it — the north apron row is exempt from
-    both of buildProps' tall-prop caps precisely because it is the skyline row
-    — but an apron prop stands one tile BEHIND a hedge that is a solid box one
-    unit tall, so its VISIBLE height is `height * scale - 1`, not
-    `height * scale`. The treehouse measures 2.478, so scale 1 showed 1.478 of
-    it at the far edge of a 59-degree camera. Both placements go to **1.8**,
-    which is 1.8x the model and 2.3x the visible silhouette — the whole house,
-    deck, ladder and canopy now clear the hedge line. The editor's scale
-    slider goes 2 -> 3 with it (`boardInspector.ts` + `boardPlacement.ts`,
-    kept in lockstep), since 1.8 against a ceiling of 2 leaves nowhere to tune;
-    the real camera-safety limits are the two render-time caps and they are
-    untouched. Also fixed a test that had started failing for the right
-    reasons: `test-garden-props.ts` pinned the rock scatter at `> 40 && < 400`,
-    calibrated before IDEA-062 v5 made `chance`/`apronChance` live World-tab
-    dials — so turning corridor rocks down to 0 failed a suite with no opinion
-    on the matter. It now measures the eligible population and asserts the
-    scatter obeys its dials. `themes.ts`, `board.ts`, `boardInspector.ts`,
-    `boardPlacement.ts`, `test-garden-props.ts` (162 checks).
+    visible". Nothing was clamping it — the north apron row is exempt from both
+    of buildProps' tall-prop caps precisely because it is the skyline row — it
+    was simply too small on a 390px screen at the far edge of the frustum. Both
+    placements go to **1.8** and the whole house, deck, ladder and canopy now
+    read. The editor's scale slider goes 2 -> 3 with it (`boardInspector.ts` +
+    `boardPlacement.ts`, kept in lockstep), since 1.8 against a ceiling of 2
+    leaves nowhere to tune; the real camera-safety limits are the two
+    render-time caps and they are untouched. Also fixed a test that had started
+    failing for the right reasons: `test-garden-props.ts` pinned the rock
+    scatter at `> 40 && < 400`, calibrated before IDEA-062 v5 made
+    `chance`/`apronChance` live World-tab dials — so turning corridor rocks
+    down to 0 failed a suite with no opinion on the matter. It now measures the
+    eligible population and asserts the scatter obeys its dials. `themes.ts`,
+    `board.ts`, `boardInspector.ts`, `boardPlacement.ts`,
+    `test-garden-props.ts` (162 checks).
+  - **v5** (2026-09-12) — the same treatment for every other prop. Nuno: "the
+    birdhouse is to small to. The trees should be bigger to... even tha wall
+    props". The wall-top props already shared the apron's scale slider, so the
+    flexibility was there and the VALUES had never been tuned: birdhouses were
+    shipping at 0.62. Now the wall-top birdhouses go x2.1 (0.62 -> 1.3), the
+    east/west trees x1.6, and the shrubs x2.1 on the north row and x1.35
+    everywhere else.
+    **The asymmetry is measured, and measuring it corrected v4's own
+    explanation.** v4 claimed an apron prop's visible height was
+    `height * scale - WALL_H`; that is the answer for a camera level with the
+    hedge crown, and this one looks down from a portrait fit that dollies it to
+    y = 49.9 / z = 29.1 (not BASE_POS's 27 / 15.5). The real sight line clears
+    at **y = 0.382**, so the treehouse had been 85% visible all along — small,
+    not hidden. `scripts/_scratch-apron-sightline.ts` reads the live camera and
+    solves it. What that DID expose is a genuine occlusion case v4 missed: the
+    twelve shrubs on the north row are 0.446 tall, so only 0.064 of each
+    cleared the sight line — 14%, a green smudge on the hedge top — which is
+    why they need twice the bump their siblings do.
+    Two rules came out of it, both now in board.ts: the four apron zones are
+    not equivalent (north is occluded, south is unoccluded AND nearest the
+    camera, east/west stand in profile, wall tops sit on the crown), and a row
+    is retuned by MULTIPLYING the authored scales rather than assigning one
+    number — each placement carries jitter (shrubs run 0.81..1.21) and a flat
+    assignment turns twelve bushes into twelve copies of one bush while looking
+    correct in the diff.
+    **And it turned up the reason the Props tab had felt useless for this:**
+    a part edit at path `""` is an edit to the prop's ROOT, applied by
+    `makePropFromDef` — and both builders then wrote
+    `mesh.scale.setScalar(placement.scale)` straight over it. A def-level
+    resize was discarded the moment the prop was placed, while looking right in
+    the tab that authored it. Nuno had done it twice chasing this same
+    complaint (treehouse `[3,3,3]`, birdhouse `[1.5,1.5,1.5]`), and both were
+    inert. Both builders now multiply, and buildProps applies its two caps to
+    the PRODUCT so a def with a root scale cannot walk through them. The two
+    dead edits were folded into their placements instead of kept — per-def
+    sizing already has `params.height`/`width`, and a hidden 3x inside a def
+    while the slider reads 0.6 is worse than either lever on its own.
+    `themes.ts`, `props.ts`, `board.ts`, `test-garden-props.ts` (165 checks),
+    `_scratch-apron-sightline.ts`.
 
 ### IDEA-050 — Persist the run: what actually happened, not just the score 🔨
 - **Priority:** 🔴

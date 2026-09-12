@@ -28,6 +28,7 @@ import { Grid, COLS, ROWS } from "../src/game/grid";
 import { MAZES } from "../src/game/mazes";
 import { MAZE_THEMES } from "../src/game/themes";
 import { PROP_LIBRARY, PROP_SHAPE_FIELDS, WALL_TOP_SHAPES, getPropDef } from "../src/game/props";
+import { buildProps } from "../src/render/board";
 import { buildFence, fencePanelCount, FENCE_H } from "../src/render/fence";
 import { buildGroundDetail, GROUND_DETAIL_PARAMS } from "../src/render/groundDetail";
 import { lobedRoughness } from "../src/render/foliage";
@@ -94,6 +95,43 @@ ok(
   "…and it takes the grid to do it",
   /export function buildWallDecor\([\s\S]{0,200}?grid: Grid,/.test(boardSrc),
 );
+
+// ---------------------------------------------------------------------------
+section("A placement's scale COMPOSES with the def, and the caps hold anyway");
+
+// IDEA-060 v5. `makePropFromDef` runs `applyPropParts` before returning, so a
+// part edit at path "" is an edit to the ROOT — and buildProps/buildWallDecor
+// used `mesh.scale.setScalar(placement.scale)`, which threw it away. It was
+// not hypothetical: the treehouse def carried `{ path: "", scale: [3,3,3] }`
+// and the birdhouse `[1.5,1.5,1.5]`, both authored in the editor's Props tab,
+// and BOTH did nothing at all on the board while looking correct in the tab
+// that authored them. Asserted as source text because the defect is in how the
+// value is written, and a behavioural check needs a def that carries a root
+// edit — which, now that the two have been folded into their placements, none
+// of them do.
+ok(
+  "buildProps MULTIPLIES the placement scale in rather than assigning it",
+  /mesh\.scale\.multiplyScalar\(placement\.scale\)/.test(boardSrc) &&
+    !/mesh\.scale\.setScalar\(/.test(boardSrc),
+  "a def-level root part edit must survive being placed",
+);
+
+// …and the height-safety caps must still bite, now that they are applied to
+// the PRODUCT rather than to the placement's own factor.
+function tallestOnRow(ty: number): number {
+  const probe = {
+    ...garden!,
+    placements: [{ propId: "treehouse", tile: [4, ty] as [number, number], offset: [0, 0] as [number, number], rotationY: 0, scale: 2.9 }],
+    wallDecor: [],
+  };
+  const g = new THREE.Group();
+  const built = buildProps(g, probe);
+  return built ? (built.children[0] as THREE.Object3D).scale.y : NaN;
+}
+ok("a tall prop on the SOUTH row is still capped", tallestOnRow(ROWS) <= 0.55 + 1e-9,
+   String(tallestOnRow(ROWS)));
+ok("…and on the NORTH row it keeps every bit of its authored scale",
+   Math.abs(tallestOnRow(-1) - 2.9) < 1e-9, String(tallestOnRow(-1)));
 
 // ---------------------------------------------------------------------------
 section("The fence");
