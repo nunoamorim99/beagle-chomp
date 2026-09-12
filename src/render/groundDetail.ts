@@ -73,7 +73,7 @@ export interface GroundDetailParams {
 }
 
 export const GROUND_DETAIL_PARAMS: GroundDetailParams = {
-  chance: 0.9,
+  chance: 0,
   apronChance: 0.3,
   minOffset: 0.26,
   maxOffset: 0.4,
