@@ -69,7 +69,20 @@ const OFFSET_MIN = -0.5;
 const OFFSET_MAX = 0.5;
 const OFFSET_STEP = 0.005;
 const SCALE_MIN = 0.4;
-const SCALE_MAX = 2;
+// IDEA-060 v4. Was 2, and that ceiling was a slider convenience rather than a
+// safety bound — the real camera-safety limits are buildProps'
+// SOUTH_ROW_TALL_SCALE_CAP (0.55) and EAST_WEST_TALL_SCALE_CAP (1.0), which
+// are enforced at RENDER time and are untouched by this number.
+//
+// It needed raising because of how a tall prop is actually SEEN. The hedge is
+// WALL_H = 1 and the apron rows sit behind it from the fixed camera, so a
+// prop's visible height is (height * scale - 1), not (height * scale) — the
+// first tile of every prop is occluded by the maze wall in front of it. The
+// treehouse is 2.478 tall, so at scale 1 the player sees 1.478 units of it at
+// the FAR edge of a 59-degree camera, and it read as a speck. At 1.8 the
+// visible part is 3.46 — 2.3x the presence for 1.8x the scale. Landing on 1.8
+// against a ceiling of 2 left almost nowhere to go next.
+const SCALE_MAX = 3;
 const SCALE_STEP = 0.01;
 const ROTATION_MIN = 0;
 const ROTATION_MAX = Math.PI * 2;

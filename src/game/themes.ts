@@ -222,7 +222,7 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
       speckChance: 0.35,
     },
     placements: [
-      { propId: "treehouse", tile: [-1, -1], offset: [-0.18, -0.2], rotationY: 0.42, scale: 1 },
+      { propId: "treehouse", tile: [-1, -1], offset: [-0.18, -0.2], rotationY: 0.42, scale: 1.8 },
       { propId: "garden-shrub", tile: [19, 4], offset: [-0.24, -0.162], rotationY: 5.691, scale: 0.949 },
       { propId: "garden-shrub", tile: [7, -1], offset: [0.184, -0.163], rotationY: 6.188, scale: 1.074 },
       { propId: "garden-shrub", tile: [0, -1], offset: [-0.22, -0.111], rotationY: 1.294, scale: 0.962 },
@@ -252,7 +252,7 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
       { propId: "garden-tree", tile: [19, 2], offset: [0.178, -0.196], rotationY: 4.689, scale: 1.092 },
       { propId: "garden-tree", tile: [-1, 3], offset: [-0.001, 0.245], rotationY: 1.083, scale: 1.068 },
       { propId: "garden-tree", tile: [19, 3], offset: [-0.131, 0.085], rotationY: 4.418, scale: 1.097 },
-      { propId: "treehouse", tile: [19, -1], offset: [0, 0], rotationY: 5.807363914339822, scale: 1 },
+      { propId: "treehouse", tile: [19, -1], offset: [0, 0], rotationY: 5.807363914339822, scale: 1.8 },
     ],
     // IDEA-060 v3: BIRDHOUSES ONLY — the 29 flower props that used to stand up
     // here went when the wall itself became a flowering hedge. It must not

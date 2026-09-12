@@ -288,6 +288,26 @@ _(empty — nothing to triage)_
     `themes.ts`, `wallTexture.ts`, `board.ts`, `props.ts`,
     `propsInspector.ts`, `test-garden-props.ts` (161 checks),
     `test-editor-board.ts` (171 checks).
+  - **v4** (2026-09-12) — the treehouse becomes a landmark you can actually
+    see. Nuno: "the treehouse are to small... should be bigger to be more
+    visible". Nothing was shrinking it — the north apron row is exempt from
+    both of buildProps' tall-prop caps precisely because it is the skyline row
+    — but an apron prop stands one tile BEHIND a hedge that is a solid box one
+    unit tall, so its VISIBLE height is `height * scale - 1`, not
+    `height * scale`. The treehouse measures 2.478, so scale 1 showed 1.478 of
+    it at the far edge of a 59-degree camera. Both placements go to **1.8**,
+    which is 1.8x the model and 2.3x the visible silhouette — the whole house,
+    deck, ladder and canopy now clear the hedge line. The editor's scale
+    slider goes 2 -> 3 with it (`boardInspector.ts` + `boardPlacement.ts`,
+    kept in lockstep), since 1.8 against a ceiling of 2 leaves nowhere to tune;
+    the real camera-safety limits are the two render-time caps and they are
+    untouched. Also fixed a test that had started failing for the right
+    reasons: `test-garden-props.ts` pinned the rock scatter at `> 40 && < 400`,
+    calibrated before IDEA-062 v5 made `chance`/`apronChance` live World-tab
+    dials — so turning corridor rocks down to 0 failed a suite with no opinion
+    on the matter. It now measures the eligible population and asserts the
+    scatter obeys its dials. `themes.ts`, `board.ts`, `boardInspector.ts`,
+    `boardPlacement.ts`, `test-garden-props.ts` (162 checks).
 
 ### IDEA-050 — Persist the run: what actually happened, not just the score 🔨
 - **Priority:** 🔴

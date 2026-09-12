@@ -265,7 +265,7 @@ export interface BoardPlacementController {
    *  one caller. */
   nudgeSelectedRotation(delta: number): boolean;
   /** IDEA-034: nudges the CURRENTLY SELECTED placement's `scale` by `delta`,
-   *  clamped to the inspector's own 0.4..2 range (boardInspector.ts's
+   *  clamped to the inspector's own 0.4..3 range (boardInspector.ts's
    *  SCALE_MIN/MAX) — same "keyboard nudge can never desync from the
    *  slider" discipline as the other two nudge methods. Works for both
    *  sub-modes (scale exists on both WorkingPropPlacement and
@@ -405,7 +405,7 @@ const OFFSET_MAX = 0.5;
 // sides cross-referencing each other; a future bounds change must edit both.
 const ROTATION_MAX = Math.PI * 2;
 const SCALE_MIN = 0.4;
-const SCALE_MAX = 2;
+const SCALE_MAX = 3;
 
 /** IDEA-062: exported for placementGizmo.ts, which must apply the EXACT same
  *  bounds a slider or a keyboard nudge would — a gizmo drag that could put a

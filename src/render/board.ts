@@ -3048,6 +3048,34 @@ const PROP_INSTANCE_HASH_SEED = 201;
  * placements — a placement's tile IS its position, nothing to enumerate or
  * exclude — so buildProps depends only on the theme's own placements data.
  */
+/**
+ * IDEA-060 v4 — A PROP'S VISIBLE HEIGHT IS `height * scale - WALL_H`, NOT
+ * `height * scale`, AND THAT IS WHY AN APRON LANDMARK READS SMALLER THAN ITS
+ * NUMBERS SAY.
+ *
+ * Every apron placement stands one tile BEHIND a row of hedge from the fixed
+ * camera, and the hedge is a solid box WALL_H (= 1) tall — so the first world
+ * unit of any apron prop is occluded no matter how large it is, and only what
+ * clears the wall crown reaches the player. The treehouse measures 2.478 tall
+ * (scripts/_scratch-prop-measure.ts), so at the scale 1 it shipped with, a
+ * player saw 1.478 units of it at the FAR edge of a 59-degree camera — Nuno:
+ * "the treehouse are to small". Nothing was clamping it: the north apron row
+ * is exempt from both caps below, by design, precisely because it is the
+ * skyline row.
+ *
+ * The useful consequence is that scale is SUPER-LINEAR in what it buys here.
+ * Going 1 -> 1.8 is 1.8x the model and 3.46 / 1.478 = 2.3x the visible
+ * silhouette, which is why a landmark that looked hopeless at 1 is a clear
+ * read at 1.8 rather than needing to be rebuilt. The same arithmetic is what
+ * makes the two caps below bite so hard in the other direction: a "tall" prop
+ * capped to 0.55 on the south row has a NEGATIVE visible height by this
+ * measure — it is entirely behind the hedge from the camera, which is exactly
+ * the promise that cap exists to make.
+ *
+ * The editor's scale slider runs to 3 (boardInspector.ts's SCALE_MAX) for the
+ * same reason; that bound is an authoring convenience and these two are the
+ * real safety limits.
+ */
 const SOUTH_ROW_TALL_SCALE_CAP = 0.55;
 const EAST_WEST_TALL_SCALE_CAP = 1.0;
 

@@ -1299,6 +1299,33 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v8.
   wrote that into props.ts on the next save. Caught after it had shipped into
   the library. They now seed per `flowerKind` (`FLOWER_SEED_COLORS`), and
   test-garden-props.ts asserts no flower def carries the daisy's petal colour.
+  **v4 MADE THE TREEHOUSE VISIBLE, AND THE ARITHMETIC IS WORTH KEEPING.** A
+  PROP'S VISIBLE HEIGHT IS `height * scale - WALL_H`, NOT `height * scale`.
+  Every apron placement stands one tile BEHIND a row of hedge from the fixed
+  camera and the hedge is a solid box 1 unit tall, so the first world unit of
+  any apron prop is occluded however large it is. The treehouse measures 2.478
+  tall, so at the scale 1 it shipped with a player saw 1.478 units of it at the
+  FAR edge of a 59-degree camera and it read as a speck (Nuno: "the treehouse
+  are to small"). Nothing was clamping it — the north apron row is exempt from
+  both caps by design, because it IS the skyline row. The useful consequence is
+  that scale is SUPER-LINEAR here: 1 -> 1.8 is 1.8x the model and 2.3x the
+  visible silhouette, which is why a landmark that looked hopeless needed a
+  number changed rather than a rebuild. The same arithmetic is what makes
+  `SOUTH_ROW_TALL_SCALE_CAP` (0.55) bite so hard in the other direction — a
+  tall prop capped there has a NEGATIVE visible height, i.e. it is entirely
+  behind the hedge, which is exactly the promise that cap exists to make. The
+  editor's scale slider went 2 -> 3 to leave room past 1.8; that bound is an
+  authoring convenience and is duplicated in `boardInspector.ts` and
+  `boardPlacement.ts`, which must stay in lockstep.
+  **AND A TEST MUST NOT PIN A NUMBER THE EDITOR NOW EXPOSES AS A DIAL.**
+  `test-garden-props.ts` asserted the rock scatter was `> 40 && < 400`,
+  calibrated when `chance` was 0.22 — then IDEA-062 v5's World tab made
+  `chance`/`apronChance` live knobs, and the first person to turn corridor
+  rocks down to 0 (the corridor belongs to the biscuits) failed a suite with no
+  opinion on how many rocks a garden wants. It now measures the eligible
+  population by forcing both chances to 1 and asserts the scatter OBEYS its
+  dials. Second occurrence of the same lesson after the garden's placement
+  counts; the trigger is a literal that tracks a tuning number.
   **WHAT THE CLAY RENDER SAYS, AND IT IS WORTH KNOWING**: with every map
   stripped (`/preview-board/?flat=1`), the fence and the wall-top flowers are
   still there as real silhouettes — and the HEDGE IS STILL A PLAIN BOX. All of

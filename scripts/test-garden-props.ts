@@ -29,7 +29,7 @@ import { MAZES } from "../src/game/mazes";
 import { MAZE_THEMES } from "../src/game/themes";
 import { PROP_LIBRARY, PROP_SHAPE_FIELDS, WALL_TOP_SHAPES, getPropDef } from "../src/game/props";
 import { buildFence, fencePanelCount, FENCE_H } from "../src/render/fence";
-import { buildGroundDetail } from "../src/render/groundDetail";
+import { buildGroundDetail, GROUND_DETAIL_PARAMS } from "../src/render/groundDetail";
 import { lobedRoughness } from "../src/render/foliage";
 import {
   makeBirdhouse,
@@ -197,7 +197,31 @@ ok("…and nothing at all for a theme that opts out",
    buildGroundDetail(new THREE.Group(), grids[0], "none", 0x9c9a90) === null);
 if (rocks) {
   ok("it is ONE draw call for the whole board", rockScene.children.length === 1);
-  ok("it scatters a sensible number", rocks.count > 40 && rocks.count < 400, String(rocks.count));
+  // The count is DERIVED from the params, not pinned. It used to assert
+  // `> 40 && < 400`, calibrated when `chance` was 0.22 — and IDEA-062 v5 then
+  // made `chance`/`apronChance` live knobs on the editor's World tab, so the
+  // first person to turn the corridor rocks down (to 0, as it happens: the
+  // corridor belongs to the biscuits) failed a suite that has nothing to say
+  // about how many rocks a garden wants. Same lesson as the garden's
+  // placement counts: a literal that tracks a tuning dial breaks on every
+  // tune. What is actually worth asserting is that the scatter OBEYS its
+  // dials — so measure the eligible population by forcing both chances to 1
+  // and check the shipped count sits where the shipped chances put it.
+  const shippedChance = GROUND_DETAIL_PARAMS.chance;
+  const shippedApron = GROUND_DETAIL_PARAMS.apronChance;
+  GROUND_DETAIL_PARAMS.chance = 1;
+  GROUND_DETAIL_PARAMS.apronChance = 1;
+  const everyTile = buildGroundDetail(new THREE.Group(), grids[0], "rocks", 0x9c9a90);
+  GROUND_DETAIL_PARAMS.chance = shippedChance;
+  GROUND_DETAIL_PARAMS.apronChance = shippedApron;
+  const eligible = everyTile ? everyTile.count : 0;
+  ok("there are eligible tiles to scatter over at all", eligible > 100, String(eligible));
+  ok(
+    "the scatter obeys its own chance dials",
+    rocks.count > 0 && rocks.count <= eligible &&
+      rocks.count <= Math.ceil(eligible * Math.max(shippedChance, shippedApron)) + 1,
+    `${rocks.count} of ${eligible} eligible at chance ${shippedChance}/${shippedApron}`,
+  );
 
   // THE RULE THIS FILE EXISTS FOR, on the ground layer. Biscuits sit at tile
   // centres; a rock there would sit under the pellet the player is tracking
