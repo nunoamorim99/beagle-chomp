@@ -24,6 +24,7 @@ import GUI from "lil-gui";
 import * as THREE from "three";
 import { PROP_SHAPE_FIELDS, type PropBaseShape, type PropParams } from "../game/props";
 import { PROP_SHAPE_OPTIONS } from "./propsCodegen";
+import { seedColorFor } from "./propsSeedColors";
 import { uniquifyPropId, type WorkingPropDef } from "./propsWorking";
 
 const MIN_COLORS = 1;
@@ -49,6 +50,11 @@ const SINGLE_COLOR_FIELDS = new Set<keyof PropParams>([
   "petalColor",
   "centerColor",
   "birdColor",
+  "roofColor",
+  "eyeColor",
+  "furColor",
+  "bellyColor",
+  "accentColor",
 ]);
 const BOOLEAN_FIELDS = new Set<keyof PropParams>(["rooftop", "showBird"]);
 
@@ -63,6 +69,9 @@ const BOOLEAN_FIELDS = new Set<keyof PropParams>(["rooftop", "showBird"]);
  *  edits is worse than no control. */
 const ENUM_FIELDS: Partial<Record<keyof PropParams, readonly string[]>> = {
   flowerKind: ["daisy", "sunflower", "rose", "tulip", "blossom"],
+  // IDEA-065. Same trap as flowerKind: without an entry here the inspector
+  // renders a NUMBER slider for a string field, which is silently wrong.
+  critterKind: ["deer", "fox", "rabbit", "raccoon", "squirrel", "squirrelExplorer"],
 };
 
 /** Slider range/step per numeric field, per the task brief's exact numbers.
@@ -93,40 +102,12 @@ const FIELD_SEED_DEFAULT: Partial<Record<keyof PropParams, number>> = {
   tilt: 0.2,
   windowRows: 2,
   windowCols: 2,
-  windowColor: 0xf4d060,
   windowEmissiveIntensity: 1,
-  trunkColor: 0x6b4a2f,
-  glowColor: 0xf4d060,
   glowIntensity: 0.9,
-  signBoardColor: 0x33333c,
-  // IDEA-060. `birdColor` has one right answer; the two FLOWER colours do not
-  // and are deliberately absent from this table — see FLOWER_SEED_COLORS.
-  birdColor: 0x3f9ede,
-};
-
-/**
- * Seed colours for `petalColor`/`centerColor`, PER FLOWER KIND.
- *
- * These cannot live in FIELD_SEED_DEFAULT above, which is a flat
- * field-to-number map, and trying anyway shipped a real defect: the table
- * seeded both fields to the DAISY's cream and gold whatever flower was
- * selected, so opening "petal color" on the Sunflower silently turned it into
- * a large cream daisy and wrote that into props.ts on the next save. The
- * comment there even claimed the opposite — "turning petal color on should not
- * repaint the flower you are looking at" — which was true only for the one
- * kind whose colours it held.
- *
- * The rule generalises past this one field: A SEED DEFAULT THAT DEPENDS ON
- * ANOTHER FIELD'S VALUE CANNOT BE A CONSTANT. Mirrors
- * gardenProps.ts's FLOWER_DEFAULTS, which is what the factory actually reads
- * when a def leaves these unset.
- */
-const FLOWER_SEED_COLORS: Record<string, { petalColor: number; centerColor: number }> = {
-  daisy: { petalColor: 0xfaf6ec, centerColor: 0xf2b632 },
-  sunflower: { petalColor: 0xf5c518, centerColor: 0x6b4526 },
-  rose: { petalColor: 0xd8384a, centerColor: 0x9c2333 },
-  tulip: { petalColor: 0xd42f4c, centerColor: 0xf09aa8 },
-  blossom: { petalColor: 0xb289de, centerColor: 0xf3e46a },
+  // COLOUR fields are NOT here — they live in propsSeedColors.ts, because
+  // several of them depend on another field's value and a flat table cannot
+  // express that. Two shipped defects came of trying (IDEA-060's sunflower
+  // repainted as a daisy, IDEA-065's six white animals).
 };
 
 const FIELD_LABEL: Partial<Record<keyof PropParams, string>> = {
@@ -274,11 +255,15 @@ export function createPropsInspector(
     // The two flower colours seed from the def's OWN `flowerKind`, not from a
     // constant — see FLOWER_SEED_COLORS for the defect that came of treating
     // them like every other colour field.
-    let seed = FIELD_SEED_DEFAULT[key] ?? 0xffffff;
-    if (key === "petalColor" || key === "centerColor") {
-      const kind = (def.params.flowerKind ?? "daisy") as string;
-      seed = (FLOWER_SEED_COLORS[kind] ?? FLOWER_SEED_COLORS.daisy)[key];
-    }
+    // EVERY colour seed comes from propsSeedColors.ts, including the ones that
+    // depend on `flowerKind`/`critterKind`. It returns `undefined` rather than
+    // white when no seed is registered, and that case must not silently paint
+    // the prop: it means someone added a colour field without a seed, which is
+    // how all six woodland animals shipped pure white (IDEA-065 v3 — see that
+    // module's header). `test-garden-props.ts` fails the build on it, so this
+    // branch should be unreachable; it bails rather than guessing.
+    const seed = seedColorFor(key, def.params as PropParams);
+    if (seed === undefined) return;
     if (def.params[key] === undefined) (def.params as Record<string, unknown>)[key] = seed;
     folder
       .addColor(

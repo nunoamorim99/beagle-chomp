@@ -148,6 +148,19 @@
         "prop-rose": () => makePropById("flower-rose", 0.35),
         "prop-tulip": () => makePropById("flower-tulip", 0.75),
         "prop-blossom": () => makePropById("flower-blossom", 0.15),
+        // IDEA-065 forest props, by library id.
+        "prop-pine": () => makePropById("pine", 0.28),
+        "prop-cabin": () => makePropById("log-cabin", 0.44),
+        "prop-deer": () => makePropById("critter-deer", 0.17),
+        "prop-fox": () => makePropById("critter-fox", 0.3),
+        "prop-rabbit": () => makePropById("critter-rabbit", 0.43),
+        "prop-raccoon": () => makePropById("critter-raccoon", 0.56),
+        "prop-squirrel": () => makePropById("critter-squirrel", 0.69),
+        "prop-explorer": () => makePropById("critter-squirrel-explorer", 0.82),
+        "prop-nesttree": () => makePropById("nest-tree", 0.36),
+        "prop-bird": () => makePropById("perched-bird", 0.51),
+        "prop-head-daisy": () => makePropById("flower-head-daisy", 0.2),
+        "prop-head-rose": () => makePropById("flower-head-rose", 0.35),
       };
       const modelName = q.get("model") ?? "beagle";
       const makeModel = MODELS[modelName] ?? MODELS.beagle;
@@ -177,15 +190,25 @@
 
       // ?toon=1 — judge the model in the GAME's material system: every lit
       // surface swapped to the shared 3-step cel ramp, keeping each mesh's color.
+      //
+      // IT MUST MAP OVER A MATERIAL ARRAY. A mesh carrying per-triangle groups
+      // (the forest pine's lit-top/shaded-underside whorls, IDEA-065) holds an
+      // ARRAY here, and `array.color` is undefined — so the fallback painted
+      // the whole tree WHITE and the first review round read it as the model
+      // having lost its colours. Third time a review-harness mismatch has
+      // reported as a model defect in this project, after `?fov=` (IDEA-054)
+      // and `?bg=none` (IDEA-056).
       if (q.get("toon") === "1") {
-        model.traverse((o) => {
-          if (!o.isMesh) return;
-          const m = o.material;
-          if (!m || m.userData?.keepUnlit) return;
+        const asToon = (m) => {
+          if (!m || m.userData?.keepUnlit) return m;
           const c = m.color ? m.color.clone() : new THREE.Color(0xffffff);
           const t = toon({ color: c.getHex() });
           if (m.vertexColors) t.vertexColors = true;
-          o.material = t;
+          return t;
+        };
+        model.traverse((o) => {
+          if (!o.isMesh) return;
+          o.material = Array.isArray(o.material) ? o.material.map(asToon) : asToon(o.material);
         });
       }
 

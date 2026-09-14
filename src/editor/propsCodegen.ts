@@ -71,6 +71,13 @@ const PARAM_FIELD_ORDER: readonly (keyof WorkingPropParams)[] = [
   "centerColor",
   "showBird",
   "birdColor",
+  // IDEA-065 forest props.
+  "roofColor",
+  "eyeColor",
+  "critterKind",
+  "furColor",
+  "bellyColor",
+  "accentColor",
 ];
 
 const COLOR_FIELDS = new Set<keyof WorkingPropParams>([
@@ -81,6 +88,10 @@ const COLOR_FIELDS = new Set<keyof WorkingPropParams>([
   "petalColor",
   "centerColor",
   "birdColor",
+  "roofColor",
+  "furColor",
+  "bellyColor",
+  "accentColor",
 ]);
 const COLOR_LIST_FIELDS = new Set<keyof WorkingPropParams>(["foliageColors", "facadeColors"]);
 

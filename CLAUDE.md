@@ -1363,6 +1363,146 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v8.
   its leafiness is paint. That is a deliberate constraint (walls are one
   InstancedMesh of unit boxes, for the draw call and for corridor legibility),
   not an oversight, and the fence is what puts real geometry at the wall base.
+- **THE DEEP FOREST IS THE SECOND img2threejs BOARD** (IDEA-065, after the
+  garden). Nuno's brief: the wall and the ground stay, the work is all in the
+  PROPS. Eleven subjects from references, in `src/render/forestProps.ts` (the
+  pine, the log cabin, the nest tree, the perched bird),
+  `src/render/forestCritters.ts` (six animals) and `makeGardenFlowerHead` in
+  `gardenProps.ts`. Seven rules are load-bearing.
+  1. **THE PINE IS A REWRITE IN PLACE, AND IT IS THE ONE EXCEPTION TO
+     IDEA-060's RULE.** That rule was about `shrub` and `tree`, which the park
+     and the forest both use — rewriting one silently re-dresses a theme
+     nobody is reviewing. `pine` is referenced by the forest and NOTHING ELSE,
+     and the forest is the theme under review, so the reason does not apply;
+     keeping a cone-stack "Pine" beside a real one would be two library
+     entries with the same name. **What was wrong with it is `foliage.ts`'s
+     own lesson one shape along**: every plant in this game was a SPHERE and
+     every conifer is a smooth CONE. Measured
+     (`scripts/_scratch-pine-profile.mjs`), a cartoon pine's half-width
+     oscillates with sd **0.092 of its maximum** down the trunk, in **9 tiers**
+     at a period of 0.092 of the height, with a needle sawtooth reaching 0.09
+     on top. A cone measures 0.0 on both.
+  2. **THE WHORL COUNT COMES FROM A RATIO, NOT FROM COUNTING.** The reference's
+     tier spacing is **0.26 of its reach**; six whorls over this canopy measure
+     0.45, and at that ratio a stack of drooping skirts stops reading as one
+     textured cone and becomes a pile of MUSHROOM CAPS. Eight lands on 0.30.
+     Two more numbers were wrong in ways only the render explained:
+     `PINE_TREND` is the SMOOTHED profile (the tiers are measured by smoothing
+     them away, so its peak sample is 0.77 and a tree built to it measures
+     0.607 w/h against a reference at 0.718) — the missing 0.23 is what the
+     smoothing removed and the RIM is the local maximum, so `TIER_RIM` carries
+     it, **as a multiplier**: added flat, a boost sized for the widest whorl is
+     two thirds of the trend at the top one and a wide plate with a needle
+     above it is a PARASOL. And eight deep serration teeth do not read as a
+     coarse edge, they read as eight round LOBES — i.e. a pine CONE.
+  3. **DRAW CALLS, NOT TRIANGLES, ARE THIS PROJECT'S PROP BUDGET — and the
+     forest is where that was first measured.** `scripts/_scratch-mesh-census.ts`:
+     garden **220** prop meshes / 22k triangles, park 120 / 16k, city 314 / 5k,
+     and the forest's first build **393 / 141k**. A pine was ten meshes and
+     there are thirty-five of them. **`src/render/propMerge.ts`** is the answer
+     in two shapes — `mergeGrouped` for parts that already carry material
+     groups (the pine's whorls, lit-top over shaded-underside) and
+     `collapseByMaterial` for a hand-assembled prop (one mesh per material).
+     It now applies to EVERY theme's board, not just the forest's: the garden
+     went 220 prop meshes -> **104** and its wall decor 76 -> 52, same pixels.
+     **WHERE `collapseByMaterial` IS CALLED IS THE WHOLE DESIGN, AND GETTING
+     IT WRONG COST A REAL EDIT.** It belongs in `buildProps` and
+     `buildWallDecor` — the BOARD — and NOWHERE ELSE. Put in the prop
+     factories first, so `makePropFromDef` returned a collapsed prop: that is
+     the same object the EDITOR builds its part tree from, so every named
+     primitive (`ring`, `pupil`, `earL`) became an opaque `merged0..N`, one
+     per material. Nuno went looking for the perched bird's EYE, found only
+     `merged3` — the gold iris material shared by BOTH eyes — recoloured it,
+     and saved `{ path: "3", color: 0xffffff }` into props.ts: a white-eyed
+     bird, and a path that means a different part in every future build. The
+     factory hands back the full named tree (what the editor authors and what
+     `applyPropParts` addresses); the board collapses the instance it places.
+     It also bakes transforms RELATIVE to the root, never to the world, so the
+     placement transform and IDEA-062's cap-the-PRODUCT rule are untouched.
+     **And when a prop has a part a theme should be able to recolour, give it
+     a NAMED PARAM** (`eyeColor` on the bird) rather than leaving it to be
+     hunted for in the part tree — that hunt is what produced the white bird.
+  4. **SIX ANIMALS ARE ONE `PropBaseShape`, AND THE RISK IS COLOUR.**
+     `critterKind` follows `flowerKind`'s precedent — they share a body plan
+     and differ in the SHAPES of its parts. IDEA-056 rule 1 bites harder here
+     than it did for the sushi pair because there are six and **three are the
+     same orange**: a fox, a squirrel and a deer are all warm tan in their
+     references. So the silhouette carries all of it — a rabbit's two tall
+     ears, a raccoon's ringed tail and mask, a squirrel's plume arcing OVER
+     its back, a fox's brush held level, a deer's antlers and legs, and the
+     explorer's hat and staff (the only prop in this game that carries an
+     object). **Verify by rendering all six together**
+     (`scripts/_scratch-critter-sheet.ts`, play camera AND clay), never by
+     assertion.
+  5. **THE ANIMALS GO ON THE SOUTH ROW, AND THAT IS THE PLACEMENT IDEA.** They
+     are the `"low"` height class, so they are the only new prop here the
+     camera-safety caps do not touch — and the south apron is UNOCCLUDED and
+     NEAREST the camera (IDEA-060's four-zone note). It is the one zone on the
+     board where something knee-high is legible. A pine there is clamped to
+     0.55 and reads as a shrub; a deer reads as a deer. **A LANDMARK ALSO
+     NEEDS ITS NEIGHBOURS CLEARED, not just its own tile** — an apron pine is
+     2.2 units against a cabin at 1.95, so dropping only the tile each
+     landmark stands on left both buried.
+  6. **AT THE PLAY CAMERA THE CABIN IS ITS ROOF, and that is recorded rather
+     than fought.** The reference is a three-quarter view from ground level
+     where the log wall is most of the building. The game looks DOWN at 59
+     degrees — a vertical wall projects at cos(59) = 0.515 of its height while
+     a 45-degree roof projects at nearly its full area — AND the cabin stands
+     on the north apron, the only occluded zone, where the hedge hides
+     everything below y = 0.382, which is most of the wall. So the roof got a
+     pale ridge cap, a pale bargeboard, four thin DARK shingle joints and a
+     shallower pitch. (Built at 0.2 of the slope in the pale trim colour the
+     joints covered four fifths of the roof and inverted it — a pale planked
+     lid with dark lines, where the reference is a dark roof with darker
+     joints.) The corner log-ends and the courses are still the identity and
+     are what the shop stage and any lower angle show.
+  7. **THE FLOWERS SPLIT IN TWO** (Nuno: *"they look better on the props of the
+     board than on the wall because they have the stem"*). `flower` LEFT
+     `WALL_TOP_SHAPES` and `flowerHead` joined it — the same five heads with no
+     stem and no leaves, as a thin wrapper on `makeGardenFlower` rather than a
+     copy, because the five heads are genuinely different constructions and a
+     second copy is five chances to retune one and not the other.
+  **AND A COLOUR FIELD WITHOUT A SEED PAINTS THE PROP WHITE.** The Props tab
+  writes a seed into `def.params` the moment it builds a control for an unset
+  field; for a colour that fallback used to be `0xffffff`. IDEA-065 added
+  `furColor`/`bellyColor`/`accentColor` and registered no seed, so SELECTING a
+  critter wrote white into its params and a save persisted it — all six
+  woodland animals shipped pure white with their per-kind palettes intact and
+  unreachable, because a def-level override now existed. IDEA-060 hit the same
+  thing with `petalColor`/`centerColor` and left the rule in a comment: **a
+  seed default that depends on another field's value cannot be a constant.**
+  The second occurrence was harder to find than the first because a repainted
+  flower looks like a bug and white looks like a lighting problem. It is now
+  enforced: **`src/editor/propsSeedColors.ts`** is a PURE module (no lil-gui,
+  no DOM, importable by a Node test) holding the flat table, the two per-kind
+  tables and `seedColorFor`, which returns **undefined rather than white** when
+  nothing knows; `test-garden-props.ts` fails the build on any single-colour
+  field in `PROP_SHAPE_FIELDS` that has no seed, seeds white, or seeds another
+  kind's colour. **Adding a colour param means adding its seed.**
+  **FIVE BURIED-PART DEFECTS IN ONE SESSION**, worth recording as a rate rather
+  than as five incidents. The family is IDEA-057's nori belt, IDEA-058's mouth
+  floor and IDEA-059's flipped band normal: a part built right, coloured right,
+  placed right, and behind another surface. Here: the cabin's door and windows
+  placed against the wall PLANE while the round log courses bulge `logR` past
+  it; the nest tree's whole hollow, nest and chick placed at a fixed radius on
+  a trunk that is a LATHE (at the hollow's own height the bark is at 0.208 and
+  the assembly was at 0.148); the perched bird floating 0.067 above its own
+  branch; the flower heads sinking 0.029 BELOW the floor once the stem went;
+  and every inner ear positioned in the ear pivot's units while the ear shell's
+  was a fraction of its LENGTH — which on the fox read as two black ANTENNAE.
+  The last was fixed by taking the position away from the caller entirely,
+  which is IDEA-054's make-it-unrepresentable lesson.
+  **AND A REVIEW-HARNESS MISMATCH REPORTED AS A MODEL DEFECT FOR THE THIRD
+  TIME** (after `?fov=` in IDEA-054 and `?bg=none` in IDEA-056):
+  `/preview-rework/`'s `?toon=1` could not read a material ARRAY, so the pine —
+  the first prop with per-triangle groups — rendered WHITE, and review round
+  one read it as the model having lost its colours. New measuring instruments:
+  `scripts/_scratch-measure-forest.mjs` (bbox + normalised width profile on an
+  alpha OR near-white background), `_scratch-pine-profile.mjs` (tier period,
+  tier amplitude, serration depth), `_scratch-palette.mjs` (dominant colours BY
+  AREA — and note that on an INKED reference those are the keylines, not the
+  surfaces, so a flat region has to be point-probed), `_scratch-crop-forest.mjs`
+  and `_scratch-critter-sheet.ts`.
 - **Input / UI / PWA**: `src/input/{touch,keyboard,dpad,stick}.ts`, `src/ui/{hud,sound,install}.ts`,
   `public/icons/*` (192, 512, 512-maskable).
 - **THERE ARE THREE TOUCH SCHEMES** (IDEA-049): swipe (default), the D-pad, and the

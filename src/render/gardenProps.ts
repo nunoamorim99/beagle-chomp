@@ -744,7 +744,46 @@ const FLOWER_DEFAULTS: Record<GardenFlowerKind, { petal: number; centre: number;
   blossom: { petal: 0xb289de, centre: 0xf3e46a, stem: 0x4e8f3a },
 };
 
-export function makeGardenFlower(params: PropParams, h: number): THREE.Group {
+/**
+ * IDEA-065: the same five flowers, HEAD ONLY — no stem, no leaves.
+ *
+ * Nuno's call, and it is a placement observation rather than a modelling one:
+ * a stemmed flower reads correctly standing in soil on the apron and reads
+ * WRONG on a hedge crown, where a stem has nothing to come out of. So the
+ * stemmed flowers become board props and the heads become the wall ones.
+ *
+ * It is a thin wrapper rather than a copy on purpose — the five heads are
+ * genuinely different constructions (a layered ball against a closed cup, and
+ * the rose and the tulip are both red, so shape is the only thing that
+ * separates them) and a second copy of that is five chances to retune one and
+ * not the other. `makeGardenFlower` grew one boolean instead.
+ */
+export function makeGardenFlowerHead(params: PropParams, h: number): THREE.Group {
+  const g = makeGardenFlower(params, h, false);
+  // SIT IT ON THE SURFACE. With the stem gone the head group is at y = 0, so
+  // its lower half is underground — measured at 0.029 below the floor for the
+  // rose. That is the tulip's own strap-leaf defect from IDEA-060 in a new
+  // place, and it is invisible in every render for the same reason: a
+  // turntable has no floor there. Measured from VERTICES, never from
+  // `Box3.setFromObject`, which over-reported this project's garden shrub by
+  // 56% because it transforms local boxes.
+  g.updateMatrixWorld(true);
+  const v = new THREE.Vector3();
+  let lo = Infinity;
+  g.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (!m.isMesh) return;
+    const pos = m.geometry.getAttribute("position") as THREE.BufferAttribute;
+    for (let i = 0; i < pos.count; i++) {
+      v.fromBufferAttribute(pos, i).applyMatrix4(m.matrixWorld);
+      if (v.y < lo) lo = v.y;
+    }
+  });
+  if (isFinite(lo)) g.position.y -= lo;
+  return g;
+}
+
+export function makeGardenFlower(params: PropParams, h: number, stemmed = true): THREE.Group {
   const g = new THREE.Group();
   const kind = (params.flowerKind ?? "daisy") as GardenFlowerKind;
   const width = params.width ?? 1;
@@ -760,14 +799,16 @@ export function makeGardenFlower(params: PropParams, h: number): THREE.Group {
 
   // The sunflower stands taller than the rest, exactly as in the reference —
   // it is the one flower whose height is part of its identity.
-  const stemH = (kind === "sunflower" ? 0.3 : kind === "rose" ? 0.21 : 0.24) * height;
-  const stem = part(
-    new THREE.CylinderGeometry(0.011 * width, 0.015 * width, stemH, 5),
-    stemMat,
-    "stem",
-    g,
-  );
-  stem.position.y = stemH / 2;
+  const stemH = stemmed ? (kind === "sunflower" ? 0.3 : kind === "rose" ? 0.21 : 0.24) * height : 0;
+  if (stemmed) {
+    const stem = part(
+      new THREE.CylinderGeometry(0.011 * width, 0.015 * width, stemH, 5),
+      stemMat,
+      "stem",
+      g,
+    );
+    stem.position.y = stemH / 2;
+  }
   // A slight lean, so a bed of them is not a parade.
   const lean = (r() - 0.5) * 0.24;
   g.rotation.z = lean;
@@ -776,7 +817,13 @@ export function makeGardenFlower(params: PropParams, h: number): THREE.Group {
   // Leaves: two blades off the stem. The tulip gets STRAP leaves from the
   // base instead, which is one of its separators.
   const leafMat = toon({ color: def.stem });
-  if (kind === "tulip") {
+  if (!stemmed) {
+    // A head on its own still leans and still spins — two of them on one wall
+    // should not be stamped — but it must not lean far enough to lift a petal
+    // off the crown it is lying on.
+    g.rotation.z = (r() - 0.5) * 0.12;
+    g.rotation.y = r() * Math.PI * 2;
+  } else if (kind === "tulip") {
     for (const side of [-1, 1]) {
       const leaf = part(petalGeometry(0.17 * height, 0.05 * width, 0.008, true), leafMat, side < 0 ? "leafL" : "leafR", g);
       leaf.position.set(side * 0.015 * width, 0.02, 0);

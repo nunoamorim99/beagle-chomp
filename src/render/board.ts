@@ -48,8 +48,12 @@ import {
   makeBroadleafTree,
   makeGardenFlower,
   makeLeafShrub,
+  makeGardenFlowerHead,
   makeTreehouse,
 } from "./gardenProps";
+import { makeForestPine, makeLogCabin, makeNestTree, makePerchedBird } from "./forestProps";
+import { makeForestCritter } from "./forestCritters";
+import { collapseByMaterial } from "./propMerge";
 
 export const WALL_H = 1;
 
@@ -2274,6 +2278,18 @@ const PROP_HEIGHT_CLASS: Record<PropBaseShape, PropHeightClass> = {
   treehouse: "tall",
   flower: "low",
   birdhouse: "low",
+  // IDEA-065. The cabin is TALL for the treehouse's reason: it is a landmark
+  // and it is meant to be seen, which is exactly why it also has to be capped
+  // anywhere but the skyline row behind the maze.
+  logCabin: "tall",
+  // Every critter is knee-high or less — even the deer is under a tile — so
+  // they are always safe in front of the play area.
+  critter: "low",
+  // The nest tree is a real tree and is capped like one. The bird and the
+  // flower heads are wall-top pieces and hug whatever they sit on.
+  nestTree: "medium",
+  perchedBird: "low",
+  flowerHead: "low",
 };
 
 // Fixed default trunk color family for every woody prop (tree/pine/palm) —
@@ -2378,52 +2394,6 @@ function makeTree(params: PropParams, h: number): THREE.Group {
     crown.position.y = crownBaseY + i * crownStep;
     crown.castShadow = true;
     g.add(crown);
-  }
-
-  return g;
-}
-
-/** pine — trunk + 2-4 stacked cones, noticeably taller than makeTree.
- *  - `params.trunkColor`, `params.foliageColors` (default deep conifer
- *    greens).
- *  - `params.height` (default 1) scales overall Y (trunk + cone-tier
- *    heights/positions); `params.width` (default 1) scales trunk+cone
- *    radii.
- *  - `params.segments` (default 3, clamped 2-4) sets the tier COUNT —
- *    was fixed at exactly 3 pre-v4.1; a 4th tier is a smaller/higher cone
- *    continuing the same taper the first 3 establish, so the def stays a
- *    single continuous conifer silhouette at any tier count. */
-function makePine(params: PropParams, h: number): THREE.Group {
-  const g = new THREE.Group();
-  const colors = params.foliageColors ?? [0x2e6b34, 0x24552a, 0x3a7a40];
-  const height = params.height ?? 1;
-  const width = params.width ?? 1;
-  const segments = THREE.MathUtils.clamp(Math.round(params.segments ?? 3), 2, 4);
-
-  const trunk = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.05 * width, 0.07 * width, 0.5 * height, 8),
-    makeTrunkMat(params.trunkColor),
-  );
-  trunk.name = "trunk"; // IDEA-033: addressable part name — see applyPropParts
-  trunk.position.y = 0.25 * height;
-  trunk.castShadow = true;
-  g.add(trunk);
-
-  const foliageMat = toon({ color: pickColor(colors, h)});
-  // Tiers taper radius/height by a fixed ratio per step (matches the
-  // pre-v4.1 authored 3-tier sequence exactly at segments=3) and climb in Y
-  // by a fixed step so consecutive cones keep overlapping enough to read as
-  // one continuous canopy at any tier count.
-  const tierStep = 0.34;
-  for (let i = 0; i < segments; i++) {
-    const r = (0.34 - i * 0.085) * width;
-    const h2 = (0.5 - i * 0.08) * height;
-    const y = (0.52 + i * tierStep) * height;
-    const cone = new THREE.Mesh(new THREE.ConeGeometry(Math.max(r, 0.08), Math.max(h2, 0.14), 10), foliageMat);
-    cone.name = `tier${i}`; // IDEA-033
-    cone.position.y = y;
-    cone.castShadow = true;
-    g.add(cone);
   }
 
   return g;
@@ -2962,7 +2932,20 @@ export function makePropFromDef(def: PropDef, instanceHash: number): THREE.Group
     switch (def.shape) {
       case "shrub": return makeShrub(p, instanceHash);
       case "tree": return makeTree(p, instanceHash);
-      case "pine": return makePine(p, instanceHash);
+      // IDEA-065: the pine is the one OLD shape this pass rewrites in place
+      // rather than adding a sibling to. IDEA-060's rule against that was
+      // about `shrub` and `tree`, which the park and the forest also use —
+      // rewriting one silently re-dresses a theme nobody is reviewing. `pine`
+      // is referenced by the forest and by nothing else, and the forest is
+      // exactly the theme under review here, so the reason does not apply;
+      // keeping a cone-stack "Pine" in the library beside a real one would
+      // just be two entries with the same name.
+      case "pine": return makeForestPine(p, instanceHash);
+      case "logCabin": return makeLogCabin(p, instanceHash);
+      case "critter": return makeForestCritter(p, instanceHash);
+      case "nestTree": return makeNestTree(p, instanceHash);
+      case "perchedBird": return makePerchedBird(p, instanceHash);
+      case "flowerHead": return makeGardenFlowerHead(p, instanceHash);
       case "palm": return makePalm(p, instanceHash);
       case "building": return makeBuilding(p, instanceHash);
       case "streetlight": return makeStreetlight(p, instanceHash);
@@ -3106,6 +3089,16 @@ export function buildProps(scene: THREE.Object3D, theme: MazeTheme): THREE.Group
     const instanceHash = hash01(tx, ty, PROP_INSTANCE_HASH_SEED);
 
     const mesh = makePropFromDef(def, instanceHash);
+    // IDEA-065: collapse to one mesh per material, HERE and not in the prop
+    // factory. The factory's named part tree is what the editor authors and
+    // what `applyPropParts` above addresses by index path; a player only ever
+    // sees the board, and the board pays a draw call per mesh. Doing it in the
+    // factory instead turned every named part into an opaque `mergedN` in the
+    // editor — see propMerge.ts's header for what that cost.
+    //
+    // It bakes transforms RELATIVE to the root, so the placement position /
+    // rotation / scale and the height-safety caps below are untouched.
+    collapseByMaterial(mesh);
 
     const heightClass = PROP_HEIGHT_CLASS[def.shape];
     const onSouthRow = ty === ROWS;
@@ -3232,6 +3225,8 @@ export function buildWallDecor(
     const instanceHash = hash01(tx, ty, WALL_DECOR_INSTANCE_HASH_SEED);
 
     const mesh = makePropFromDef(def, instanceHash);
+    // IDEA-065: one mesh per material, for buildProps' reason above.
+    collapseByMaterial(mesh);
     mesh.position.set(worldX(tx), WALL_H + WALL_DECOR_Y_OFFSET, worldZ(ty));
     mesh.rotation.y = placement.rotationY;
     // MULTIPLY rather than assign, for buildProps' reason above — a def-level

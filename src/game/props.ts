@@ -41,7 +41,16 @@ export type PropBaseShape =
   | "broadleafTree"
   | "treehouse"
   | "flower"
-  | "birdhouse";
+  | "birdhouse"
+  // IDEA-065, built from references (src/render/forestProps.ts). Additions
+  // for the Deep Forest theme, on the same reasoning: `pine` is REWRITTEN in
+  // place because the forest is the only theme that uses it and the only
+  // theme under review, but everything else here is new.
+  | "logCabin"
+  | "critter"
+  | "nestTree"
+  | "perchedBird"
+  | "flowerHead";
 
 /** The full tunable parameter set across ALL base shapes. Every field is
  *  OPTIONAL with a documented default the render factory applies, so a
@@ -114,6 +123,32 @@ export interface PropParams {
   showBird?: boolean;
   /** birdhouse only: the perched bird's plumage (default 0x3f9ede). */
   birdColor?: number;
+
+  // --- IDEA-065 forest props ---
+  /** logCabin only: the roof slabs and the chimney (default 0x4a3a33). Kept
+   *  separate from `facadeColors` because a log cabin's roof and its walls
+   *  are the one contrast the silhouette depends on, so a theme retinting one
+   *  must be able to leave the other alone. */
+  roofColor?: number;
+  /** critter only: WHICH of the six woodland animals this is. Six defs share
+   *  one shape for the reason the five flowers do — they share a body plan
+   *  (body, head, ears, forelimbs, feet, tail) and differ in the SHAPES of
+   *  those parts. See forestCritters.ts's header. Default "rabbit". */
+  critterKind?: "deer" | "fox" | "rabbit" | "raccoon" | "squirrel" | "squirrelExplorer";
+  /** critter only: the main coat (default per kind). */
+  furColor?: number;
+  /** critter only: the pale bib/underside/inner ear (default per kind). */
+  bellyColor?: number;
+  /** perchedBird only: the eye's iris RING (default the measured 0xe8c24a
+   *  gold). It is a named param rather than a part edit because the eye is
+   *  the bird's identity rank 1 and "recolour the eyes" is a thing a theme
+   *  should be able to say — hunting for the right primitive in the part tree
+   *  to do it is how a whole prop ended up white. */
+  eyeColor?: number;
+  /** critter only: whatever the kind's reference makes DARK — a fox's socks,
+   *  a raccoon's mask and tail bands, a deer's antlers, a rabbit's inner ear
+   *  (default per kind). */
+  accentColor?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -254,6 +289,12 @@ export const PROP_SHAPE_FIELDS: Record<PropBaseShape, readonly (keyof PropParams
   treehouse: ["height", "width", "foliageColors", "trunkColor"],
   flower: ["height", "width", "flowerKind", "petalColor", "centerColor"],
   birdhouse: ["height", "width", "trunkColor", "showBird", "birdColor"],
+  // IDEA-065.
+  logCabin: ["height", "width", "segments", "trunkColor", "roofColor", "windowColor", "windowEmissiveIntensity"],
+  critter: ["height", "width", "critterKind", "furColor", "bellyColor", "accentColor"],
+  nestTree: ["height", "width", "trunkColor", "foliageColors", "showBird", "birdColor"],
+  perchedBird: ["height", "width", "birdColor", "bellyColor", "eyeColor", "trunkColor"],
+  flowerHead: ["height", "width", "flowerKind", "petalColor", "centerColor"],
 } as const;
 
 /** The starter library — the props IDEA-026 shipped, now as named reusable
@@ -291,11 +332,11 @@ export const PROP_LIBRARY: readonly PropDef[] = [
     name: "Pine",
     shape: "pine",
     params: {
-      height: 1,
-      width: 1,
-      segments: 3,
-      foliageColors: [0x2e6b34, 0x24552a, 0x3a7a40],
-      trunkColor: 0x6b4a2f,
+      height: 1.5,
+      width: 1.4,
+      segments: 8,
+      foliageColors: [0x285835, 0x2e6337, 0x24523a],
+      trunkColor: 0x7a6142,
     },
   },
   {
@@ -327,6 +368,8 @@ export const PROP_LIBRARY: readonly PropDef[] = [
     name: "City Tower",
     shape: "building",
     params: {
+      height: 1,
+      width: 1,
       facadeColors: [0x5a5a68, 0x6d6a78, 0x4a4a58, 0x7a7480],
       windowRows: 2,
       windowCols: 2,
@@ -446,6 +489,93 @@ export const PROP_LIBRARY: readonly PropDef[] = [
     },
   },
   {
+    id: "log-cabin",
+    name: "Log Cabin",
+    shape: "logCabin",
+    params: {
+      height: 1,
+      width: 1,
+      segments: 7,
+      trunkColor: 0xc2804e,
+      windowColor: 0xf0c86a,
+      windowEmissiveIntensity: 0.6,
+      roofColor: 0x6b5248,
+    },
+    parts: {
+      edits: [
+      { path: "2", scale: [1.032, 1, 1.049] },
+      { path: "19", position: [0, 0.155, 0.526] },
+      { path: "12", position: [-0.203, 0.27, 0.524] },
+      { path: "11", position: [-0.203, 0.27, 0.516] },
+      { path: "14", position: [0.203, 0.27, 0.524] },
+      { path: "13", position: [0.203, 0.27, 0.516] },
+      { path: "16", position: [0, 0.542, 0.524] },
+      { path: "15", position: [0, 0.542, 0.516] },
+    ],
+      added: [],
+    },
+  },
+  {
+    id: "critter-deer",
+    name: "Deer",
+    shape: "critter",
+    params: {
+      height: 1,
+      width: 1,
+      critterKind: "deer",
+    },
+  },
+  {
+    id: "critter-fox",
+    name: "Fox",
+    shape: "critter",
+    params: {
+      height: 1,
+      width: 1,
+      critterKind: "fox",
+    },
+  },
+  {
+    id: "critter-rabbit",
+    name: "Rabbit",
+    shape: "critter",
+    params: {
+      height: 1,
+      width: 1,
+      critterKind: "rabbit",
+    },
+  },
+  {
+    id: "critter-raccoon",
+    name: "Raccoon",
+    shape: "critter",
+    params: {
+      height: 1,
+      width: 1,
+      critterKind: "raccoon",
+    },
+  },
+  {
+    id: "critter-squirrel",
+    name: "Squirrel",
+    shape: "critter",
+    params: {
+      height: 1,
+      width: 1,
+      critterKind: "squirrel",
+    },
+  },
+  {
+    id: "critter-squirrel-explorer",
+    name: "Squirrel Explorer",
+    shape: "critter",
+    params: {
+      height: 1,
+      width: 1,
+      critterKind: "squirrelExplorer",
+    },
+  },
+  {
     id: "flower-daisy",
     name: "Daisy",
     shape: "flower",
@@ -465,6 +595,8 @@ export const PROP_LIBRARY: readonly PropDef[] = [
       height: 1,
       width: 1,
       flowerKind: "sunflower",
+      petalColor: 0xf5c518,
+      centerColor: 0x6b4526,
     },
   },
   {
@@ -475,6 +607,8 @@ export const PROP_LIBRARY: readonly PropDef[] = [
       height: 1,
       width: 1,
       flowerKind: "rose",
+      petalColor: 0xd8384a,
+      centerColor: 0x9c2333,
     },
   },
   {
@@ -485,6 +619,8 @@ export const PROP_LIBRARY: readonly PropDef[] = [
       height: 1,
       width: 1,
       flowerKind: "tulip",
+      petalColor: 0xd42f4c,
+      centerColor: 0xf09aa8,
     },
   },
   {
@@ -495,6 +631,94 @@ export const PROP_LIBRARY: readonly PropDef[] = [
       height: 1,
       width: 1,
       flowerKind: "blossom",
+      petalColor: 0xb289de,
+      centerColor: 0xf3e46a,
+    },
+  },
+  {
+    id: "nest-tree",
+    name: "Nest Tree",
+    shape: "nestTree",
+    params: {
+      height: 1,
+      width: 1,
+      foliageColors: [0x2e6337, 0x38703c, 0x25552e],
+      trunkColor: 0x7a5433,
+      showBird: true,
+      birdColor: 0xe8622a,
+    },
+  },
+  {
+    id: "perched-bird",
+    name: "Perched Bird",
+    shape: "perchedBird",
+    params: {
+      height: 1,
+      width: 1,
+      trunkColor: 0x7a5433,
+      birdColor: 0x2f7fd6,
+      eyeColor: 15254090,
+      bellyColor: 0x8fc4ea,
+    },
+  },
+  {
+    id: "flower-head-daisy",
+    name: "Daisy Head",
+    shape: "flowerHead",
+    params: {
+      height: 1,
+      width: 1,
+      flowerKind: "daisy",
+      petalColor: 0xfaf6ec,
+      centerColor: 0xf2b632,
+    },
+  },
+  {
+    id: "flower-head-sunflower",
+    name: "Sunflower Head",
+    shape: "flowerHead",
+    params: {
+      height: 1,
+      width: 1,
+      flowerKind: "sunflower",
+      petalColor: 0xf5c518,
+      centerColor: 0x6b4526,
+    },
+  },
+  {
+    id: "flower-head-rose",
+    name: "Rose Head",
+    shape: "flowerHead",
+    params: {
+      height: 1,
+      width: 1,
+      flowerKind: "rose",
+      petalColor: 0xd8384a,
+      centerColor: 0x9c2333,
+    },
+  },
+  {
+    id: "flower-head-tulip",
+    name: "Tulip Head",
+    shape: "flowerHead",
+    params: {
+      height: 1,
+      width: 1,
+      flowerKind: "tulip",
+      petalColor: 0xd42f4c,
+      centerColor: 0xf09aa8,
+    },
+  },
+  {
+    id: "flower-head-blossom",
+    name: "Blossom Head",
+    shape: "flowerHead",
+    params: {
+      height: 1,
+      width: 1,
+      flowerKind: "blossom",
+      petalColor: 0xb289de,
+      centerColor: 0xf3e46a,
     },
   },
 ] as const;
@@ -529,12 +753,18 @@ function getFallbackPropDef(): PropDef {
 export const WALL_TOP_SHAPES: readonly PropBaseShape[] = [
   "bloom",
   "sign",
-  // IDEA-060: the garden's five flowers and its birdhouse are wall-top
-  // pieces by design — Nuno's brief put the flowers ON the wall and said the
-  // birdhouse works either there or on the board, which is why the post is
-  // part of the birdhouse prop rather than something it stands on.
-  "flower",
+  // IDEA-060: the birdhouse works either on a wall top or on the board, which
+  // is why the post is part of the birdhouse prop rather than something it
+  // stands on.
   "birdhouse",
+  // IDEA-065. `flower` used to be here and has MOVED OUT, which is Nuno's own
+  // observation about the garden set: a stemmed flower reads correctly
+  // standing in soil and reads wrong on a hedge crown, where its stem has
+  // nothing to come out of. So the stemmed five became board props and
+  // `flowerHead` — the same five heads with no stem and no leaves — is what
+  // goes on a wall.
+  "flowerHead",
+  "perchedBird",
 ];
 
 export function isWallTopProp(id: string): boolean {

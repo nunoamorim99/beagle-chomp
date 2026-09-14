@@ -27,7 +27,8 @@ import * as THREE from "three";
 import { Grid, COLS, ROWS } from "../src/game/grid";
 import { MAZES } from "../src/game/mazes";
 import { MAZE_THEMES } from "../src/game/themes";
-import { PROP_LIBRARY, PROP_SHAPE_FIELDS, WALL_TOP_SHAPES, getPropDef } from "../src/game/props";
+import { PROP_LIBRARY, PROP_SHAPE_FIELDS, WALL_TOP_SHAPES, getPropDef, type PropParams } from "../src/game/props";
+import { seedColorFor } from "../src/editor/propsSeedColors";
 import { buildProps } from "../src/render/board";
 import { buildFence, fencePanelCount, FENCE_H } from "../src/render/fence";
 import { buildGroundDetail, GROUND_DETAIL_PARAMS } from "../src/render/groundDetail";
@@ -469,6 +470,82 @@ ok(
   /typeof value === "string"/.test(codegenSrc),
   "flowerKind would otherwise emit as `flowerKind: daisy,` and not compile",
 );
+
+
+// ---------------------------------------------------------------------------
+section("Every colour field the Props tab offers has a seed");
+
+// THE DEFECT THIS EXISTS FOR HAS SHIPPED TWICE, and the second time it shipped
+// six pure-white animals.
+//
+// The Props tab writes a seed value into `def.params` the moment it builds a
+// control for a field the def has not set. For a COLOUR that seed used to fall
+// back to `0xffffff`, so adding a colour field to PROP_SHAPE_FIELDS and
+// forgetting to register a seed meant: select the prop, and white is written
+// into its params; save, and white is in props.ts; and the factory's own
+// per-kind palette is now unreachable because a def-level override exists.
+//
+// IDEA-060 hit it with `petalColor`/`centerColor` seeded from a flat table (a
+// sunflower repainted as a daisy). IDEA-065 hit it with `furColor`,
+// `bellyColor` and `accentColor` seeded from nothing at all. The flower
+// version at least LOOKED like a bug; white looks like a lighting problem,
+// which is why it survived a whole review pass.
+//
+// `seedColorFor` now returns undefined rather than white, and this is the
+// check that makes the omission fail the build instead of the board.
+const COLOR_FIELD = /Color$|Colors$/;
+const seedProblems: string[] = [];
+for (const [shape, fields] of Object.entries(PROP_SHAPE_FIELDS)) {
+  for (const field of fields) {
+    if (!COLOR_FIELD.test(field)) continue;
+    // A colour LIST (foliageColors/facadeColors) is a different control with
+    // its own seeding; this rule is about the single-colour swatch.
+    if (field.endsWith("Colors")) continue;
+    // Seed it the way the inspector would, for every kind the shape can be.
+    const defs = PROP_LIBRARY.filter((d) => d.shape === shape);
+    const cases: PropParams[] = defs.length ? defs.map((d) => d.params) : [{}];
+    for (const params of cases) {
+      const seed = seedColorFor(field, params);
+      if (seed === undefined) {
+        seedProblems.push(`${shape}.${String(field)}`);
+      } else if (seed === 0xffffff) {
+        // Not fatal on its own — a white thing may genuinely be white — but no
+        // shipped prop has one, and it is the signature of the defect.
+        seedProblems.push(`${shape}.${String(field)} seeds WHITE`);
+      }
+    }
+  }
+}
+ok(
+  "every single-colour prop field has a registered seed",
+  seedProblems.length === 0,
+  [...new Set(seedProblems)].join(", "),
+);
+
+// And the seed must be what the FACTORY would have used, or turning the
+// control on silently repaints the prop you are looking at. Spot-checked
+// against the two per-kind tables, which are the ones that can drift.
+ok(
+  "a critter seeds its OWN kind's fur, not another kind's",
+  seedColorFor("furColor", { critterKind: "fox" }) !== seedColorFor("furColor", { critterKind: "raccoon" }),
+);
+ok(
+  "a flower seeds its OWN kind's petal, not the daisy's",
+  seedColorFor("petalColor", { flowerKind: "sunflower" }) !== seedColorFor("petalColor", { flowerKind: "daisy" }),
+);
+
+// The six critter defs must NOT carry colour overrides at all: their palettes
+// live per-kind in forestCritters.ts, and an override is exactly what the
+// white-seed bug left behind.
+for (const d of PROP_LIBRARY.filter((x) => x.shape === "critter")) {
+  ok(
+    `${d.id} leaves its colours to the kind's own palette`,
+    d.params.furColor === undefined &&
+      d.params.bellyColor === undefined &&
+      d.params.accentColor === undefined,
+    "a def-level override here makes CRITTER_COLORS unreachable",
+  );
+}
 
 console.log("\n" + "-".repeat(60));
 console.log(`GARDEN PROPS: ${pass} passed, ${fail} failed`);
