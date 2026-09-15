@@ -24,7 +24,7 @@
 // hedge blooms (buildHedgeDecor, unchanged) as a fallback — a theme either
 // hand-places wall components OR gets scattered palette blooms, never both.
 import * as THREE from "three";
-import { Grid, COLS, ROWS, TILE, worldX, worldZ } from "../game/grid";
+import { Grid, COLS, ROWS, worldX, worldZ } from "../game/grid";
 // IDEA-045: the fruit ids the board can spawn. Render importing pure game
 // data is the allowed direction (CLAUDE.md); the reverse never happens.
 import { type FruitId, type PowerupId } from "../game/config";
@@ -53,7 +53,24 @@ import {
 } from "./gardenProps";
 import { makeForestPine, makeLogCabin, makeNestTree, makePerchedBird } from "./forestProps";
 import { makeForestCritter } from "./forestCritters";
-import { collapseByMaterial } from "./propMerge";
+import { buildSurroundGround, disposeSurroundGround } from "./surround";
+import { ensureSurround } from "./surroundRecipe";
+import {
+  WALL_SHAPE_HASH_SEED,
+  type WallShape,
+  wallGeometry,
+  wallHeightScale,
+  wallShapeFor,
+} from "./hedgeWall";
+import {
+  ARCH_DEFAULTS,
+  ARCH_INSTANCE_HASH_SEED,
+  ARCH_PARAMS,
+  archTransformFor,
+  makeArchway,
+  tunnelMouths,
+} from "./archway";
+import { collapseByMaterial, mergeBySignature } from "./propMerge";
 
 export const WALL_H = 1;
 
@@ -135,6 +152,47 @@ export interface Board {
    *  material exactly like `fence` does, so teardown is `disposeGroundDetail`
    *  and never a bare `scene.remove`. */
   groundDetail: THREE.InstancedMesh | null;
+  /** IDEA-066: the ground BEYOND the board's own floor plane.
+   *
+   *  Unlike `fence` and `groundDetail` this is never null. Every theme gets
+   *  ground, because the no-sky-gap guarantee has to be unconditional — a
+   *  theme that wants the old void back sets `surroundGround` to its own
+   *  `bg` and the plane becomes invisible, which is one fewer special case
+   *  than a "none" kind and cannot be got wrong by omission.
+   *
+   *  Owns its geometry AND material, so teardown is `disposeSurroundGround`
+   *  and never a bare `scene.remove` — same rule as the two above. */
+  surroundGround: THREE.Mesh;
+  /** IDEA-066: the procedural neighbourhood beyond the verge, or `null` for a
+   *  theme whose palette says `surround: "none"` (Arcade Night, deliberately).
+   *
+   *  BORROWED, NOT OWNED — the one slot in this struct that is. The surround
+   *  reads only the theme and SURROUND_PARAMS, never the grid, so it is
+   *  identical on all 36 maps and `ensureSurround` caches it across levels
+   *  rather than rebuilding several hundred props on every level change.
+   *  `disposeLevel` must therefore leave it alone; teardown is
+   *  `disposeSurround()` in surroundRecipe.ts, called on a theme change by
+   *  ensureSurround itself. This is here for the census and the editor. */
+  surround: THREE.Group | null;
+  /** IDEA-066: hand-placed props on the VERGE rings, or `null` for a theme
+   *  that has authored none.
+   *
+   *  Owned like `props` is — it holds the prop factories' own materials, so
+   *  teardown is `disposePropGroup`. Unlike `props` it is collapsed by
+   *  SIGNATURE rather than per prop, so twenty shrubs out here cost one draw
+   *  call instead of twenty; `mergeBySignature` disposes the material objects
+   *  that weld away, which is the one thing that makes that safe. */
+  verge: THREE.Group | null;
+  /** IDEA-067: the hedge portals standing at the board's TUNNEL MOUTHS, or
+   *  `null` for a theme that has not named a `tunnelArch` prop.
+   *
+   *  A FIXTURE, not a placement — it is derived from the GRID rather than
+   *  from `theme.placements`, which is the whole reason it is a separate
+   *  slot: a tunnel is a property of the maze and there are 36 mazes, so a
+   *  hand-authored per-theme position would be a guess that happens to be
+   *  right (see buildTunnelArches). Owned like `props` is, so teardown is
+   *  `disposePropGroup`. */
+  tunnelArches: THREE.Group | null;
 }
 
 // IDEA-026: wall/floor/biscuit materials are shared, module-level, and
@@ -1963,7 +2021,13 @@ export function buildBoard(scene: THREE.Object3D, grid: Grid): Board {
   let wallCount = 0;
   grid.cells.forEach((row) => row.forEach((c) => { if (c === "#") wallCount++; }));
 
-  const wallGeo = new THREE.BoxGeometry(TILE, WALL_H, TILE);
+  // IDEA-068: the block a theme's walls are cut from — a plain box for sand,
+  // brick and Arcade Night's flat, a lumpy hedge for the three themes whose
+  // walls are plants. DERIVED from the wall texture rather than carried as a
+  // second palette field, for surroundTextureFor's reason: the two have to
+  // relate, so a separate slot is only ever a chance for them to disagree.
+  const wallShape = wallShapeFor(theme.palette.wallTexture);
+  const wallGeo = wallGeometry(wallShape, WALL_H);
   const walls = new THREE.InstancedMesh(wallGeo, matWall, wallCount);
   walls.castShadow = true;
   walls.receiveShadow = true;
@@ -1972,9 +2036,7 @@ export function buildBoard(scene: THREE.Object3D, grid: Grid): Board {
 
   grid.cells.forEach((row, y) => row.forEach((c, x) => {
     if (c === "#") {
-      dummy.position.set(worldX(x), WALL_H / 2, worldZ(y));
-      dummy.updateMatrix();
-      walls.setMatrixAt(wi++, dummy.matrix);
+      setWallInstance(walls, wi++, dummy, x, y, wallShape);
     } else if (c === "." || c === "o") {
       const mesh: THREE.Object3D = c === "o" ? makeBone() : new THREE.Mesh(geoBiscuit, matBiscuit);
       mesh.position.set(worldX(x), 0.45, worldZ(y));
@@ -2000,6 +2062,13 @@ export function buildBoard(scene: THREE.Object3D, grid: Grid): Board {
     theme.palette.groundDetail,
     theme.palette.groundDetailColor,
   );
+  // IDEA-066. LAST, so it is added after the board floor: opaque draws sort
+  // front-to-back, and the nearer floor depth-rejects the covered fragments
+  // of this full-frame quad rather than the other way round.
+  const surroundGround = buildSurroundGround(scene, theme.palette);
+  const surround = ensureSurround(scene, theme.palette.surround, theme.palette);
+  const verge = buildVerge(scene, theme);
+  const tunnelArches = buildTunnelArches(scene, grid, theme);
 
   return {
     pelletMeshes,
@@ -2014,7 +2083,60 @@ export function buildBoard(scene: THREE.Object3D, grid: Grid): Board {
     props,
     fence,
     groundDetail,
+    surroundGround,
+    surround,
+    verge,
+    tunnelArches,
   };
+}
+
+/**
+ * IDEA-068: one wall instance, and the ONE place a tile's crown height is
+ * decided.
+ *
+ * A single shared geometry means every tile is the same block, so the only
+ * variety a wall run can have comes from this matrix — and both of the things
+ * in here exist to stop ~200 identical blocks reading as a grid:
+ *
+ *  - a QUARTER TURN, in 90-degree steps and never a free angle. Free angles
+ *    would leave the block's corners off the lattice and open gaps at every
+ *    junction; quarter turns keep the footprint exactly on the tile and give
+ *    the shared lump four different profiles.
+ *  - a per-tile CROWN HEIGHT, always at or below WALL_H. This is the strongest
+ *    anti-grid signal available, because it reads as separately clipped
+ *    sections rather than as one extruded ribbon — and it is bounded downward
+ *    so every fixed clearance above WALL_H stays correct.
+ */
+function setWallInstance(
+  walls: THREE.InstancedMesh,
+  index: number,
+  dummy: THREE.Object3D,
+  tx: number,
+  ty: number,
+  shape: WallShape,
+): void {
+  const sy = wallHeightScale(hash01(tx, ty, WALL_SHAPE_HASH_SEED), shape);
+  dummy.position.set(worldX(tx), (WALL_H * sy) / 2, worldZ(ty));
+  dummy.rotation.set(0, Math.floor(hash01(tx, ty, WALL_SHAPE_HASH_SEED + 1) * 4) * (Math.PI / 2), 0);
+  dummy.scale.set(1, sy, 1);
+  dummy.updateMatrix();
+  dummy.rotation.set(0, 0, 0);
+  dummy.scale.set(1, 1, 1);
+  walls.setMatrixAt(index, dummy.matrix);
+}
+
+/**
+ * The world Y of a tile's hedge crown — the SAME answer `setWallInstance`
+ * gave, so anything sitting ON the hedge lands on it.
+ *
+ * Without this, IDEA-068's per-tile crown height would have left every bloom,
+ * leaf speck and wall-top prop hovering by whatever that tile happened to be
+ * lowered — the fixed `WALL_H + 0.06` offsets they were written against stop
+ * being true the moment the crown moves. One function, four callers, nothing
+ * to keep in step by hand.
+ */
+export function wallCrownY(tx: number, ty: number, shape: WallShape): number {
+  return WALL_H * wallHeightScale(hash01(tx, ty, WALL_SHAPE_HASH_SEED), shape);
 }
 
 /**
@@ -2145,6 +2267,7 @@ function buildHedgeDecor(
   palette: ThemePalette,
 ): THREE.Object3D[] {
   if (palette.bloomChance <= 0 || palette.bloomColors.length === 0) return [];
+  const shape = wallShapeFor(palette.wallTexture);
 
   const bloomColors = palette.bloomColors;
 
@@ -2192,7 +2315,9 @@ function buildHedgeDecor(
       // rather than stamped.
       const jx = (hash01(x, y, 4) - 0.5) * 0.4;
       const jz = (hash01(x, y, 5) - 0.5) * 0.4;
-      dummy.position.set(worldX(x) + jx, WALL_H + 0.06, worldZ(y) + jz);
+      // IDEA-068: the tile's OWN crown, not a flat WALL_H — the hedge block
+      // varies per tile now and a fixed offset leaves a bloom hovering.
+      dummy.position.set(worldX(x) + jx, wallCrownY(x, y, shape) + 0.06, worldZ(y) + jz);
       dummy.updateMatrix();
       mesh.setMatrixAt(i, dummy.matrix);
     });
@@ -2207,7 +2332,7 @@ function buildHedgeDecor(
     leafSpots.forEach(([x, y], i) => {
       const jx = (hash01(x, y, 6) - 0.5) * 0.4;
       const jz = (hash01(x, y, 7) - 0.5) * 0.4;
-      dummy.position.set(worldX(x) + jx, WALL_H + 0.04, worldZ(y) + jz);
+      dummy.position.set(worldX(x) + jx, wallCrownY(x, y, shape) + 0.04, worldZ(y) + jz);
       dummy.scale.set(1.3, 0.6, 1);
       dummy.updateMatrix();
       leafMesh.setMatrixAt(i, dummy.matrix);
@@ -2258,7 +2383,16 @@ function buildHedgeDecor(
  *  safe in front. Derived from the SHAPE (not the individual def) per the
  *  task brief — every def sharing a base shape shares its camera-safety
  *  class, since the shape is what determines silhouette scale. */
-type PropHeightClass = "tall" | "medium" | "low";
+//
+//  IDEA-067 adds a FOURTH class, "portal", and it is not a synonym for any of
+//  the three. An archway is the first prop in this library that is mostly a
+//  HOLE: the middle 40% of its width is an aperture, so the arithmetic behind
+//  "tall" — how much of the play area does this mass hide — is the wrong
+//  question about it. Capping it as "tall" crushes a 2.05-unit portal to 1.13
+//  on the south row, which is the exact complaint that cost a whole session on
+//  the treehouse ("the treehouse are to small"), and doing it to a prop you can
+//  see through is worse than doing it to a building.
+type PropHeightClass = "tall" | "medium" | "low" | "portal";
 
 const PROP_HEIGHT_CLASS: Record<PropBaseShape, PropHeightClass> = {
   building: "tall",
@@ -2290,6 +2424,9 @@ const PROP_HEIGHT_CLASS: Record<PropBaseShape, PropHeightClass> = {
   nestTree: "medium",
   perchedBird: "low",
   flowerHead: "low",
+  // IDEA-067. See PropHeightClass above, and PORTAL_*_SCALE_CAP below for the
+  // two numbers this fourth class actually buys.
+  archway: "portal",
 };
 
 // Fixed default trunk color family for every woody prop (tree/pine/palm) —
@@ -2962,6 +3099,11 @@ export function makePropFromDef(def: PropDef, instanceHash: number): THREE.Group
       case "treehouse": return makeTreehouse(p, instanceHash);
       case "flower": return makeGardenFlower(p, instanceHash);
       case "birdhouse": return makeBirdhouse(p, instanceHash);
+      // IDEA-067: the hedge portal. Reachable as a normal library shape so it
+      // can be hand-placed anywhere, AND through buildTunnelArches below,
+      // which reads the GRID and stands one at every tunnel mouth. See
+      // archway.ts rule 5 for why it is deliberately both.
+      case "archway": return makeArchway(p, instanceHash);
     }
   })();
   if (def.parts) applyPropParts(g, def.parts);
@@ -3078,6 +3220,30 @@ const PROP_INSTANCE_HASH_SEED = 201;
 const SOUTH_ROW_TALL_SCALE_CAP = 0.55;
 const EAST_WEST_TALL_SCALE_CAP = 1.0;
 
+/**
+ * IDEA-067: the same two zones for the "portal" class — and unlike every cap
+ * above it, the south one is GEOMETRIC rather than aesthetic.
+ *
+ * `_scratch-surround-sightline.ts` solves the grazing ray at the binding
+ * camera (the tall phone, not the desktop) and reports 1.28 world units as the
+ * height at which an apron prop on the south row starts eating the board. An
+ * archway is 2.05 units tall at scale 1, so the cap is 1.28 / 2.05 = 0.624 —
+ * written as that division rather than as the decimal, so the two cannot drift
+ * apart when ARCH_DEFAULTS.baseHeight is retuned.
+ *
+ * That still leaves a south-row arch 1.28 units tall, a full quarter-unit over
+ * the hedge crown, where "tall" would have left it at 1.13 — so the fourth
+ * class is not a licence, it is the difference between a portal you walk under
+ * and a hoop. East/west takes `tall`'s own 1.0 unchanged: an arch is exactly
+ * what belongs beside a tunnel mouth, and 1.0 is already full authored size.
+ *
+ * These apply to HAND placements only. A tunnel arch is placed by
+ * buildTunnelArches, which is a FIXTURE rather than a placement and is bounded
+ * by ARCH_PARAMS.scale instead.
+ */
+const PORTAL_SOUTH_ROW_SCALE_CAP = 1.28 / ARCH_DEFAULTS.baseHeight;
+const PORTAL_EAST_WEST_SCALE_CAP = 1.0;
+
 export function buildProps(scene: THREE.Object3D, theme: MazeTheme): THREE.Group | null {
   if (theme.placements.length === 0) return null;
 
@@ -3123,11 +3289,16 @@ export function buildProps(scene: THREE.Object3D, theme: MazeTheme): THREE.Group
     // applied to the PRODUCT, after the multiply. Identical to the old
     // `Math.min(placement.scale, cap)` for any def whose root is still 1,
     // which is every def but one.
-    if (heightClass === "tall") {
+    if (heightClass === "tall" || heightClass === "portal") {
+      const portal = heightClass === "portal";
       const cap = onSouthRow
-        ? SOUTH_ROW_TALL_SCALE_CAP
+        ? portal
+          ? PORTAL_SOUTH_ROW_SCALE_CAP
+          : SOUTH_ROW_TALL_SCALE_CAP
         : onEastWestCol
-          ? EAST_WEST_TALL_SCALE_CAP
+          ? portal
+            ? PORTAL_EAST_WEST_SCALE_CAP
+            : EAST_WEST_TALL_SCALE_CAP
           : null;
       if (cap !== null) {
         const worst = Math.max(mesh.scale.x, mesh.scale.y, mesh.scale.z);
@@ -3141,6 +3312,169 @@ export function buildProps(scene: THREE.Object3D, theme: MazeTheme): THREE.Group
     group.add(mesh);
   });
 
+  scene.add(group);
+  return group;
+}
+
+
+/**
+ * IDEA-066: the VERGE — hand-placed props on the rings just outside the apron.
+ *
+ * Structurally `buildProps` with three deliberate differences, and each one is
+ * why this is a separate function rather than a branch inside it.
+ *
+ * 1. ONE CAP, AND ONLY ON THE SOUTH. `_scratch-surround-sightline.ts` solves
+ *    the real grazing ray at every aspect and reports that NORTH, EAST and
+ *    WEST cannot occlude the maze at ANY height: their shadow travels away
+ *    from the board — north props shadow further north, east props further
+ *    east. That is geometry, not tuning. Only the south band is between the
+ *    camera and the play area.
+ *
+ *    And the number below is AESTHETIC, not geometric. The solved limit at
+ *    verge ring 1 is 3.85 world units and at ring 2 it is 6.41; 1.2 is a
+ *    judgement about crowding the near edge of the frame. DO NOT copy the
+ *    apron's 0.55 out here — that one is also aesthetic (its own geometric
+ *    limit is 1.28) and it was tuned for a prop standing one tile from the
+ *    hedge, which is a different picture entirely.
+ *
+ *    The binding camera for all of this is the TALL PHONE, not the desktop:
+ *    it sits higher (y 54.3 against 27.0) but much further back (z 31.7
+ *    against 15.5), so its ray to a south prop is the SHALLOWEST. Reasoning
+ *    from BASE_POS gives 2.70 for the apron where the real answer is 1.28.
+ *
+ * 2. IT COLLAPSES BY SIGNATURE, NOT PER PROP. Every prop factory builds its
+ *    own materials, so twenty verge shrubs are twenty identical-looking
+ *    material objects and twenty draw calls. Bucketing on what they LOOK like
+ *    welds them into one. Safe here for the same reason it is safe in the
+ *    surround and unsafe on a character: nothing out here is recoloured,
+ *    animated, team-tinted or part-edited after it is placed.
+ *
+ * 3. IT CASTS NO SHADOWS. The verge sits at |x| >= 12.5 / |z| >= 13.5, well
+ *    outside the key light's +-14 / +-16 shadow camera, so a cast flag buys
+ *    nothing — and the MERGED batch's bounding volume does overlap that box,
+ *    which would put the whole thing through the shadow pass for no pixels.
+ */
+const VERGE_SOUTH_TALL_SCALE_CAP = 1.2;
+
+/** Its own hash band, clear of buildProps (200/201), buildWallDecor (301),
+ *  buildHedgeDecor (1-7), groundDetail (401-406) and the surround (600-639). */
+const VERGE_INSTANCE_HASH_SEED = 501;
+
+export function buildVerge(scene: THREE.Object3D, theme: MazeTheme): THREE.Group | null {
+  if (theme.verge.length === 0) return null;
+
+  const group = new THREE.Group();
+  group.name = "verge";
+
+  theme.verge.forEach((placement: PropPlacement) => {
+    const def = getPropDef(placement.propId);
+    const [tx, ty] = placement.tile;
+    const mesh = makePropFromDef(def, hash01(tx, ty, VERGE_INSTANCE_HASH_SEED));
+
+    mesh.position.set(worldX(tx) + placement.offset[0], 0, worldZ(ty) + placement.offset[1]);
+    mesh.rotation.y = placement.rotationY;
+    // MULTIPLY, never assign — a def-level root part edit has to compose with
+    // the placement's own scale (IDEA-062's rule, and the birdhouse is the
+    // def that proved it).
+    mesh.scale.multiplyScalar(placement.scale);
+
+    // Applied to the PRODUCT, after the multiply, so a def carrying a root
+    // scale cannot walk straight through the cap.
+    // "portal" joins "tall" here rather than taking its own verge number: out
+    // on the verge the solved limit is 3.85 units at ring 1, so an arch at the
+    // shared 1.2 cap (2.46 units) is nowhere near it and a second constant
+    // would be two numbers saying the same thing.
+    const cls = PROP_HEIGHT_CLASS[def.shape];
+    if ((cls === "tall" || cls === "portal") && ty > ROWS) {
+      const worst = Math.max(mesh.scale.x, mesh.scale.y, mesh.scale.z);
+      if (worst > VERGE_SOUTH_TALL_SCALE_CAP) {
+        mesh.scale.multiplyScalar(VERGE_SOUTH_TALL_SCALE_CAP / worst);
+      }
+    }
+
+    group.add(mesh);
+  });
+
+  mergeBySignature(group, { castShadow: false });
+  group.traverse((o) => {
+    o.castShadow = false;
+    o.receiveShadow = false;
+  });
+  scene.add(group);
+  return group;
+}
+/**
+ * IDEA-067: THE TUNNEL ARCHES — a hedge portal at every border tunnel.
+ *
+ * Nuno: "something on the sides that connect the beagle to go to one side to
+ * the other, is like a arch fence." Measured across all 36 shipped mazes that
+ * names exactly two tiles, and the same two on every board: (0, 9) and
+ * (COLS-1, 9). They are the only non-wall tiles in the entire 19x21 border —
+ * every other apparent gap is void — and until now neither of them was marked
+ * by anything at all. The beagle simply stopped existing at the board edge.
+ *
+ * WHY THIS READS THE GRID INSTEAD OF BEING TWO ENTRIES IN `theme.placements`,
+ * which is the cheaper answer and the wrong one. A placement is a per-THEME
+ * fact; a tunnel is a per-MAZE one. This project has already shipped exactly
+ * that mismatch: `theme.wallDecor` hung Night City's five lamps in mid-air
+ * over open corridor in 14 of its 18 mazes, and one of them had never been on
+ * a wall in any maze, because nobody checked (IDEA-060 rule 9). Hand-placing
+ * these two would be right on all 36 boards TODAY and would silently become
+ * wrong the first time a maze is authored with a tunnel anywhere else. Reading
+ * the grid cannot be in the wrong place and cannot miss one.
+ *
+ * WHICH arch is still the theme's call (`theme.tunnelArch`, a prop id), and a
+ * theme that names none gets none — the same null-for-nothing contract
+ * `fence`/`groundDetail`/`surround` already use. Only the garden names one
+ * today; the other five get their own art rather than this one recoloured,
+ * because a yew portal at a beach tunnel mouth is not a beach.
+ *
+ * It CASTS SHADOWS, unlike the verge and the surround. Those two sit outside
+ * the key light's +-14 / +-16 shadow camera so the flag buys them nothing; a
+ * tunnel arch stands at |x| = 9.8, well inside it, and its shadow falling
+ * across the apron is most of what makes it look like it is standing on the
+ * ground rather than pasted onto it.
+ *
+ * It collapses by SIGNATURE rather than per prop: the two arches are separate
+ * factory calls and therefore separate material objects that look identical,
+ * so bucketing on what they LOOK like takes ten draw calls to five. Safe here
+ * for the same reason it is safe on the verge — nothing out here is
+ * recoloured, animated, team-tinted or part-edited after it is placed.
+ */
+export function buildTunnelArches(
+  scene: THREE.Object3D,
+  grid: Grid,
+  theme: MazeTheme,
+): THREE.Group | null {
+  const id = theme.tunnelArch;
+  if (!id) return null;
+  const mouths = tunnelMouths(grid);
+  if (mouths.length === 0) return null;
+
+  const def = getPropDef(id);
+  const group = new THREE.Group();
+  group.name = "tunnelArches";
+
+  // ONE hash for BOTH mouths, deliberately — everywhere else in this file a
+  // prop is varied by its own tile so a row does not read as clones. These
+  // two are the two ends of ONE tunnel, and a gate that is a different green
+  // at each end is not variety, it is a continuity error. It also halves the
+  // merge: two identical arches weld to one mesh per material, where two
+  // differently-tinted ones weld to none.
+  const instanceHash = hash01(0, 0, ARCH_INSTANCE_HASH_SEED);
+  for (const m of mouths) {
+    const mesh = makePropFromDef(def, instanceHash);
+    const at = archTransformFor(m);
+    mesh.position.set(at.x, ARCH_PARAMS.lift, at.z);
+    mesh.rotation.y = at.rotationY;
+    // MULTIPLY, never assign — a def-level root part edit has to compose with
+    // the fixture's own scale (IDEA-062's rule, and the birdhouse is the def
+    // that proved it by carrying an inert 1.5 for a whole release).
+    mesh.scale.multiplyScalar(ARCH_PARAMS.scale);
+    group.add(mesh);
+  }
+
+  mergeBySignature(group, { castShadow: true });
   scene.add(group);
   return group;
 }
@@ -3227,7 +3561,11 @@ export function buildWallDecor(
     const mesh = makePropFromDef(def, instanceHash);
     // IDEA-065: one mesh per material, for buildProps' reason above.
     collapseByMaterial(mesh);
-    mesh.position.set(worldX(tx), WALL_H + WALL_DECOR_Y_OFFSET, worldZ(ty));
+    mesh.position.set(
+      worldX(tx),
+      wallCrownY(tx, ty, wallShapeFor(theme.palette.wallTexture)) + WALL_DECOR_Y_OFFSET,
+      worldZ(ty),
+    );
     mesh.rotation.y = placement.rotationY;
     // MULTIPLY rather than assign, for buildProps' reason above — a def-level
     // root part edit must survive being placed. No cap to re-apply here: every
@@ -3296,6 +3634,27 @@ export function buildWallDecor(
 export function applyBoardTheme(board: Board, scene: THREE.Object3D, grid: Grid, theme: MazeTheme): void {
   syncBoardMaterials(theme.palette, grid);
 
+  // IDEA-068: the wall GEOMETRY is a per-theme choice now, so a re-theme has
+  // to swap it — the same reasoning the fence and the ground detail already
+  // carry (both are KINDS, so a re-theme can change whether there is one at
+  // all). Leaving it out stands Night City's brick on the garden's lumpy
+  // hedge block, which renders perfectly and looks like a texture bug. The
+  // instance matrices go with it: the crown height is part of the shape, so a
+  // box theme has to come back flat.
+  const nextShape = wallShapeFor(theme.palette.wallTexture);
+  board.walls.geometry.dispose();
+  board.walls.geometry = wallGeometry(nextShape, WALL_H);
+  {
+    const wd = new THREE.Object3D();
+    let wi = 0;
+    grid.cells.forEach((row, y) =>
+      row.forEach((c, x) => {
+        if (c === "#") setWallInstance(board.walls, wi++, wd, x, y, nextShape);
+      }),
+    );
+    board.walls.instanceMatrix.needsUpdate = true;
+  }
+
   board.hedgeDecor.forEach((entry) => {
     if (entry instanceof THREE.Group) {
       // Wall-decor component: self-owned geometries/materials throughout —
@@ -3342,6 +3701,31 @@ export function applyBoardTheme(board: Board, scene: THREE.Object3D, grid: Grid,
     theme.palette.groundDetail,
     theme.palette.groundDetailColor,
   );
+
+  // IDEA-066: rebuilt rather than recoloured, because `surroundGround` and
+  // the floor emissive it is matched against are both palette values and the
+  // material is built from them together (see buildSurroundGround's emissive
+  // note). Two mutations would have to stay in step with that arithmetic; one
+  // rebuild of a two-triangle quad cannot drift.
+  scene.remove(board.surroundGround);
+  disposeSurroundGround(board.surroundGround);
+  board.surroundGround = buildSurroundGround(scene, theme.palette);
+  // Content-keyed: a re-theme changes the key and rebuilds, a level change
+  // does not. Being inside applyBoardTheme is also what gives the editor's
+  // World tab a live preview for free, since that is the single rebuild path.
+  board.surround = ensureSurround(scene, theme.palette.surround, theme.palette);
+
+  // Rebuilt like `props` is, and for the same reason: the placements are
+  // per-theme, so a re-theme changes which props stand out there.
+  if (board.verge) disposePropGroup(scene, board.verge);
+  board.verge = buildVerge(scene, theme);
+
+  // IDEA-067: rebuilt on a re-theme because WHICH arch stands at the tunnel
+  // is a per-theme choice (`theme.tunnelArch`) — including the choice of none.
+  // The grid is unchanged here, which is exactly why this is safe to rebuild
+  // from: applyBoardTheme is handed the SAME grid the level was built with.
+  if (board.tunnelArches) disposePropGroup(scene, board.tunnelArches);
+  board.tunnelArches = buildTunnelArches(scene, grid, theme);
 }
 
 /**

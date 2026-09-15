@@ -78,6 +78,21 @@ const PARAM_FIELD_ORDER: readonly (keyof WorkingPropParams)[] = [
   "furColor",
   "bellyColor",
   "accentColor",
+  // IDEA-067 the hedge archway.
+  "archOpening",
+  "archRise",
+  "archCurve",
+  "archPier",
+  "archDepth",
+  "archCrown",
+  "archRibbon",
+  "archCrest",
+  "archBlossoms",
+  "archThreshold",
+  "archFence",
+  "blossomColor",
+  "fenceColor",
+  "stoneColor",
 ];
 
 const COLOR_FIELDS = new Set<keyof WorkingPropParams>([
@@ -92,6 +107,9 @@ const COLOR_FIELDS = new Set<keyof WorkingPropParams>([
   "furColor",
   "bellyColor",
   "accentColor",
+  "blossomColor",
+  "fenceColor",
+  "stoneColor",
 ]);
 const COLOR_LIST_FIELDS = new Set<keyof WorkingPropParams>(["foliageColors", "facadeColors"]);
 

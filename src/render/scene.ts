@@ -13,6 +13,8 @@
 import * as THREE from "three";
 import { COLS, ROWS, TILE } from "../game/grid";
 import { WALL_H } from "./board";
+import { setSurroundView } from "./surround";
+import { refreshSurroundForView } from "./surroundRecipe";
 import { getEquippedMazeTheme, type MazeTheme } from "../game/themes";
 
 // Half-extents of the maze in world units, plus a little breathing room so
@@ -331,9 +333,19 @@ export function createScene(canvas: HTMLCanvasElement): SceneRig {
   // reverted the next time the window resizes (or even just rotates on a
   // phone). Reading this mutable value each time is what makes a re-theme
   // survive every subsequent resize.
+  // IDEA-066: near/far are PER-THEME now (palette.fogNear/fogFar) and they
+  // are mutable `let`s for exactly the reason FOG_COLOR above is one — resize()
+  // rebuilds scene.fog from scratch, so a re-theme that only touched the
+  // installed Fog would be reverted by the next rotation. All three are read
+  // fresh on every resize.
+  //
+  // They are ABSOLUTE WORLD UNITS AT THE BASE DOLLY, and that is what makes
+  // the dolly scaling below meaningful: at 30/55 the top of the frame measured
+  // 62% fogged on BOTH a phone and a desktop, which is not luck — it is
+  // dist/baseDist doing its job. Keep any retune in those units.
   let FOG_COLOR = initialPalette.bg;
-  const FOG_NEAR_BASE = 30;
-  const FOG_FAR_BASE = 55;
+  let FOG_NEAR_BASE = initialPalette.fogNear;
+  let FOG_FAR_BASE = initialPalette.fogFar;
   scene.fog = new THREE.Fog(FOG_COLOR, FOG_NEAR_BASE, FOG_FAR_BASE);
 
   const camera = new THREE.PerspectiveCamera(BASE_FOV, 1, 0.1, CAMERA_FAR);
@@ -459,12 +471,52 @@ export function createScene(canvas: HTMLCanvasElement): SceneRig {
     scene.fog = new THREE.Fog(FOG_COLOR, FOG_NEAR_BASE * fogScale, FOG_FAR_BASE * fogScale);
 
     publishBoardBox(w, h);
+    publishSurroundView();
+  }
+
+  /**
+   * IDEA-069: tell the surround how much ground this frame can actually see.
+   *
+   * Nuno, on a phone: *"much of that doesn't show, so we can optimize the
+   * render of the maps for mobile to only render the necessary to cover the
+   * view."* SURROUND_PARAMS ships the UNION of every sampled aspect (50 wide),
+   * because one baked recipe had to satisfy all of them — so a portrait phone,
+   * which reaches |x| ~15, was building and drawing a band more than three
+   * times wider than it can see.
+   *
+   * The footprint is the four frustum corners dropped onto y = 0. That is
+   * exact rather than sampled, and it is only sound because of what
+   * `_scratch-surround-coverage.ts` proved: the camera pitches far enough
+   * down that THE HORIZON IS NEVER IN SHOT at any aspect, so all four corner
+   * rays do hit the ground. The guard below is for the day someone changes
+   * the rig and that stops being true — it leaves the extent alone rather
+   * than culling against a nonsense box.
+   */
+  function publishSurroundView(): void {
+    const dir = new THREE.Vector3();
+    const hit = new THREE.Vector3();
+    let halfX = 0;
+    let zNear = -Infinity;
+    let zFar = Infinity;
+    for (const nx of [-1, 1]) {
+      for (const ny of [-1, 1]) {
+        dir.set(nx, ny, 1).unproject(camera).sub(camera.position).normalize();
+        // Pointing up or level: this ray escapes over the horizon and the
+        // footprint is unbounded. Bail out entirely rather than cull.
+        if (dir.y > -1e-3) return;
+        hit.copy(camera.position).addScaledVector(dir, -camera.position.y / dir.y);
+        halfX = Math.max(halfX, Math.abs(hit.x));
+        zNear = Math.max(zNear, hit.z);
+        zFar = Math.min(zFar, hit.z);
+      }
+    }
+    if (setSurroundView(halfX, zNear, zFar)) refreshSurroundForView();
   }
 
   /**
    * Publish where the board SITS on screen, as CSS variables on the document
-   * element: `--bc-board-bottom` (its lowest edge) plus `--bc-board-left` and
-   * `--bc-board-right` (its side edges).
+   * element: `--bc-board-bottom` (its lowest edge), `--bc-board-top` (its
+   * highest) plus `--bc-board-left` and `--bc-board-right` (its sides).
    *
    * The 2D layer wants to place things against the maze — the power-up tray
    * sits directly under it on a phone, and beside it on a desktop window — and
@@ -480,11 +532,13 @@ export function createScene(canvas: HTMLCanvasElement): SceneRig {
    */
   function publishBoardBox(viewportW: number, viewportH: number): void {
     let minNdcY = Infinity;
+    let maxNdcY = -Infinity;
     let minNdcX = Infinity;
     let maxNdcX = -Infinity;
     for (const corner of BOARD_CORNERS) {
       const ndc = corner.clone().project(camera);
       minNdcY = Math.min(minNdcY, ndc.y);
+      maxNdcY = Math.max(maxNdcY, ndc.y);
       minNdcX = Math.min(minNdcX, ndc.x);
       maxNdcX = Math.max(maxNdcX, ndc.x);
     }
@@ -494,6 +548,11 @@ export function createScene(canvas: HTMLCanvasElement): SceneRig {
       Math.round(Math.max(0, Math.min(extent, v)));
     const style = document.documentElement.style;
     style.setProperty("--bc-board-bottom", `${px(((1 - minNdcY) / 2) * viewportH, viewportH)}px`);
+    // IDEA-069: the band ABOVE the board is where the power-up tray lives on a
+    // phone now. Same reasoning as every other value here — the board is 3D,
+    // its camera dollies with the aspect ratio, and CSS cannot know where the
+    // maze starts any more than it could know where it ends.
+    style.setProperty("--bc-board-top", `${px(((1 - maxNdcY) / 2) * viewportH, viewportH)}px`);
     style.setProperty("--bc-board-left", `${px(((minNdcX + 1) / 2) * viewportW, viewportW)}px`);
     style.setProperty("--bc-board-right", `${px(((maxNdcX + 1) / 2) * viewportW, viewportW)}px`);
   }
@@ -529,7 +588,18 @@ export function createScene(canvas: HTMLCanvasElement): SceneRig {
     BACKDROP_BOTTOM_COLOR.set(p.bg);
 
     FOG_COLOR = p.bg;
-    if (scene.fog instanceof THREE.Fog) scene.fog.color.set(p.bg);
+    FOG_NEAR_BASE = p.fogNear;
+    FOG_FAR_BASE = p.fogFar;
+    if (scene.fog instanceof THREE.Fog) {
+      scene.fog.color.set(p.bg);
+      // Re-scale by the dolly the camera is CURRENTLY at, not by 1 — a
+      // re-theme must land before the next resize, which challenge mode
+      // requires: it forces a theme per level and the board would otherwise
+      // sit under the previous theme's fog depth until the phone rotated.
+      const s = camera.position.distanceTo(BASE_LOOK) / baseDist;
+      scene.fog.near = FOG_NEAR_BASE * s;
+      scene.fog.far = FOG_FAR_BASE * s;
+    }
 
     hemi.color.set(p.hemiSky);
     hemi.groundColor.set(p.hemiGround);

@@ -117,6 +117,17 @@ const BEACON_BOB = 0.09; // vertical bob amplitude (adds motion the eye catches 
 // via depthWrite:false, but a tiny Y offset also keeps draw-order sane if
 // depthWrite is ever revisited).
 const MARKER_Y_APRON_RING = MARKER_Y_APRON + 0.001;
+
+// IDEA-066: the VERGE's own marker set, deliberately LARGER than the apron's.
+// These tiles sit two to three further out, so at the editor's orbit camera
+// they are 12-25 units further away than an apron marker — reusing the 0.16
+// disc would make them read as smaller AND make them harder to hit, which is
+// the opposite of correct for the ring you are meant to be working in.
+const VERGE_MARKER_GEO = new THREE.CircleGeometry(0.22, 16);
+const VERGE_RING_GEO = new THREE.RingGeometry(0.22, 0.27, 20);
+const MARKER_Y_VERGE = MARKER_Y_APRON;
+const MARKER_Y_VERGE_RING = MARKER_Y_VERGE + 0.001;
+const BEACON_Y_VERGE = 0.8;
 const MARKER_Y_WALL_RING = MARKER_Y_WALL + 0.001;
 
 const COLOR_EMPTY = 0xbfe0ff; // bright, cool "you can place something here" — brightened from v4.1's faint 0x8fa0b8 so it reads as an actionable affordance, not background scenery
@@ -186,7 +197,22 @@ function beaconMaterial(): THREE.MeshBasicMaterial {
   });
 }
 
-export type PlacementSubMode = "apron" | "wall";
+/**
+ * IDEA-066: `verge` joined `apron` and `wall`.
+ *
+ * `apron` and `verge` are the SAME data shape (a WorkingPropPlacement) on
+ * different tiles, so the dispatchers below branch on prop-vs-wall and read
+ * the array through `placementsFor`, rather than growing a third arm each.
+ * The two are separate arrays on the theme for the reasons MazeTheme.verge
+ * gives — chiefly that buildProps' height caps key on apron coordinates and
+ * would silently not apply out here.
+ */
+export type PlacementSubMode = "apron" | "wall" | "verge";
+
+/** True for the two sub-modes backed by `WorkingPropPlacement`. */
+export function isPropSubMode(mode: PlacementSubMode): boolean {
+  return mode !== "wall";
+}
 
 /** What's currently selected, if anything. `tile` is always present (every
  *  selection originates from a slot click); `existing` is the placement
@@ -358,6 +384,54 @@ export function apronCandidates(grid: Grid): Array<[number, number]> {
   return candidates;
 }
 
+/**
+ * IDEA-066: how many rings beyond the apron the VERGE offers.
+ *
+ * TWO, and the number is a UI budget rather than a design limit. Two rings is
+ * ~180 slots and therefore ~540 more overlay meshes on top of the ~280 the
+ * apron and wall sets already build; three is ~285 and the pane starts to
+ * read as noise rather than as choices. It is a constant so going to three is
+ * one edit — but SURROUND_PARAMS.keepClear must cover it, or a hand-placed
+ * verge prop and a procedural plot end up on the same tile.
+ */
+export const VERGE_RINGS = 2;
+
+/**
+ * The verge tiles: Chebyshev distance 2..(1 + rings) from the maze footprint
+ * — i.e. everything the apron ring does not already own, out to the limit.
+ *
+ * THE TUNNEL EXCLUSION IS EXTENDED OUTWARD, which `apronCandidates` does not
+ * do: it only masks `tx === -1` and `tx === COLS`, because that is the only
+ * column it has. A tunnel is the one place a player's eye travels off the
+ * board, and a neighbour's shed parked in that sightline is precisely the
+ * "correctly built, entirely in the way" defect this project keeps finding.
+ */
+export function vergeCandidates(grid: Grid, rings = VERGE_RINGS): Array<[number, number]> {
+  const blockedRows = new Set<number>();
+  grid.tunnelRows.forEach((ty) => {
+    blockedRows.add(ty - 1);
+    blockedRows.add(ty);
+    blockedRows.add(ty + 1);
+  });
+
+  const lo = -1 - rings;
+  const hiX = COLS + rings;
+  const hiY = ROWS + rings;
+  const candidates: Array<[number, number]> = [];
+  for (let ty = lo; ty <= hiY; ty++) {
+    for (let tx = lo; tx <= hiX; tx++) {
+      // Inside the maze, or on the apron ring the other enumerator owns.
+      const inApronBox = tx >= -1 && tx <= COLS && ty >= -1 && ty <= ROWS;
+      if (inApronBox) continue;
+      // East/west of the board, in line with a tunnel mouth.
+      const besideBoard = ty >= 0 && ty < ROWS;
+      if (besideBoard && blockedRows.has(ty)) continue;
+      candidates.push([tx, ty]);
+    }
+  }
+  return candidates;
+}
+
 /** Every wall ('#') tile — the candidate set for wall-top components
  *  (IDEA-031). Unlike the apron ring, there's no exclusion rule here: any
  *  wall tile can carry a lamp/sign/bloom (wall-top props are always in the
@@ -378,7 +452,7 @@ export function wallCandidates(grid: Grid): Array<[number, number]> {
  *  wall-top def, in library order, so this stays correct even if the
  *  library's wall-top entries are reordered). */
 function defaultPropIdFor(subMode: PlacementSubMode): string {
-  if (subMode === "apron") return DEFAULT_PROP_ID;
+  if (isPropSubMode(subMode)) return DEFAULT_PROP_ID;
   const found = PROP_LIBRARY.find((d) => WALL_TOP_SHAPES.includes(d.shape));
   return found?.id ?? DEFAULT_PROP_ID;
 }
@@ -390,6 +464,11 @@ function defaultPropIdFor(subMode: PlacementSubMode): string {
  *  `isWallTopProp` split exactly, just listing the OPPOSITE set for apron so
  *  the two dropdowns never overlap. */
 export function propOptionsFor(subMode: PlacementSubMode): Array<{ id: string; name: string }> {
+  // The verge offers exactly what the apron does, for now. IDEA-066 phase 4
+  // adds the garden's neighbour house, which is the first prop that must be
+  // verge-ONLY (a 3-unit building one tile from the hedge is not a choice
+  // anyone should be offered) — and the split belongs there, with the prop
+  // that needs it, rather than as an empty exclusion list shipped early.
   return PROP_LIBRARY.filter((d) => (subMode === "wall") === isWallTopProp(d.id)).map((d) => ({ id: d.id, name: d.name }));
 }
 
@@ -459,6 +538,7 @@ export function createBoardPlacement(
 
   const apronMarkers = new Map<string, THREE.Mesh>();
   const wallMarkers = new Map<string, THREE.Mesh>();
+  const vergeMarkers = new Map<string, THREE.Mesh>();
   // IDEA-034: which markers are CURRENTLY in the "empty" state (and therefore
   // pulsing) — populated/pruned by paintMarker every time a marker's state
   // changes, so updatePulse's per-frame loop only ever touches the small live
@@ -471,6 +551,7 @@ export function createBoardPlacement(
 
   const apronTiles = apronCandidates(grid);
   const wallTiles = wallCandidates(grid);
+  const vergeTiles = vergeCandidates(grid);
 
   /** Builds one marker: the raycast-target disc (unchanged shape/role from
    *  v4.1) plus a non-raycast-target ring OUTLINE (IDEA-034 — see
@@ -530,16 +611,31 @@ export function createBoardPlacement(
     wallMarkers.set(`${tx},${ty}`, mesh);
   });
 
+  vergeTiles.forEach(([tx, ty]) => {
+    const mesh = buildMarker(VERGE_MARKER_GEO, VERGE_RING_GEO, MARKER_Y_VERGE_RING, tx, ty, "verge", MARKER_Y_VERGE, BEACON_Y_VERGE);
+    markerRoot.add(mesh, mesh.userData.ring as THREE.Mesh, mesh.userData.beacon as THREE.Mesh);
+    vergeMarkers.set(`${tx},${ty}`, mesh);
+  });
+
   let subMode: PlacementSubMode = "apron";
   let currentTheme: WorkingTheme | null = null;
   let selection: PlacementSelection | null = null;
 
   function markersFor(mode: PlacementSubMode): Map<string, THREE.Mesh> {
-    return mode === "apron" ? apronMarkers : wallMarkers;
+    if (mode === "apron") return apronMarkers;
+    return mode === "wall" ? wallMarkers : vergeMarkers;
+  }
+
+  /** The theme array a prop sub-mode writes into. The ONE place the
+   *  apron/verge split turns into a field name. */
+  function placementsFor(theme: WorkingTheme, mode: PlacementSubMode): WorkingPropPlacement[] {
+    return mode === "verge" ? theme.verge : theme.placements;
   }
 
   function findPlacement(theme: WorkingTheme, mode: PlacementSubMode, tx: number, ty: number): WorkingPropPlacement | WorkingWallDecorPlacement | null {
-    if (mode === "apron") return theme.placements.find((p) => p.tile[0] === tx && p.tile[1] === ty) ?? null;
+    if (isPropSubMode(mode)) {
+      return placementsFor(theme, mode).find((p) => p.tile[0] === tx && p.tile[1] === ty) ?? null;
+    }
     return theme.wallDecor.find((p) => p.tile[0] === tx && p.tile[1] === ty) ?? null;
   }
 
@@ -603,6 +699,7 @@ export function createBoardPlacement(
   function paintAll(): void {
     apronTiles.forEach(([tx, ty]) => paintMarker("apron", tx, ty));
     wallTiles.forEach(([tx, ty]) => paintMarker("wall", tx, ty));
+    vergeTiles.forEach(([tx, ty]) => paintMarker("verge", tx, ty));
   }
 
   function setVisibility(): void {
@@ -617,6 +714,11 @@ export function createBoardPlacement(
     });
     wallMarkers.forEach((m) => {
       m.visible = subMode === "wall";
+      (m.userData.ring as THREE.Mesh).visible = m.visible;
+      if (!m.visible) (m.userData.beacon as THREE.Mesh).visible = false;
+    });
+    vergeMarkers.forEach((m) => {
+      m.visible = subMode === "verge";
       (m.userData.ring as THREE.Mesh).visible = m.visible;
       if (!m.visible) (m.userData.beacon as THREE.Mesh).visible = false;
     });
@@ -689,10 +791,10 @@ export function createBoardPlacement(
   function createDefaultPlacement(mode: PlacementSubMode, tile: [number, number]): void {
     if (!currentTheme) return;
     const propId = defaultPropIdFor(mode);
-    if (mode === "apron") {
+    if (isPropSubMode(mode)) {
       const placement: WorkingPropPlacement = { propId, tile, offset: [0, 0], rotationY: 0, scale: 1 };
-      currentTheme.placements.push(placement);
-      setSelection({ subMode: "apron", tile, existing: placement });
+      placementsFor(currentTheme, mode).push(placement);
+      setSelection({ subMode: mode, tile, existing: placement });
     } else {
       const placement: WorkingWallDecorPlacement = { propId, tile, rotationY: 0, scale: 1 };
       currentTheme.wallDecor.push(placement);
@@ -756,16 +858,16 @@ export function createBoardPlacement(
       if (!selection || !currentTheme) throw new Error("boardPlacement: assignProp called with no selection");
       const [tx, ty] = selection.tile;
 
-      if (selection.subMode === "apron") {
+      if (isPropSubMode(selection.subMode)) {
         let placement = selection.existing as WorkingPropPlacement | null;
         if (!placement) {
           placement = { propId, tile: [tx, ty], offset: [0, 0], rotationY: 0, scale: 1 };
-          currentTheme.placements.push(placement);
+          placementsFor(currentTheme, selection.subMode).push(placement);
         } else {
           placement.propId = propId;
         }
-        setSelection({ subMode: "apron", tile: [tx, ty], existing: placement });
-        paintMarker("apron", tx, ty);
+        setSelection({ subMode: selection.subMode, tile: [tx, ty], existing: placement });
+        paintMarker(selection.subMode, tx, ty);
         onChange();
         return placement;
       }
@@ -785,9 +887,10 @@ export function createBoardPlacement(
     removeSelected(): void {
       if (!selection || !currentTheme || !selection.existing) return;
       const [tx, ty] = selection.tile;
-      if (selection.subMode === "apron") {
-        const idx = currentTheme.placements.indexOf(selection.existing as WorkingPropPlacement);
-        if (idx >= 0) currentTheme.placements.splice(idx, 1);
+      if (isPropSubMode(selection.subMode)) {
+        const arr = placementsFor(currentTheme, selection.subMode);
+        const idx = arr.indexOf(selection.existing as WorkingPropPlacement);
+        if (idx >= 0) arr.splice(idx, 1);
       } else {
         const idx = currentTheme.wallDecor.indexOf(selection.existing as WorkingWallDecorPlacement);
         if (idx >= 0) currentTheme.wallDecor.splice(idx, 1);
@@ -797,7 +900,7 @@ export function createBoardPlacement(
       onChange();
     },
     nudgeSelectedOffset(dx: number, dz: number): boolean {
-      if (!selection || selection.subMode !== "apron" || !selection.existing) return false;
+      if (!selection || !isPropSubMode(selection.subMode) || !selection.existing) return false;
       const placement = selection.existing as WorkingPropPlacement;
       placement.offset[0] = clampOffset(placement.offset[0] + dx);
       placement.offset[1] = clampOffset(placement.offset[1] + dz);

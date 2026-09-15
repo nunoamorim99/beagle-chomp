@@ -106,6 +106,15 @@ export interface WorkingTheme {
    *  theme saved in the editor. test-board-surfaces guards exactly that. */
   blurb: string;
   price: number;
+  /** IDEA-066: MazeTheme.secret, carried so a load -> edit -> save round trip
+   *  cannot drop it. It USED to be dropped, silently, and it was the exact
+   *  failure blurb's comment above warns about: Arcade Night is the only
+   *  theme carrying `secret: true`, so opening it in the Board tab, nudging
+   *  one slider and saving deleted the flag — and `visibleMazeThemes` then
+   *  listed the Pac-Beagle's tribute board, free, in every player's shop,
+   *  making the coat's advertised unlock meaningless. Optional, and written
+   *  only when true, so every other theme's entry is byte-identical. */
+  secret?: boolean;
   palette: WorkingPalette;
   /** Mutable working copy of MazeTheme.placements (IDEA-030, apron props) —
    *  boardPlacement.ts's add/remove/select flow pushes/splices this array
@@ -113,6 +122,19 @@ export interface WorkingTheme {
    *  "genuinely mutable array, not the registry's readonly one" story as
    *  bloomColors above, just promoted to a whole placement-object array. */
   placements: WorkingPropPlacement[];
+  /** IDEA-066: mutable working copy of MazeTheme.verge — the same element
+   *  type as `placements`, which is what keeps this file's change to three
+   *  one-line edits (placementArrayLiteral is already generic over T, and
+   *  WorkingPropPlacement / placementEntryLiteral are reused verbatim). It is
+   *  a SEPARATE array for the reasons MazeTheme.verge's own comment gives. */
+  verge: WorkingPropPlacement[];
+  /** IDEA-067: MazeTheme.tunnelArch — WHICH arch stands at the board's tunnel
+   *  mouths, or absent for none. Carried here for `secret`'s reason, which is
+   *  this file's standing trap: the writer emits every field BY HAND, so a
+   *  MazeTheme key it does not know about is silently deleted from any theme
+   *  saved out of the Board tab. Optional and written only when set, so every
+   *  theme without one keeps a byte-identical entry. */
+  tunnelArch?: string;
   /** Mutable working copy of MazeTheme.wallDecor (IDEA-031, wall-top
    *  components) — same mutability story as `placements` above, kept as a
    *  SEPARATE array (not a `placements` entry with a "kind" flag) because a
@@ -143,8 +165,17 @@ export function cloneWorkingTheme(theme: MazeTheme): WorkingTheme {
     name: theme.name,
     blurb: theme.blurb,
     price: theme.price,
+    ...(theme.secret ? { secret: true as const } : {}),
+    ...(theme.tunnelArch ? { tunnelArch: theme.tunnelArch } : {}),
     palette: { ...theme.palette, bloomColors: [...theme.palette.bloomColors] },
     placements: theme.placements.map((p) => ({
+      propId: p.propId,
+      tile: [p.tile[0], p.tile[1]],
+      offset: [p.offset[0], p.offset[1]],
+      rotationY: p.rotationY,
+      scale: p.scale,
+    })),
+    verge: theme.verge.map((p) => ({
       propId: p.propId,
       tile: [p.tile[0], p.tile[1]],
       offset: [p.offset[0], p.offset[1]],
@@ -251,6 +282,10 @@ export function formatThemeEntry(theme: WorkingTheme, indent = 2): string {
   const paletteLines = [
     `${i2}bg: ${hex(p.bg)},`,
     `${i2}backdropTop: ${hex(p.backdropTop)},`,
+    // IDEA-066. Plain numbers, not colours, so no hex(). Absolute world
+    // units at the base dolly — see ThemePalette's own note.
+    `${i2}fogNear: ${p.fogNear},`,
+    `${i2}fogFar: ${p.fogFar},`,
     `${i2}wall: ${hex(p.wall)},`,
     // Not a colour, so it does not go through hex(). Emitted right after
     // `wall` because it belongs to the same slot — and emitted AT ALL
@@ -268,6 +303,10 @@ export function formatThemeEntry(theme: WorkingTheme, indent = 2): string {
     `${i2}fenceColor: ${hex(p.fenceColor)},`,
     `${i2}groundDetail: ${JSON.stringify(p.groundDetail)},`,
     `${i2}groundDetailColor: ${hex(p.groundDetailColor)},`,
+    // IDEA-066, same field-by-field rule as fence/groundDetail above: miss
+    // one here and every theme saved from the editor loses its surround.
+    `${i2}surround: ${JSON.stringify(p.surround)},`,
+    `${i2}surroundGround: ${hex(p.surroundGround)},`,
     `${i2}floor: ${hex(p.floor)},`,
     `${i2}floorTexture: ${JSON.stringify(p.floorTexture)},`,
     `${i2}floorEmissive: ${hex(p.floorEmissive)},`,
@@ -295,11 +334,20 @@ export function formatThemeEntry(theme: WorkingTheme, indent = 2): string {
     `${i1}id: ${str(theme.id)},`,
     `${i1}name: ${str(theme.name)},`,
     `${i1}blurb: ${str(theme.blurb)},`,
+    // Written only when set, so a theme without it keeps a byte-identical
+    // entry. themes.ts declares it `secret?: boolean` and only Arcade Night
+    // uses it — see WorkingTheme.secret for what dropping it cost.
+    ...(theme.secret ? [`${i1}secret: true,`] : []),
     `${i1}price: ${theme.price},`,
+    // IDEA-067. Written after `price` and before `palette` so the emitted
+    // order matches MazeTheme's own declaration order, which is what keeps a
+    // save diffable against the hand-authored entries.
+    ...(theme.tunnelArch ? [`${i1}tunnelArch: ${str(theme.tunnelArch)},`] : []),
     `${i1}palette: {`,
     paletteLines,
     `${i1}},`,
     placementArrayLiteral("placements", theme.placements, placementEntryLiteral, i1, i2),
+    placementArrayLiteral("verge", theme.verge, placementEntryLiteral, i1, i2),
     placementArrayLiteral("wallDecor", theme.wallDecor, wallDecorEntryLiteral, i1, i2),
     `${i0}},`,
   ].join("\n");

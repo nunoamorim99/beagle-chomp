@@ -254,6 +254,15 @@
   --bc-touch:44px;
   --bc-touch-run:56px;
   --bc-touch-dpad:60px;
+  /* IDEA-069: the gap between the D-pad's four arrows. Nuno: *"put closer
+     the buttons, the arrows be more close."* ZERO, not a step — the pad is a
+     3x3 grid with an empty centre, so this gap is added to the hole TWICE
+     (once each side) and at --bc-s2 the four arrows sat 76px apart on a
+     60px button. At 0 the hole is exactly one button wide, which is the
+     classic D-pad proportion and as tight as this construction goes:
+     tightening further means shrinking --bc-touch-dpad, and 60px is already
+     near the 44px floor a thumb needs. */
+  --bc-dpad-gap:0px;
 
   /* ---- Type ------------------------------------------------------- */
   /* Display: rounded terminals that match the toon geometry. Weight 700-800

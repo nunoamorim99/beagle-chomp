@@ -22,8 +22,9 @@
 // shapes that merge takes.
 //
 // **WHERE IT IS CALLED IS THE WHOLE DESIGN, AND GETTING IT WRONG COST A
-// REAL EDIT.** `collapseByMaterial` is called by `buildProps` and
-// `buildWallDecor` — the BOARD — and by NOTHING ELSE. It must never live
+// REAL EDIT.** The merges here are called by the BOARD and by NOTHING ELSE —
+// `collapseByMaterial` from `buildProps` and `buildWallDecor`,
+// `mergeBySignature` from `ensureSurround` (IDEA-066). They must never live
 // inside a prop factory.
 //
 // The first version put it at the end of each factory, so `makePropFromDef`
@@ -42,6 +43,16 @@
 // instance it is about to place, which is what a player sees. Nothing that
 // authors a prop ever sees a merged mesh, and nothing the board draws ever
 // pays for a part tree.
+//
+// IDEA-066 ADDED A SECOND MERGE WITH A NARROWER CONTRACT. `mergeBySignature`
+// buckets by what a material LOOKS LIKE rather than by which object it is, so
+// it can weld across props — which is what collapses a four-hundred-prop
+// surround to about sixteen draw calls instead of fourteen hundred. Welding
+// means one object now paints another, so it is allowed ONLY where nothing is
+// recoloured, animated, team-tinted or part-edited: the surround and the
+// verge, and never a character. Its own doc comment carries the full rule,
+// including why an unstamped material can cost a draw call but never
+// correctness.
 import * as THREE from "three";
 
 /**
@@ -126,6 +137,60 @@ export function mergeGrouped(
  * worse than one that says nothing.
  */
 export function collapseByMaterial(root: THREE.Object3D): THREE.Object3D {
+  // Identity keying: a factory builds its own materials, so two props never
+  // share one and two parts of one prop share exactly when they are meant to.
+  return collapseBy(root, (m) => m, true);
+}
+
+/**
+ * Collapse a whole GROUP OF PROPS into one mesh per VISUAL SIGNATURE.
+ *
+ * IDEA-066. Same machinery as collapseByMaterial above -- transforms baked
+ * relative to the root, normals kept as authored, material-ARRAY meshes left
+ * alone -- with one difference: the bucket key is the material's `toonKey`
+ * stamp (see toon.ts) rather than the material object itself.
+ *
+ * WHY IT EXISTS. collapseByMaterial gets a prop from ~3.5 meshes down to ~3,
+ * which is the right trade for thirty apron props and hopeless for four
+ * hundred surround ones: the surround would cost ~1,400 draw calls and draw
+ * calls are this project's prop budget. Keying on appearance instead collapses
+ * the ENTIRE surround to one mesh per distinct material -- about sixteen --
+ * and that number does not grow with how much you put out there.
+ *
+ * WHERE IT MAY BE USED, and this is a narrower contract than
+ * collapseByMaterial's:
+ *   - The SURROUND and the VERGE, from the board layer, and nothing else.
+ *   - NEVER on anything recoloured or animated at runtime. Welding two
+ *     materials means one object now paints the other; that is safe out there
+ *     because nothing in the surround is team-coloured, frightened, part-
+ *     edited or tweened, and it would be a disaster on a character.
+ *   - NEVER inside a prop factory, for the reason the header above gives.
+ *
+ * A material with no `toonKey` (built with `new THREE.MeshToonMaterial`
+ * directly, or any non-toon material) falls back to its own uuid, so it never
+ * welds -- it just costs its own draw call. Unknown input can cost
+ * performance, never correctness.
+ */
+export function mergeBySignature(
+  root: THREE.Object3D,
+  opts?: { castShadow?: boolean },
+): THREE.Object3D {
+  return collapseBy(
+    root,
+    (m) => (typeof m.userData.toonKey === "string" ? m.userData.toonKey : "uuid:" + m.uuid),
+    opts?.castShadow ?? false,
+  );
+}
+
+/**
+ * The shared engine. `keyOf` decides what counts as "the same material";
+ * `castShadow` is what every produced mesh gets.
+ */
+function collapseBy(
+  root: THREE.Object3D,
+  keyOf: (m: THREE.Material) => unknown,
+  castShadow: boolean,
+): THREE.Object3D {
   root.updateMatrixWorld(true);
   // RELATIVE to the root, not to the world. The root's own transform is left
   // ALONE and must be: `buildProps` multiplies the placement scale onto it and
@@ -135,8 +200,20 @@ export function collapseByMaterial(root: THREE.Object3D): THREE.Object3D {
   // straight through a cap whose job is bounding how big the thing ends up in
   // front of the camera.
   const toLocal = root.matrixWorld.clone().invert();
-  const order: THREE.Material[] = [];
-  const byMat = new Map<THREE.Material, { geo: THREE.BufferGeometry; xf: THREE.Matrix4 }[]>();
+  // `order` keeps a representative material per bucket AND fixes the output
+  // order, so merged0..N are stable across runs rather than Map-insertion
+  // dependent in some future refactor.
+  const order: { key: unknown; mat: THREE.Material }[] = [];
+  const byMat = new Map<unknown, { geo: THREE.BufferGeometry; xf: THREE.Matrix4 }[]>();
+  // Materials that lost their bucket to an equivalent one. Only a SIGNATURE
+  // merge can produce any: `collapseByMaterial` keys by identity, so every
+  // bucket has exactly one material object and this stays empty. When two
+  // DISTINCT objects do weld — which is the whole point of mergeBySignature,
+  // and the verge is where it happens, since every prop factory builds its
+  // own materials — the loser ends up referenced by nothing and would leak a
+  // GPU program for the life of the page. Disposing it is safe precisely
+  // because it is unreachable: the merged mesh holds the representative.
+  const orphaned = new Set<THREE.Material>();
   const arrayMeshes: THREE.Mesh[] = [];
 
   root.traverse((o) => {
@@ -147,11 +224,15 @@ export function collapseByMaterial(root: THREE.Object3D): THREE.Object3D {
       return;
     }
     const entry = { geo: m.geometry, xf: toLocal.clone().multiply(m.matrixWorld) };
-    const list = byMat.get(m.material);
-    if (list) list.push(entry);
-    else {
-      order.push(m.material);
-      byMat.set(m.material, [entry]);
+    const key = keyOf(m.material);
+    const list = byMat.get(key);
+    if (list) {
+      list.push(entry);
+      const rep = order.find((o) => o.key === key);
+      if (rep && rep.mat !== m.material) orphaned.add(m.material);
+    } else {
+      order.push({ key, mat: m.material });
+      byMat.set(key, [entry]);
     }
   });
   if (!order.length && !arrayMeshes.length) return root;
@@ -163,13 +244,13 @@ export function collapseByMaterial(root: THREE.Object3D): THREE.Object3D {
     g.applyMatrix4(toLocal.clone().multiply(m.matrixWorld));
     const out = new THREE.Mesh(g, m.material);
     out.name = m.name;
-    out.castShadow = m.castShadow;
+    out.castShadow = castShadow && m.castShadow;
     return out;
   });
   for (const m of arrayMeshes) m.geometry.dispose();
 
-  const merged: THREE.Mesh[] = order.map((mat, i) => {
-    const parts = byMat.get(mat) ?? [];
+  const merged: THREE.Mesh[] = order.map(({ key, mat }, i) => {
+    const parts = byMat.get(key) ?? [];
     const geos = parts.map((p) => {
       const g = p.geo.index ? p.geo.toNonIndexed() : p.geo.clone();
       g.applyMatrix4(p.xf);
@@ -179,11 +260,40 @@ export function collapseByMaterial(root: THREE.Object3D): THREE.Object3D {
     for (const g of geos) n += g.attributes.position.count;
     const pos = new Float32Array(n * 3);
     const nor = new Float32Array(n * 3);
+    // IDEA-067: VERTEX COLOURS HAVE TO SURVIVE THE MERGE, and until this run
+    // they did not. Only `position` and `normal` were carried, so any geometry
+    // with a `color` attribute lost it — and a material with
+    // `vertexColors: true` and no colour attribute renders **pure black**, not
+    // untinted. The tunnel arch is what found it: fence.ts paints its dark
+    // rails with a grey vertex colour (so the palette still owns the timber
+    // hue and the fence stays one draw call), and the arch's footing came back
+    // as six black slabs at the feet of an otherwise correct model.
+    //
+    // Allocated only when SOMETHING in the bucket has one, and geometries that
+    // do not are filled with WHITE — the identity for a multiply, so mixing a
+    // plain prop into a vertex-coloured bucket cannot darken it.
+    const wantsColor = geos.some((g) => g.attributes.color !== undefined);
+    const col = wantsColor ? new Float32Array(n * 3).fill(1) : null;
+    // IDEA-072: AND `uv`, ONE ATTRIBUTE ALONG, for exactly the same reason.
+    // A merged geometry with no UVs samples texel (0, 0) for every vertex, so
+    // a TEXTURED material comes back as one flat colour — the corner of its
+    // own canvas. It stayed latent through the whole surround because nothing
+    // out there carries a map (`makeSurroundMaterials` builds plain `toon`
+    // colours), and it surfaced the moment a showcase stood the REAL maze wall
+    // behind the beagle: eleven hedge blocks rendered as plain green boxes.
+    // A bucket holds ONE material, so either everything in it is mapped or
+    // nothing is, and the zero-fill can never reach a sampler.
+    const wantsUv = geos.some((g) => g.attributes.uv !== undefined);
+    const uvs = wantsUv ? new Float32Array(n * 2) : null;
     let o = 0;
     for (const g of geos) {
       pos.set(g.attributes.position.array as Float32Array, o * 3);
       const gn = g.attributes.normal;
       if (gn) nor.set(gn.array as Float32Array, o * 3);
+      const gc = g.attributes.color;
+      if (col && gc) col.set(gc.array as Float32Array, o * 3);
+      const gu = g.attributes.uv;
+      if (uvs && gu) uvs.set(gu.array as Float32Array, o * 2);
       o += g.attributes.position.count;
       g.dispose();
     }
@@ -191,15 +301,22 @@ export function collapseByMaterial(root: THREE.Object3D): THREE.Object3D {
     const out = new THREE.BufferGeometry();
     out.setAttribute("position", new THREE.BufferAttribute(pos, 3));
     out.setAttribute("normal", new THREE.BufferAttribute(nor, 3));
+    if (col) out.setAttribute("color", new THREE.BufferAttribute(col, 3));
+    if (uvs) out.setAttribute("uv", new THREE.BufferAttribute(uvs, 2));
     out.computeBoundingSphere();
     const mesh = new THREE.Mesh(out, mat);
     mesh.name = "merged" + i;
-    mesh.castShadow = true;
+    mesh.castShadow = castShadow;
     return mesh;
   });
 
   root.clear();
   for (const m of merged) root.add(m);
   for (const m of keep) root.add(m);
+  // Never dispose a material still standing as a bucket's representative — a
+  // prop can carry the same object on two parts, so `orphaned` and the
+  // representative list are not disjoint by construction.
+  const kept = new Set(order.map((o) => o.mat));
+  for (const m of orphaned) if (!kept.has(m)) m.dispose();
   return root;
 }

@@ -39,6 +39,14 @@ const EDITOR_SAVABLE_FILES = [
   // rewrites in place, so the file stays the source of truth.
   "src/render/fence.ts",
   "src/render/groundDetail.ts",
+  // IDEA-066: the surround's dials. Same contract as the two above --
+  // production never writes SURROUND_PARAMS, the World tab does and then
+  // writes the values back to the literal.
+  "src/render/surround.ts",
+  // IDEA-067: ARCH_PARAMS -- where the tunnel arches stand.
+  "src/render/archway.ts",
+  // IDEA-068: HEDGE_WALL_PARAMS -- the shape of the maze wall itself.
+  "src/render/hedgeWall.ts",
 ] as const;
 
 // IDEA-062: the editor's own writes must NOT trigger an HMR full reload.

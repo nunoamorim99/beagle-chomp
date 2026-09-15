@@ -22,6 +22,11 @@ import {
   disposeShowcaseSurfaces,
   type ShowcaseSurfaces,
 } from "./showcaseSurface";
+import {
+  SHOWCASE_FOG_REACH,
+  createShowcaseSurround,
+  type ShowcaseSurround,
+} from "./showcaseSurround";
 import { toon } from "./toon";
 
 // Vertical-gradient backdrop, the same cheap inward-facing skydome technique
@@ -158,6 +163,14 @@ function makeGardenPatch(): GardenPatch {
     hedge.rotation.y = angle;
     hedge.castShadow = true;
     hedge.receiveShadow = true;
+    // IDEA-072 v2: HIDDEN, not deleted. These five 0.5 x 0.28 boxes were the
+    // menu's stand-in for a maze wall, and `buildStageDressing` now puts the
+    // REAL one behind the dog at its real 1-unit size — two walls of different
+    // scales in one shot reads as a mistake, and this is the doll's-house one.
+    // Kept (with their blooms) because they are what the scene falls back to
+    // if the stage dressing is ever switched off, and because deleting them
+    // would take `applyPatchTheme`'s hedge/bloom tinting with them.
+    hedge.visible = false;
     g.add(hedge);
     hedgeTopBlooms.push(hedge);
   }
@@ -218,6 +231,12 @@ function applyTheme(bits: ThemedBits, theme: MazeTheme): void {
   // texture bakes the palette colour in, so tinting it again would square it);
   // the soil tint just below therefore only applies on a "flat" floor theme.
   applyShowcaseSurfaces(bits.surfaces, p);
+
+  // IDEA-072: the world past the patch — ground to the horizon, a fogged band
+  // of the theme's own neighbourhood standing on it, and fog matched to the
+  // sky. Run alongside the surfaces rather than after the lights, because it
+  // reads the palette and nothing else.
+  bits.surround.apply(theme);
 
   // Sky: the shader dome's two gradient stops.
   const uniforms = (bits.backdrop as THREE.ShaderMaterial).uniforms;
@@ -310,7 +329,12 @@ const CAM_DIR = CAM_POS.clone().sub(CAM_LOOK).normalize();
 // every angle") plus the beagle's own built-in idle tail-wag/ear-sway/
 // breathing (syncToEntity already drives all of that whenever `moving` is
 // false and dt keeps advancing — see characters.ts's WalkState/moveBlend).
+// IDEA-072 v2 retired this — see animateIdle. Kept as a named constant rather
+// than deleted because the decision is a STAGING one and reversible in one
+// line: if the menu ever loses its arch, the spin is what put life back into a
+// dog standing alone on a disc.
 const TURNTABLE_SPEED = 0.18; // rad/s — slow, smooth full rotation every ~35s
+void TURNTABLE_SPEED;
 
 /** IDEA-037: everything in the vignette whose colour comes from the theme.
  *  Collected once at build time so applyTheme() can mutate materials IN PLACE
@@ -318,6 +342,8 @@ const TURNTABLE_SPEED = 0.18; // rad/s — slow, smooth full rotation every ~35s
  *  makes re-theming instant and allocation-free. */
 interface ThemedBits {
   backdrop: THREE.ShaderMaterial | THREE.MeshBasicMaterial;
+  /** IDEA-072: the ground and the horizon band this vignette stands in. */
+  surround: ShowcaseSurround;
   /** The wall/floor stand-ins, for the procedural surfaces pass. */
   surfaces: ShowcaseSurfaces;
   soil: THREE.MeshToonMaterial;
@@ -389,9 +415,22 @@ export function createMenuScene(): MenuScene {
   const patch = makeGardenPatch();
   scene.add(patch.group);
 
+  // IDEA-072. `eyeY` is CAM_POS.y and not the look target's: the fog has to
+  // match the sky along a horizontal ray from the camera, which is the height
+  // the camera is at. The portrait dolly moves the camera along its own look
+  // ray, so its height changes a little — 1.15 to ~1.36 — and the dome's
+  // gradient across that span is far under a value step, so one number is
+  // honest here where it would not be on a camera that craned.
+  const surround = createShowcaseSurround(scene, {
+    eyeY: CAM_POS.y,
+    seed: 1,
+    stage: { bandScale: 1, camDist: BASE_DIST, fogReach: SHOWCASE_FOG_REACH },
+  });
+
   // IDEA-037: everything the theme can re-tint, gathered once.
   const themed: ThemedBits = {
     backdrop: backdrop.material,
+    surround,
     // The grass rim is a torus, so it is left OUT of the wall list: its UVs
     // wrap the pattern exactly once around the whole ring, which smears it.
     // It keeps the palette's wall colour and stays a plain trim.
@@ -438,7 +477,15 @@ export function createMenuScene(): MenuScene {
 
   function animateIdle(dt: number): void {
     idleT += dt;
-    turntableAngle += dt * TURNTABLE_SPEED;
+    // IDEA-072 v2 — THE TURNTABLE IS OFF, and the arch is why. Nuno: *"put the
+    // beagle stopped and behind him the arch of each theme."* A spin exists to
+    // show a coat from every angle, which is the SHOP's job; the menu's job is
+    // a portrait, and a portrait wants its subject facing out with the staging
+    // behind it holding still. A dog revolving inside a fixed archway also
+    // reads as a display turntable in a shop window rather than as a dog in a
+    // garden — the exact "diorama on a table" note this whole feature started
+    // from. The shop's own spin is untouched.
+    turntableAngle = 0;
     beagleMesh.rotation.y = turntableAngle;
 
     const parts = beagleMesh.userData.parts as BeagleParts | undefined;
@@ -488,6 +535,7 @@ export function createMenuScene(): MenuScene {
     },
     dispose(): void {
       disposeShowcaseSurfaces(themed.surfaces);
+      surround.dispose();
       scene.remove(beagleMesh);
       beagleMesh.traverse((o) => {
         if (o instanceof THREE.Mesh) {

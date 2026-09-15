@@ -53,6 +53,9 @@ import { createWorldInspector } from "./worldInspector";
 import { allWorldFields, type WorldField } from "./worldFields";
 import { FENCE_PARAMS } from "../render/fence";
 import { GROUND_DETAIL_PARAMS } from "../render/groundDetail";
+import { SURROUND_PARAMS } from "../render/surround";
+import { ARCH_PARAMS } from "../render/archway";
+import { HEDGE_WALL_PARAMS } from "../render/hedgeWall";
 import { applyConfigEdits, type ConfigEdit } from "./configRewrite";
 import {
   startSessionRecorder,
@@ -1836,7 +1839,9 @@ const boardTreeContainer = treeContainer; // #partTree — same DOM node, one vi
 const boardTree = createBoardTreeView(boardTreeContainer, (id: BoardTreeRowId) => {
   boardTree.setSelected(id);
   if (isPlacementRow(id)) {
-    boardPlacement.setSubMode(id === "placementApron" ? "apron" : "wall");
+    boardPlacement.setSubMode(
+      id === "placementApron" ? "apron" : id === "placementVerge" ? "verge" : "wall",
+    );
     return;
   }
   boardInspector.focusSlot(id);
@@ -3385,13 +3390,14 @@ declare global {
        *  data itself is correct, or vice versa — asserting on BOTH is what
        *  proves the whole pipeline, data through render, actually works). */
       placementsLength(): number;
+      vergeLength(): number;
       wallDecorLength(): number;
       /** IDEA-030/031: boardPlacement's current sub-mode + selection state —
        *  lets the suite verify a tree-row click actually switched sub-modes,
        *  and read back exactly which tile/propId is selected after a slot
        *  pick without re-deriving it from marker colors (which would need
        *  pixel-level scene inspection Playwright can't easily do headless). */
-      placementSubMode(): "apron" | "wall";
+      placementSubMode(): "apron" | "wall" | "verge";
       placementSelection(): { tile: [number, number]; propId: string | null } | null;
       /** IDEA-030/031: projects a board tile to CLIENT-VIEWPORT pixel
        *  coordinates using the live camera + canvas rect — the exact inverse
@@ -3409,7 +3415,7 @@ declare global {
        *  (MARKER_Y_APRON vs MARKER_Y_WALL) so the projected point lands
        *  exactly on the marker's own render position, not the tile's floor
        *  level. */
-      tileToClientXY(tile: [number, number], mode: "apron" | "wall"): { x: number; y: number } | null;
+      tileToClientXY(tile: [number, number], mode: "apron" | "wall" | "verge"): { x: number; y: number } | null;
       /** IDEA-034: reads back one slot marker's CURRENT rendered visual
        *  state (disc opacity/color, uniform scale) — see
        *  boardPlacement.ts's getMarkerState doc comment for why this is a
@@ -3462,10 +3468,13 @@ window.__boardTestHook = {
   mode: () => mode,
   workingThemeId: () => workingTheme.id,
   placementsLength: () => workingTheme.placements.length,
+  vergeLength: () => workingTheme.verge.length,
   wallDecorLength: () => workingTheme.wallDecor.length,
   placementSubMode: () => boardPlacement.getSubMode(),
   tileToClientXY: (tile, submode) => {
-    const y = submode === "apron" ? 0.02 : 1.02; // mirrors boardPlacement.ts's MARKER_Y_APRON/MARKER_Y_WALL
+    // Mirrors boardPlacement.ts's MARKER_Y_APRON / MARKER_Y_VERGE / MARKER_Y_WALL.
+    // The two prop sub-modes share a height; only wall tops are up at the crown.
+    const y = submode === "wall" ? 1.02 : 0.02;
     const world = new THREE.Vector3(worldX(tile[0]), y, worldZ(tile[1]));
     const ndc = world.clone().project(stage.camera);
     if (ndc.z > 1 || ndc.z < -1) return null; // outside the camera's near/far range entirely
@@ -3677,6 +3686,9 @@ window.__charTestHook = {
 const WORLD_PARAM_OBJECTS: Record<string, Record<string, number>> = {
   FENCE_PARAMS: FENCE_PARAMS as unknown as Record<string, number>,
   GROUND_DETAIL_PARAMS: GROUND_DETAIL_PARAMS as unknown as Record<string, number>,
+  SURROUND_PARAMS: SURROUND_PARAMS as unknown as Record<string, number>,
+  ARCH_PARAMS: ARCH_PARAMS as unknown as Record<string, number>,
+  HEDGE_WALL_PARAMS: HEDGE_WALL_PARAMS as unknown as Record<string, number>,
 };
 
 const worldBaseline = new Map<string, number>();

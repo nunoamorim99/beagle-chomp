@@ -93,6 +93,15 @@
         } else if (view === "hero") {
           cam.position.set(-9, 6.5, 14);
           cam.lookAt(-2, 0.4, 0);
+        } else if (view === "arch") {
+          // IDEA-067: framed on the WEST TUNNEL MOUTH at a low three-quarter
+          // — the one place on the board with a fixture on it, and the angle
+          // Nuno reviews it from. `game` is still the only view that decides
+          // anything (a board fixture that only reads here does not read), but
+          // a 40px arc on a phone cannot be judged for CONSTRUCTION, and this
+          // is where "is that a plant or a block" is actually answerable.
+          cam.position.set(-16, 4.2, 4.5);
+          cam.lookAt(-9.4, 1.1, -1);
         } else if (view === "top") {
           cam.position.set(0, 30, 0.001);
           cam.lookAt(0, 0, 0);

@@ -50,7 +50,13 @@ export type PropBaseShape =
   | "critter"
   | "nestTree"
   | "perchedBird"
-  | "flowerHead";
+  | "flowerHead"
+  // IDEA-067, built from a reference (src/render/archway.ts). The hedge
+  // PORTAL that marks the tunnel mouth — the one place on the board where
+  // the beagle crosses from one side to the other. It is a normal library
+  // shape so it can be hand-placed anywhere, AND board.ts stands one at
+  // every tunnel it finds in the GRID; see that module's rule 5.
+  | "archway";
 
 /** The full tunable parameter set across ALL base shapes. Every field is
  *  OPTIONAL with a documented default the render factory applies, so a
@@ -149,6 +155,79 @@ export interface PropParams {
    *  a raccoon's mask and tail bands, a deer's antlers, a rabbit's inner ear
    *  (default per kind). */
   accentColor?: number;
+
+  // --- IDEA-067 the hedge archway ---
+  // Eight dials, and they exist so the arch is a THING TO TRY rather than a
+  // thing that shipped. Nuno: "make the necessary changes to allow the edit
+  // of that component to allow create other and try other things." Every one
+  // is a ratio of HW (the portal wall's own height) rather than a world
+  // number, so `height` stays the single scale control and no dial has to be
+  // re-tuned after it moves. src/render/archway.ts's ARCH_DEFAULTS holds the
+  // values and the measurement spec holds the reasons.
+  /** archway only: the opening's width as a fraction of the portal's height
+   *  (default 0.5, which is 1.03 world units — ONE MAZE TILE, so the arch
+   *  frames the tunnel corridor exactly). The reference measures 0.338; the
+   *  shipped value is far wider because the play camera looks down 59 degrees
+   *  and an arch has to be readable in PLAN. See archway.ts rule 6. */
+  archOpening?: number;
+  /** archway only: the arch head's rise over the opening's HALF-width
+   *  (default 0.78). Below 1 is a segmental arch, 1 is a semicircle, above 1
+   *  is pointed — so this and `archCurve` together are the two dials that
+   *  decide what KIND of arch it is. */
+  archRise?: number;
+  /** archway only: the arch head's superellipse exponent (default 2.6).
+   *  2 is a true ellipse, above 2 flattens the crown and sharpens the
+   *  shoulders into the reference's basket handle, below 2 draws it up into
+   *  a gothic point. */
+  archCurve?: number;
+  /** archway only: each pier's width / HW (default 0.22). The reference's
+   *  mass is in the SIDES — its crown band is thinner than either pier — and
+   *  an arch with an even band all round reads as a picture frame.
+   *
+   *  There is no pier HEIGHT dial and that is deliberate: the piers carry
+   *  whatever the band does not (`H - rise - crown`), so the arch is always a
+   *  closed figure of the authored height however the other three are turned.
+   *  A fourth independent number would let them disagree. */
+  archPier?: number;
+  /** archway only: depth through the portal / HW (default 0.366, about
+   *  three quarters of a maze tile). Not measurable from the reference; see
+   *  the spec's hiddenByTheSingleView. */
+  archDepth?: number;
+  /** archway only: the arch BAND's thickness / HW (default 0.16) — the hedge
+   *  above the opening. It and `archRise` between them decide how much of the
+   *  portal is pier and how much is arch. */
+  archCrown?: number;
+  /** archway only: the band's depth as a fraction of the PIERS' depth
+   *  (default 0.55). Below 1 so the band crosses the gap as a ribbon rather
+   *  than lidding it — at 1 the arch is a wall with a hole in it, which from
+   *  the play camera is a green slab. archway.ts rule 6. */
+  archRibbon?: number;
+  /** archway only: how much lighter, looser growth rides the arch's outer
+   *  edge, 0..1 (default 0.55). At 0 the outline is smooth, which reads as
+   *  topiary rather than as a hedge somebody has let go a little. */
+  archCrest?: number;
+  /** archway only: a picket fence round each foot (default true), built by
+   *  fence.ts's own panel builder so it IS the maze wall's fence rather than
+   *  a copy of it — same pickets, same pitch, same dark rails, and the World
+   *  tab's dials move both together. Nuno asked for it by name: the arch
+   *  stands where the maze wall's fence ends, and anything else at that
+   *  junction reads as a different garden. */
+  archFence?: boolean;
+  /** archway only: the footing fence's timber (default 0xa9743f, the
+   *  garden palette's own `fenceColor`). */
+  fenceColor?: number;
+  /** archway only: flower specks per pier face (default 9). The maze wall
+   *  wears a flowering hedge texture, so an arch in plain green does not
+   *  belong to the hedge it stands against. */
+  archBlossoms?: number;
+  /** archway only: the flush stone sill across the foot of the opening
+   *  (default true). */
+  archThreshold?: boolean;
+  /** archway only: the flower specks (default 0xf4efe6 cream). */
+  blossomColor?: number;
+  /** archway only: the threshold slab (default 0x9c9a90, the garden's own
+   *  groundDetail stone). */
+  stoneColor?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -295,6 +374,26 @@ export const PROP_SHAPE_FIELDS: Record<PropBaseShape, readonly (keyof PropParams
   nestTree: ["height", "width", "trunkColor", "foliageColors", "showBird", "birdColor"],
   perchedBird: ["height", "width", "birdColor", "bellyColor", "eyeColor", "trunkColor"],
   flowerHead: ["height", "width", "flowerKind", "petalColor", "centerColor"],
+  // IDEA-067.
+  archway: [
+    "height",
+    "width",
+    "archOpening",
+    "archRise",
+    "archCurve",
+    "archPier",
+    "archDepth",
+    "archCrown",
+    "archRibbon",
+    "archCrest",
+    "archBlossoms",
+    "archThreshold",
+    "archFence",
+    "foliageColors",
+    "blossomColor",
+    "fenceColor",
+    "stoneColor",
+  ],
 } as const;
 
 /** The starter library — the props IDEA-026 shipped, now as named reusable
@@ -337,6 +436,12 @@ export const PROP_LIBRARY: readonly PropDef[] = [
       segments: 8,
       foliageColors: [0x285835, 0x2e6337, 0x24523a],
       trunkColor: 0x7a6142,
+    },
+    parts: {
+      edits: [
+      { path: "0", scale: [1, 6.197, 1] },
+    ],
+      added: [],
     },
   },
   {
@@ -719,6 +824,93 @@ export const PROP_LIBRARY: readonly PropDef[] = [
       flowerKind: "blossom",
       petalColor: 0xb289de,
       centerColor: 0xf3e46a,
+    },
+  },
+  // IDEA-067 — the hedge archway, in three tunings that are deliberately
+  // three different ARCHES rather than three colourways. The reference is one
+  // portal; what makes this prop worth a dozen dials is that the same
+  // construction draws a garden doorway, a clipped topiary gate and a gothic
+  // arbour, so these three are the starting points for the fourth.
+  {
+    id: "hedge-arch",
+    name: "Hedge Arch",
+    shape: "archway",
+    // The shipped values. Every ratio here is `shippedRatios` in
+    // .img2threejs/garden-arch/measurements.json, spelled out rather than
+    // left to the factory defaults so the def a player opens in the Props tab
+    // shows every dial already turned to the measured answer.
+    params: {
+      height: 1,
+      width: 1,
+      archOpening: 0.458,
+      archRise: 1.29,
+      archCurve: 2.1,
+      archPier: 0.208,
+      archDepth: 0.354,
+      archCrown: 0.142,
+      archRibbon: 0.6,
+      archCrest: 0.55,
+      archBlossoms: 8,
+      archThreshold: false,
+      archFence: true,
+      foliageColors: [0x3f8f3a, 0x367f33, 0x47993f],
+      blossomColor: 0xf4efe6,
+      fenceColor: 0xa9743f,
+      stoneColor: 0x9c9a90,
+    },
+  },
+  {
+    id: "hedge-arch-gothic",
+    name: "Gothic Arbour",
+    shape: "archway",
+    // `archCurve` below 2 points the head and `archRise` above 1 takes it past
+    // a semicircle. Narrower and taller with a thin crown, which is the whole
+    // difference between a doorway and an arbour you walk under.
+    params: {
+      height: 1.18,
+      width: 0.88,
+      archOpening: 0.44,
+      archRise: 1.75,
+      archCurve: 1.45,
+      archPier: 0.16,
+      archDepth: 0.24,
+      archCrown: 0.11,
+      archRibbon: 0.7,
+      archCrest: 0.8,
+      archBlossoms: 9,
+      archThreshold: false,
+      archFence: true,
+      foliageColors: [0x367f33, 0x2f7330],
+      blossomColor: 0xe8709a,
+      fenceColor: 0x8a5f34,
+      stoneColor: 0x9c9a90,
+    },
+  },
+  {
+    id: "hedge-arch-topiary",
+    name: "Topiary Gate",
+    shape: "archway",
+    // The other end of the same two dials: `archCurve` at 3.4 flattens the
+    // head almost to a lintel and `archCrest` at 0 leaves the crown a clean
+    // clipped line. Squat, wide and heavy — a gate rather than a portal.
+    params: {
+      height: 0.82,
+      width: 1.2,
+      archOpening: 0.58,
+      archRise: 0.7,
+      archCurve: 3.4,
+      archPier: 0.3,
+      archDepth: 0.4,
+      archCrown: 0.22,
+      archRibbon: 0.85,
+      archCrest: 0,
+      archBlossoms: 0,
+      archThreshold: true,
+      archFence: true,
+      foliageColors: [0x47993f, 0x3f8f3a],
+      blossomColor: 0xf4efe6,
+      fenceColor: 0xb78450,
+      stoneColor: 0xa8a69c,
     },
   },
 ] as const;

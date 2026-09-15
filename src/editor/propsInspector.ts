@@ -55,8 +55,12 @@ const SINGLE_COLOR_FIELDS = new Set<keyof PropParams>([
   "furColor",
   "bellyColor",
   "accentColor",
+  // IDEA-067.
+  "blossomColor",
+  "fenceColor",
+  "stoneColor",
 ]);
-const BOOLEAN_FIELDS = new Set<keyof PropParams>(["rooftop", "showBird"]);
+const BOOLEAN_FIELDS = new Set<keyof PropParams>(["rooftop", "showBird", "archThreshold", "archFence"]);
 
 /** Fields whose value is one of a fixed set of STRINGS. The first of its kind
  *  here — every PropParams field before IDEA-060 was a number, a colour, a
@@ -89,6 +93,23 @@ const SLIDER_RANGE: Partial<Record<keyof PropParams, readonly [number, number, n
   windowCols: [0, 4, 1],
   glowIntensity: [0, 1.5, 0.01],
   windowEmissiveIntensity: [0, 1.5, 0.01],
+  // IDEA-067 — the archway. Every range is a RATIO of the portal's own height
+  // (see PropParams), so none of them has to be re-tuned when `height` moves,
+  // and each is bounded at the point where the arch stops being one:
+  //  - `archOpening` past ~0.62 leaves no pier to carry the head;
+  //  - `archCurve` at 1 is a diamond and at 6 a lintel, so the useful span is
+  //    the 1.1..4 between a gothic point and a flat gate;
+  //  - `archCrown` below ~0.05 is a ribbon, which is the defect the measured
+  //    0.147 was thickened away from in the first place.
+  archOpening: [0.2, 0.75, 0.005],
+  archRise: [0.3, 2.2, 0.01],
+  archCurve: [1.1, 4, 0.05],
+  archPier: [0.08, 0.5, 0.005],
+  archDepth: [0.1, 0.7, 0.005],
+  archCrown: [0.05, 0.4, 0.005],
+  archRibbon: [0.15, 1, 0.01],
+  archCrest: [0, 1, 0.01],
+  archBlossoms: [0, 24, 1],
 };
 
 /** Default value a numeric field snaps to the FIRST time it's turned on (a
@@ -104,6 +125,19 @@ const FIELD_SEED_DEFAULT: Partial<Record<keyof PropParams, number>> = {
   windowCols: 2,
   windowEmissiveIntensity: 1,
   glowIntensity: 0.9,
+  // IDEA-067. These MUST equal archway.ts's ARCH_DEFAULTS or turning a
+  // control on visibly changes the prop — IDEA-060's sunflower-repainted-as-
+  // a-daisy defect, in the numeric half of this table rather than the colour
+  // half. scripts/test-garden-props.ts asserts the two agree.
+  archOpening: 0.458,
+  archRise: 1.29,
+  archCurve: 2.1,
+  archPier: 0.208,
+  archDepth: 0.354,
+  archCrown: 0.142,
+  archRibbon: 0.6,
+  archCrest: 0.55,
+  archBlossoms: 8,
   // COLOUR fields are NOT here — they live in propsSeedColors.ts, because
   // several of them depend on another field's value and a flat table cannot
   // express that. Two shipped defects came of trying (IDEA-060's sunflower
@@ -131,6 +165,21 @@ const FIELD_LABEL: Partial<Record<keyof PropParams, string>> = {
   centerColor: "centre color",
   showBird: "perched bird",
   birdColor: "bird color",
+  // IDEA-067.
+  archOpening: "opening width",
+  archRise: "arch rise",
+  archCurve: "arch curve (1 gothic - 4 flat)",
+  archPier: "foot thickness",
+  archDepth: "depth through",
+  archCrown: "band thickness",
+  archRibbon: "band depth (of pier)",
+  archCrest: "loose growth",
+  archBlossoms: "blossoms",
+  archThreshold: "stone threshold",
+  archFence: "footing fence",
+  blossomColor: "blossom color",
+  fenceColor: "fence color",
+  stoneColor: "stone color",
 };
 
 function hexProxy(get: () => number, set: (v: number) => void): { color: string } {

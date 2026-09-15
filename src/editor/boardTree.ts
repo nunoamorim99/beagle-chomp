@@ -18,12 +18,25 @@
 // selection (see boardInspector.ts). Both rows ARE still selectable/
 // highlightable exactly like every other row (so the tree visually shows
 // which sub-mode is active), just with a different click EFFECT.
-export type BoardSlotId = "atmosphere" | "walls" | "floor" | "biscuits" | "blooms" | "specks";
+// IDEA-067 added "tunnelArch": WHICH hedge portal stands at the board's two
+// tunnel mouths. It earns a slot rather than hiding in "Theme identity"
+// because it is a thing ON the board that a player sees, and because the
+// left-hand tree is how anyone discovers this tab has an opinion about it at
+// all — three shipped arches with no way to switch between them is one arch
+// and two dead library entries.
+export type BoardSlotId =
+  | "atmosphere"
+  | "walls"
+  | "tunnelArch"
+  | "floor"
+  | "biscuits"
+  | "blooms"
+  | "specks";
 /** The two placement sub-mode rows — kept as their own id type (not folded
  *  into BoardSlotId) since they don't correspond to a lil-gui folder at all
  *  (see this module's header) — boardInspector.ts's `folders` map is keyed
  *  by BoardSlotId alone, so a placement row id would be meaningless there. */
-export type PlacementRowId = "placementApron" | "placementWall";
+export type PlacementRowId = "placementApron" | "placementVerge" | "placementWall";
 export type BoardTreeRowId = BoardSlotId | PlacementRowId;
 
 export interface BoardSlotRow {
@@ -34,16 +47,18 @@ export interface BoardSlotRow {
 export const BOARD_SLOTS: readonly BoardSlotRow[] = [
   { id: "atmosphere", label: "Atmosphere" },
   { id: "walls", label: "Walls" },
+  { id: "tunnelArch", label: "Tunnel arch" },
   { id: "floor", label: "Floor" },
   { id: "biscuits", label: "Biscuits" },
   { id: "blooms", label: "Blooms" },
   { id: "specks", label: "Specks" },
   { id: "placementApron", label: "Props (apron)" },
+  { id: "placementVerge", label: "Props (verge)" },
   { id: "placementWall", label: "Wall components" },
 ];
 
 export function isPlacementRow(id: BoardTreeRowId): id is PlacementRowId {
-  return id === "placementApron" || id === "placementWall";
+  return id === "placementApron" || id === "placementVerge" || id === "placementWall";
 }
 
 export interface BoardTreeView {

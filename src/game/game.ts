@@ -128,6 +128,7 @@ import {
 } from "../render/board";
 import { disposeFence } from "../render/fence";
 import { disposeGroundDetail } from "../render/groundDetail";
+import { disposeSurroundGround } from "../render/surround";
 import {
   makeBeagle,
   makeGhost,
@@ -988,6 +989,16 @@ export class Game {
     // geometry+materials — disposePropGroup is board.ts's canonical
     // teardown for them, so a level change never leaks prop GPU resources.
     if (level.board.props) disposePropGroup(this.rig.scene, level.board.props);
+    // IDEA-066: the verge owns its props the same way, so it needs the same
+    // teardown. (The SURROUND does not — it is borrowed and cached across
+    // levels; see Board.surround.)
+    if (level.board.verge) disposePropGroup(this.rig.scene, level.board.verge);
+    // IDEA-067: the tunnel arches own their props the same way the verge does.
+    // They are grid-DERIVED rather than hand-placed, which changes nothing
+    // about ownership — a fixture still holds real geometry and materials.
+    if (level.board.tunnelArches) {
+      disposePropGroup(this.rig.scene, level.board.tunnelArches);
+    }
     // IDEA-060: the fence owns its geometry AND its material (fence.ts), so it
     // needs a real disposal, not the bare scene.remove the walls above get.
     if (level.board.fence) {
@@ -998,6 +1009,12 @@ export class Game {
       this.rig.scene.remove(level.board.groundDetail);
       disposeGroundDetail(level.board.groundDetail);
     }
+
+    // IDEA-066: same ownership rule again — the surround ground owns its
+    // geometry and material, so a bare scene.remove would leak both. It is
+    // never null, unlike the two above.
+    this.rig.scene.remove(level.board.surroundGround);
+    disposeSurroundGround(level.board.surroundGround);
   }
 
   start(): void {

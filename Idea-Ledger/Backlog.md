@@ -16,10 +16,19 @@ Living backlog of ideas. Two purposes:
 ## 📥 Inbox (raw captures — untriaged)
 > `/idea` appends raw notes here with a date. `/idea-triage` turns them into registered ideas
 > below, then clears them from here. Don't assign IDs in the Inbox.
-_(empty — nothing to triage)_
+- **2026-09-14** — **the biscuits are 176 separate draw calls, and they are ~90% of a
+  propless board.** Found while taking [[IDEA-066]]'s phase-0 census: Arcade Night ships
+  zero props and still costs **198** draw calls at 390x844, of which **176 are unnamed
+  `SphereGeometry` meshes — one per pellet**. Every theme pays it. Instancing them (one
+  `InstancedMesh`, hide an eaten one by zeroing its matrix or moving it below the floor)
+  would save ~175 calls on EVERY board — more than the entire IDEA-066 surround is
+  budgeted to spend (18). The catch is that `board.ts` tracks pellets as individual meshes
+  for eat/respawn and the bones are separate builders, so this is a real refactor of the
+  pellet layer, not a one-liner. Measured by `scripts/_scratch-mesh-census.ts`, whose
+  header now carries the before-table.
 
 ## Backlog (open ideas)
-> New registered ideas go here. Next free ID: IDEA-066
+> New registered ideas go here. Next free ID: IDEA-073
 > (054 went to the crab and 055 to the mosquito — built in parallel by two sessions, which is
 > why the ids were split up front rather than both taking the next free one. 056 and 057 are the
 > sushi pair, registered together because neither is buildable without the other as its
@@ -47,6 +56,692 @@ _(empty — nothing to triage)_
 - **Dependencies:** —
 
 ## In progress 🔨
+
+### IDEA-072 — The menus stand somewhere 🔨
+- **Priority:** 🟡
+- **Area:** render
+- **Registered:** 2026-09-15
+- **Building:** started 2026-09-15.
+- **Description:** Nuno, after [[IDEA-071]]: *"one thing that I'd like to change
+  is the preview of the home screen and the shop. Since we have now this logic of
+  the ambience, let's bring that to the menus... and hide the blue part."*
+  - **v1** (2026-09-15) — the menu vignette and both shop stages.
+    **THE BLUE PART WAS LITERAL AND IT WAS MOST OF BOTH SCREENS.** The menu
+    beagle stood on a 1.15-radius soil disc with three hedge blocks behind it,
+    and past the rim there was NO GEOMETRY AT ALL — about 70% of a 390x844
+    frame was gradient dome, and the disc read as a diorama on a table rather
+    than as a dog in a garden.
+    **AND [[IDEA-066]]'S ANSWER DOES NOT PORT, WHICH IS THE WHOLE DESIGN.**
+    That one could answer "empty sky" with a bigger floor because the board's
+    horizon is never in shot — it pitches 59 degrees down with a 23-degree
+    half-FOV, so the top of frame still points 36 degrees DOWNWARD. Measured,
+    these rigs are nothing like it: **menu 14.2 degrees of elevation (horizon
+    17% from the top of frame), shop character 9.5 (27%), shop diorama 33.3
+    (horizon off the top).** On the two character stages ground can only ever
+    fill up to that line, and what fills the rest is THINGS THAT STAND UP on
+    it. So `showcaseSurround.ts` is a ground plane AND a fogged band of the
+    theme's own neighbourhood standing on the horizon, built from
+    `surroundProps.ts`'s existing distant builders and switched on
+    `palette.surround`, so a theme shows its own vocabulary and Arcade Night's
+    deliberate void survives untouched.
+    **TWO NUMBERS WERE ARITHMETIC RATHER THAN TASTE.** The band sits at 34-60
+    units because the subject is ~0.6 units at 3.2-5.3, so the frame is only
+    ~4 units tall where it stands and a 2.2-unit house at 8 units is half the
+    screen — and because at 26 the near ring's `detail: 0` tree crowns read as
+    pale HEXAGONS, twenty faces being invisible at 15-40px on the board and
+    glaring at 80. And the ring counts went 14/21/28 to 34/48/62/76: after the
+    behind-camera wedge takes its 28%, the first build put about seven objects
+    across the whole visible horizon, which is a few lonely props in a field. A
+    horizon reads on being CONTINUOUS; the fog is what stops continuous from
+    becoming a wall.
+    **THE BACKDROP DOME RENDERS ~40% DARKER THAN ITS PALETTE SAYS, AND HAS
+    SINCE [[IDEA-021]].** Those gradient shaders write `gl_FragColor` with no
+    colour-space conversion, so the renderer's linear-to-sRGB step never runs
+    and the sky is its LINEAR triple shown raw — measured to the byte,
+    `palette.bg` 0x9ecbe8 = (158, 203, 232) renders as (87, 152, 206), which is
+    exactly its own linear (0.342, 0.597, 0.807) read as sRGB. **Deliberately
+    not fixed**: the shader is shared by the menu, both shop stages and the
+    game's own backdrop, so correcting it changes a look that was tuned by eye
+    across four screens and has nothing to do with this feature. It matters
+    because fog IS converted properly, so handing it the palette hex lands 40%
+    too light and paints a pale band across the horizon — precisely where this
+    feature has to be invisible.
+    **FOUR DEFECTS THAT EACH RENDERED AS NOTHING**, which is this project's
+    most-repeated family and turned up twice more here.
+    (a) Fog's far plane was derived from the band's outer radius measured from
+    the STAGE CENTRE — fine for cameras 3.2 and 3.6 units out, and wrong for
+    the diorama's **10.6**, whose band then fell entirely past the end of the
+    curve: built, merged, added to the scene, invisible.
+    (b) Then fog REACH was still derived from band EXTENT, so a stage with no
+    band got a far plane at its own camera distance and the theme diorama came
+    back as an empty blue screen with the model fogged out from eight units
+    away. They are separate fields now; only the near/far RATIO comes from the
+    palette, because that is what carries the per-theme character.
+    (c) `surroundTextureFor` is a CACHE returning one texture per key, and
+    writing `repeat` on what it returns writes it onto the texture THE BOARD
+    holds — so opening the shop and then starting a run would have tiled the
+    board's ground at the menu's density, whichever built last. It clones now
+    (sharing `.source`, no second upload), which is also where the anisotropy
+    goes: a ground plane seen from 3 units up is the textbook anisotropic case
+    and isotropic minification smeared the lawn into dark lenses.
+    (d) And the test's own first version failed the BEACH on a correct model by
+    asserting no vertex sits below zero — `distantDune` is a blob centred at
+    y = 0 and flattened to 0.12, so half of it is under the sand ON PURPOSE. It
+    asserts nothing is entirely BURIED instead. Suspect the instrument first.
+    **THE DIORAMA GETS GROUND AND FOG AND NO BAND**, solved rather than guessed
+    after guessing twice. Its camera is 9.2 units out horizontally at 33.3
+    degrees, so the top of frame points 13.3 degrees down and meets the ground
+    **17 units past the stage centre**. Inside that line a band sprawls hedges
+    and a flower border across the top of the picture; past it the only thing
+    that reaches the screen is a cropped fragment at the frame edge. Both were
+    rendered; nothing is the right amount, and ground alone is IDEA-066's own
+    answer applied where it fits.
+    **AND THE THEMES TAB ADVERTISES THE THEME RATHER THAN THE ONE YOU OWN** —
+    `showTheme` applies the STAGED palette, so Deep Forest's diorama stands on
+    forest earth under forest fog. The surround restore lives inside
+    `restoreAtmosphere()` rather than beside its four call sites, for the same
+    reason that function exists.
+    `showcaseSurround.ts` (new), `menuScene.ts`, `shopScene.ts`, `surround.ts`
+    (two helpers exported so the showcase ground cannot disagree with the
+    board's), `test-showcase-surround.ts` (85 checks, new, in `npm run test`),
+    `_scratch-showcase-sheet.ts` (new).
+  - **v2** (2026-09-15) — the game itself, behind the dog. Nuno: *"bring the
+    trees closer to the dog, and the main props of each theme like the walls of
+    each theme should appear, the treehouse of the garden for example. Another
+    thing we can make is to put the beagle stopped and behind him the arch of
+    each theme."*
+    **THREE ASKS, ONE COMPOSITION, AND IT IS A PLACE THE GAME ALREADY HAS: a
+    TUNNEL MOUTH.** A run of the theme's real maze wall, an arch standing in
+    the gap, the beagle in front of it facing out — both a portrait and a
+    screenshot of the game. The wall is `wallGeometry` + `wallShapeFor` +
+    `wallTextureFor`, the same block and cached texture the maze builds from,
+    so a hedge theme gets [[IDEA-068]]'s lumpy crown and Night City its brick;
+    what it replaces says why the ask was needed, since the menu's stand-in was
+    five 0.5 x 0.28 boxes and the shop's two 0.42 x 0.26 ones. The landmarks
+    are the REAL library props through `makePropFromDef`, so the menu plants
+    the same treehouse the garden does rather than a lookalike that drifts.
+    **THE ARCH IS TINTED FROM THE PALETTE RATHER THAN TAKEN FROM
+    `theme.tunnelArch`.** Only the garden names one and deliberately —
+    [[IDEA-067]] rule 5 keeps a yew portal off the beach's tunnel mouths, so
+    setting it on five more themes to fix a MENU would change five BOARDS.
+    `makeArchway` already takes its colours as params, so the showcase builds
+    its own and no board changes at all.
+    **AND THIS IS THE ONE CAMERA AN ARCH READS ON**, which contradicts IDEA-067
+    rule 1 unless you know which camera each note is about: at the play camera
+    an arch reads in PLAN and a portal renders as a green slab, which is why
+    the shipped arch is a low arbour; at 14 degrees it reads as an arch.
+    **THE BAND CAME BACK IN, 34 TO 26, AND THE HONEST FIX WAS NOT UNDOING v1.**
+    v1 pushed it out because at 26 the near ring's `detail: 0` crowns read as
+    pale hexagons. Nuno's "closer" note was about something else — the MIDDLE
+    DISTANCE was empty — and the stage dressing now fills 5-13 units with props
+    that carry proper detail, so the band is a horizon again and the two ranges
+    chain instead of leaving bare lawn between them.
+    **AND A LANDMARK WITH A FRONT NOW TURNS IT TOWARD THE VIEWER** (Nuno:
+    *"rotate the treehouse to have the front of the treehouse pointing to the
+    user"*). `SHOWCASE_FRONTED` names them and membership is VERIFIED rather
+    than guessed — the treehouse's door, window and grooves sit at +Z, the log
+    cabin's door and step likewise — because being wrong about a prop's local
+    axis shows its BACK. It aims at the CAMERA, not at world +Z: 1.9 units off
+    the centre line is about 10 degrees round, and squaring to the world still
+    shows a sliver of side wall. Trees keep their random yaw.
+    **THE TURNTABLE IS OFF ON THE MENU ONLY**: a spin shows a coat from every
+    angle, which is the shop's job, and a dog revolving inside a fixed archway
+    reads as a display turntable in a shop window.
+    **AND `mergeBySignature` WAS DROPPING `uv`**, one attribute along from the
+    vertex colours IDEA-067 found. A merged geometry with no UVs samples texel
+    (0, 0) everywhere, so a textured material comes back as one flat colour —
+    latent through the whole surround because nothing out there carries a map,
+    and live the instant a showcase stood the real maze wall behind the beagle:
+    eleven hedge blocks as plain green boxes.
+    `showcaseSurround.ts`, `propMerge.ts`, `menuScene.ts`, `shopScene.ts`.
+- **Dependencies:** [[IDEA-021]], [[IDEA-026]], [[IDEA-066]], [[IDEA-071]]
+
+
+### IDEA-071 — The neighbourhood's art: glass, beds and borders 🔨
+- **Priority:** 🟡
+- **Area:** render
+- **Registered:** 2026-09-15
+- **Building:** started 2026-09-15.
+- **Description:** Four notes off the play session after [[IDEA-070]], all about the
+  surround's ART rather than its machinery, plus one defect Nuno reported that turned
+  out to be structural. He also asked whether his photographic references were worse
+  than cartoon ones for this — the answer is recorded under the greenhouse, because
+  that subject is the proof either way.
+  - **v1** (2026-09-15) — all four.
+    **THE GREENHOUSE WAS A WHITE CARD, AND THE CAUSE IS ARITHMETIC RATHER THAN ART.**
+    Nuno: *"the greenhouses are not transparent, it's just a small white house."*
+    Three separate things were wrong and only one of them was the one the complaint
+    named. (a) Roof AND walls were both `glassPale`, so the building was one pale
+    mass — fixed to dark `glass` walls under a pale roof, which also INVERTS the
+    house (pale walls, dark roof) on both counts where before they differed only in
+    roof hue. (b) That fix changed almost nothing, because **from 59 degrees up the
+    walls are under the roof's overhang and the roof is the whole read** —
+    [[IDEA-060]]'s log-cabin lesson, hit again. (c) The roof was ONE FLAT VALUE, and
+    the toon ramp says why: three texels sampled NEAREST means a surface is in the
+    top band whenever `dot(N, L) > 2/3`, and at the measured 18.3-degree pitch the
+    two slopes measure 0.90 and 0.74 against the key light — **both clear it**, so
+    the gable was invisible and the object was literally a white card lying on grass.
+    Solving `0.864 cos a - 0.259 sin a = 2/3` puts the split at 25.6 degrees; it
+    ships at 27.5, paid for by a dwarf wall (0.41 GW measured -> 0.22), which keeps
+    the house/greenhouse aspect separation at x1.41 against its x1.35 gate and is
+    what the reference photograph shows anyway.
+    **A GLAZING GRID IS BELOW THE RESOLUTION FLOOR, AND THE ARITHMETIC IS WORTH
+    KEEPING.** The building is ~25 CSS px across on a 390px phone, so one world unit
+    is ~15 px and a bar thick enough to reach the CARTOON floor of 2 px is EW * 0.08
+    — four of them would be 59% of the roof. So the roof is broken up by whole dark
+    PANES instead of by the lines between them, which is also what a glasshouse looks
+    like from above. They lie FLUSH: shipped for one render as vents propped at
+    -0.55 rad, and a thin box tilted that far foreshortens from this camera into a
+    TRIANGLE — three black wedges on a white slab, which reads as damage.
+    **THE PHOTO-VS-DRAWING QUESTION, ANSWERED ON THIS SUBJECT.** Use a PHOTOGRAPH
+    when the question is proportion, value structure or what a thing is made of; use
+    a DRAWING when the question is silhouette and identity. A cartoon greenhouse is
+    drawn as a white box with lines on it, so it would have CONFIRMED the bug; the
+    photograph is what said a real one has a pale translucent roof and CLEAR walls
+    you see a dark interior through, i.e. that the walls are the darkest part.
+    [[IDEA-059]] rule 8's caveat still stands on top of it — a flat drawing carries
+    compensations a toon mesh has none of, so measuring correctly is necessary and
+    not sufficient.
+    **THE FLOWER BEDS ARE ROUND NOW, WITH A KERB.** *"The flower beds don't look like
+    flowers."* They were a brown RECTANGLE carrying four small spheres of two
+    colours, spaced apart — four separated dots on dirt read as pebbles. Rebuilt from
+    the reference: a pale stone kerb ring round dark mulch (the greenhouse plinth's
+    two-mass trick, which the reference volunteers just as plainly), a packed mass of
+    blooms on a golden-angle `sqrt(t)` spiral so they distribute evenly BY AREA and
+    overlap into one form, and a centre sapling. Being ROUND is rank 1: everything
+    else out here is a rectangle. `SurroundMaterials` gained a **`bloomC`** for it —
+    every theme's `bloomColors` carries three or four hues and the set was throwing
+    the middle ones away, so garden's [cream, yellow, pink, red] shipped as cream and
+    red. One extra draw call against a measured 13-14 of an 18 ceiling.
+    **THE FLOWERING SHRUB IS A BORDER, NOT A SHRUB, AND THAT COST TWO BUILDS.** The
+    reference is a border of forsythia, berberis and aubretia — plants with NO GREEN
+    LEFT, solid blocks of one saturated colour. Built first as the brief sounded (an
+    object, drifted, scattered through the plots) it rendered as LITTER: a saturated
+    mass 0.9 units tall alone on a lawn is a red crisp packet, and a detail-0
+    icosphere's faceting, which green-on-green hides completely, is glaring the
+    moment the colour is loud. Built second as a tight run it was a string of BEADS,
+    because `distantHedgeRun`'s 2.4h step against a 2.16h blob is a hair under
+    continuous and only gets away with it between two greens. It ships as a low
+    (0.22-0.30) run of few, very wide, heavily overlapping blobs in contiguous HUE
+    blocks, laid just inside one of the plot's own hedges — **the placement is the
+    difference between a border and litter**, for the same reason `hedgePerimeter`
+    exists one scale up. Deliberately absent from the fringe, which has no hedge to
+    stand against and is the nearest, least-fogged part of the band.
+    **"WE HAVE GREENHOUSES INSIDE THE HOUSES" WAS NOT A SPACING NUMBER.** Two causes.
+    The outbuilding always offset in `u` and barely in `v`, which is right for an
+    east/west plot and wrong for a north or south one (1.78 units apart needing 1.9).
+    And underneath that, **it does not fit**: a house runs up to 4.7 x 3.7 units at
+    the top of `plot.scale` and an outbuilding 2.3 x 2.7, in a plot of 7 x 6 — so
+    3.7 + 2.7 > 6 and 4.7 + 2.3 = 7 exactly, and on those plots every choice of
+    fractions is just choosing where to clip. It is now SOLVED: four candidate
+    corners tried against the house's real **vertex-measured** footprint (never
+    `Box3.setFromObject`, which over-reports a rotated child by up to 56% and every
+    building here is rotated), and a plot that cannot fit one simply has none. About
+    one house plot in ten loses its shed; a missing shed is invisible and a shed
+    inside a house is the first thing anyone sees. The allotment's greenhouse/shed
+    pair gets the same solve.
+    **AND IT HAS A TEST NOW, WHICH IT COULD NOT HAVE HAD BEFORE.** `mergeBySignature`
+    welds the whole band into one mesh per material, so by the time anything can look
+    at the finished group every object's identity is gone — the defect lived in that
+    blind spot for two releases. `buildSurroundContent` is the band UNMERGED, split
+    out of `ensureSurround` purely so `test-surround.ts` can measure 92 buildings
+    against each other. Its first version tested `overlap < gap`, which reads
+    perfectly and PERMITS an overlap of up to `gap`: it passed five pairs clipping by
+    exactly 0.12, 0.07 and 0.03, i.e. by precisely the tolerance it thought it was
+    enforcing.
+    `surroundProps.ts`, `surroundRecipe.ts`, `test-surround.ts` (+2 checks),
+    `_scratch-building-overlap.ts`, `.img2threejs/garden-greenhouse/measurements.json`.
+- **Dependencies:** [[IDEA-060]], [[IDEA-066]], [[IDEA-070]]
+
+
+### IDEA-070 — The tray against the chrome, and a south band worth looking at 🔨
+- **Priority:** 🟡
+- **Area:** render / UI
+- **Registered:** 2026-09-15
+- **Building:** started 2026-09-15.
+- **Description:** Two notes off the play session after [[IDEA-069]], and the second
+  is mostly a lesson about measuring before tuning.
+  - **v1** (2026-09-15) — both.
+    **THE POWER-UP TRAY ANCHORS TO THE HUD NOW, NOT TO THE BOARD.** Nuno: *"put them
+    more up, right below the coins and the control buttons — this way the tags of the
+    power-ups don't mess around with the ambient, right now they are hiding some
+    trees."* IDEA-069 put the tray in the band above the maze and anchored it to
+    `--bc-board-top`, which parks it at the BOTTOM of that band, on the
+    neighbourhood. `hud.ts` now publishes `--bc-hud-bottom` and the tray hangs off
+    that, growing downward. **Measured with a ResizeObserver rather than a literal**,
+    and that is the load-bearing part: the row's height is CONTENT-dependent (the map
+    chip runs "5" to "Bonus", the score column grows with the figure, a narrow phone
+    wraps the row), so a constant is one that has to be re-tuned whenever anything
+    above it changes — the trap the HUD's own chrome row was rebuilt to escape. A
+    `resize` listener would not do: the row changes height when its CONTENT changes,
+    which a window resize never hears about.
+    **THE SOUTH BAND WAS EMPTY BECAUSE ALMOST NOTHING WAS EVER BUILT THERE, AND THE
+    ARCHETYPE MIX WAS NOT THE REASON.** *"On the bottom of the maze, on the zone we
+    have the buttons and the joystick, we should balance the world — there are no
+    houses or greenhouses there."* The obvious fix — let south PLOTS take buildings —
+    is done (`southAllotmentChance`), and measured it barely shows: on a phone the
+    visible south window is z 14.5..22.4 while the plot lattice lands at 22.5..24.1,
+    so exactly ONE plot falls inside it. Tuning the mix harder would have changed
+    almost nothing and looked like the change had failed. The FRINGE owns that
+    annulus (IDEA-066 rule 7 added it for exactly this gap), so `southFringeBuildings`
+    is the dial that actually fills the band.
+    **Greenhouses, not sheds, and that is a VALUE decision**: the first tuning split
+    them evenly and the render refused it — a shed is a small red roof, the flower
+    beds out here are small dark red rectangles, and at that size on dark lawn they
+    are the same mark. A greenhouse is PALE (its identity rank 1 is a pale box on a
+    dark plinth), so it is the one building that separates from what is already
+    there. 78% greenhouse. Both south buildings are held to ~three quarters of their
+    eaves width — the band is unfogged, nearest the camera and the largest anything
+    in the surround ever draws, so full size does not read as further away, it reads
+    as bigger than the maze. A full HOUSE still never appears there.
+    **And the suite caught the missing dial before the editor did**: `test-surround`
+    asserts every `SURROUND_PARAMS` field resolves in the World tab, so the new one
+    failed the build until it was exposed.
+    `hud.ts`, `style.css`, `surround.ts`, `surroundRecipe.ts`, `worldFields.ts`,
+    `test-surround.ts` (+4 checks), `_scratch-tray-band.ts`.
+
+
+### IDEA-069 — Sized for the phone, not for the union 🔨
+- **Priority:** 🟠
+- **Area:** render / UI / perf
+- **Registered:** 2026-09-15
+- **Building:** started 2026-09-15.
+- **Description:** Four notes off one play session, three of them the same shape —
+  something sized for the union of every case instead of for the case in front of it.
+  - **v1** (2026-09-15) — all four.
+    **THE SURROUND IS CULLED TO THE FRAME'S OWN GROUND FOOTPRINT.** Nuno: *"much of
+    that doesn't show, so we can optimize the render of the maps for mobile to only
+    render the necessary to cover the view."* `SURROUND_PARAMS` ships the UNION of
+    eight sampled aspects (halfWidth 50) because one baked recipe had to satisfy all
+    of them — but portrait reaches |x| ~15.3 and z -38.7..+22.4 while 16:9 reaches
+    |x| ~31.6 and only -21.2..+11.9, so a phone was building, merging, uploading and
+    drawing a band three times wider than it can see. `scene.ts`'s `resize()` drops
+    the four frustum corners onto y = 0 (exact, and sound only because the coverage
+    sweep proved the horizon is never in shot) and hands the box to `SURROUND_VIEW`.
+    **Measured: garden surround 98,948 -> 34,264 triangles (-65%)**, forest -63%,
+    park -61%, city -67%, beach -51%; Night City's whole frame -35%. Draw calls
+    unchanged. Three things keep it safe — the GROUND PLANE is not culled (two
+    triangles, and IDEA-066 rule 1 is explicit that a visible world edge is
+    catastrophic while the margin is free), a 6-unit margin clamped in BOTH
+    directions, and quantisation to 4 units so a window drag cannot rebuild several
+    hundred props per frame. The view joins the content key;
+    `refreshSurroundForView` is how a resize (in scene.ts, which has the camera and
+    no idea of the theme) reaches the board (which knows the theme and never hears
+    about a resize) without threading a callback through every caller.
+    **THE POWER-UP TRAY MOVED ABOVE THE BOARD.** *"When a player uses the buttons or
+    joystick the power-ups are on the same zone."* It sat UNDER the maze — exactly
+    where both control schemes live — so the readout you glance at mid-chase was
+    under the hand steering with it. The apparatus that managed that (anchor to the
+    pad, grow upward, a rule per scheme, `--bc-pad-block`) is DELETED rather than
+    adjusted. `scene.ts` publishes `--bc-board-top`; the tray anchors by its BOTTOM
+    so it grows upward as it wraps. Measured before shipping
+    (`_scratch-tray-band.ts`, the real rig at six framings): 152px of band at
+    390x844, 132px at 360x780, 168px at 414x896, 69px at 820x900, against a 42px
+    chip — and -44px in landscape, which is why the two landscape blocks that put
+    the tray in a corner or a side rail are untouched and still win.
+    **THE D-PAD'S GAP WENT TO ZERO.** The pad is a 3x3 grid with an empty centre, so
+    the gap is added to the hole twice — at `--bc-s2` the arrows sat 76px apart on a
+    60px button. The hole is now exactly one button wide, which is as tight as this
+    construction goes without shrinking a thumb target already near 44px.
+    **AND THE FLOWERING HEDGE WENT TO TWO DAISIES A FACE.** Nuno had already voted
+    with the editor, moving the garden off `hedgeFlower` onto plain `hedge`. The
+    count has come down THREE times now (14 -> 6 -> 4 -> 2) and always for the same
+    reason: the reference shows ONE face of ONE hedge while the texture wraps six
+    sides of ~200 boxes, so any density that looks right in isolation is multiplied
+    by twelve hundred faces. The garden is back on `hedgeFlower`, without which the
+    change would have had no visible effect.
+    `surround.ts`, `surroundRecipe.ts`, `scene.ts`, `style.css`, `tokens.css`,
+    `wallTexture.ts`, `themes.ts`, `test-surround.ts` (+9 checks),
+    `_scratch-tray-band.ts` (new).
+
+
+### IDEA-068 — The maze wall stops being a box 🔨
+- **Priority:** 🟠
+- **Area:** render / theme
+- **Registered:** 2026-09-15
+- **Building:** started 2026-09-15.
+- **Description:** (Nuno) *"the maze walls look too geometrical and I was thinking,
+  since they are simulating a plant, if we can add a little texture, not be so
+  straight and look more like a hedge."* He was attacking something CLAUDE.md already
+  carried as a known compromise — IDEA-060's own clay-render note: *"the HEDGE IS
+  STILL A PLAIN BOX. All of its leafiness is paint."*
+  - **v1** (2026-09-15) — **the lumpy block, and the toon ramp is the actual
+    feature.** Measured off the real render, the board spans 325 CSS px for 19
+    tiles, so a 0.08-unit geometric feature is 1.4 px and cannot read as a SHAPE
+    (the same arithmetic that had just killed the grass idea in one paragraph).
+    What reads at that size is a change of VALUE over a LARGE AREA — and the scene
+    is cel-shaded on a 3-step ramp that quantises by the surface NORMAL, so a flat
+    top face is one uniform band of green while an undulating one falls into two or
+    three and the wall top mottles. **The mottling is the feature; the geometry is
+    only how it is produced.**
+    `hedgeWall.ts` holds it, and every constraint on it is forced rather than
+    chosen. ONE shared geometry (the walls are a single InstancedMesh, which is why
+    a 200-tile board costs less than its biscuits), so the per-tile variety has to
+    come from the instance MATRIX: a quarter turn in 90-degree steps only, and a
+    per-tile crown height. The flanks bulge OUTWARD ONLY — neighbours butt at their
+    faces, so outward merely overlaps while inward opens a gap you can see through
+    the wall. The crown dips DOWNWARD ONLY, because blooms, leaf specks and
+    wall-top props sit at WALL_H + 0.04 / 0.06 / 0.08 and an upward bump swallows
+    one whole with no error; all three now read `wallCrownY`, the SAME function the
+    instance matrix uses.
+    **A SEPARABLE EVEN FUNCTION IS WHAT LETS A CROWN CROSS A SEAM**, and it is the
+    one genuinely non-obvious thing here. Fading the crown to zero at every tile
+    edge guarantees neighbours meet flush AND guarantees every tile is its own
+    dome — on a straight run that reads as a row of CUSHIONS, a different grid
+    rather than less of one. `ridge(x) + ridge(z)` with `ridge` EVEN and
+    tile-periodic is flush at the seam without being zero there, and survives the
+    four rotations because it is symmetric in x and z. `crownRoll` mixes it against
+    an asymmetric per-tile term that does fade at the edges — the asymmetry being
+    what makes four rotations produce four tiles instead of one tile turned round.
+    **THE CLAY RENDER SET THE AMPLITUDES AND FAILED THE FIRST PASS**: in colour the
+    walls read as convincingly soft, and with every map stripped they were still
+    flat-topped slabs — all of the softness was the texture, which is IDEA-059's
+    burger lesson in a new place. They ship at roughly double that tuning.
+    Derived from `wallTexture` rather than a new palette field, so hedge and
+    hedgeFlower get it (garden, forest, park) and sand, brick and Arcade Night's
+    flat keep their boxes — the test asserts a box theme gets *literally*
+    `BoxGeometry`. A re-theme swaps the geometry and rewrites the instance
+    matrices, as the fence and ground detail already are.
+    Cost: **~38k triangles across the maze against the box's 2.4k, still ONE draw
+    call**. Six World-tab dials.
+    **And a test that looks for a vertex where it used to be reports a sound model
+    as broken**: the seam check first hunted crown vertices at exactly |x| = 0.5
+    and found none in any rotation, because the flank bulge is at its maximum AT
+    the crown. It isolates by zeroing `bulge` instead.
+    `hedgeWall.ts`, `test-hedge-wall.ts` (27 checks, in `npm run test`) (new);
+    `board.ts`, `worldFields.ts`, `sourceStore.ts`, `saveFile.ts`, `main.ts`,
+    `vite.config.ts`, `test-garden-props.ts`, `test-editor-board.ts`.
+
+
+### IDEA-067 — The tunnel arch 🔨
+- **Priority:** 🟠
+- **Area:** render / theme / editor
+- **Registered:** 2026-09-15
+- **Building:** started 2026-09-15.
+- **Description:** (Nuno, after IDEA-066 landed) *"one thing that I feel that is missing
+  is something on the sides that connect the beagle to go to one side to the other, is
+  like a arch fence... on the other maps I think I need something too but for this theme
+  the garden I have this reference"* —
+  `.img2threejs/reference/boardwalls/archhedgerow.png`, a clipped yew wall with an arched
+  portal cut through it — *"make the necessary changes to allow the edit of that component
+  to allow create other and try other things."*
+  That sentence names exactly one thing in the game. Measured across all 36 shipped
+  mazes there is ONE crossing and it is identical on every board: **row 9, west and
+  east**, the only two tiles in the whole 19x21 border that are not wall — every other
+  apparent gap is `" "` void, not floor. Until now nothing whatsoever marked either end;
+  the beagle simply stopped existing at the board's edge.
+  - **v1** (2026-09-15) — **the arch, and the four things the render said that no
+    assertion could.**
+    **THE FIRST BUILD WAS THE REFERENCE LITERALLY AND IT RENDERED AS A PLAIN GREEN
+    SLAB.** Not approximately: a 2.05-unit hedge wall with a portal cut through it,
+    standing across the tunnel mouth, and the aperture contributed **exactly zero
+    pixels**. The cause is not subtle once a render shows it — the arch spans the
+    tunnel, the tunnel runs east-west, so the two jambs stand NORTH and SOUTH of the
+    corridor, which is to say one directly behind the other along the camera's own
+    horizontal heading. The near jamb eclipsed the whole portal, and the only thing
+    hinting at an opening was the grey threshold slab poking out at the corridor.
+    The arithmetic afterwards says what the shape has to BE rather than merely that
+    the old one failed: the camera looks down 59 degrees, so a pier of height `h`
+    hides everything within `h / tan(59) = 0.6h` behind it, and the corridor is one
+    tile across which the camera's horizontal heading crosses at 0.86 of that. The
+    far side shows only while **`0.6h < 0.86 x openW`** — at the reference's
+    full-height jambs that needs an opening three tiles wide. **Generalisable, and
+    the most useful thing this run produced: AT THIS CAMERA AN ARCH READS IN PLAN,
+    NOT IN ELEVATION. The opening has to be open to the SKY, not to the far side.**
+    Every portal, gate, doorway and window this project ever builds on the board has
+    the same problem and the same answer.
+    So it ships as **two clipped piers 1.35 units tall with an arched band of lobed
+    foliage springing between them** — an arbour rather than a portal, which is also
+    much closer to what a garden arch over a path actually is. Three more render
+    verdicts followed, each a correct measurement that became the wrong shape:
+    an EXTRUDED band read as a flat floating ribbon (`ExtrudeGeometry`'s default UV
+    generator lays UVs out in WORLD units, so a 0.34-wide band samples a 0.34 slice
+    of a texture built to cover a unit box — almost a flat colour, and whichever one
+    that slice landed on), rebuilt as a chain of overlapping blobs on
+    `distantHedgeRun`'s own tuning; the arch read as **one more bush** because the
+    lawn, the hedge and the arch are all green, fixed by moving most of its blossoms
+    from the piers to the BAND, the only part that clears the hedge line; and it read
+    **dark** because `palette.wall` is not the colour of the wall a player sees —
+    wallTexture.ts bakes that value into a texture that comes out far lighter, since
+    cartoon foliage is mostly LIT leaves ABOVE the mass. The arch's foliage ships at
+    1.34x and its crest at 1.5x.
+    **IT IS A PROP AND A FIXTURE AT THE SAME TIME, DELIBERATELY.** `archway` is a
+    normal `PropBaseShape` with **twelve dials** — opening, rise, head curve
+    (1.1 gothic to 4 flat), pier width, depth, band thickness, band depth, crest
+    raggedness, blossoms, threshold, hedge surface, and three colours — so it is
+    authored in the Props tab and hand-placeable anywhere, shipping in **three
+    tunings that are three different ARCHES rather than three colourways** (Hedge
+    Arch, Gothic Arbour, Topiary Gate). AND `buildTunnelArches` reads the **GRID**
+    and stands one at every tunnel it finds, because a per-THEME placement meeting a
+    per-MAZE layout is exactly how `wallDecor` hung Night City's lamps in mid-air
+    over open corridor in 14 of 18 boards for two releases. `MazeTheme.tunnelArch` is
+    a prop ID, so the theme answers "which", never "where"; only the garden names one.
+    **MEASURED: 5 draw calls / 1,816 triangles for BOTH arches**, after two real
+    merge defects — a six-group `BoxGeometry` costs a draw call PER GROUP even when
+    five share a material (and `mergeBySignature` skips material arrays by contract,
+    so those four boxes could never weld either: 24 calls where the whole surround
+    spends 14), and the two ends of one tunnel were being given different per-tile
+    hashes, which is a continuity error as well as a merge that cannot happen.
+    **AND THE WORLD TAB'S SURROUND PANEL WAS DEAD.** IDEA-066 phase 5 added
+    `src/render/surround.ts` to `SavableFile` and to `worldFields.ts` and NOT to
+    `sourceStore.ts`, so `sourceTextFor` returned `""`, `readConfigNumber` returned
+    null, and all **sixteen** surround dials rendered as disabled "not found in
+    src/render/surround.ts" rows. It renders, it says something plausible, and the
+    whole group is inert. **The three lists are ONE contract** — `SavableFile`,
+    vite's `EDITOR_SAVABLE_FILES` and the source store — and `test-archway.ts` now
+    asserts it for both files. Two stale assertions in `test-garden-props.ts` were
+    left red by IDEA-066 for the same family of reason (the treehouses moved to the
+    verge and the checks kept reading `placements`, then asserted the APRON's cap
+    rule against a VERGE placement) and are fixed.
+    `archway.ts`, `test-archway.ts` (60 checks, in `npm run test`),
+    `.img2threejs/garden-arch/` (new); `props.ts`, `themes.ts`, `board.ts`,
+    `game.ts`, `boardCodegen.ts`, `propsInspector.ts`, `propsCodegen.ts`,
+    `propsSeedColors.ts`, `worldFields.ts`, `sourceStore.ts`, `saveFile.ts`,
+    `main.ts`, `vite.config.ts`, `_scratch-mesh-census.ts`, `test-garden-props.ts`.
+
+
+  - **v2** (2026-09-15) — **the arch became a plant, and the three tunings
+    became reachable.** Nuno, on v1: *"I like the arch, that gives a touch... but
+    the massive blocks we have on the bottom I don't like it, I prefer if
+    everything was like the hedge arch from the props and then on the bottom have
+    a fence like the wall maze. I see you made 3 but I can't change them on the
+    board... make the arch look more a plant and not a block."* Four things.
+    **IT IS ONE CONTINUOUS CHAIN OF FOLIAGE NOW**, up one leg, round the head and
+    down the other, with no box anywhere in it. v1's two `BoxGeometry` piers wore
+    the wall texture, which was defensible on paper — the maze hedge is literally
+    a box wearing that texture — and wrong for a reason a wall does not have: a
+    wall is a long run seen end-on at 25px, where a box is all anyone can read,
+    while an arch is a single object the eye goes to, against open lawn, with a
+    lobed band already growing out of its top. `archPier` now sets how much
+    THICKER the chain is at the feet than the crown, eased cubically so the
+    thickening lives in the bottom third (a linear taper is a CONE, which is a
+    different plant), and `archHedgeTexture` went with the boxes — a wall texture
+    wraps a unit BOX and an icosphere's UVs are nothing like it, so the dial had
+    no host left.
+    **THE FOOTING FENCE IS THE MAZE'S OWN FENCE, NOT A COPY.** `fence.ts` exports
+    `fencePanelGeometry(widthTiles)` and the arch runs three panels round each
+    foot — same pickets, same pitch, same dark rails, same `FENCE_PARAMS`, so the
+    World tab's dials move both together. A short run keeps the picket WIDTH and
+    PITCH and changes the COUNT; scaling a one-tile panel is the obvious move and
+    is wrong twice, halving the picket to ~2px and breaking the divides-the-tile
+    constraint. Three panels, not four — the fourth would face into the doorway.
+    **AND IT FOUND A LATENT DEFECT IN `propMerge.ts` THAT WOULD HAVE BITTEN
+    ANYTHING VERTEX-COLOURED.** Both merges carried `position` and `normal` and
+    nothing else, so a geometry with a `color` attribute lost it — and a material
+    with `vertexColors: true` and no colour attribute renders **pure black**. The
+    arch came back with six black slabs at its feet on an otherwise correct
+    model. The merge now allocates a colour buffer when anything in the bucket
+    has one and fills WHITE (a multiply's identity) for those that do not.
+    **THE THREE ARCHES ARE SWITCHABLE.** `tunnelArch` had no control anywhere, so
+    trying the Gothic Arbour meant hand-editing themes.ts — three tunings nobody
+    can switch between are one tuning and two dead library entries. It is a board
+    SLOT now, with a row in the left-hand tree and options DERIVED from
+    `PROP_LIBRARY` by shape, so a fourth arch authored in the Props tab joins the
+    list by existing. Two smaller render verdicts: a cream icosahedron on green
+    is a PEBBLE, so every blossom gained the gold eye the maze wall's painted
+    daisies have always had; and the chain's foot blobs reached **0.45 units
+    underground** (invisible — the board's own floor hides it), so they are
+    CLAMPED flat rather than lifted, which is also how a clipped hedge meets the
+    ground. `/preview-board/` gained **`?view=arch`**, the tunnel mouth at a low
+    three-quarter: `game` still decides everything, but a 40px arc on a phone
+    cannot be judged for construction.
+    `archway.ts`, `fence.ts`, `propMerge.ts`, `props.ts`, `boardInspector.ts`,
+    `boardTree.ts`, `propsInspector.ts`, `propsCodegen.ts`, `propsSeedColors.ts`,
+    `preview-board/index.html`, `shoot-board.ts`, `test-archway.ts`.
+### IDEA-066 — The world around the maze 🔨
+- **Priority:** 🔴
+- **Area:** render / theme
+- **Registered:** 2026-09-14
+- **Building:** started 2026-09-14, phase 0 (measurement).
+- **Description:** (Nuno, after playing) *"the maze is right but around the maze looks so
+  empty… all the props are literally side by side the maze and we can't make this give
+  ambience. On the gaming moment the user should feel she is inside a garden, or inside a
+  forest, on a real beach… the maze zone reserved for play and visibility, but around it we
+  can add so much more content. The treehouse is a good detail but is too close to the maze
+  and can only be put in specific places, the trees the same thing."* Fill the space around
+  the board with the theme the player chose: neighbour houses, other gardens, more trees and
+  flowers — small props near the maze, BIGGER ones further out.
+- **Notes:** the diagnosis is literal and it is one line. `board.ts`'s floor is ONE
+  `PlaneGeometry(COLS + 2, ROWS + 2)` — 21 x 23 units, the maze plus exactly one tile — and
+  past its edge there is no geometry at all, only the gradient skydome. **Every pixel of
+  "empty sky" in Nuno's screenshots is the ground running out**, not sky: the camera pitches
+  59.3 degrees down with a 23 degree half-FOV, so the TOP edge of the frame points 36.3
+  degrees DOWNWARD and meets y = 0 at z = -21.2 (desktop) or z = -38.7 (portrait). The
+  horizon is never in shot, which is why this needs more ground rather than a skybox.
+  Three concentric layers: the ground, a hand-authored VERGE two rings out (the editor's
+  `apronCandidates` enumerates one ring and nothing else, which is the whole "side by side
+  the maze" complaint), and a procedural SURROUND filling the rest to the frame edge from a
+  per-theme recipe. Plan and the measured numbers behind it:
+  `~/.claude/plans/so-after-a-few-snug-hoare.md`.
+  Two live bugs found while planning, both fixed here: **`MazeTheme.secret` is not written
+  by `formatThemeEntry`**, so saving Arcade Night from the Board tab silently drops
+  `secret: true` and lists the Pac-Beagle's tribute board free in every player's shop
+  (`test-board-surfaces` guards `ThemePalette` keys only, never `MazeTheme`'s own fields);
+  and **Deep Forest ships zero apron placements** — [[IDEA-065]] built eleven props and
+  never placed them.
+- **Dependencies:** [[IDEA-026]], [[IDEA-030]], [[IDEA-031]], [[IDEA-060]], [[IDEA-062]], [[IDEA-065]]
+- **History:**
+  - **v1** (2026-09-14) — **the ground, and what grows on it.** Phases 0-2 of 5.
+    **Phase 0 measured first.** `_scratch-surround-coverage.ts` unprojects a 9x9 NDC
+    grid through the REAL camera at eight aspects: **zero rays escape above the
+    horizon** (the top of the frame points 36.3 degrees DOWNWARD, meeting y = 0 at
+    z = -21.2 on a desktop and -38.7 on a phone), and **68% of sampled frame pixels
+    landed off the board's floor**. So the "empty sky" was the ground running out,
+    the fix is a bigger floor rather than a skybox, and the void now has a number.
+    `_scratch-surround-sightline.ts` solved the height limits per band at both
+    cameras and found that **only the SOUTH band can ever occlude the maze** —
+    north, east and west shadow away from the board at every height — and that the
+    shipped apron caps are AESTHETIC (0.55 against a real limit of 1.28), so they
+    must not be copied outward. The binding camera is the TALL PHONE, not the
+    desktop: reasoning from `BASE_POS` gives 2.70 instead of 1.28.
+    **Phase 1: the ground.** A 100x80 plane running UNDER the board floor (no butt
+    joint, no crack), `ThemePalette` gaining `surroundGround` / `surround` /
+    `fogNear` / `fogFar`. **Zero sky gap at all eight aspects.** Two traps, both
+    caught by measuring rather than looking: the surround's colour is the floor
+    TEXTURE's mean and not `palette.floor` (the garden's floor is SOIL and the lawn
+    painter covers it, 48/255 apart — the first build put a brown field round a
+    green maze), and its emissive must be scaled by that mean's luminance because
+    board.ts drives the floor's lift through an emissiveMap. Fog ships at today's
+    30/55 for every theme — a byte-for-byte no-op — because tuning it with nothing
+    out there to see would be guessing.
+    **Phase 2: the neighbourhood.** `mergeBySignature` in propMerge.ts buckets by
+    what a material LOOKS like rather than which object it is, collapsing the whole
+    band to one mesh per distinct material — **13-14 draw calls for four hundred
+    props**, against ~1,400 the old way, and it does not grow with density. The key
+    is stamped by `toon()` from its own parameter bag, so it is exhaustive by
+    construction; an unstamped material falls back to its uuid and can cost a draw
+    call but never correctness. `surroundProps.ts` holds nine distant builders on
+    one shared 17-material set; `surroundRecipe.ts` holds the plot lattice, the
+    fringe and five per-theme recipes (garden `plots`, forest `woodland`, beach
+    `dunes`, park `parkland`, city `cityblocks`, **Arcade Night `none`** — its clean
+    void preserved exactly). The Deep Forest gets a real treeline, which matters
+    because it shipped with zero apron props.
+    **Measured, all six themes:** surround 3-14 draw calls / 29-119k triangles;
+    worst whole frame 371 calls / 266k triangles (garden), against a 356-call
+    baseline. Budgets are DELTAS over that baseline, because the garden already sat
+    at 356 and an absolute ceiling below it is a test nobody can pass.
+    **Four defects only the render could name**, all recorded in CLAUDE.md: a hedge
+    alternating lit/dark per blob is a chain of BEADS, not shading; a greenhouse
+    sharing the window glass is a charcoal SLAB (a window must be a building's
+    darkest thing and a greenhouse its lightest); a flower bed on the lawn colour is
+    a pale RECTANGLE and on the timber colour a red BRICK; a dune mixed halfway to
+    pale sand is a BOULDER. And one only a test could: `planFringe`'s jitter walked
+    eight items back inside the keep-clear box, into the verge the rule exists to
+    protect.
+    **Two live bugs fixed on the way past.** `MazeTheme.secret` was never written by
+    `formatThemeEntry`, so saving Arcade Night from the Board tab deleted
+    `secret: true` and would have listed the Pac-Beagle's tribute board free in
+    every player's shop — `test-board-surfaces` guarded `ThemePalette` keys only and
+    now guards `MazeTheme`'s own fields too (verified against HEAD that it fails on
+    exactly `secret`). And `npm run test` was **already red**: a garden wall-top
+    bloom stood on a tile that is wall in 16 of 36 mazes ([[IDEA-061]] grew the set
+    without re-auditing), and an assertion demanded every garden wall-top be a
+    birdhouse, which Nuno's own editor session in `174eded` had contradicted.
+    **The World tab drives all 14 dials** (`SURROUND_PARAMS`, same contract as
+    `FENCE_PARAMS`), and `test-surround.ts` — 155 checks, in `npm run test` — holds
+    the draw-call ceiling, the keep-clear rule, determinism across grids, the seed
+    band, and that every dial resolves in the real source and sits inside its own
+    slider range. `surround.ts`, `surroundProps.ts`, `surroundRecipe.ts`,
+    `test-surround.ts`, four `_scratch-surround-*` instruments (new);
+    `propMerge.ts`, `toon.ts`, `board.ts`, `scene.ts`, `game.ts`, `themes.ts`,
+    `boardCodegen.ts`, `boardInspector.ts`, `worldFields.ts`, `saveFile.ts`,
+    `vite.config.ts`, `_scratch-mesh-census.ts`, `test-board-surfaces.ts`,
+    `test-garden-props.ts`.
+  - **v4** (2026-09-15) — **the neighbourhood, the fog and the ground.** Phase 5 of
+    5, which closes the idea.
+    **PLOTS ARE IRREGULAR QUADRILATERALS NOW**, every corner jittered on its own
+    and bounded to 0.35 of the LANE so two neighbours can never close the street
+    between them. A field of jittered rectangles still reads as a grid — the jitter
+    moves them without changing what they are. Contents are placed by BILINEAR
+    interpolation between the four corners, so nothing can escape its own hedge
+    whatever shape the quad takes. One sign to remember: a hedge run is built along
+    its local +X, so aiming it down an edge needs `atan2(-dz, dx)`; the other sign
+    mirrors every run and leaves the boundary crossing its own corners.
+    **AND PLOTS HAVE ARCHETYPES, WHICH IS THE DIAL NUNO ASKED FOR** ("a balance
+    between the houses and greenhouses and the gardens"). Every plot used to run
+    one recipe — house + trees + shrubs + beds, every time — which reads as an
+    estate built in one afternoon. Four kinds now, from one hash roll against
+    cumulative bands (`houseChance` / `allotmentChance` / `orchardChance`, and
+    whatever is left is LAWN): a house and its garden, an **allotment** with a
+    greenhouse and no house at all — the one that makes the place read as WORKED
+    rather than developed — an orchard, and lawn. Keep some lawn: it is not a gap,
+    it is what stops the surround reading as wall-to-wall stuff, and the hedges
+    alone still carry the lattice. It is cheaper as well as better — the garden's
+    surround went **123k triangles to 99k**, because a lawn plot is not a house
+    plot.
+    **THE FOG IS TUNED, AND `near` DELIBERATELY BARELY MOVED.** The board's own far
+    edge sits 38.2 units from the base camera, so pushing `near` past it takes the
+    MAZE to zero fog — a real change to a look that was already tuned, and not one
+    the surround needs. What the surround needs is `far`, and only the open themes
+    need it far: garden 34/92, park 34/85, beach 38/104 against forest 30/60, city
+    28/54 and Arcade Night 26/46, which pull IN. That split is the whole reason
+    this became per-theme rather than one global pair, and it is what finally makes
+    the neighbourhood visible to the frame edge on a wide desktop.
+    **THE SURROUND GROUND TILES** (`surroundTexture.ts`), where the board's floor
+    cannot: floorTexture maps one canvas 1:1 onto its plane because it is
+    GRID-DERIVED, and one non-repeating canvas over 100x80 units at the same
+    32px/tile would be 3200x2560, ~33 MB of RGBA for a surface with no per-tile
+    information to carry. Eight tiles, not four — on screen the surround runs
+    15-40px a tile, so a 4-tile period is a 60-160px repeat and reads as wallpaper.
+    That inverts the floor's caching rule: this one IS cached by `kind|hex`,
+    because there is no grid to paint in and therefore no way for level 1's
+    corridors to reach level 2's ground. The kind is DERIVED from
+    `palette.floorTexture` rather than carried as a second palette field — the two
+    have to relate, so a separate slot would only ever be a chance for them to
+    disagree, and the seam is exactly where a disagreement shows.
+    **A third harness reported a false failure, and the tally is the point.**
+    `_scratch-surround-seam.ts` read the surround MATERIAL's colour, which
+    correctly became white the moment the ground gained a map (a textured surface
+    bakes its colour in), and declared four sound themes broken. It now samples the
+    surround TEXTURE's mean against the floor texture's — the same measurement on
+    both sides. Third in this feature, after the building probe held to the wrong
+    table and the verge cap read off a `scale` the merge had baked away. **When a
+    check fails here, suspect the instrument first.**
+    Measured, all six themes: surround 3-14 draw calls, worst whole frame 392 calls
+    / 258k triangles (garden, down from 279k), zero sky gap at all eight aspects,
+    every theme's surround matching its board floor within the seam tolerance.
+    `surroundRecipe.ts`, `surround.ts`, `surroundTexture.ts` (new),
+    `worldFields.ts`, `themes.ts`, `_scratch-surround-seam.ts`.
 
 ### IDEA-065 — The Deep Forest board: a treeline, a cabin and things living in it 🔨
 - **Priority:** 🟡

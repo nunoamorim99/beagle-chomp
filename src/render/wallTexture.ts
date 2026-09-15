@@ -211,17 +211,26 @@ function daisy(
  *     per-pixel probability would give one face two and its neighbour ten,
  *     and the maze would look blighted in patches.
  *
- *     Four, against the reference's own density of roughly seven per
- *     hedge-tile. The count has come down twice and both times for the same
- *     reason, which is worth stating plainly: THE REFERENCE SHOWS ONE FACE OF
- *     ONE HEDGE, while this texture wraps all six sides of every one of ~200
- *     boxes — and the sum of that is a pattern rather than a scatter. At
- *     fourteen the maze rendered as white STATIC over green, a fine dense
- *     stipple across the wall tops, which are the largest and most-seen
- *     surface on the board. Six read as real flowers and was still busier than
- *     a garden wants. Ink is conserved by making them BIGGER and FEWER, which
- *     is this module's own "fewer, bigger clusters" note and floorTexture's
- *     "fewer/bigger grass tufts" reaching the same answer for a third time.
+ *     TWO, against the reference's own density of roughly seven per
+ *     hedge-tile. The count has now come down THREE TIMES and every time for
+ *     the same reason, which is worth stating plainly: THE REFERENCE SHOWS ONE
+ *     FACE OF ONE HEDGE, while this texture wraps all six sides of every one
+ *     of ~200 boxes — so whatever per-face density looks right in isolation is
+ *     multiplied by twelve hundred faces, and the sum is a pattern rather than
+ *     a scatter. At fourteen the maze rendered as white STATIC over green, a
+ *     fine dense stipple across the wall tops, which are the largest and
+ *     most-seen surface on the board. Six read as real flowers and was still
+ *     busy. Four is what shipped, and Nuno turned the garden OFF hedgeFlower
+ *     onto the plain `hedge` rather than keep it: *"the hedge flower have too
+ *     much flowers, lets make the hedge flower with less flowers, like just a
+ *     few flower to be more clean."* Two per face is ~2,400 daisies across a
+ *     board, which is still a flowering hedge from any distance and no longer
+ *     a stipple up close.
+ *     Ink is conserved by making them BIGGER and FEWER, which is this module's
+ *     own "fewer, bigger clusters" note and floorTexture's "fewer/bigger grass
+ *     tufts" reaching the same answer for a fourth time. NOTE THE COUNT IS
+ *     ALSO THE SPACING: at two a face can show both daisies far apart, which
+ *     is what "a few flowers on a hedge" looks like; at four they cluster.
  *
  *     There is no longer a second layer of flowers in front of this one. The
  *     garden's wall tops carried 29 hand-placed flower PROPS as well, and
@@ -234,6 +243,11 @@ function daisy(
  * separate thing rather than as one more lit leaf. Pure white does that but
  * blows out under the cel ramp's top step; a warm off-white keeps the step.
  */
+/** Daisies per wall FACE — see drawHedgeFlower's note. Exported because a
+ *  test asserting "a few" needs the number rather than a copy of it, and
+ *  because it is the one thing in this module anybody ever retunes. */
+export const HEDGE_FLOWERS_PER_FACE = 2;
+
 function drawHedgeFlower(ctx: CanvasRenderingContext2D, base: RGB): void {
   drawHedge(ctx, base);
   const petal: RGB = [0.96, 0.96, 0.92];
@@ -241,7 +255,7 @@ function drawHedgeFlower(ctx: CanvasRenderingContext2D, base: RGB): void {
   // Its own seed, deliberately not the hedge's: sharing one would place every
   // daisy at a cluster centre, since both would consume the same sequence.
   const r = rng(0xda151e5);
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < HEDGE_FLOWERS_PER_FACE; i++) {
     daisy(ctx, r() * SIZE, r() * SIZE, SIZE * 0.085, petal, eye, r);
   }
 }

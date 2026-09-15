@@ -157,8 +157,16 @@ function picketShape(): THREE.Shape {
  * BufferGeometry list) rather than with BufferGeometryUtils so this module
  * keeps to the plain `three` import the project uses everywhere.
  */
-function buildPanelGeometry(): THREE.BufferGeometry {
+function buildPanelGeometry(widthTiles = 1): THREE.BufferGeometry {
   const parts: { geo: THREE.BufferGeometry; shade: number }[] = [];
+  // IDEA-067: a run shorter or longer than one tile keeps the SAME picket
+  // width and the SAME pitch and simply carries a different COUNT. Scaling a
+  // one-tile panel instead is the obvious move and it is wrong twice over: a
+  // 0.5x panel halves the picket to ~2px, under the cartoon rule's floor, and
+  // it silently breaks rule 4 (the pitch must divide the tile). Rounded to a
+  // whole number of pickets, because half a picket is a splinter.
+  const count = Math.max(1, Math.round(FENCE_PARAMS.pickets * widthTiles));
+  const span = count * pitch();
 
   const picket = new THREE.ExtrudeGeometry(picketShape(), {
     depth: FENCE_PARAMS.picketThickness,
@@ -176,8 +184,8 @@ function buildPanelGeometry(): THREE.BufferGeometry {
   // is at picketThickness. Pull it back to straddle the origin.
   picket.translate(0, 0, -FENCE_PARAMS.picketThickness / 2);
 
-  for (let i = 0; i < FENCE_PARAMS.pickets; i++) {
-    const x = (i - (FENCE_PARAMS.pickets - 1) / 2) * pitch();
+  for (let i = 0; i < count; i++) {
+    const x = (i - (count - 1) / 2) * pitch();
     const g = picket.clone();
     g.translate(x, 0, 0);
     parts.push({ geo: g, shade: 1 });
@@ -196,7 +204,7 @@ function buildPanelGeometry(): THREE.BufferGeometry {
   // tonal step across it. (A second material would cost a second draw call per
   // maze; a vertex attribute costs nothing and keeps the fence at one.)
   for (const f of [FENCE_PARAMS.railLow, FENCE_PARAMS.railHigh]) {
-    const rail = new THREE.BoxGeometry(TILE, FENCE_H * FENCE_PARAMS.railHeight * 2, FENCE_PARAMS.railThickness);
+    const rail = new THREE.BoxGeometry(span, FENCE_H * FENCE_PARAMS.railHeight * 2, FENCE_PARAMS.railThickness);
     rail.translate(0, FENCE_H * f, -FENCE_PARAMS.picketThickness / 2 - FENCE_PARAMS.railThickness / 2);
     parts.push({ geo: rail, shade: FENCE_PARAMS.railShade });
   }
@@ -292,7 +300,7 @@ export function buildFence(
   const count = fencePanelCount(grid);
   if (count === 0) return null;
 
-  const geo = buildPanelGeometry();
+  const geo = buildPanelGeometry(1);
   // No emissive lift, unlike every other board surface. The wall and floor
   // palettes carry one because a dark theme would otherwise go to black; the
   // fence is a small bright object standing in front of the wall, so it has
@@ -324,6 +332,25 @@ export function buildFence(
   mesh.instanceMatrix.needsUpdate = true;
   scene.add(mesh);
   return mesh;
+}
+
+/**
+ * IDEA-067: one picket panel of `widthTiles`, for a caller that is not the
+ * maze — the tunnel arch runs a short fence round each pier's foot so the
+ * arch meets the ground the same way every wall in the theme does.
+ *
+ * Exported rather than copied because the picket silhouette, the pitch rule
+ * and the dark rails behind the gaps are the three things that make this read
+ * as a fence at 25px, and a second implementation is three chances to retune
+ * one and not the other. It follows FENCE_PARAMS, so the World tab's dials
+ * move the arch's fence and the maze's together — which is the point: they
+ * are the same fence.
+ *
+ * Returns geometry in the same frame `buildFence` uses: centred on x, sitting
+ * on y = 0, facing +Z. The caller owns it and must dispose it.
+ */
+export function fencePanelGeometry(widthTiles: number): THREE.BufferGeometry {
+  return buildPanelGeometry(widthTiles);
 }
 
 /** Frees an InstancedMesh from `buildFence` — geometry AND material, since

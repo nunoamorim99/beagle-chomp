@@ -44,6 +44,7 @@ import {
   disposeShowcaseSurfaces,
   type ShowcaseSurfaces,
 } from "./showcaseSurface";
+import { SHOWCASE_FOG_REACH, createShowcaseSurround } from "./showcaseSurround";
 import { toon } from "./toon";
 import { wallTextureFor } from "./wallTexture";
 
@@ -162,6 +163,12 @@ function makeGardenPatch(): GardenPatch {
     hedge.rotation.y = s * 0.35;
     hedge.castShadow = true;
     hedge.receiveShadow = true;
+    // IDEA-072 v2: HIDDEN, exactly as the menu's own arc is and for the same
+    // reason — `buildStageDressing` now stands the REAL 1-unit maze wall behind
+    // the hero, and a 0.42 x 0.26 stand-in beside it reads as a mistake rather
+    // than as a second hedge. Kept rather than deleted so `applyPatchTheme`'s
+    // hedge/bloom tinting still has something to address.
+    hedge.visible = false;
     g.add(hedge);
 
     const bloom = new THREE.Mesh(bloomGeo, bloomMat);
@@ -620,6 +627,31 @@ const DIORAMA_PORTRAIT_DIST = 12.2;
 const DIORAMA_BASE_DIST = DIORAMA_CAM_POS.distanceTo(DIORAMA_CAM_LOOK);
 const DIORAMA_CAM_DIR = DIORAMA_CAM_POS.clone().sub(DIORAMA_CAM_LOOK).normalize();
 
+/**
+ * IDEA-072: the diorama gets GROUND AND FOG, and NO horizon band.
+ *
+ * Solved rather than guessed, after guessing twice. The camera sits at
+ * (3.2, 6.2, 8.6) — 9.2 units from the stage centre horizontally — at 33.3
+ * degrees of elevation with a 20-degree half-FOV, so the TOP of frame points
+ * 13.3 degrees DOWNWARD and, from y = 6.2, meets the ground 26.2 horizontal
+ * units from the camera: about **17 units past the stage centre**. Its horizon
+ * is off the top of the screen entirely, which is IDEA-066's situation and not
+ * the character stages' — and there a bigger floor was the whole answer.
+ *
+ * That leaves a band nowhere to stand. At 0.38 (12.9-22.8 units) it was inside
+ * the frame's own ground line and sprawled hedges and a flower border across
+ * the top of the picture at near-full saturation. At 0.55 (18.7-33) it was
+ * past the line, and the only thing that ever reached the screen was a CROPPED
+ * fragment along the very top edge — which reads as debris rather than as
+ * distance. Both were rendered; neither is better than none.
+ *
+ * The character rig is the opposite case and keeps its band: at 9.5 degrees of
+ * elevation its horizon is IN shot a quarter of the way down the frame, and
+ * ground alone can never reach above it.
+ */
+const DIORAMA_SURROUND_SCALE = 0;
+
+
 // Idle life tuning — same spirit as menuScene's TURNTABLE_SPEED: a slow,
 // continuous showcase spin so the player can see the whole skin without
 // touching anything. The diorama turntables noticeably slower than a
@@ -743,11 +775,22 @@ export function createShopScene(): ShopScene {
   const gardenPatch = patch.group;
   scene.add(gardenPatch);
 
+  // IDEA-072: ground out to the horizon, a fogged band of the theme's own
+  // neighbourhood standing on it, and fog matched to the sky. `eyeY` is the
+  // CAMERA's height rather than the look target's, because the fog has to
+  // match the dome along a horizontal ray FROM the camera.
+  const surround = createShowcaseSurround(scene, {
+    eyeY: CAM_POS.y,
+    seed: 2,
+    stage: { bandScale: 1, camDist: BASE_DIST, fogReach: SHOWCASE_FOG_REACH },
+  });
+
   // Show the EQUIPPED theme from the first paint rather than flashing the
   // garden default — same reasoning (and the same guarantee that the profile
   // is hydrated before Game is constructed) as menuScene's own first-paint
   // applyTheme.
   applyPatchTheme(patch, getEquippedMazeTheme());
+  surround.apply(getEquippedMazeTheme());
 
   // IDEA-026: default atmosphere values, captured once, so showBeagle/
   // showEnemy can restore the standard shop look exactly (bitwise) after a
@@ -832,6 +875,20 @@ export function createShopScene(): ShopScene {
     turntableAngle = 0;
     hero.rotation.y = 0;
     gardenPatch.visible = kind !== "theme";
+    // The two rigs frame opposite depths — see DIORAMA_SURROUND_SCALE.
+    surround.setStage(
+      kind === "theme"
+        ? {
+            bandScale: DIORAMA_SURROUND_SCALE,
+            camDist: DIORAMA_BASE_DIST,
+            // Past the 17 units at which this rig's frame leaves the ground,
+            // so the lawn fades out near the top of the picture instead of
+            // ending on a hard line — and nowhere near the model, which sits
+            // 8-13 units from the camera and must stay at zero fog.
+            fogReach: 26,
+          }
+        : { bandScale: 1, camDist: BASE_DIST, fogReach: SHOWCASE_FOG_REACH },
+    );
     applyCameraFraming(kind, lastAspect);
   }
 
@@ -888,6 +945,12 @@ export function createShopScene(): ShopScene {
     (scene.background as THREE.Color).set(DEFAULT_BG);
     hemi.color.set(DEFAULT_HEMI_SKY);
     hemi.groundColor.set(DEFAULT_HEMI_GROUND);
+    // IDEA-072: and the world around the stage goes back to the EQUIPPED
+    // theme's, since that is what the dome is still wearing. Put here rather
+    // than beside each `restoreAtmosphere()` call because there are already
+    // four of them and a fifth is one new hero kind away — the same reason
+    // this function exists at all.
+    surround.apply(getEquippedMazeTheme());
   }
 
   return {
@@ -964,12 +1027,22 @@ export function createShopScene(): ShopScene {
       const next = makeThemeDiorama(theme);
       setHero(next, "theme");
       tintAtmosphere(theme.palette.bg, theme.palette.hemiSky, theme.palette.hemiGround);
+      // The BAND shows the theme being CONSIDERED, not the one equipped. This
+      // is the screen where somebody decides whether to spend 50 coins on it,
+      // and a Deep Forest diorama standing in a garden's treeline advertises
+      // the wrong product. The sky stays the equipped theme's (the dome is
+      // only lerped 35% by `tintAtmosphere`), and that mismatch is invisible
+      // here for a concrete reason: this rig's horizon is OFF the top of the
+      // frame, so there is no sky-to-ground seam on screen to disagree at.
+      surround.apply(theme);
     },
     setMazeTheme(theme: MazeTheme): void {
       applyPatchTheme(patch, theme);
+      surround.apply(theme);
     },
     dispose(): void {
       disposeHero(hero);
+      surround.dispose();
       disposeShowcaseSurfaces(patch.surfaces);
     },
   };

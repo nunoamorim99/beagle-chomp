@@ -57,9 +57,11 @@ import { type BoardSlotId } from "./boardTree";
 import type { WorkingTheme, WorkingPropPlacement, WorkingWallDecorPlacement } from "./boardCodegen";
 import { propOptionsFor, type PlacementSelection } from "./boardPlacement";
 import { MAZE_THEMES } from "../game/themes";
+import { PROP_LIBRARY } from "../game/props";
 import { type WallTextureKind } from "../render/wallTexture";
 import { type FenceKind } from "../render/fence";
 import { type GroundDetailKind } from "../render/groundDetail";
+import { type SurroundKind } from "../render/surround";
 import { type FloorTextureKind } from "../render/floorTexture";
 
 const MAX_BLOOM_COLORS = 4;
@@ -338,6 +340,20 @@ export function createBoardInspector(
       .name("backdrop top")
       .onChange(() => cb.onAtmosphereBg());
 
+    // IDEA-066: fog depth, in ABSOLUTE world units at the base dolly.
+    // resize() scales both by dist/baseDist, so these are the landscape
+    // numbers and portrait gets the same look at a longer throw. The board's
+    // own far edge sits 38.2 units from the base camera, so a fogNear past
+    // that takes the MAZE to zero fog -- a real change, not a nudge.
+    folder
+      .add({ fogNear: p.fogNear }, "fogNear", 10, 120, 1)
+      .name("fog near")
+      .onChange((v: number) => { p.fogNear = v; cb.onAtmosphereBg(); });
+    folder
+      .add({ fogFar: p.fogFar }, "fogFar", 20, 200, 1)
+      .name("fog far")
+      .onChange((v: number) => { p.fogFar = v; cb.onAtmosphereBg(); });
+
     folder
       .addColor(colorProxy(lights.hemi.color), "color")
       .name("hemi sky")
@@ -368,6 +384,44 @@ export function createBoardInspector(
       .add(lights.rim, "intensity", 0, 2, 0.01)
       .name("rim intensity")
       .onChange((v: number) => { p.rimIntensity = v; });
+  }
+
+  /**
+   * IDEA-067: WHICH arch stands at the board's tunnel mouths.
+   *
+   * Nuno: "I see you made 3 but I can't change them on the board." He could
+   * not — `tunnelArch` was a `MazeTheme` field with no control anywhere, so
+   * the only way to try the Gothic Arbour was to hand-edit themes.ts, which
+   * is exactly the kind of thing this tab exists to stop. Three tunings
+   * nobody can switch between are one tuning and two dead entries.
+   *
+   * It lives with the theme's own identity rather than in the World tab for
+   * the reason `tunnelArch` is a MazeTheme field and `ARCH_PARAMS` is not:
+   * this answers WHICH, which is a property of the theme, while the World
+   * tab's four dials answer WHERE, which is a property of the board. And the
+   * options are DERIVED from the library by shape, so authoring a fourth arch
+   * in the Props tab puts it in this list by existing.
+   */
+  function buildTunnelArchFolder(theme: WorkingTheme): void {
+    const folder = gui.addFolder("Tunnel arch");
+    folders.tunnelArch = folder;
+    const NONE = "(none)";
+    const options: Record<string, string> = { [NONE]: "" };
+    for (const def of PROP_LIBRARY) {
+      if (def.shape === "archway") options[def.name] = def.id;
+    }
+    const state = { arch: theme.tunnelArch ?? "" };
+    folder
+      .add(state, "arch", options)
+      .name("arch at the tunnels")
+      .onChange((id: string) => {
+        // Stored ABSENT rather than as an empty string: `tunnelArch` is an
+        // optional field and boardCodegen only writes it when set, so a theme
+        // with no arch must keep a byte-identical entry.
+        if (id) theme.tunnelArch = id;
+        else delete theme.tunnelArch;
+        cb.onDecorChange();
+      });
   }
 
   function buildWallsFolder(theme: WorkingTheme, wall: THREE.MeshStandardMaterial): void {
@@ -472,6 +526,28 @@ export function createBoardInspector(
       .name("stone color")
       .onChange((v: string) => { p.groundDetailColor = new THREE.Color(v).getHex(); })
       .onFinishChange(() => cb.onDecorChange());
+
+    // IDEA-066: what grows BEYOND the board. Every member of SurroundKind
+    // has to appear here as a literal or test-board-surfaces fails the
+    // build -- an unreachable kind is a kind nobody can author.
+    folder
+      .add({ surround: p.surround }, "surround", [
+        "none",
+        "plots",
+        "woodland",
+        "dunes",
+        "parkland",
+        "cityblocks",
+      ])
+      .name("surround")
+      .onChange((v: SurroundKind) => {
+        p.surround = v;
+        cb.onDecorChange();
+      });
+    folder
+      .addColor(hexProxy(() => p.surroundGround, (v) => { p.surroundGround = v; }), "color")
+      .name("surround ground")
+      .onChange(() => cb.onDecorChange());
   }
 
   function buildBiscuitsFolder(theme: WorkingTheme, biscuit: THREE.MeshStandardMaterial): void {
@@ -720,6 +796,7 @@ export function createBoardInspector(
       clearSlotFolders();
       destroyPlacementFolder();
       buildAtmosphereFolder(theme, lights);
+      buildTunnelArchFolder(theme);
       buildWallsFolder(theme, materials.wall);
       buildFloorFolder(theme, materials.floor);
       buildBiscuitsFolder(theme, materials.biscuit);

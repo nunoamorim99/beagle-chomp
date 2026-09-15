@@ -1808,7 +1808,7 @@ button.recovery-copy{padding:9px var(--bc-s3);font-size:14px;flex:0 0 auto}
   display:grid;
   grid-template-columns:repeat(3,var(--bc-touch-dpad));
   grid-template-rows:repeat(3,var(--bc-touch-dpad));
-  gap:var(--bc-s2);
+  gap:var(--bc-dpad-gap);
   /* The pad's own gaps must not swallow taps meant for the canvas behind it. */
   pointer-events:none;
 }
@@ -2286,58 +2286,65 @@ body.tutorial-open #mainMenu{display:none}
 .powerups{position:fixed;z-index:3;pointer-events:none;
   left:calc(var(--bc-gutter) + env(safe-area-inset-left));
   right:calc(var(--bc-gutter) + env(safe-area-inset-right));
-  /* DIRECTLY UNDER THE BOARD, with one step of air between them.
+  /* IDEA-069: ABOVE THE BOARD, in the band between the HUD and the maze —
+     Nuno's own proposal, and the reasoning is about the THUMB rather than
+     about space: *"when a player use the buttons or joystick the power ups are
+     on the same zone."* The tray used to live under the board, which is
+     exactly where both control schemes live, so on a phone the readout you
+     glance at mid-chase sat under the hand steering with it — and the whole
+     apparatus below (anchor to the pad, grow upward, a separate rule per
+     scheme, a --bc-pad-block token so neither had to ask which was on screen)
+     existed only to manage that collision. Moving the tray to the OTHER side
+     of the board deletes the collision instead of managing it.
 
-     --bc-board-bottom is published by src/render/scene.ts on every resize:
-     the maze is 3D and its camera dollies with the aspect ratio (and again on
-     the portrait ramp), so where it ENDS on screen is something only the
-     render layer can answer. A CSS guess would be wrong on the next phone and
-     wrong again the moment the device is rotated. The fallback covers the
-     moment before the first resize() lands, and any harness that renders this
-     tray with no scene behind it. */
-  top:calc(var(--bc-board-bottom, 66%) + var(--bc-s2));
+     --bc-board-top is published by src/render/scene.ts on every resize, for
+     the same reason --bc-board-bottom always was: the maze is 3D and its
+     camera dollies with the aspect ratio (and again on the portrait ramp), so
+     where it STARTS on screen is something only the render layer can answer.
+     A CSS guess is wrong on the next phone and wrong again on rotation.
+
+     IDEA-070 moved it to the TOP of that band rather than the bottom. Nuno:
+     *"put them more up, right below the coins and the control buttons — this
+     way the tags of the power-ups don't mess around with the ambient, right
+     now they are hiding some trees."* Anchoring to --bc-board-top put the row
+     immediately above the maze, which is where the neighbourhood is; the chips
+     are chrome and belong against the chrome.
+
+     --bc-hud-bottom is published by src/ui/hud.ts through a ResizeObserver,
+     because the row's height is CONTENT-dependent (the map chip runs from "5"
+     to "Bonus", the score column grows with the figure, a narrow phone can
+     wrap the whole thing) — a literal offset here is one that has to be
+     re-tuned whenever anything above it changes, which is the trap the HUD's
+     own chrome row was rebuilt to escape.
+
+     It grows DOWNWARD now, into the band, which is the safe direction: the
+     measured band is 152px at 390x844 against a 42px chip, and the worst case
+     at the far end is a row touching the top of the maze — where this tray has
+     always been a scrim readout anyway. Upward would put it through the HUD.
+     The fallback covers the moment before the first observation lands, and any
+     harness that renders this tray with no HUD behind it. */
+  bottom:auto;
+  top:calc(var(--bc-hud-bottom, 96px) + var(--bc-s2));
   /* A ROW, centred under the maze, wrapping rather than overflowing. Each chip
      is sized to its own content — the floor width a vertical stack wanted made
      three chips wider than a phone. */
   display:flex;flex-direction:row;flex-wrap:wrap;
   justify-content:center;align-items:flex-start;gap:6px}
 
-/* THE D-PAD SHARES THE SPACE UNDER THE BOARD. The gap between the maze and the
-   bottom of the screen has to hold both, so with the pad on (body.dpad-on,
-   toggled by src/input/dpad.ts's setVisible) the tray is clamped to whatever is
-   left above it: under the board when there is room, stopping short of the pad
-   when there is not.
+/* --bc-dpad-block / --bc-pad-block: "how tall is the on-screen control".
 
-   Both control schemes have to work, so the clearance comes from the pad's own
-   metrics rather than a magic number — change --bc-touch-dpad and this
-   follows. */
-:root{--bc-dpad-block:calc(3 * var(--bc-touch-dpad) + 2 * var(--bc-s2))}
+   IDEA-069 moved the power-up tray ABOVE the board, so the portrait tray no
+   longer has to dodge either control and its two per-scheme anchors are gone.
+   These tokens stay because the SHORT-VIEWPORT block below still needs them:
+   in landscape the board fills the height, there is no band above it either,
+   and the tray falls back to the bottom corner beside whichever control is up. */
+:root{--bc-dpad-block:calc(3 * var(--bc-touch-dpad) + 2 * var(--bc-dpad-gap))}
 /* --bc-pad-block is "how tall is the on-screen control, whichever one is up".
    Each scheme sets it from its OWN metrics on its own body class, and nothing
    has to ask which control is showing — the two classes are mutually exclusive
    because game.ts calls setVisible on both (IDEA-049). */
 body.dpad-on{--bc-pad-block:var(--bc-dpad-block)}
 body.stick-on{--bc-pad-block:var(--bc-stick-block)}
-/* With the pad on, the tray anchors to the PAD instead of to the board, and
-   grows upward.
-
-   The obvious version — stay under the board, clamped to a guessed row height
-   — cannot work, because the row height is not knowable in CSS: it depends on
-   how many power-ups are held and therefore on how many lines the row wraps to.
-   A guess that is one line short puts the chips through the D-pad. Anchoring
-   the tray’s BOTTOM to the pad’s top edge is exact at any number of lines: it
-   can never reach the pad, and it grows up over the board’s lower edge instead
-   — which is fine, because this tray has always been a scrim readout ON the
-   play area. */
-body.dpad-on .powerups,
-body.stick-on .powerups{
-  top:auto;
-  bottom:calc(env(safe-area-inset-bottom) + var(--bc-s3) + var(--bc-pad-block) + var(--bc-s2))}
-/* Paused hides the control (steering while paused would read as a broken pad),
-   so the tray goes back under the board with it. */
-body.dpad-on.paused .powerups,
-body.stick-on.paused .powerups{
-  top:calc(var(--bc-board-bottom, 66%) + var(--bc-s2));bottom:auto}
 
 
 .powerup{position:relative;overflow:hidden;

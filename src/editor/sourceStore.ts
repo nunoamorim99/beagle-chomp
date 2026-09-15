@@ -35,6 +35,19 @@ import propsSource from "../game/props.ts?raw";
 import configSource from "../game/config.ts?raw";
 import fenceSource from "../render/fence.ts?raw";
 import groundDetailSource from "../render/groundDetail.ts?raw";
+// IDEA-066 phase 5 added SURROUND_PARAMS to SavableFile and to the World
+// tab's catalogue and NOT here, which is a silent whole-panel failure rather
+// than an error: `sourceTextFor` returns "" for an unregistered file,
+// `readConfigNumber("")` returns null, and worldInspector.ts turns every one
+// of the sixteen surround dials into a disabled "not found in
+// src/render/surround.ts" row. It renders, it says something plausible, and
+// the whole group is dead. THE THREE LISTS ARE ONE CONTRACT: SavableFile,
+// vite.config.ts's EDITOR_SAVABLE_FILES, and this map — a file missing from
+// the second is a 403 on save, and one missing from the third cannot be read
+// at all.
+import surroundSource from "../render/surround.ts?raw";
+import archwaySource from "../render/archway.ts?raw";
+import hedgeWallSource from "../render/hedgeWall.ts?raw";
 // TYPE-ONLY on purpose: saveFile.ts imports setSourceText from here, so a
 // value import would close a runtime cycle. `import type` is guaranteed to
 // be erased; the inline `{ type X }` form can leave a bare side-effect
@@ -56,6 +69,9 @@ const texts = new Map<SavableFile, string>([
   ["src/game/config.ts", configSource],
   ["src/render/fence.ts", fenceSource],
   ["src/render/groundDetail.ts", groundDetailSource],
+  ["src/render/surround.ts", surroundSource],
+  ["src/render/archway.ts", archwaySource],
+  ["src/render/hedgeWall.ts", hedgeWallSource],
 ]);
 
 /** Which files have been written this session. The file on disk is now ahead

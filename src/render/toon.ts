@@ -43,7 +43,63 @@ export function toon(
   params: THREE.MeshToonMaterialParameters | number,
 ): THREE.MeshToonMaterial {
   const opts = typeof params === "number" ? { color: params } : params;
-  return new THREE.MeshToonMaterial({ ...opts, gradientMap: toonGradient() });
+  const mat = new THREE.MeshToonMaterial({ ...opts, gradientMap: toonGradient() });
+  // IDEA-066: stamp the material with a signature of the arguments it was
+  // BUILT from, so propMerge.ts's mergeBySignature can weld two materials
+  // that are visually identical but separate objects (every prop factory
+  // builds its own, deliberately, so disposal is safe).
+  //
+  // IT IS STAMPED HERE RATHER THAN COMPUTED FROM THE MATERIAL, and that is
+  // the whole design. Enumerating a MeshToonMaterial's fields to build a key
+  // means one day forgetting one -- and the failure mode of a key that is too
+  // LOOSE is two different materials welding into one, i.e. a part silently
+  // repainted, with no error and nothing to see until someone notices the
+  // wrong colour. Stamping the parameter bag is exhaustive by construction:
+  // whatever was passed in is what is compared.
+  //
+  // A material with NO stamp (built with `new THREE.MeshToonMaterial` directly,
+  // or any non-toon material) falls back to its own uuid in mergeBySignature,
+  // so it never welds with anything. An unknown material can then only ever
+  // cost a draw call, never correctness.
+  //
+  // The stamp describes CONSTRUCTION. Anything mutated after this call --
+  // board.ts's matWall/matFloor/matBiscuit are re-tinted in place on a
+  // re-theme -- must never be signature-merged; see mergeBySignature's own
+  // contract for where that is and is not allowed.
+  mat.userData.toonKey = materialSignature(opts);
+  return mat;
+}
+
+/**
+ * A stable, order-independent string for a material parameter bag.
+ *
+ * Keys are SORTED so two bags with the same values written in a different
+ * order still weld; values that are three.js objects collapse to something
+ * comparable (a Color to its hex, anything with a uuid -- a texture, a
+ * gradient map -- to that uuid). Anything unrecognised is JSON-stringified,
+ * which is conservative: a value that does not serialise stably simply fails
+ * to match itself and costs a draw call.
+ */
+function materialSignature(opts: THREE.MeshToonMaterialParameters): string {
+  const val = (v: unknown): string => {
+    if (v === null || v === undefined) return String(v);
+    if (typeof v === "number" || typeof v === "boolean" || typeof v === "string") {
+      return String(v);
+    }
+    const o = v as { isColor?: boolean; getHex?: () => number; uuid?: string };
+    if (o.isColor && typeof o.getHex === "function") return "#" + o.getHex().toString(16);
+    if (typeof o.uuid === "string") return "uuid:" + o.uuid;
+    try {
+      return JSON.stringify(v);
+    } catch {
+      return "unserialisable";
+    }
+  };
+  const bag = opts as unknown as Record<string, unknown>;
+  return Object.keys(bag)
+    .sort()
+    .map((k) => k + "=" + val(bag[k]))
+    .join("|");
 }
 
 /** Any material the editor can show controls for — i.e. one with a colour. */

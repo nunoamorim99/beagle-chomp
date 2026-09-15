@@ -5,7 +5,7 @@
 //
 // Writes .img2threejs/<SUBJECT>/renders/<label>/<view>.png, one per view in
 // VIEWS. Env knobs mirror the page's query string:
-//   THEME=garden   MAZE=0   FLAT=1   FENCE=0   VIEWS=game,close
+//   THEME=garden   MAZE=0   FLAT=1   FENCE=0   VIEWS=game,close,arch
 //
 // The default view set is deliberately NOT a turntable. A board has exactly
 // one camera a player ever sees; `close` is that camera's magnification, and

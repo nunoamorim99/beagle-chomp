@@ -42,6 +42,14 @@ export const FIELD_SEED_COLOR: Partial<Record<keyof PropParams, number>> = {
   // IDEA-065.
   eyeColor: 0xe8c24a,
   roofColor: 0x4a3a33,
+  // IDEA-067. All three are flat rather than kind-dependent: an archway has
+  // no `*Kind` field, so there is exactly one right answer per key and this
+  // table is the correct home. They mirror archway.ts's own fallbacks, which
+  // is the whole contract — turning a colour control ON must not repaint
+  // anything.
+  blossomColor: 0xf4efe6,
+  fenceColor: 0xa9743f,
+  stoneColor: 0x9c9a90,
 };
 
 /**

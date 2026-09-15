@@ -43,6 +43,7 @@ import { chromium, type Browser, type Page } from "playwright";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { MAZE_THEMES } from "../src/game/themes";
+import { BOARD_SLOTS } from "../src/editor/boardTree";
 
 // ---------------------------------------------------------------------------
 // A CRASH-PROOF BACKUP OF themes.ts.
@@ -81,6 +82,19 @@ if (existsSync(THEMES_BACKUP)) {
 const GARDEN = MAZE_THEMES.find((t) => t.id === "garden");
 if (!GARDEN) throw new Error("no garden theme in MAZE_THEMES");
 const GARDEN_PLACEMENTS = GARDEN.placements.length;
+/**
+ * A tile the garden ACTUALLY has a prop on, read off the registry rather than
+ * typed in. The previous literal ([19, 4]) was correct when it was written and
+ * silently wrong from IDEA-060 onward — and because no assertion mentions a
+ * tile, the failures read as five unrelated broken features rather than as one
+ * stale coordinate. Derive it, and a future re-authoring cannot do this again.
+ */
+const GARDEN_APRON = GARDEN.placements;
+const GARDEN_VERGE = GARDEN.verge;
+const GARDEN_WALL_TILES = GARDEN.wallDecor;
+const FILLED = GARDEN.placements[0];
+const FILLED_TILE: [number, number] = [FILLED.tile[0], FILLED.tile[1]];
+const FILLED_FOLDER = `Placement \u2014 prop @ (${FILLED_TILE[0]}, ${FILLED_TILE[1]})`;
 const GARDEN_WALL_DECOR = GARDEN.wallDecor.length;
 const GARDEN_PLANTED = GARDEN.placements.filter(
   (pl) => pl.propId === "garden-shrub" || pl.propId === "garden-tree",
@@ -319,8 +333,9 @@ interface BoardSnapshot {
   mode: string;
   workingThemeId: string;
   placementsLength: number;
+  vergeLength: number;
   wallDecorLength: number;
-  placementSubMode: "apron" | "wall";
+  placementSubMode: "apron" | "wall" | "verge";
   placementSelection: { tile: [number, number]; propId: string | null } | null;
 }
 async function boardSnapshot(page: Page): Promise<BoardSnapshot> {
@@ -335,6 +350,7 @@ async function boardSnapshot(page: Page): Promise<BoardSnapshot> {
       mode: h.mode(),
       workingThemeId: h.workingThemeId(),
       placementsLength: h.placementsLength(),
+      vergeLength: h.vergeLength(),
       wallDecorLength: h.wallDecorLength(),
       placementSubMode: h.placementSubMode(),
       placementSelection: h.placementSelection(),
@@ -371,7 +387,38 @@ async function markerState(page: Page, tile: [number, number], submode: "apron" 
  *  apron/wall tile at this rig's fixed framing — a thrown error here means
  *  the camera framing itself broke, which deserves a loud failure, not a
  *  silently-skipped check). */
-async function clickTile(page: Page, tile: [number, number], submode: "apron" | "wall"): Promise<void> {
+/**
+ * The screen point of the first slot marker the CURRENT camera can actually
+ * see, across all three sub-modes, or null if it can see none.
+ *
+ * Used only by the character-mode picking gate, which needs a VISIBLE marker
+ * rather than a particular one — see its call site for what asking for a
+ * particular one cost, twice. It scans the VERGE as well as the apron for a
+ * reason this run found the hard way: character mode frames the camera on the
+ * beagle, and measured, NONE of the garden's apron placements project under it
+ * any more. They are all on the south and east/west rows; the one that used to
+ * carry this check was the treehouse at the north-west corner, and IDEA-066
+ * moved it out to the verge. So the north side is where the visible markers
+ * are, and which LAYER they belong to is not something this check has an
+ * opinion about.
+ */
+async function firstVisibleMarker(page: Page): Promise<{ x: number; y: number } | null> {
+  const candidates: Array<{ tile: [number, number]; mode: "apron" | "verge" | "wall" }> = [
+    ...GARDEN_APRON.map((p) => ({ tile: [p.tile[0], p.tile[1]] as [number, number], mode: "apron" as const })),
+    ...GARDEN_VERGE.map((p) => ({ tile: [p.tile[0], p.tile[1]] as [number, number], mode: "verge" as const })),
+    ...GARDEN_WALL_TILES.map((p) => ({ tile: [p.tile[0], p.tile[1]] as [number, number], mode: "wall" as const })),
+  ];
+  for (const c of candidates) {
+    const pt = await page.evaluate(
+      ({ tile, mode }) => window.__boardTestHook?.tileToClientXY(tile as [number, number], mode) ?? null,
+      c,
+    );
+    if (pt) return pt;
+  }
+  return null;
+}
+
+async function clickTile(page: Page, tile: [number, number], submode: "apron" | "wall" | "verge"): Promise<void> {
   const pt = await page.evaluate(
     ({ tile, submode }) => {
       const h = window.__boardTestHook;
@@ -458,10 +505,16 @@ async function run(): Promise<void> {
       check("walls instance count matches MAZES[0]'s real wall-tile count (198)", snap.wallCount === 198);
 
       const rows = await treeRows(page);
+      // DERIVED from the registry, not typed out. The literal list here went
+      // stale the moment IDEA-067 added a seventh slot — the third time in one
+      // session that a hand-copied constant in this suite reported a working
+      // feature as broken (after the [19, 4] tile and `placements[0]`). What is
+      // worth asserting is that the tree shows EVERY slot the registry defines,
+      // in ITS order, and nothing else; the names are BOARD_SLOTS' business.
       check(
-        "tree pane lists the 6 palette slots + 2 placement rows",
+        `tree pane lists all ${BOARD_SLOTS.length} rows the registry defines, in order`,
         JSON.stringify(rows.map((r) => r.text)) ===
-          JSON.stringify(["Atmosphere", "Walls", "Floor", "Biscuits", "Blooms", "Specks", "Props (apron)", "Wall components"]),
+          JSON.stringify(BOARD_SLOTS.map((s) => s.label)),
       );
 
       const folderTitles = await boardFolderTitles(page);
@@ -560,16 +613,13 @@ async function run(): Promise<void> {
     // -------------------------------------------------------------------
     console.log("\n=== selecting a FILLED apron slot selects the existing placement ===");
     {
-      // Garden's first authored shrub placement (src/game/themes.ts:
-      // `{ propId: "shrub", tile: [19, 4], ... }`).
-      const filledTile: [number, number] = [19, 4];
+      const filledTile = FILLED_TILE;
       await clickTile(page, filledTile, "apron");
       await page.waitForTimeout(300);
 
       const snap = await boardSnapshot(page);
       check("clicking a filled slot does NOT add a new placement", snap.placementsLength === GARDEN_PLACEMENTS);
-      // IDEA-060 repointed the garden's 23 shrubs to the reference-built shape.
-      check("the selection reports the existing shrub", snap.placementSelection?.propId === "garden-shrub");
+      check("the selection reports the prop the registry authored", snap.placementSelection?.propId === FILLED.propId);
       check(
         "the selection is at garden's authored tile",
         snap.placementSelection?.tile[0] === filledTile[0] && snap.placementSelection?.tile[1] === filledTile[1],
@@ -580,7 +630,7 @@ async function run(): Promise<void> {
     console.log("\n=== Placement folder: swap prop, edit offset/rotation/scale re-applies live ===");
     {
       const before = await boardSnapshot(page);
-      const folderTitle = `Placement — prop @ (19, 4)`;
+      const folderTitle = FILLED_FOLDER;
 
       await selectPlacementDropdown(page, "Oak Tree");
       await page.waitForTimeout(300);
@@ -588,7 +638,7 @@ async function run(): Promise<void> {
       check("swapping the prop dropdown updates the selection's propId", afterSwap.placementSelection?.propId === "oak");
       check("swapping the prop does not change placementsLength (still an edit, not an add)", afterSwap.placementsLength === before.placementsLength);
 
-      await setFolderSlider(page, `Placement — prop @ (19, 4)`, "offset X", 0.3);
+      await setFolderSlider(page, FILLED_FOLDER, "offset X", 0.3);
       await page.waitForTimeout(200);
       await setFolderSlider(page, folderTitle, "offset Z", -0.2);
       await page.waitForTimeout(200);
@@ -603,8 +653,10 @@ async function run(): Promise<void> {
       await page.waitForTimeout(250);
       const clip = await page.evaluate(() => navigator.clipboard.readText());
       check(
-        "copied code reflects the edited oak placement at (19, 4)",
-        /\{ propId: "oak", tile: \[19, 4\], offset: \[0\.3, -0\.2\], rotationY: 1\.5, scale: 1\.4 \},/.test(clip),
+        `copied code reflects the edited oak placement at (${FILLED_TILE[0]}, ${FILLED_TILE[1]})`,
+        new RegExp(
+          `\\{ propId: "oak", tile: \\[${FILLED_TILE[0]}, ${FILLED_TILE[1]}\\], offset: \\[0\\.3, -0\\.2\\], rotationY: 1\\.5, scale: 1\\.4 \\},`,
+        ).test(clip),
       );
 
       // Restore garden's authored shrub at (19,4) for later sections.
@@ -620,17 +672,17 @@ async function run(): Promise<void> {
     // -------------------------------------------------------------------
     console.log("\n=== keyboard arrow-nudge moves the selected placement's offset ===");
     {
-      // Still selected at (19, 4) from the restore above.
-      const beforeX = await readFolderSlider(page, "Placement — prop @ (19, 4)", "offset X");
+      // Still selected at FILLED_TILE from the restore above.
+      const beforeX = await readFolderSlider(page, FILLED_FOLDER, "offset X");
       check("offset X slider reads a number before nudging", typeof beforeX === "number");
       await page.keyboard.press("ArrowRight");
       await page.waitForTimeout(200);
-      const afterX = await readFolderSlider(page, "Placement — prop @ (19, 4)", "offset X");
+      const afterX = await readFolderSlider(page, FILLED_FOLDER, "offset X");
       check("ArrowRight nudges offset X up by the default NUDGE_STEP (0.01)", afterX !== null && beforeX !== null && Math.abs(afterX - (beforeX + 0.01)) < 1e-9);
 
       await page.keyboard.press("ArrowLeft"); // undo the nudge by hand (board mode has no undo/redo)
       await page.waitForTimeout(200);
-      const restoredX = await readFolderSlider(page, "Placement — prop @ (19, 4)", "offset X");
+      const restoredX = await readFolderSlider(page, FILLED_FOLDER, "offset X");
       check("ArrowLeft nudges it back down", restoredX !== null && beforeX !== null && Math.abs(restoredX - beforeX) < 1e-9);
     }
 
@@ -791,10 +843,19 @@ async function run(): Promise<void> {
       // does anything there — which is correct behaviour and made this section
       // assert against a theme that has not got the feature. The forest still
       // runs the density path, so it is where the density path gets tested.
-      await selectBaseTheme(page, "Deep Forest");
+      // Picked by the PROPERTY this section needs — an empty wallDecor (so
+      // buildWallTopDecor takes the density branch at all) and a non-zero
+      // bloomChance — rather than by name. Naming one is what broke this twice:
+      // the garden when IDEA-060 filled its wallDecor, then the forest when
+      // IDEA-065 did.
+      const densityTheme = MAZE_THEMES.find(
+        (t) => t.wallDecor.length === 0 && t.palette.bloomChance > 0,
+      );
+      if (!densityTheme) throw new Error("no theme runs the density-bloom path any more");
+      await selectBaseTheme(page, densityTheme.name);
       await page.waitForTimeout(300);
       const before = await boardSnapshot(page);
-      check("forest starts with hedge decor meshes (density blooms, empty wallDecor)", before.hedgeDecorMeshCount > 0);
+      check(`${densityTheme.name} starts with hedge decor meshes (density blooms, empty wallDecor)`, before.hedgeDecorMeshCount > 0);
 
       await setFolderSlider(page, "Blooms", "bloom chance", 0);
       await page.waitForTimeout(300);
@@ -910,7 +971,7 @@ async function run(): Promise<void> {
       // garden.placements list, which has no [-1,6] entry) — an EMPTY marker
       // to contrast against a FILLED one below.
       const emptyTile: [number, number] = [-1, 6];
-      const filledTile: [number, number] = [19, 4]; // garden's first authored shrub (see earlier section)
+      const filledTile = FILLED_TILE; // see FILLED's note
 
       const emptyState = await markerState(page, emptyTile, "apron");
       const filledState = await markerState(page, filledTile, "apron");
@@ -929,18 +990,31 @@ async function run(): Promise<void> {
       }
 
       // The empty marker's opacity must be seen to CHANGE over time (the
-      // pulse) — sample it twice, letting main.ts's real per-frame loop
-      // (stage.ts's renderer.setAnimationLoop, driving
-      // boardPlacement.updatePulse every tick) run in between. A fixed
-      // wait is used rather than reading two frames back-to-back, since
-      // Playwright's own event loop granularity is coarser than a single
-      // rAF tick anyway.
-      const sample1 = await markerState(page, emptyTile, "apron");
-      await page.waitForTimeout(700); // > half a PULSE_SPEED period (2.4 rad/s), long enough to move measurably along the sine wave
-      const sample2 = await markerState(page, emptyTile, "apron");
+      // pulse) — sampled while main.ts's real per-frame loop (stage.ts's
+      // renderer.setAnimationLoop, driving boardPlacement.updatePulse every
+      // tick) runs in between. A fixed wait rather than two frames back to
+      // back, since Playwright's event loop granularity is coarser than a
+      // single rAF tick anyway.
+      //
+      // SAMPLED ACROSS A WHOLE PERIOD, not twice 700ms apart. The pulse is
+      // sin(t * 2.4), so its period is 2.62s and two samples 1.68 rad apart
+      // are EQUAL whenever they straddle a peak symmetrically — a real phase
+      // race that failed a sound build once in three runs here. Taking
+      // max-minus-min over a full period is strictly STRONGER (a static value
+      // still fails, and now every phase of a pulsing one passes) rather than
+      // a threshold loosened until it stopped complaining.
+      const opacities: number[] = [];
+      for (let i = 0; i < 6; i++) {
+        const s = await markerState(page, emptyTile, "apron");
+        if (s) opacities.push(s.opacity);
+        if (i < 5) await page.waitForTimeout(500); // 6 samples x 500ms = 2.5s ~ one full period
+      }
+      const swing = opacities.length
+        ? Math.max(...opacities) - Math.min(...opacities)
+        : 0;
       check(
         "an empty marker's opacity visibly PULSES over time (not a static value)",
-        sample1 !== null && sample2 !== null && Math.abs(sample1.opacity - sample2.opacity) > 0.01,
+        opacities.length === 6 && swing > 0.01,
       );
 
       // Selecting the empty tile: it becomes the SELECTED color (pink),
@@ -961,16 +1035,16 @@ async function run(): Promise<void> {
     // -------------------------------------------------------------------
     console.log("\n=== IDEA-034: rotation is first-class — [ / ] keys rotate the selected placement (both sub-modes) ===");
     {
-      // Apron: garden's authored shrub at (19, 4).
-      const apronTile: [number, number] = [19, 4];
+      // Apron: whatever the garden actually authored first.
+      const apronTile = FILLED_TILE;
       await clickTile(page, apronTile, "apron");
       await page.waitForTimeout(300);
-      const beforeRot = await readFolderSlider(page, "Placement — prop @ (19, 4)", "rotation");
+      const beforeRot = await readFolderSlider(page, FILLED_FOLDER, "rotation");
       check("apron rotation slider reads a number before rotating", typeof beforeRot === "number");
 
       await page.keyboard.press("]");
       await page.waitForTimeout(200);
-      const afterBracket = await readFolderSlider(page, "Placement — prop @ (19, 4)", "rotation");
+      const afterBracket = await readFolderSlider(page, FILLED_FOLDER, "rotation");
       check(
         "] rotates the selected apron placement by the default BOARD_ROTATE_STEP (0.12 rad)",
         afterBracket !== null && beforeRot !== null && Math.abs(afterBracket - (beforeRot + 0.12)) < 1e-9,
@@ -978,7 +1052,7 @@ async function run(): Promise<void> {
 
       await page.keyboard.press("[");
       await page.waitForTimeout(200);
-      const restoredRot = await readFolderSlider(page, "Placement — prop @ (19, 4)", "rotation");
+      const restoredRot = await readFolderSlider(page, FILLED_FOLDER, "rotation");
       check("[ rotates it back down (undoing the ] nudge by hand — no undo/redo in board mode)", restoredRot !== null && beforeRot !== null && Math.abs(restoredRot - beforeRot) < 1e-9);
 
       // Shift = coarse quarter-turn step. nudgeSelectedRotation WRAPS into
@@ -989,7 +1063,7 @@ async function run(): Promise<void> {
       // modulo 2π keeps this correct regardless of the authored start angle.
       await page.keyboard.press("Shift+]");
       await page.waitForTimeout(200);
-      const coarse = await readFolderSlider(page, "Placement — prop @ (19, 4)", "rotation");
+      const coarse = await readFolderSlider(page, FILLED_FOLDER, "rotation");
       const TWO_PI = Math.PI * 2;
       const expectedCoarse = beforeRot !== null ? (beforeRot + Math.PI / 4) % TWO_PI : NaN;
       check(
@@ -1028,15 +1102,15 @@ async function run(): Promise<void> {
     // -------------------------------------------------------------------
     console.log("\n=== IDEA-034: - / = keys scale the selected placement ===");
     {
-      const apronTile: [number, number] = [19, 4];
+      const apronTile = FILLED_TILE;
       await clickTile(page, apronTile, "apron");
       await page.waitForTimeout(300);
-      const beforeScale = await readFolderSlider(page, "Placement — prop @ (19, 4)", "scale");
+      const beforeScale = await readFolderSlider(page, FILLED_FOLDER, "scale");
       check("scale slider reads a number before scaling", typeof beforeScale === "number");
 
       await page.keyboard.press("=");
       await page.waitForTimeout(200);
-      const afterEquals = await readFolderSlider(page, "Placement — prop @ (19, 4)", "scale");
+      const afterEquals = await readFolderSlider(page, FILLED_FOLDER, "scale");
       check(
         "= grows the selected placement's scale by the default BOARD_SCALE_STEP (0.04)",
         afterEquals !== null && beforeScale !== null && Math.abs(afterEquals - (beforeScale + 0.04)) < 1e-9,
@@ -1044,7 +1118,7 @@ async function run(): Promise<void> {
 
       await page.keyboard.press("-");
       await page.waitForTimeout(200);
-      const restoredScale = await readFolderSlider(page, "Placement — prop @ (19, 4)", "scale");
+      const restoredScale = await readFolderSlider(page, FILLED_FOLDER, "scale");
       check("- shrinks it back down to the original value", restoredScale !== null && beforeScale !== null && Math.abs(restoredScale - beforeScale) < 1e-9);
     }
 
@@ -1127,7 +1201,7 @@ async function run(): Promise<void> {
     // -------------------------------------------------------------------
     console.log('\n=== IDEA-034: Placement folder never grows a color control (color override stays OUT of scope) ===');
     {
-      // Re-select garden's authored shrub at (19, 4) — a FILLED apron slot —
+      // Re-select the garden's first authored prop — a FILLED apron slot —
       // and confirm the Placement folder's control count is EXACTLY the 6
       // documented controls (prop/offset X/offset Z/rotation/scale/remove),
       // never a 7th "color" swatch. This is the same folderControllerCount
@@ -1138,11 +1212,11 @@ async function run(): Promise<void> {
       // color control onto this task's own additions (Nuno: "if I want a
       // different-color umbrella I create a prop for that" — color lives in
       // the prop LIBRARY, never the placement).
-      await clickTile(page, [19, 4], "apron");
+      await clickTile(page, FILLED_TILE, "apron");
       await page.waitForTimeout(300);
       check(
         "apron Placement folder still has exactly 6 controls — no color swatch was added",
-        (await folderControllerCount(page, "Placement — prop @ (19, 4)")) === 6,
+        (await folderControllerCount(page, FILLED_FOLDER)) === 6,
       );
       const apronLabels = await page.evaluate(() => {
         const guis = [...document.querySelectorAll("#boardGuiHost .lil-gui")];
@@ -1298,7 +1372,23 @@ async function run(): Promise<void> {
       // the setPickingEnabled(false) gate main.ts's setMode wires (see its
       // own doc comment on why THREE.Raycaster ignores `.visible`).
       const beforeClick = await boardSnapshot(page);
-      await clickTile(page, [19, 4], "apron"); // a filled garden apron tile, if picking were (wrongly) still live
+      // NOT `FILLED_TILE`, and this is the third time this one line has gone
+      // stale. It was the literal [19, 4], correct when written and silently
+      // wrong from IDEA-060; it became `placements[0]`, which is not a stable
+      // reference to any particular TILE — IDEA-066 moved the garden's
+      // treehouses out to the verge and `placements[0]` went from the
+      // north-west corner (-1, -1) to the south-west one (-1, 20), which does
+      // not project at all under CHARACTER mode's camera, and the suite died
+      // with "tile did not project onscreen" 32 checks from the end.
+      //
+      // What this check actually needs is not a specific tile: it is ANY point
+      // over a board slot marker that the current camera can see, because the
+      // claim is that picking is GATED OFF in character mode. So ask the page
+      // which of the garden's own placements project, and use the first — a
+      // re-authoring cannot break that, and neither can a camera retune.
+      const clickable = await firstVisibleMarker(page);
+      check("at least one board slot marker projects under the character camera", clickable !== null);
+      if (clickable) await page.mouse.click(clickable.x, clickable.y);
       await page.waitForTimeout(200);
       const afterClick = await boardSnapshot(page);
       check(
@@ -1436,6 +1526,51 @@ async function run(): Promise<void> {
       check("and the SCALE is untouched (the clamp-drift regression)", rotated!.scale === big!.scale);
     }
 
+    // -------------------------------------------------------------------
+    console.log("\n=== IDEA-066: the VERGE is a third sub-mode with its own array ===");
+    {
+      // The acceptance test for phase 3. A verge click has to land in
+      // `theme.verge` and NOT in `theme.placements` — they are separate arrays
+      // precisely because buildProps' height caps key on apron coordinates and
+      // would silently not apply out here, and because the editor builds a
+      // marker per tile from its own candidate set.
+      await clickTreeRow(page, "Props (verge)");
+      await page.waitForTimeout(250);
+      const before = await boardSnapshot(page);
+      check("switching to the verge row reports the verge sub-mode", before.placementSubMode === "verge");
+
+      // A tile two rings out on the NORTH side: uncapped, and well clear of
+      // the tunnel sightlines the candidate set excludes.
+      const vergeTile: [number, number] = [6, -3];
+      await clickTile(page, vergeTile, "verge");
+      await page.waitForTimeout(300);
+      const after = await boardSnapshot(page);
+
+      check("clicking an empty verge slot creates a verge placement", after.vergeLength === before.vergeLength + 1);
+      check("...and does NOT touch the apron array", after.placementsLength === before.placementsLength);
+      check(
+        "the selection is the verge tile just clicked",
+        after.placementSelection?.tile[0] === vergeTile[0] && after.placementSelection?.tile[1] === vergeTile[1],
+      );
+
+      // And it survives codegen. boardCodegen writes every MazeTheme field by
+      // HAND, so a new array missing from formatThemeEntry is silently dropped
+      // from every theme saved in the editor — the exact failure `secret` was
+      // shipping (see test-board-surfaces' MazeTheme guard).
+      await clickCopyThemeCode(page);
+      await page.waitForTimeout(250);
+      const clip = await page.evaluate(() => navigator.clipboard.readText());
+      check("copied theme code carries a verge array", /verge: \[/.test(clip));
+      check(
+        "...with the placement just authored in it",
+        new RegExp(`tile: \\[${vergeTile[0]}, ${vergeTile[1]}\\]`).test(clip),
+      );
+
+      await page.keyboard.press("Delete");
+      await page.waitForTimeout(250);
+      const cleaned = await boardSnapshot(page);
+      check("cleanup: Delete removes it again", cleaned.vergeLength === before.vergeLength);
+    }
     // -------------------------------------------------------------------
     console.log("\n=== IDEA-025 v2 delete flow (character mode) still works after visiting board mode ===");
     {

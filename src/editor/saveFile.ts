@@ -23,7 +23,10 @@ export type SavableFile =
   | "src/game/props.ts"
   | "src/game/config.ts"
   | "src/render/fence.ts"
-  | "src/render/groundDetail.ts";
+  | "src/render/groundDetail.ts"
+  | "src/render/surround.ts"
+  | "src/render/archway.ts"
+  | "src/render/hedgeWall.ts";
 
 export interface SaveResult {
   ok: boolean;

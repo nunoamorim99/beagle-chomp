@@ -18,6 +18,7 @@ import { type WallTextureKind } from "../render/wallTexture";
 import { type FloorTextureKind } from "../render/floorTexture";
 import { type FenceKind } from "../render/fence";
 import { type GroundDetailKind } from "../render/groundDetail";
+import { type SurroundKind } from "../render/surround";
 
 
 /** Every color/lighting slot a maze theme controls. All colors are hex
@@ -32,6 +33,24 @@ export interface ThemePalette {
   bg: number;
   /** Top color of the backdrop sky dome (bottom is always `bg`). */
   backdropTop: number;
+  /**
+   * IDEA-066: fog near/far, in ABSOLUTE WORLD UNITS AT THE BASE DOLLY — i.e.
+   * the numbers that apply at every landscape aspect, where `computeFitDistance`
+   * floors the camera at `baseDist` and the rig is exactly (0, 27, 15.5).
+   * `resize()` scales both by `dist / baseDist` on portrait, which is what makes
+   * the two framings see the SAME fog at the same point in the frame — measured,
+   * 62% at the top of frame on both at the old global 30/55.
+   *
+   * Per-theme because the surround made one global pair impossible: an open
+   * garden wants to show you the neighbourhood, a deep forest wants to swallow
+   * depth, and Arcade Night is propless on purpose so the fog IS its surround.
+   *
+   * Absolute units rather than multipliers on purpose — a multiplier is relative
+   * to a base with no meaning of its own, and cannot be solved against the frame
+   * geometry the way these can (`scripts/_scratch-surround-coverage.ts`).
+   */
+  fogNear: number;
+  fogFar: number;
 
   // --- board materials (board.ts) ---
   wall: number;
@@ -78,6 +97,24 @@ export interface ThemePalette {
   groundDetail: GroundDetailKind;
   /** Stone colour. Read only when `groundDetail` is not "none". */
   groundDetailColor: number;
+  /**
+   * IDEA-066: which procedural NEIGHBOURHOOD grows beyond the board
+   * (src/render/surround.ts) — the third board system that is geometry rather
+   * than a texture, after the fence and the ground dressing.
+   *
+   * "none" costs nothing at all, and Arcade Night takes it deliberately: it was
+   * always the clean, propless tribute board.
+   */
+  surround: SurroundKind;
+  /**
+   * Colour of the ground BEYOND the board's own floor plane.
+   *
+   * Defaults to matching `floor`, and should stay close to it: the board's
+   * floor texture bakes `floor` in as its ground, so anything far from it draws
+   * a visible ring around the maze. `scripts/_scratch-surround-seam.ts` measures
+   * the join; a theme that wants today's void back sets this to its own `bg`.
+   */
+  surroundGround: number;
   floor: number;
   /**
    * Which procedural GROUND the floor wears (src/render/floorTexture.ts).
@@ -175,6 +212,40 @@ export interface MazeTheme {
    *  density populations). Empty = a bare apron (classic). Each references a
    *  library prop ([[props.ts]]) by id. */
   placements: readonly PropPlacement[];
+  /**
+   * IDEA-066: hand-placed props on the VERGE rings — two tiles out from the
+   * apron, where the big stuff goes.
+   *
+   * The same element type as `placements`, and a SEPARATE array on purpose.
+   * Reusing `placements` with out-of-apron tiles creates unreachable data
+   * three ways: the editor builds a marker per tile from `apronCandidates`
+   * and a marker is the only way to select a placement, so a verge tile could
+   * be created by hand and never moved or deleted again; `buildProps`' height
+   * caps key on `ty === ROWS` / `tx === -1 || tx === COLS`, so every tall
+   * verge prop would be SILENTLY uncapped (the exact shape of the
+   * buildWallDecor-never-checked-for-a-wall bug); and the two layers want
+   * different shadow and merge treatment — the verge is collapsed by
+   * SIGNATURE and casts nothing, the apron is collapsed per prop and casts.
+   */
+  verge: readonly PropPlacement[];
+  /**
+   * IDEA-067: the prop id of the arch that stands at this theme's TUNNEL
+   * MOUTHS, or absent for a theme that wants none.
+   *
+   * An ID rather than an array of placements, and that is the whole design.
+   * A tunnel is a property of the MAZE — there are 36 of them and every one
+   * puts its two tunnels at row 9 — while a placement is a property of the
+   * THEME. `buildTunnelArches` reads the grid and stands one arch at every
+   * tunnel it finds, so the theme only has to answer "which arch", never
+   * "where". Hand-placing the positions would be right on all 36 boards today
+   * and would silently go wrong the first time a maze is authored with a
+   * tunnel somewhere else — which is exactly how `wallDecor` ended up hanging
+   * Night City's lamps over open corridor for two releases.
+   *
+   * Only the garden names one. The other five get their own art rather than
+   * this one recoloured: a yew portal at a beach tunnel mouth is not a beach.
+   */
+  tunnelArch?: string;
   /** IDEA-031: explicit wall-top component placements (generalizes IDEA-011's
    *  density blooms — the palette still carries bloom COLORS as a fallback for
    *  themes that keep the classic scattered garden look via bloomChance, but a
@@ -189,17 +260,22 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
     name: "The Garden",
     blurb: "Hedges and lawn · a bright afternoon",
     price: 0,
+    tunnelArch: "hedge-arch",
     palette: {
       bg: 0x9ecbe8,
       backdropTop: 0xcfe9f7,
+      fogNear: 34,
+      fogFar: 92,
       wall: 0x3f8f3a,
       wallTexture: "hedgeFlower",
       wallEmissive: 0x0e2a0e,
-      wallEmissiveIntensity: 0.2,
+      wallEmissiveIntensity: 0,
       fence: "picket",
       fenceColor: 0xa9743f,
       groundDetail: "rocks",
       groundDetailColor: 0x9c9a90,
+      surround: "plots",
+      surroundGround: 0x517a33,
       floor: 0x6b4a2f,
       floorTexture: "lawn",
       floorEmissive: 0x2a1a0c,
@@ -222,46 +298,53 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
       speckChance: 0,
     },
     placements: [
-      { propId: "treehouse", tile: [-1, -1], offset: [-0.18, -0.2], rotationY: 0.42, scale: 1.8 },
-      { propId: "garden-shrub", tile: [-1, -1], offset: [-0.152, 0.121], rotationY: 0.948, scale: 2.108 },
-      { propId: "treehouse", tile: [19, -1], offset: [0, 0], rotationY: 5.807363914339822, scale: 1.8 },
-      { propId: "garden-tree", tile: [-1, 19], offset: [0, -0.18068294614122848], rotationY: 0, scale: 3 },
       { propId: "garden-shrub", tile: [-1, 20], offset: [0, 0.1270483582247568], rotationY: 0.84, scale: 2 },
       { propId: "garden-shrub", tile: [0, 21], offset: [-0.17038862911364383, 0], rotationY: 0, scale: 2 },
       { propId: "garden-shrub", tile: [-1, 21], offset: [0, 0], rotationY: 0, scale: 1.5 },
-      { propId: "garden-tree", tile: [11, -1], offset: [0, 0], rotationY: 0, scale: 2 },
-      { propId: "garden-tree", tile: [9, -1], offset: [0, 0], rotationY: 0, scale: 3 },
       { propId: "garden-shrub", tile: [19, 20], offset: [0, 0.13253337033606982], rotationY: 0, scale: 2 },
-      { propId: "garden-tree", tile: [19, 19], offset: [0, -0.28843027067037497], rotationY: 0, scale: 3 },
       { propId: "garden-shrub", tile: [19, 18], offset: [0, 0], rotationY: 0, scale: 2 },
-      { propId: "garden-tree", tile: [19, 17], offset: [0, 0], rotationY: 0, scale: 2 },
-      { propId: "garden-tree", tile: [-1, 17], offset: [0, 0], rotationY: 0, scale: 2 },
       { propId: "garden-shrub", tile: [-1, 18], offset: [0, 0], rotationY: 0, scale: 2 },
-      { propId: "garden-tree", tile: [7, -1], offset: [0, 0], rotationY: 0, scale: 2 },
       { propId: "garden-shrub", tile: [5, 21], offset: [0.179218601730339, 0], rotationY: 0, scale: 2 },
       { propId: "garden-shrub", tile: [7, 21], offset: [-0.29206965444680133, 0], rotationY: 0, scale: 2 },
       { propId: "garden-shrub", tile: [6, 21], offset: [0, 0], rotationY: 0, scale: 1 },
-      { propId: "garden-tree", tile: [14, -1], offset: [0, 0], rotationY: 0, scale: 3 },
-      { propId: "garden-tree", tile: [4, -1], offset: [0, 0], rotationY: 0, scale: 3 },
       { propId: "garden-shrub", tile: [19, 21], offset: [0, 0], rotationY: 0, scale: 1.5 },
       { propId: "garden-shrub", tile: [18, 21], offset: [0.16786334683974324, -0.0015449399414393383], rotationY: 0, scale: 2 },
       { propId: "garden-shrub", tile: [13, 21], offset: [0, 0], rotationY: 0, scale: 2 },
       { propId: "garden-shrub", tile: [12, 21], offset: [0, 0], rotationY: 0, scale: 1.5 },
       { propId: "garden-shrub", tile: [14, 21], offset: [0, 0], rotationY: 0, scale: 1.5 },
-      { propId: "garden-tree", tile: [16, -1], offset: [0, 0], rotationY: 0, scale: 2 },
-      { propId: "garden-tree", tile: [2, -1], offset: [0, 0], rotationY: 0, scale: 2 },
-      { propId: "garden-tree", tile: [19, 11], offset: [0, 0], rotationY: 0, scale: 2.5 },
-      { propId: "garden-tree", tile: [-1, 11], offset: [0, 0], rotationY: 0, scale: 2.5 },
+    ],
+    verge: [
+      { propId: "garden-tree", tile: [8, -2], offset: [-0.2, 0.1], rotationY: 0, scale: 3.2 },
+      { propId: "garden-tree", tile: [14, -3], offset: [0, 0], rotationY: 0, scale: 3.8 },
+      { propId: "garden-tree", tile: [-3, 4], offset: [0, 0], rotationY: 0, scale: 3.4 },
+      { propId: "garden-tree", tile: [21, 8], offset: [0, 0], rotationY: 0, scale: 3.6 },
+      { propId: "garden-tree", tile: [-2, 14], offset: [0.1, 0], rotationY: 0, scale: 3 },
+      { propId: "garden-tree", tile: [20, 16], offset: [0, 0], rotationY: 0, scale: 3.2 },
+      { propId: "garden-shrub", tile: [5, -2], offset: [0.2, 0], rotationY: 0, scale: 2.4 },
+      { propId: "garden-shrub", tile: [11, -3], offset: [0, 0.1], rotationY: 0, scale: 2.8 },
+      { propId: "garden-shrub", tile: [17, -2], offset: [-0.1, 0], rotationY: 0, scale: 2.2 },
+      { propId: "garden-shrub", tile: [-3, 10], offset: [0, 0], rotationY: 0, scale: 2.5 },
+      { propId: "garden-shrub", tile: [21, 3], offset: [0, 0], rotationY: 0, scale: 2.3 },
+      { propId: "garden-shrub", tile: [-2, 19], offset: [0, 0], rotationY: 0, scale: 2.1 },
+      { propId: "nest-tree", tile: [10, -2], offset: [0, 0], rotationY: 0, scale: 3 },
+      { propId: "treehouse", tile: [0, -3], offset: [0, 0], rotationY: 0.36, scale: 3 },
+      { propId: "treehouse", tile: [18, -3], offset: [0, 0], rotationY: 6.1, scale: 3 },
     ],
     wallDecor: [
       { propId: "birdhouse", tile: [0, 20], rotationY: 0.85, scale: 2 },
       { propId: "birdhouse", tile: [18, 20], rotationY: 5.6, scale: 2 },
       { propId: "birdhouse", tile: [9, 13], rotationY: 0, scale: 2 },
-      { propId: "bloom", tile: [12, 14], rotationY: 0, scale: 1 },
+      { propId: "flower-head-rose", tile: [11, 10], rotationY: 0, scale: 1 },
       { propId: "birdhouse", tile: [9, 5], rotationY: 0, scale: 2 },
       { propId: "bloom", tile: [0, 8], rotationY: 0, scale: 1 },
+      { propId: "perched-bird", tile: [9, 14], rotationY: 0, scale: 1.2 },
+      { propId: "flower-head-sunflower", tile: [8, 12], rotationY: 0, scale: 1 },
     ],
   },
+
+
+
+
 
 
 
@@ -293,6 +376,8 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
     palette: {
       bg: 0x0b0b16,
       backdropTop: 0x232348,
+      fogNear: 26,
+      fogFar: 46,
       wall: 0x2b2b6b,
       wallTexture: "flat",
       wallEmissive: 0x14143a,
@@ -301,6 +386,8 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
       fenceColor: 0xa9743f,
       groundDetail: "none",
       groundDetailColor: 0x9c9a90,
+      surround: "none",
+      surroundGround: 0x111120,
       floor: 0x111120,
       floorTexture: "flat",
       floorEmissive: 0x0a0a18,
@@ -324,6 +411,7 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
     },    // Deliberately propless: the v1.0 throwback is a clean neon board in a
     // black void — anything planted around it would break the retro read.
     placements: [],
+    verge: [],
     wallDecor: [],
   },
   {
@@ -334,6 +422,8 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
     palette: {
       bg: 0x87a998,
       backdropTop: 0xc8dcc8,
+      fogNear: 30,
+      fogFar: 60,
       wall: 0x215426,
       wallTexture: "hedge",
       wallEmissive: 0x0a2210,
@@ -342,6 +432,8 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
       fenceColor: 0xa9743f,
       groundDetail: "none",
       groundDetailColor: 0x9c9a90,
+      surround: "woodland",
+      surroundGround: 0x4a3524,
       floor: 0x4a3524,
       floorTexture: "earth",
       floorEmissive: 0x1e1408,
@@ -364,6 +456,7 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
       speckChance: 0.5,
     },
     placements: [],
+    verge: [],
     wallDecor: [
       { propId: "flower-head-sunflower", tile: [0, 20], rotationY: 0, scale: 1 },
     ],
@@ -382,6 +475,8 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
     palette: {
       bg: 0xa8d8ef,
       backdropTop: 0xd8f0fa,
+      fogNear: 38,
+      fogFar: 104,
       wall: 0xd4b078,
       wallTexture: "sand",
       wallEmissive: 0x4a3a18,
@@ -390,6 +485,8 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
       fenceColor: 0xa9743f,
       groundDetail: "none",
       groundDetailColor: 0x9c9a90,
+      surround: "dunes",
+      surroundGround: 0x9a8258,
       floor: 0x9a8258,
       floorTexture: "sand",
       floorEmissive: 0x3a2e14,
@@ -436,6 +533,7 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
       { propId: "palm", tile: [19, 1], offset: [-0.066, 0.227], rotationY: 3.638, scale: 1 },
       { propId: "palm", tile: [-1, 2], offset: [-0.218, 0.056], rotationY: 2.902, scale: 1 },
     ],
+    verge: [],
     wallDecor: [],
   },
   {
@@ -450,6 +548,8 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
     palette: {
       bg: 0x9ecbe8,
       backdropTop: 0xd4ecfa,
+      fogNear: 34,
+      fogFar: 85,
       wall: 0x5aa348,
       wallTexture: "hedge",
       wallEmissive: 0x143a12,
@@ -458,6 +558,8 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
       fenceColor: 0xa9743f,
       groundDetail: "none",
       groundDetailColor: 0x9c9a90,
+      surround: "parkland",
+      surroundGround: 0x5f7942,
       floor: 0x8a7a5e,
       floorTexture: "parkGrass",
       floorEmissive: 0x342c1c,
@@ -521,6 +623,7 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
       { propId: "streetlight", tile: [-1, 1], offset: [0.088, -0.241], rotationY: 0.581, scale: 1.09 },
       { propId: "streetlight", tile: [-1, 13], offset: [-0.186, -0.206], rotationY: 6.08, scale: 1.062 },
     ],
+    verge: [],
     wallDecor: [],
   },
   {
@@ -542,6 +645,8 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
       // amber light.
       bg: 0x332a52,
       backdropTop: 0x5a4a88,
+      fogNear: 28,
+      fogFar: 54,
       wall: 0x7a7480,
       wallTexture: "brick",
       wallEmissive: 0x3a5aaa,
@@ -550,6 +655,8 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
       fenceColor: 0xa9743f,
       groundDetail: "none",
       groundDetailColor: 0x9c9a90,
+      surround: "cityblocks",
+      surroundGround: 0x3a3640,
       floor: 0x3a3640,
       floorTexture: "road",
       floorEmissive: 0x1c1a20,
@@ -622,6 +729,7 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
     // now guarded by scripts/test-garden-props.ts). The replacements are all
     // wall in 15+ of the 18, and the city is otherwise untouched — its own
     // rebuild is a later session's job.
+    verge: [],
     wallDecor: [
       { propId: "lamp-post", tile: [2, 2], rotationY: 0, scale: 1 },
       { propId: "transit-sign", tile: [16, 2], rotationY: 1.571, scale: 1 },

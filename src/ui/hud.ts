@@ -102,6 +102,39 @@ export function createHud(root: HTMLElement, maxLives: number): Hud {
   const powerupsEl = require<HTMLElement>("powerups");
   const centerEl = require<HTMLElement>("center");
 
+  // IDEA-070: publish where the HUD ENDS, so the power-up tray can sit
+  // directly under it.
+  //
+  // Nuno: *"put them more up, right below the coins and the control buttons
+  // — this way the tags of the power-ups don't mess around with the ambient,
+  // right now they are hiding some trees."* IDEA-069 put the tray in the band
+  // above the board and anchored it to the BOARD's top edge, so it sat at the
+  // bottom of that band, on the neighbourhood. Anchoring to the HUD instead
+  // puts it at the top of the same band, against the chrome it belongs with.
+  //
+  // MEASURED, NOT A CONSTANT, for the reason levelMap.ts publishes its own
+  // header height: this row's height is content-dependent. The lives chip is
+  // a fixed five hearts, but the map chip grows from "5" to "115" to "Bonus",
+  // the score column grows with the figure, and a narrow phone can wrap the
+  // whole row — and a literal offset here is one that has to be re-tuned
+  // every time anything above it changes, which is the exact trap the HUD's
+  // own chrome row was rebuilt to escape in IDEA-048.
+  const hudEl = (scope.querySelector(".hud") ?? document.querySelector(".hud")) as HTMLElement | null;
+  function publishHudBottom(): void {
+    if (!hudEl) return;
+    const bottom = Math.round(hudEl.getBoundingClientRect().bottom);
+    document.documentElement.style.setProperty("--bc-hud-bottom", `${bottom}px`);
+  }
+  // A ResizeObserver rather than a resize listener: the row changes height
+  // when its CONTENT changes (a wrapped chip, a wider figure), which a window
+  // resize event never hears about.
+  const hudObserver =
+    hudEl && typeof ResizeObserver !== "undefined"
+      ? new ResizeObserver(() => publishHudBottom())
+      : null;
+  hudObserver?.observe(hudEl as HTMLElement);
+  publishHudBottom();
+
   function clearCenter(): void {
     centerEl.innerHTML = "";
   }

@@ -386,26 +386,64 @@ ok(
   MAZE_THEMES.filter((t) => t.id === "forest" || t.id === "park")
     .some((t) => t.placements.some((p) => p.propId === "shrub" || p.propId === "oak")),
 );
-const houses = garden.placements.filter((p) => p.propId === "treehouse");
+// IDEA-066 MOVED THE TREEHOUSES OUT TO THE VERGE, and this assertion did not
+// follow them — it kept reading `placements` and went red without anything
+// being wrong with the garden. The claim worth making is that the landmark is
+// PLANTED, not which of the three concentric layers it ended up on: the verge
+// is where IDEA-066 says the big stuff goes, and a treehouse one tile from
+// the hedge was the original complaint that started that whole idea.
+const houses = [
+  ...garden.placements.map((p) => ({ p, layer: "apron" as const })),
+  ...garden.verge.map((p) => ({ p, layer: "verge" as const })),
+].filter((h) => h.p.propId === "treehouse");
 ok("the garden plants at least one treehouse landmark", houses.length >= 1);
 // The COUNT is not the rule — Nuno added a second one at the opposite north
 // corner, and there is no reason a board should not have two. The rule is
 // WHERE: buildProps caps a "tall" prop hard anywhere but the north row, so a
 // treehouse placed south or east is silently scaled to 0.55 and there would
 // have been no point building it at this size.
-for (const h of houses) {
+// AND THE TWO LAYERS CAP DIFFERENTLY, which is the second half of what this
+// assertion got wrong. buildProps caps a "tall" APRON prop on the south row
+// and on both east/west columns, leaving only the north row free; buildVerge
+// caps only the SOUTH, because the sightline sweep proved north, east and
+// west cannot occlude the maze at any height out there — their shadow travels
+// away from the board. So "somewhere it is not silently scaled to 0.55" is a
+// different tile set per layer, and asserting the apron's answer against a
+// verge placement is how this went red without anything being wrong.
+for (const { p, layer } of houses) {
+  const [tx, ty] = p.tile;
+  const uncapped =
+    layer === "apron"
+      ? ty === -1
+      : ty <= ROWS;
   ok(
-    `…on the north apron row, where a tall prop is not scale-capped (${h.tile})`,
-    h.tile[1] === -1,
+    `…on ${layer} ground where a tall prop is not scale-capped (${p.tile})`,
+    uncapped,
+    `tx=${tx} ty=${ty}`,
   );
 }
-// IDEA-060 v3. The wall tops used to carry 29 flower props; they went when the
-// wall TEXTURE became a flowering hedge, because two flowering layers on one
-// surface is one too many. The defs stay in the library — this was a placement
-// decision, not a deletion.
+// IDEA-060 v3. The wall tops used to carry 29 STEMMED flower props; they went
+// when the wall TEXTURE became a flowering hedge, because two flowering layers
+// on one surface is one too many. The defs stay in the library — this was a
+// placement decision, not a deletion.
+//
+// IT MUST TEST THE STEM, NOT THE NAME. The original check was
+// `startsWith("flower-")`, which was exact when written and became wrong the
+// moment IDEA-065 split the five flowers in two and named the stemless halves
+// `flower-head-*` — props created SPECIFICALLY for wall tops, on Nuno's own
+// observation that a stemmed flower reads wrong on a hedge crown because its
+// stem has nothing to come out of. So the prefix matched exactly the props the
+// rule was changed to allow, and the suite went red the first time anyone
+// planted one. The rule is about the STEM: `flower-daisy` is out, `flower-head-
+// daisy` is in.
+const STEMMED_FLOWERS = PROP_LIBRARY.filter((p) => p.shape === "flower").map((p) => p.id);
 ok(
-  "no flower props stand on the wall tops any more",
-  !garden.wallDecor.some((p) => p.propId.startsWith("flower-")),
+  "no STEMMED flower props stand on the wall tops (a stem needs soil)",
+  !garden.wallDecor.some((p) => STEMMED_FLOWERS.includes(p.propId)),
+);
+ok(
+  "…and every wall-top prop is a shape WALL_TOP_SHAPES actually allows",
+  garden.wallDecor.every((p) => WALL_TOP_SHAPES.includes(getPropDef(p.propId).shape)),
 );
 ok(
   "…but all five flowers are still in the library, buildable",
@@ -419,7 +457,18 @@ ok(
 // ~40 density bloom spheres, which is the opposite of what taking the flowers
 // off was for. The birdhouses are what hold the branch.
 ok("the garden's wallDecor is not EMPTY", garden.wallDecor.length > 0);
-ok("…and it is the birdhouses holding it", garden.wallDecor.every((p) => p.propId === "birdhouse"));
+// IDEA-066: this used to assert EVERY entry was a birdhouse, and the shipped
+// data stopped satisfying it the moment Nuno hand-placed two blooms in the
+// editor (174eded) -- so `npm run test` was red before this branch started.
+// The over-specification was the bug: the rule the comment above states is
+// that the BRANCH must be held, and a hand-placed bloom holds it exactly as
+// well as a birdhouse. What is worth pinning is that the garden still carries
+// its signature wall-top piece; that every entry is a legal wall-top shape is
+// already asserted further down, against WALL_TOP_SHAPES.
+ok(
+  "…and the garden still carries its signature birdhouses",
+  garden.wallDecor.some((p) => p.propId === "birdhouse"),
+);
 ok("the garden still has density blooms available as a palette fallback",
    garden.palette.bloomColors.length > 0 && garden.palette.bloomChance > 0,
    "so the swap above is real, not theoretical");

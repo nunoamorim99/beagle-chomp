@@ -61,6 +61,58 @@ if (ifaceMatch) {
 }
 
 // ---------------------------------------------------------------------------
+// IDEA-066. The guard above covers ThemePalette's keys and NOTHING ELSE, so
+// MazeTheme's own top-level fields were never checked -- and one of them was
+// genuinely missing. `secret` is declared on MazeTheme, only Arcade Night
+// carries it, and `formatThemeEntry` did not emit it: opening the tribute board
+// in the Board tab, nudging one slider and saving DELETED `secret: true` from
+// themes.ts. `visibleMazeThemes` would then list the Pac-Beagle's board in every
+// player's shop at price 0, making the coat's advertised unlock meaningless --
+// silently, with no test failing. Optional fields are included deliberately:
+// `secret?:` is exactly the one that broke.
+section("Every MazeTheme field survives a save");
+
+const themeIfaceMatch = /export interface MazeTheme \{([\s\S]*?)\n\}/.exec(themesSrc);
+ok("MazeTheme is declared in themes.ts", themeIfaceMatch !== null);
+
+if (themeIfaceMatch) {
+  const keys = themeIfaceMatch[1]
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0 && !l.startsWith("//") && !l.startsWith("*") && !l.startsWith("/*"))
+    .map((l) => /^([A-Za-z_][A-Za-z0-9_]*)\??\s*:/.exec(l)?.[1])
+    .filter((k): k is string => Boolean(k));
+
+  ok("found MazeTheme's fields", keys.length >= 7, "got " + keys.length);
+  for (const k of keys) {
+    ok(
+      "boardCodegen writes " + k,
+      new RegExp("\\b" + k + ":").test(codegenSrc),
+      "add `" + k + "` to formatThemeEntry, or saved themes will drop it",
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// IDEA-066. Fog is per-theme now, and two bounds are worth pinning. They are
+// deliberately loose rails, not taste: the LOOK is tuned by eye against a
+// render sheet, but a theme whose fog swallows the maze or whose far plane is
+// past the world's own edge is wrong at any taste.
+section("Every theme's fog is sane");
+
+for (const t of MAZE_THEMES) {
+  const p = t.palette;
+  ok(`${t.id}: fogNear < fogFar`, p.fogNear < p.fogFar, `${p.fogNear} / ${p.fogFar}`);
+  // The board's far corner sits ~38.2 units from the base camera and the near
+  // edge ~27.3. A fogNear below 27 starts hazing the play area itself.
+  ok(`${t.id}: fog does not reach into the play area`, p.fogNear >= 24, `fogNear ${p.fogNear}`);
+  // SURROUND_PARAMS reaches |x| 50 / z -50, so the far corner of the ground is
+  // ~90 units out on a desktop. A far plane past ~160 would render the world's
+  // own edge crisply instead of letting it fade.
+  ok(`${t.id}: fog still hides the world's edge`, p.fogFar <= 160, `fogFar ${p.fogFar}`);
+}
+
+// ---------------------------------------------------------------------------
 section("Every theme names a real surface");
 
 // Kept in step with the two unions by reading them out of the render modules —
