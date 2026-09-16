@@ -176,6 +176,20 @@ async function main(): Promise<void> {
   const noticeSub = await hostileCard.locator(".news-sub").innerText();
   ok("a notice shows no version separator", !noticeSub.includes("·"), noticeSub);
 
+  // --- the invitation, when there is nothing to offer ----------------------
+  section("The invitation is silent on a browser that has blocked push");
+
+  // FREE, because headless Chromium reports `Notification.permission` as
+  // "denied" whatever the context grants — so this page IS the blocked-browser
+  // case, with no stubbing at all. The rule: a permission that is denied can
+  // only be reset in browser settings, so a banner about it on every visit is
+  // nagging rather than inviting. The account screen still says why.
+  ok(
+    "no invitation card on a blocked browser",
+    await page.locator("#news .news-invite").isHidden(),
+    await page.locator("#news .news-invite").innerText().catch(() => "(absent)"),
+  );
+
   // --- the detail sheet -----------------------------------------------------
   section("A card opens the full note");
 
@@ -299,6 +313,219 @@ async function main(): Promise<void> {
     method: "DELETE",
     headers: { Authorization: `Bearer ${adminToken}` },
   });
+
+  // --- the invitation (IDEA-074) -------------------------------------------
+  //
+  // The screen where a push LANDS (push-sw.js opens `/?news=1`) was the one
+  // place in the game that never mentioned notifications: the only switch is
+  // three taps away in the account screen, so the feature's whole audience was
+  // "people who went looking for it".
+  //
+  // TWO THINGS ARE STUBBED, and only these two. Headless Chromium reports
+  // `Notification.permission` as "denied" whatever the context grants, which is
+  // the one state that correctly shows NO card (asserted above on the real
+  // page) — so the positive cases need a browser that behaves like a phone.
+  // And a device cannot really be subscribed here: there is no push service to
+  // reach, and `subscribe()` fails with a message that reads like a permission
+  // error even when permission was just granted (see push.ts). `getSubscription`
+  // answering non-null IS what "this device is on" means to `isSubscribed()`.
+  // ONE extra context, not two: this app pulls the whole three.js graph and
+  // stands up a WebGL scene on every load, which on the dev server is 10-15
+  // seconds and slower again with a second browser already running. The
+  // subscribed/not-subscribed switch is therefore a QUERY FLAG the init script
+  // reads, so each case costs exactly one page load.
+  const phoneCtx = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    reducedMotion: "reduce",
+  });
+  await phoneCtx.addInitScript((t) => localStorage.setItem("beagle-chomp:token", t), token);
+  // PASSED AS A STRING, not as a function, and that is not a style choice.
+  // This suite runs under tsx, whose esbuild transform wraps named function
+  // expressions in `__name(...)` for keepNames — including an arrow that picks
+  // up its name from an object property, which `get: () => …` does. Playwright
+  // serialises the function source and evaluates it in the PAGE, where
+  // `__name` does not exist: the whole init script dies with
+  // "ReferenceError: __name is not defined", every stub silently fails to
+  // apply, and the browser's real (denied) state is what the app sees. It
+  // looks exactly like the feature not working.
+  await phoneCtx.addInitScript({
+    content: `
+      Object.defineProperty(Notification, "permission", {
+        configurable: true,
+        get: function () { return "default"; },
+      });
+      Object.defineProperty(Notification, "requestPermission", {
+        configurable: true,
+        value: function () { return Promise.resolve("granted"); },
+      });
+      Object.defineProperty(PushManager.prototype, "getSubscription", {
+        configurable: true,
+        // Off the URL rather than out of storage, so switching case is ONE
+        // page load: an init script runs before the app, so no reload is
+        // needed to make the flag take effect.
+        value: function () {
+          return Promise.resolve(
+            new URLSearchParams(location.search).get("__sub") === "1"
+              ? { endpoint: "https://example.invalid/stub" }
+              : null,
+          );
+        },
+      });
+    `,
+  });
+  const phone = await phoneCtx.newPage();
+
+  const openNews = async (subscribed: boolean): Promise<void> => {
+    // `domcontentloaded`, not `networkidle`: the readiness signal that matters
+    // is the menu being on screen, and waiting for the network to go quiet on
+    // a Vite dev server serving several hundred modules is a 30-second gamble
+    // that says nothing extra. The selector wait below is the real one.
+    await phone.goto(`${BASE}?__sub=${subscribed ? 1 : 0}`, {
+      waitUntil: "domcontentloaded",
+      timeout: 60_000,
+    });
+    await phone.waitForSelector("#menuNewsBtn", { timeout: 45_000 });
+    await phone.waitForTimeout(900);
+    await phone.locator("#menuNewsBtn").click();
+    await phone.waitForTimeout(1400);
+  };
+
+  section("The invitation, on a device that could be subscribed and is not");
+
+  await openNews(false);
+  const offPage = phone;
+  const invite = offPage.locator("#news .news-invite");
+  ok("the card is showing", await invite.isVisible());
+
+  const inviteText = (await invite.innerText()).replace(/\s+/g, " ");
+  ok("…and says what turning them on buys you", /leaderboard/i.test(inviteText), inviteText);
+
+  const cta = invite.locator("button");
+  ok("…and carries a button that can act", (await cta.count()) === 1);
+  // §04: amber marks the SINGLE next action on a screen, and this screen's is
+  // the Back button. Two amber things means one of them is wrong.
+  const ctaClass = (await cta.getAttribute("class")) ?? "";
+  ok("…which is the confirm green, not amber", ctaClass.includes("btn-confirm"), ctaClass);
+  const ctaBox = await cta.boundingBox();
+  ok(
+    "…and is a 44px target inside a 390px screen",
+    !!ctaBox && ctaBox.height >= 44 && ctaBox.x >= -1 && ctaBox.x + ctaBox.width <= 391,
+    JSON.stringify(ctaBox),
+  );
+
+  // A stale font subset renders a ligature as its own NAME — the card would
+  // read "notifications Turn them on" across the whole width.
+  const inviteGlyphW = await invite
+    .locator(".news-mark--invite i.bc-i")
+    .evaluate((el) => (el as HTMLElement).offsetWidth);
+  ok("…and its bell is a GLYPH, not the word", inviteGlyphW > 0 && inviteGlyphW <= 40, `${inviteGlyphW}px`);
+
+  // ABOVE the list and OUTSIDE it. The list is the scroller; an invitation
+  // inside it is one most players never scroll to.
+  ok(
+    "the card is not inside the scrolling list",
+    (await offPage.locator("#news .news-list .news-invite").count()) === 0,
+  );
+  const inviteBox = await invite.boundingBox();
+  const listBox = await offPage.locator("#news .news-list").boundingBox();
+  ok(
+    "…and sits above it",
+    !!inviteBox && !!listBox && inviteBox.y + inviteBox.height <= listBox.y + 1,
+    JSON.stringify({ inviteBox, listBox }),
+  );
+
+  section("The card grows an Install step when the browser offers one");
+
+  // A browser decides when a site is installable and fires
+  // `beforeinstallprompt` whenever it likes — usually long after boot, and
+  // here never, since headless Chromium does not offer installs. Dispatching
+  // the real event is how test-menu-ui.ts drives the banner too, and it
+  // exercises install.ts rather than a hand-built copy of it.
+  ok("only one step before the offer arrives", (await invite.locator("button").count()) === 1);
+
+  await offPage.evaluate(() => {
+    const e = new Event("beforeinstallprompt") as Event & {
+      prompt?: () => Promise<void>;
+      userChoice?: Promise<unknown>;
+    };
+    e.prompt = () => Promise.resolve();
+    e.userChoice = Promise.resolve({ outcome: "dismissed", platform: "web" });
+    window.dispatchEvent(e);
+  });
+  await offPage.waitForTimeout(900);
+
+  // IDEA-074 v2's point: the card repaints itself when the offer arrives,
+  // rather than waiting for the player to close and reopen the screen.
+  ok("…two steps once it does", (await invite.locator(".news-invite-step").count()) === 2);
+  const installBtn = invite.locator(".news-invite-step", { hasText: "Install the app" }).locator("button");
+  ok("…with an Install button", (await installBtn.count()) === 1);
+  const notifyBtn = invite
+    .locator(".news-invite-step", { hasText: "Turn on notifications" })
+    .locator("button");
+  ok("…and the notifications one still there", (await notifyBtn.count()) === 1);
+  // Exactly one of the two is the card's reason. Two greens side by side would
+  // flatten them into one choice; amber is not available at all (§04 — the
+  // screen's single amber action is Back).
+  const classes = await invite.locator("button").evaluateAll((els) =>
+    els.map((e) => (e as HTMLElement).className),
+  );
+  ok(
+    "…one green, one wood — never two of either",
+    classes.filter((c) => c.includes("btn-confirm")).length === 1 &&
+      classes.filter((c) => c.includes("btn-secondary")).length === 1,
+    classes.join(" | "),
+  );
+
+  // The step says what installing actually buys. It claimed "offline play"
+  // elsewhere in this codebase until v5.2, which stopped being true at v5.0
+  // when sign-in before play made the game online-only.
+  const installCopy = await invite
+    .locator(".news-invite-step", { hasText: "Install the app" })
+    .locator(".news-invite-copy")
+    .innerText();
+  ok("…and does not promise offline play", !/offline/i.test(installCopy), installCopy);
+
+  // WHERE, not just whether: a player who later wants them OFF needs an
+  // address, or they block the site at the browser level instead.
+  const note = await invite.locator(".news-invite-note").innerText();
+  ok("the card says where to change this later", /account/i.test(note), note);
+
+  // A browser hands out ONE usable beforeinstallprompt — `prompt()` cannot be
+  // replayed — so pressing Install spends it and the row must go. A row left
+  // behind is a button that silently does nothing from then on.
+  await installBtn.click();
+  await offPage.waitForTimeout(900);
+  ok("pressing Install spends the offer", (await installBtn.count()) === 0);
+  ok("…and the notifications step survives it", (await notifyBtn.count()) === 1);
+
+  // A subscribe that cannot complete — which is every subscribe in here, since
+  // there is no push service to reach — must say so IN PLACE rather than
+  // vanishing or going quiet. Vanishing on failure would look exactly like
+  // success, which is the worst available outcome for this card.
+  const beforeText = (await invite.innerText()).replace(/\s+/g, " ");
+  await notifyBtn.click();
+  await offPage.waitForTimeout(2500);
+  ok("a failed attempt leaves the card up", await invite.isVisible());
+  const afterText = (await invite.innerText()).replace(/\s+/g, " ");
+  ok("…and says something went wrong", afterText !== beforeText, afterText);
+  ok("…with the button pressable again", await notifyBtn.isEnabled());
+
+  section("The invitation disappears once this device is subscribed");
+
+  // Nuno's ask, literally: "when active this message disappears from the
+  // notification screen".
+  await openNews(true);
+  const onPage = phone;
+  ok("the news screen still opens", await onPage.locator("#news .news-sheet").isVisible());
+  ok(
+    "…and the invitation is gone",
+    await onPage.locator("#news .news-invite").isHidden(),
+    await onPage.locator("#news .news-invite").innerText().catch(() => "(absent)"),
+  );
+  // It must be the CARD that went, not the screen — a bug that hid the sheet
+  // would pass a naive "the card is not visible" check.
+  ok("…while the notes are still listed", (await onPage.locator("#news .news-card").count()) > 0);
+  await phoneCtx.close();
 
   ok("no page errors throughout", errors.length === 0, errors.join(" | "));
 

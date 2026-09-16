@@ -40,6 +40,87 @@ export function isIOSSafari(): boolean {
   return isIOS && !isOtherBrowser;
 }
 
+// ---------------------------------------------------------------------------
+// THE SHARED INSTALL STATE (IDEA-074 v2)
+//
+// The stashed `beforeinstallprompt` event used to live inside
+// `initInstallPrompt`'s closure, which was right while the top banner was the
+// only thing offering an install. The News screen now offers it too, and a
+// browser hands out ONE usable event: `prompt()` may be called once, and after
+// that the event is spent. So the event lives HERE, at module scope, with one
+// function that consumes it — anything else means two buttons racing for one
+// event and whichever loses does nothing at all, silently.
+//
+// It is module state rather than a parameter for the ordering reason: the
+// event fires whenever the browser decides the site is installable, which is
+// usually long before the player opens the News screen. Something has to be
+// listening from boot, and that is `initInstallPrompt()` at main.ts's top
+// level.
+// ---------------------------------------------------------------------------
+
+let deferredPrompt: BeforeInstallPromptEvent | null = null;
+const installListeners = new Set<() => void>();
+
+function notifyInstallChange(): void {
+  for (const fn of installListeners) {
+    try {
+      fn();
+    } catch {
+      /* a listener's own failure must not stop the others */
+    }
+  }
+}
+
+/** What, if anything, this browser can be offered right now.
+ *
+ *  - `installed`  — running standalone; there is nothing to offer.
+ *  - `prompt`     — Chromium stashed an event and we can raise the real dialog.
+ *  - `ios-steps`  — iOS Safari, which has no install API at all: the only path
+ *                   is Share → Add to Home Screen, so all we can do is say so.
+ *                   It is also a PREREQUISITE there — iOS refuses push until
+ *                   the app is installed (push.ts rule 2).
+ *  - `none`       — no install path worth mentioning (a desktop browser that
+ *                   has not offered one, or one already dismissed this visit).
+ */
+export type InstallOffer = "installed" | "prompt" | "ios-steps" | "none";
+
+export function installOffer(): InstallOffer {
+  if (isStandalone()) return "installed";
+  if (deferredPrompt) return "prompt";
+  if (isIOSSafari()) return "ios-steps";
+  return "none";
+}
+
+/**
+ * Raise the browser's own install dialog. The stashed event is consumed
+ * whatever the player answers — it cannot be replayed — so the offer drops
+ * back to `none` and every listener is told. Chromium fires a fresh
+ * `beforeinstallprompt` on a later visit if the site is still installable.
+ */
+export async function promptInstall(): Promise<"accepted" | "dismissed" | "unavailable"> {
+  const prompt = deferredPrompt;
+  if (!prompt) return "unavailable";
+  deferredPrompt = null;
+  notifyInstallChange();
+  try {
+    await prompt.prompt();
+    const { outcome } = await prompt.userChoice;
+    return outcome;
+  } catch {
+    // Chromium throws if the event has already been used or the page lost its
+    // activation. Nothing to tell the player that they cannot see for
+    // themselves — the dialog either appeared or it did not.
+    return "dismissed";
+  }
+}
+
+/** Run `fn` whenever the offer above may have changed (an event arrived, was
+ *  spent, or the app was installed). Returns an unsubscribe. */
+export function onInstallChange(fn: () => void): () => void {
+  installListeners.add(fn);
+  return () => installListeners.delete(fn);
+}
+
 function buildBanner(message: string, buttonLabel: string | null): {
   el: HTMLDivElement;
   button: HTMLButtonElement | null;
@@ -79,7 +160,6 @@ function buildBanner(message: string, buttonLabel: string | null): {
 export function initInstallPrompt(): void {
   if (isStandalone()) return; // already installed — never nag
 
-  let deferredPrompt: BeforeInstallPromptEvent | null = null;
   let banner: ReturnType<typeof buildBanner> | null = null;
 
   function teardown(): void {
@@ -98,20 +178,22 @@ export function initInstallPrompt(): void {
     // with no browser chrome — which is what the manifest's display:standalone
     // delivers.
     banner = buildBanner("Install Beagle Chomp for full-screen play", "Install");
+    // The BANNER no longer owns the prompt — `promptInstall()` does, because the
+    // News screen offers the same install and a browser only ever hands out one
+    // usable `beforeinstallprompt` event. Two owners means one of them holds a
+    // spent event and its button does nothing.
     banner.button?.addEventListener("click", () => {
-      const prompt = deferredPrompt;
-      if (!prompt) return;
-      deferredPrompt = null;
       teardown();
-      void prompt.prompt();
-      void prompt.userChoice.then(() => { /* no-op: banner already dismissed */ });
+      void promptInstall();
     });
     banner.dismiss.addEventListener("click", teardown);
+    notifyInstallChange();
   });
 
   window.addEventListener("appinstalled", () => {
     deferredPrompt = null;
     teardown();
+    notifyInstallChange();
   });
 
   // iOS Safari has no beforeinstallprompt at all; offer the manual-steps hint

@@ -15,8 +15,12 @@
 
 import {
   whoWasOvertaken,
+  whoToNudge,
   rankAlertBody,
+  BOARD_NUDGE_TITLE,
+  BOARD_NUDGE_BODY,
   type BoardEntry,
+  type NudgeCandidate,
   type Runner,
 } from "../src/notifications/rankAlert.js";
 
@@ -216,6 +220,125 @@ section("the message");
   ok("…and where they are now", body.includes("#2"), body);
   // Every platform truncates, and iOS gives no actions/image/badge to lean on.
   ok("…in one short line", body.length <= 90 && !body.includes("\n"), `${body.length} chars`);
+}
+
+// ---------------------------------------------------------------------------
+// THE GENERIC NUDGE (IDEA-074)
+//
+// Same principle as everything above: the interesting cases are the refusals.
+// This one goes to EVERYBODY rather than to a handful, so a bug here is not one
+// person told something untrue — it is the whole player base pushed twice about
+// one run, which is the fastest way to lose the channel for good.
+
+const NUDGE_OPTS = { cooldownHours: 12, maxRecipients: 100, now: NOW };
+
+/** A nudge candidate. `nudgedMinsAgo` omitted means never nudged. */
+function cand(
+  userId: string,
+  over: Partial<NudgeCandidate> & { nudgedMinsAgo?: number } = {},
+): NudgeCandidate {
+  const { nudgedMinsAgo, ...rest } = over;
+  return {
+    userId,
+    notifyRank: true,
+    hasPlayed: true,
+    lastNudgeAt:
+      nudgedMinsAgo === undefined ? null : new Date(NOW.getTime() - nudgedMinsAgo * 60_000),
+    ...rest,
+  };
+}
+
+section("the nudge: who is left out");
+
+{
+  const pool = [cand("runner"), cand("a"), cand("b"), cand("c")];
+  const out = whoToNudge("runner", [], pool, NUDGE_OPTS);
+  ok("the runner is never told about their own run", !out.includes("runner"), out.join(","));
+  ok("…everyone else is", out.length === 3, out.join(","));
+}
+
+{
+  // The one that matters most: a player already getting "you've been overtaken"
+  // must not also get "someone broke their record". Two pushes, one run.
+  const pool = [cand("a"), cand("b"), cand("c")];
+  const out = whoToNudge("runner", ["b"], pool, NUDGE_OPTS);
+  ok("nobody gets BOTH messages for one run", out.join(",") === "a,c", out.join(","));
+}
+
+{
+  ok(
+    "a player who turned board alerts off is never nudged",
+    whoToNudge("runner", [], [cand("a", { notifyRank: false })], NUDGE_OPTS).length === 0,
+  );
+  // "Can you do better?" is meaningless to somebody with no record of their own,
+  // and a signed-up-never-played account is exactly who would mute us for it.
+  ok(
+    "a player who has never finished a run is never nudged",
+    whoToNudge("runner", [], [cand("a", { hasPlayed: false })], NUDGE_OPTS).length === 0,
+  );
+}
+
+section("the nudge: the cooldown and the cap");
+
+{
+  const pool = [
+    cand("fresh", { nudgedMinsAgo: 60 }), // 1h ago — inside a 12h cooldown
+    cand("stale", { nudgedMinsAgo: 13 * 60 }), // 13h ago — due again
+    cand("never"),
+  ];
+  const out = whoToNudge("runner", [], pool, NUDGE_OPTS);
+  ok("a recent nudge silences this one", !out.includes("fresh"), out.join(","));
+  ok("…and an old one does not", out.includes("stale") && out.includes("never"), out.join(","));
+  // Exactly on the boundary counts as elapsed, so a 12h cooldown does not
+  // quietly become "12h and a bit" through a >= / > slip.
+  ok(
+    "the boundary is inclusive",
+    whoToNudge("runner", [], [cand("a", { nudgedMinsAgo: 12 * 60 })], NUDGE_OPTS).length === 1,
+  );
+  ok(
+    "a zero cooldown nudges someone told a minute ago",
+    whoToNudge("runner", [], [cand("a", { nudgedMinsAgo: 1 })], {
+      ...NUDGE_OPTS,
+      cooldownHours: 0,
+    }).length === 1,
+  );
+}
+
+{
+  // When the cap bites, the people kept are the ones who have gone LONGEST
+  // without hearing from the board — so a capped fan-out rotates through the
+  // player base instead of hitting the same rows every time.
+  const pool = [
+    cand("recent", { nudgedMinsAgo: 13 * 60 }),
+    cand("older", { nudgedMinsAgo: 40 * 60 }),
+    cand("never"),
+  ];
+  const out = whoToNudge("runner", [], pool, { ...NUDGE_OPTS, maxRecipients: 2 });
+  ok("the cap keeps the longest-waiting first", out.join(",") === "never,older", out.join(","));
+  ok(
+    "maxRecipients 0 turns the whole thing off",
+    whoToNudge("runner", [], pool, { ...NUDGE_OPTS, maxRecipients: 0 }).length === 0,
+  );
+  ok("nobody eligible means nobody sent", whoToNudge("runner", [], [], NUDGE_OPTS).length === 0);
+}
+
+section("the nudge: the message");
+
+{
+  // It goes to everyone who plays, most of whom are nowhere near whoever just
+  // moved — so it must not name them, name their score, or imply the reader was
+  // passed. Those are `rankAlertBody`'s job, on a much smaller list.
+  const body = BOARD_NUDGE_BODY;
+  ok("says nothing about the reader's own rank", !/#\d/.test(body), body);
+  ok("…in one short line", body.length <= 90 && !body.includes("\n"), `${body.length} chars`);
+  // Length rather than `!== ""`: both are `const` string LITERAL types here, so
+  // TS resolves that comparison at compile time and errors on it.
+  ok(
+    "…with a title of its own",
+    BOARD_NUDGE_TITLE.length > 0 && BOARD_NUDGE_TITLE.length <= 40,
+    BOARD_NUDGE_TITLE,
+  );
+  ok("…and is an invitation, not a claim", body.includes("?"), body);
 }
 
 console.log(`\n${"-".repeat(60)}`);

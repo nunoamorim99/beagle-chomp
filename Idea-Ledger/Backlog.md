@@ -28,7 +28,7 @@ Living backlog of ideas. Two purposes:
   header now carries the before-table.
 
 ## Backlog (open ideas)
-> New registered ideas go here. Next free ID: IDEA-073
+> New registered ideas go here. Next free ID: IDEA-075
 > (054 went to the crab and 055 to the mosquito — built in parallel by two sessions, which is
 > why the ids were split up front rather than both taking the next free one. 056 and 057 are the
 > sushi pair, registered together because neither is buildable without the other as its
@@ -40,7 +40,9 @@ Living backlog of ideas. Two purposes:
 > the original eight twists. 064 gives every beagle a power and turns the shop's "skins" into
 > BEAGLES, which is what makes room for real cosmetic skins — pirate, football kit — later.
 > 065 turns the img2threejs pipeline on the BOARD for the second time — the Deep Forest, after
-> IDEA-060's garden.)
+> IDEA-060's garden. 074 is the other half of 052b: the News screen finally ASKS for the
+> notification, and a personal best tells everyone who plays rather than only the handful it
+> passed.)
 
 ### IDEA-028 — Challenge twist: moving walls / maze changes mid-level 💡
 - **Priority:** 🟢
@@ -1618,6 +1620,259 @@ Living backlog of ideas. Two purposes:
 
 ## Delivered ✅
 > Already in production. Do NOT delete. Each keeps its version history.
+
+### IDEA-074 — Ask for the notification, and tell everyone the board moved ✅
+- **Priority:** 🟡
+- **Area:** ux · backend
+- **Registered:** 2026-09-15
+- **Delivered:** 2026-09-15.
+- **Description:** Nuno: *"on the notification screen we should add some message to
+  incentivate the user to active the notification of the game… and then when active this
+  message desappear from the notification screen. Beside that I know I request to send a
+  notification to the player when the score is beated, lets keep that, that is cool, but
+  for the other players that have at least one run lets send a generic message like
+  'Looks like someone break their record, lets make better'."*
+- **Notes:** two halves of the same complaint — [[IDEA-052]]b built the channel and then
+  barely used it. The **client** half: the News screen is where a push LANDS (push-sw.js
+  opens `/?news=1`) and it was the one screen in the game that never mentioned
+  notifications, while the only switch sat three taps into the account screen under a
+  heading most players never open. The **server** half: a new personal best only ever
+  produced the "you've been overtaken" alert, which by design reaches the handful of
+  top-N players a run actually passed — so the board only spoke to the people already on
+  top of it. Everyone else heard nothing, ever.
+- **Dependencies:** [[IDEA-052]], [[IDEA-020]]
+- **History:**
+  - **v1** (2026-09-15) — **an invitation on the News screen, and a generic nudge for
+    everyone who plays.**
+    The card sits between the header and the list (never inside the scroller — an
+    invitation that scrolls away is one most players never see), carries the bell, one
+    line about what it buys you, and a green "Turn them on". **It is not dismissible on
+    purpose**: turning them on is its only exit, which is exactly the ask. It shows
+    NOTHING where there is nothing to offer — a browser that cannot do push, or one where
+    the player has already blocked it at the OS level, gets no card at all, because a
+    denied permission can only be reset in browser settings and a banner about it every
+    visit is nagging rather than inviting. iOS before the Home Screen install is the
+    exception, and gets the instruction with no button. On success the card says so for
+    one render before going for good — vanishing AS the result of a press reads as the
+    press having failed. Green rather than amber because §04 reserves amber for the one
+    next action on a screen and this screen's is Back.
+    The **nudge** is `whoToNudge` in `notifications/rankAlert.ts` — pure, beside
+    `whoWasOvertaken`, and bounded in four ways that all live there rather than in SQL so
+    they are testable with no database: the runner is never told about their own run,
+    **nobody who is getting the specific alert gets the generic one too** (two pushes about
+    one run is how you lose the channel), a player who has never finished a run is never
+    nudged ("can you do better?" means nothing to someone with no record), and it is one
+    per player per cooldown with a hard cap on the fan-out. When the cap bites it keeps
+    the players who have gone LONGEST without hearing from the board, so a capped fan-out
+    rotates through the player base instead of hitting the same rows every time. The body
+    names nobody and no score: it goes to everyone who plays, most of whom are nowhere
+    near whoever just moved, and "Dave is on 4,200" told to a player whose best is 900 is
+    a reason to stop rather than to start.
+    **Its cooldown is its OWN column** (`users.last_board_nudge_at`, migration 013) and
+    that is the one design decision worth the migration. Sharing `last_rank_alert_at` was
+    cheaper and wrong: a generic nudge at 20:05 would silence the 20:30 message telling a
+    player they had actually been passed — the valuable message suppressed by the cheap
+    one, and only for the players near the top, who are precisely who the specific alert
+    exists for. Two columns also let the two cooldowns differ, which they should (12h
+    against 6h, since every accepted personal best anywhere fires a nudge). The two
+    fan-outs are CHAINED rather than both fired off, so `sendToAll`'s concurrency ceiling
+    — sized for a 384 MB container holding one fan-out's worth of TLS sessions — keeps
+    meaning what it says.
+    **Three defects found on the way, two of them live.** `.news-invite{display:flex}`
+    beats the UA's `[hidden]{display:none}` and this project has no `[hidden]` rule of its
+    own, so the first build rendered a 362x34 empty board at the top of the screen —
+    visible, carrying nothing; the `.hidden` CLASS is what the rest of the UI uses and is
+    `!important`. `isSubscribed()` awaited `navigator.serviceWorker.ready`, which does not
+    reject when there is no worker — it never settles at all — so on a device whose worker
+    had been unregistered (this project's own stale-shell recovery does exactly that,
+    taking the subscription with it) the account screen sat on "Checking…" forever and the
+    new card would have been hidden forever, on precisely the device that had just lost
+    its subscription; it is bounded now. And the account screen's switch still read "When
+    someone beats your score" while now carrying both kinds — a control that does more
+    than it claims.
+    **And a trap worth writing down: a Playwright `addInitScript` FUNCTION does not
+    survive tsx.** esbuild's keepNames wraps a named function expression in `__name(…)` —
+    including an arrow that takes its name from an object property, which `get: () => …`
+    does — and Playwright serialises the source into the PAGE, where `__name` does not
+    exist. The whole init script dies with one ReferenceError, every stub silently fails
+    to apply, and the browser's real state is what the app sees: it looks exactly like the
+    feature not working. Pass `{ content: "…" }`.
+    Verified: 43 pure rank-alert checks (16 new), the full server suite (486), the full
+    game suite (0 failures), **50/50 `npm run test:news-ui` against the live stack** —
+    which drives the real card in all three states, including a failed subscribe leaving
+    the card up and saying why — plus typecheck and a 390x844 screenshot.
+    `src/ui/news.ts`, `src/ui/push.ts`, `src/ui/profile.ts`, `src/style.css`,
+    `server/migrations/013_board_nudge.sql` (new), `server/src/notifications/rankAlert.ts`,
+    `server/src/repo/pushSubscriptions.ts`, `server/src/repo/types.ts`,
+    `server/src/services/pushService.ts`, `server/src/services/scoreService.ts`,
+    `server/src/env.ts`, `server/src/index.ts`, `server/scripts/test-rank-alert.ts`,
+    `scripts/test-news-ui.ts`, `CLAUDE.md`.
+
+  - **v2** (2026-09-15) — **the card is a SET-UP card now: install, then
+    notifications** (Nuno: *"add more explicit where to activate the
+    notification and how to install the beagle chomp, like add a button to
+    install the app if not installed"*). Up to two rows, each with its own
+    button, and the card only hides when there is nothing left to offer.
+    **They belong together because on iOS one is the prerequisite of the
+    other**: iPhone and iPad refuse push entirely until the game is on the
+    Home Screen, so v1's card there was offering something the player could
+    not have and did not say what to do about it. On iOS the row is the Share
+    → Add to Home Screen steps with NO button, because Apple exposes no
+    install API and a button that cannot work is worse than none.
+    **The stashed `beforeinstallprompt` moved to module scope in
+    `install.ts`** behind `installOffer()` / `promptInstall()` /
+    `onInstallChange()`, and the top banner now goes through the same
+    function. A browser hands out ONE usable event — `prompt()` may be called
+    once and it is then spent — so two owners means two buttons racing for one
+    event and whichever loses does nothing at all, silently. `onInstallChange`
+    is what lets a card already on screen grow its Install row when the
+    browser decides the site is installable (usually long after boot) instead
+    of waiting for a close-and-reopen; pressing Install makes the row
+    disappear, because the offer is spent whatever the player answered.
+    **Exactly one step is green and it is the card's reason** — notifications
+    whenever they are on offer, install only when it is all there is. The
+    first build keyed that off `steps.length === 1` and produced TWO wood
+    buttons in the two-step case; the suite caught it because it asserts one
+    of each rather than "the button is green". And the footnote now names
+    **Account → Notifications**: "turn them on" with no address leaves a
+    player who later wants them OFF with nowhere to go, which ends in blocking
+    the site at the browser level — the one state nothing in the app can undo.
+    Copy is on a height budget (both steps = 392px of an 844px phone).
+    Verified: `npm run test:news-ui` 59/59 including the install row driven by
+    a real dispatched `beforeinstallprompt`, `npm run test:menu-ui` 54/54 (the
+    banner still behaves), full game suite, build and both typechecks, plus
+    390x844 screenshots of both card shapes.
+    `src/ui/install.ts`, `src/ui/news.ts`, `src/style.css`,
+    `scripts/test-news-ui.ts`, `scripts/_scratch-news-invite.ts` (new),
+    `CLAUDE.md`.
+
+### IDEA-073 — The world has a sound, and you can turn it down ✅
+- **Priority:** 🟡
+- **Area:** audio
+- **Registered:** 2026-09-15
+- **Delivered:** 2026-09-15.
+- **Description:** Nuno: *"lets add music, like a relax ambience music related to
+  each theme. Like the garden we can keep the birds sound we already have but lets
+  put that on the game moment too. Then on the beach theme lets put the sound of the
+  waves. On the deep forest something related to the forest sound. On the city some
+  car sound but relax."* Plus, after the assessment: *"add a new button to silence
+  the beds on the gaming moment and let the one we have to silence the eating
+  biscuits. On the profile account menu add a section to manage the volume."*
+- **Notes:** the assessment that opened this is the useful part, because the answer
+  turns on something easy to get wrong: **there is no "sound API" here that supplies
+  sounds.** `src/ui/sound.ts` is ~870 lines of hand-written Web Audio synthesis and
+  the project ships ZERO audio files — so the question was never "does the API have
+  a waves sample", it was "can we build one", and the four Nuno named are the four
+  best cases synthesis has. Surf IS low-passed noise with a slow swell; wind through
+  leaves IS band-passed noise; and **two of the five were already written and locked
+  to the menu** — `chirp()`/`scheduleBird()` is the garden, and the menu bed's
+  "distant traffic" low-passed to 320 Hz is the city.
+  **AMBIENCE YES, MUSIC NO, AND THAT IS A RECOMMENDATION NOT A LIMIT.** A composed
+  melody would need audio files (~200 KB-1 MB a theme, precached, fetched), which
+  breaks the generated-never-fetched rule this project already got burned by once
+  with the Google Fonts incident. But it is also the wrong thing: in a chase game a
+  melody loops and grates inside three minutes where a texture never does. Beds only.
+  **ARCADE NIGHT GETS SILENCE** (Nuno's call) — it is the neon tribute board with a
+  deliberately empty void, and `palette.surround: "none"` already says so.
+- **Dependencies:** [[IDEA-048]] (the `sound.ui` layer and its bus/duck machinery).
+  - **v1** (2026-09-15) — five themed ambience beds, two independent mutes and a
+    Sound section in the account screen. **`src/ui/ambience.ts`** is the engine,
+    split out of sound.ts because the two answer different questions: that one
+    owns CUES (short, loud, event-shaped, one per thing that happened), this one
+    owns BEDS (endless, quiet, nothing-shaped, one per PLACE). Garden birds,
+    beach surf, forest rustle with wood pigeons and a rare woodpecker, Night
+    City traffic with passing cars and a distant horn, a breezier park — and
+    **Arcade Night silent**, Nuno's call, the neon tribute board whose
+    `surround` is already `"none"`.
+    **THE ASSESSMENT IS THE PART WORTH KEEPING.** There is no "sound API" here
+    that supplies sounds: sound.ts is ~900 lines of hand-written Web Audio
+    synthesis and the project ships ZERO audio assets, so the question was never
+    "does the API have waves" but "can we build one". The four Nuno named are
+    the four best cases synthesis has — surf, wind and distant traffic are all
+    filtered noise with a slow swell on the cutoff — and **two of the five were
+    already written and nailed to the menu** (`chirp()` was the garden; the menu
+    bed's own low-passed "distant traffic" was the city). A composed MELODY was
+    assessed and declined in both directions: it would need audio files
+    (~200 KB-1 MB a theme, precached, fetched), breaking the
+    generated-never-fetched rule the Google Fonts incident already punished, and
+    it is the wrong thing anyway — a tune loops and grates inside three minutes
+    of a chase where a texture never does.
+    **THE BEDS STAY OUT OF THE CHOMP'S BAND, which is the whole answer to "work
+    the beds to allow use the two sounds and feel good anyway."** `biscuit()` is
+    a 340-520 Hz blip and the most frequent sound in the game, so every bed
+    lives at the EXTREMES — under ~320 Hz and over ~1.2 kHz — leaving the middle
+    to the cues. A frequency split, not a volume fight, and MEASURED:
+    `_scratch-bed-spectrum.ts` renders each bed in an `OfflineAudioContext` and
+    filters it into three bands (0.010-0.027 rms against the chomp's 0.16 peak;
+    the chomp's band at 9-26% of the bed's low). **It found a real leak nothing
+    else would have**: the forest's leaf layer was a bandpass at 1900 Hz —
+    clearly above the chomp — at **Q 0.5**, and a Q that low is broad enough
+    that its lower SKIRT reached into 340-520 Hz. The rule was honoured by the
+    centre frequency and broken by the skirt.
+    **TWO MUTES ARE TWO BUSES.** `master` forks into `sfxBus` (cues, with uiBus
+    under them) and `bedBus`; `setMuted`/`bc_muted` keep their old meaning so no
+    existing caller changed. Volumes persist in `localStorage` and deliberately
+    NOT against the account — volume is a DEVICE preference, and it avoids the
+    migration a per-account column costs ([[IDEA-049]]'s `ControlScheme` note).
+    The bed's gain RAMPS over 60 ms because a dragged slider writes it every
+    input event and stepping a live noise bed is audible as zipper noise.
+    **`MazeTheme.ambience` is REQUIRED** (unlike `secret`/`tunnelArch`): a
+    missing field will not compile, but `"none"` builds perfectly and is silent,
+    so the test asserts exactly one theme is silent, that it is Arcade Night, and
+    that no two themes share a bed. The bed follows **`sceneThemeId`** — what the
+    board WEARS — so a forced challenge theme ([[IDEA-063]]) puts the ears where
+    the eyes are, and `ambience()` no-ops when unchanged, which is load-bearing:
+    classic plays 36 levels on one theme and would otherwise hiccup at every
+    boundary.
+    **FOUR INSTRUMENTS REPORTED FALSE FAILURES**, a rate worth recording. The
+    HUD probe had no control (its "broken" worst case was identical with the new
+    button hidden); the spectrum probe first demanded a HIGH band it had itself
+    documented as unrenderable, then **measured band energy in NOISE with a
+    Goertzel at four discrete frequencies** — right for "is this TONE present",
+    a coin flip for "how much energy is in this band", wandering 3-5x per run
+    until replaced by a real bandpass filter (a 45 s window did not help: the
+    problem was never the averaging time); and a glyph-width check passed at
+    **0px** on an element the auth gate had hidden. Suspect the instrument
+    first, and give every threshold a lower bound as well as an upper one.
+    The icon subset was re-cut to 59 for `graphic_eq` (`npm run test:icon-font`
+    green, all 59 present); the fourth HUD button was measured at five framings
+    and costs nothing (one row everywhere, HUD height unchanged at 134px).
+    `ambience.ts`, `sound.ts`, `icons.ts`, `profile.ts`, `themes.ts`,
+    `game.ts`, `main.ts`, `boardCodegen.ts`, `index.html`, `style.css`,
+    `test-ambience.ts` (35 checks, in `npm run test`), `test-icon-font.ts`,
+    `_scratch-{bed-spectrum,bed-button,hud-band}.ts`.
+  - **v2** (2026-09-15) — the menu goes back to ONE button. Nuno: *"on the main
+    menu we can only have one button because we only have one sound on the
+    menus; on the game yes keep the two buttons."* A RUN has both layers going
+    at once and they compete for the same ears, which is the whole reason v1
+    split them; a menu does not, so two controls there are two switches for one
+    decision.
+    **IT IS A MASTER TOGGLE, AND THAT IS THE ONE JUDGEMENT CALL.** The bed is
+    the only thing you hear CONTINUOUSLY on the menu, so bed-only is the other
+    honest reading of "one sound" — but the interface taps play on that screen
+    too and the menu is the only place this button can be reached before a run
+    starts, so bed-only would strand them behind a slider on the account
+    screen. That is a regression on what this same button did before v1 split
+    the layers. OFF means BOTH off, and pressing it half-muted silences the
+    rest rather than un-muting half: "make it quiet" is what pressing a speaker
+    with a line through it means, and the alternative makes the icon lie about
+    the state it is in.
+    **IT IS `.sound-btn` AND NOT `.mute-btn`**, which is not cosmetic:
+    `attachMuteButton` claims EVERY `.mute-btn` on the page for the effects
+    flag, so leaving that class on the menu button would have silently made it
+    an effects-only control again — the change would have looked done and done
+    nothing.
+    **AND TWO TOGGLES OVER OVERLAPPING STATE NEEDED A SUBSCRIPTION.** Muting
+    effects in the HUD changes what the menu's master button ought to draw.
+    Before the split that was free (one handler drove every `.mute-btn`), so
+    `sound.onStateChange` replaces it and every attached button re-renders on
+    any mute change — otherwise the menu icon is precisely the "two attachments
+    that could disagree about whether sound is off" that `attachToggle`'s own
+    comment warns against. Verified in the real DOM
+    (`_scratch-bed-button.ts`: master silences both, restores both, silences
+    the rest from half-muted, and the menu glyph follows a HUD press).
+    `index.html`, `sound.ts`, `style.css`, `game.ts`, `test-ambience.ts`
+    (38 checks), `_scratch-bed-button.ts`.
 
 ### IDEA-061 — Thirty maps, and a map number that never resets ✅
 - **Priority:** 🔴

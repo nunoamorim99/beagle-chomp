@@ -18,8 +18,24 @@
 // the context is already running, or many times over.
 
 import { ICON, setGlyph } from "./icons";
+import { createAmbience, type AmbienceKind } from "./ambience";
+
+export type { AmbienceKind } from "./ambience";
 
 const MUTE_STORAGE_KEY = "bc_muted";
+/** IDEA-073: the AMBIENCE bed's own mute, independent of the cues above.
+ *  A separate key rather than a shape change to the old one, so an existing
+ *  player's mute preference survives the upgrade untouched. */
+const BED_MUTE_STORAGE_KEY = "bc_bed_muted";
+const SFX_VOL_STORAGE_KEY = "bc_vol_sfx";
+const BED_VOL_STORAGE_KEY = "bc_vol_bed";
+
+/** Defaults for the two volume sliders. The bed sits UNDER the cues by
+ *  default because that is the mix this game wants — see ambience.ts's rule
+ *  about staying out of the chomp's band; the slider is there for a player
+ *  whose taste differs, not to make an unbalanced default usable. */
+const DEFAULT_SFX_VOLUME = 1;
+const DEFAULT_BED_VOLUME = 0.7;
 
 // ---------------------------------------------------------------------------
 // localStorage persistence for the mute *preference* only. This is UI config,
@@ -46,6 +62,49 @@ function writeStoredMuted(muted: boolean): void {
   }
 }
 
+/** IDEA-073. Same contract as the pair above, generalized over a key so the
+ *  bed's mute and the two volumes do not each grow their own copy of the
+ *  try/catch. Every one of these must degrade to "the default, in memory for
+ *  this session" rather than throwing. */
+function readStoredFlag(key: string): boolean {
+  try {
+    return window.localStorage.getItem(key) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeStoredFlag(key: string, on: boolean): void {
+  try {
+    window.localStorage.setItem(key, on ? "1" : "0");
+  } catch {
+    /* see writeStoredMuted */
+  }
+}
+
+/** A 0..1 volume. Anything unparseable, out of range or absent falls back to
+ *  `fallback` — a corrupt storage value must never be able to leave a player
+ *  with a silent game and no obvious reason why. */
+function readStoredVolume(key: string, fallback: number): number {
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (raw === null) return fallback;
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return fallback;
+    return Math.min(1, Math.max(0, n));
+  } catch {
+    return fallback;
+  }
+}
+
+function writeStoredVolume(key: string, value: number): void {
+  try {
+    window.localStorage.setItem(key, String(value));
+  } catch {
+    /* see writeStoredMuted */
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Small synthesis helpers. Every sound is one-shot: create oscillator(s) +
 // gain node(s), schedule a short attack/release envelope so the gain is never
@@ -69,6 +128,10 @@ interface ToneOpts {
   attack?: number;
   /** When to start, in seconds from "now" (ctx.currentTime). */
   delay?: number;
+  /** Which bus to land on. Defaults to the EFFECTS bus; the ambience bed
+   *  passes its own so a bird is silenced by the bed button and not by the
+   *  effects one. */
+  destination?: AudioNode;
 }
 
 export interface Sound {
@@ -91,8 +154,44 @@ export interface Sound {
   death(): void;
   levelClear(): void;
   readyGo(): void;
+  /** EFFECTS mute: the chomp, the death, every interface tap. Keeps its name
+   *  and its `bc_muted` key from before IDEA-073 split the two. */
   setMuted(muted: boolean): void;
   isMuted(): boolean;
+  /** IDEA-073: the AMBIENCE bed's own mute, independent of the above. */
+  setBedMuted(muted: boolean): void;
+  isBedMuted(): boolean;
+  /** 0..1, persisted. The profile screen's two sliders. */
+  setSfxVolume(v: number): void;
+  getSfxVolume(): number;
+  setBedVolume(v: number): void;
+  getBedVolume(): number;
+  /**
+   * IDEA-073: cross-fade to a place's ambience bed.
+   *
+   * Called with the theme the board currently WEARS, which is `sceneThemeId`
+   * and not the equipped theme — a challenge level forces its own, owned or
+   * not, and the ears should be in the same place as the eyes. Re-calling it
+   * with the bed already playing is free, which is what lets startLevel call
+   * it unconditionally.
+   */
+  ambience(kind: AmbienceKind): void;
+  /** What bed is playing. For tests, and for the bed button's label. */
+  currentAmbience(): AmbienceKind;
+  /**
+   * IDEA-073 v2: fires whenever a MUTE flag moves, so every attached button
+   * re-renders.
+   *
+   * It exists because the menu's single button and the HUD's two now overlap:
+   * muting effects in the HUD changes what the menu's master button should be
+   * showing, and before the split that was free (one handler drove every
+   * `.mute-btn` on the page). Two independent toggles over shared state is
+   * exactly the "two attachments that could disagree about whether sound is
+   * off" that attachToggle's own comment warns about — this is what stops it.
+   *
+   * Returns an unsubscribe, so a detached button stops being re-rendered.
+   */
+  onStateChange(fn: () => void): () => void;
   resume(): void;
   /** Design system §10: the INTERFACE sound layer, under the game layer. */
   ui: UiSound;
@@ -135,8 +234,6 @@ export interface UiSound {
   error(): void;
   /** A full-screen page opened or closed, under the hedge wipe. */
   screen(): void;
-  /** Birds and distant traffic under the menu. Silent during a run. */
-  menuBed(on: boolean): void;
   /** Duck the whole interface layer while a run is in progress. */
   setRunActive(active: boolean): void;
 }
@@ -156,8 +253,49 @@ export function createSound(): Sound {
   master.gain.value = 1;
   master.connect(ctx.destination);
 
+  // IDEA-073: master now forks into TWO independently controlled buses, and
+  // that split is the whole feature Nuno asked for —
+  //
+  //    master -> sfxBus -> (game cues, and uiBus under them)
+  //           -> bedBus -> (the ambience bed, and the menu bed)
+  //
+  // because the two answer to different buttons. The existing control keeps
+  // its name, its storage key and its meaning (EFFECTS — the chomp, the
+  // death, every interface tap), so nothing that already calls setMuted has
+  // to change. The new one silences the place you are standing in without
+  // taking the game's feedback with it.
+  //
+  // Each bus carries its own volume as well as its own mute, and mute is
+  // expressed as "hold the bus at 0" rather than as a flag each cue consults
+  // — same reasoning the single master gain had, now twice.
+  const sfxBus = ctx.createGain();
+  sfxBus.connect(master);
+  const bedBus = ctx.createGain();
+  bedBus.connect(master);
+
   let muted = readStoredMuted();
-  master.gain.value = muted ? 0 : 1;
+  let bedMuted = readStoredFlag(BED_MUTE_STORAGE_KEY);
+  let sfxVolume = readStoredVolume(SFX_VOL_STORAGE_KEY, DEFAULT_SFX_VOLUME);
+  let bedVolume = readStoredVolume(BED_VOL_STORAGE_KEY, DEFAULT_BED_VOLUME);
+
+  function applySfxGain(): void {
+    sfxBus.gain.value = muted ? 0 : sfxVolume;
+  }
+
+  function applyBedGain(): void {
+    // Ramped rather than assigned: a slider being dragged writes this on
+    // every input event, and stepping a live noise bed's gain in jumps is
+    // audible as zipper noise. 60 ms is under the eye's notice and over the
+    // ear's.
+    const t = ctx.currentTime;
+    const target = bedMuted ? 0 : bedVolume;
+    bedBus.gain.cancelScheduledValues(t);
+    bedBus.gain.setValueAtTime(bedBus.gain.value, t);
+    bedBus.gain.linearRampToValueAtTime(target, t + 0.06);
+  }
+
+  applySfxGain();
+  bedBus.gain.value = bedMuted ? 0 : bedVolume;
 
   // Deterministic-ish per-call pitch wobble for biscuit() so a rapid run of
   // them (once per pellet along a corridor) doesn't read as a single
@@ -177,6 +315,7 @@ export function createSound(): Sound {
       peak,
       attack = 0.008,
       delay = 0,
+      destination,
     } = opts;
 
     const t0 = ctx.currentTime + Math.max(delay, 0);
@@ -201,7 +340,7 @@ export function createSound(): Sound {
     env.gain.exponentialRampToValueAtTime(Math.max(peak * 0.001, 0.0001), t0 + duration);
 
     osc.connect(env);
-    env.connect(master);
+    env.connect(destination ?? sfxBus);
 
     osc.start(t0);
     // Stop a hair after the envelope's target time so the exponential ramp's
@@ -398,7 +537,10 @@ export function createSound(): Sound {
   // it, unchanged.
   const uiBus = ctx.createGain();
   uiBus.gain.value = 1;
-  uiBus.connect(master);
+  // IDEA-073: uiBus -> sfxBus -> master. An interface tap is an EFFECT, so
+  // the button that silences the chomp silences the taps with it; the bed
+  // button leaves both alone.
+  uiBus.connect(sfxBus);
 
   /** The design's levels, as linear gains. 10^(dB/20). */
   const DB = {
@@ -507,82 +649,20 @@ export function createSound(): Sound {
     playNoise({ duration: 0.035, peak: level * 0.55, freq: 1500 * ratio, q: 0.7 });
   }
 
-  // The menu bed's nodes, held so it can be stopped. Built lazily — a player
-  // who never reaches the menu never allocates them.
-  let bedTraffic: AudioBufferSourceNode | null = null;
-  let bedGain: GainNode | null = null;
-  let bedBirdTimer: ReturnType<typeof setTimeout> | null = null;
+  // ---- the ambience bed ----------------------------------------------------
+  //
+  // IDEA-073. This REPLACED a hand-rolled menu bed that lived here — a looping
+  // low-passed noise "distant traffic" plus a scheduled bird chirp. Both
+  // recipes survive, in ambience.ts, as the CITY and GARDEN beds: the menu bed
+  // was already two of the five places this game has, it was simply nailed to
+  // the menu and mixed together (birds AND traffic, which is nowhere).
+  //
+  // Deleting it rather than keeping it alongside is the point. Two bird
+  // implementations are two things to retune and one of them will be forgotten
+  // — and the whole ask was "put the birds we already have on the game moment
+  // too", which is one bed shown in two places, not a second bed.
+  const ambienceEngine = createAmbience(ctx, bedBus);
 
-  function stopBed(): void {
-    if (bedBirdTimer !== null) {
-      clearTimeout(bedBirdTimer);
-      bedBirdTimer = null;
-    }
-    if (bedGain) {
-      // Fade rather than cut: a noise bed stopped hard is a click.
-      const t = ctx.currentTime;
-      bedGain.gain.cancelScheduledValues(t);
-      bedGain.gain.setValueAtTime(bedGain.gain.value, t);
-      bedGain.gain.linearRampToValueAtTime(0.0001, t + 0.35);
-    }
-    if (bedTraffic) {
-      bedTraffic.stop(ctx.currentTime + 0.4);
-      bedTraffic = null;
-    }
-    bedGain = null;
-  }
-
-  /** One bird: two or three short whistles a semitone or two apart. */
-  function chirp(): void {
-    if (!bedGain) return;
-    const base = 2200 + Math.random() * 900;
-    const notes = 2 + Math.floor(Math.random() * 2);
-    for (let i = 0; i < notes; i++) {
-      playTone({
-        type: "sine",
-        freq: base * (1 + i * 0.06),
-        endFreq: base * (1 + i * 0.06) * 1.25,
-        duration: 0.05,
-        peak: DB.bed * 1.6,
-        attack: 0.006,
-        delay: i * 0.075,
-      });
-    }
-  }
-
-  function scheduleBird(): void {
-    // Irregular on purpose — birds on a timer read as a machine.
-    bedBirdTimer = setTimeout(
-      () => {
-        if (!bedGain) return;
-        chirp();
-        scheduleBird();
-      },
-      1800 + Math.random() * 4200,
-    );
-  }
-
-  function startBed(): void {
-    if (bedGain) return;
-    bedGain = ctx.createGain();
-    bedGain.gain.value = 0.0001;
-    bedGain.connect(uiBus);
-    // Distant traffic: heavily low-passed noise, well under everything else.
-    // It is not meant to be identifiable, only to stop the menu sounding like
-    // a muted television.
-    bedTraffic = ctx.createBufferSource();
-    bedTraffic.buffer = getNoise();
-    bedTraffic.loop = true;
-    const lp = ctx.createBiquadFilter();
-    lp.type = "lowpass";
-    lp.frequency.value = 320;
-    lp.Q.value = 0.5;
-    bedTraffic.connect(lp);
-    lp.connect(bedGain);
-    bedTraffic.start();
-    bedGain.gain.linearRampToValueAtTime(DB.bed, ctx.currentTime + 1.2);
-    scheduleBird();
-  }
 
   const ui: UiSound = {
     press(): void {
@@ -673,10 +753,6 @@ export function createSound(): Sound {
       playNoise({ duration: 0.3, peak: DB.screen, freq: 4200, endFreq: 1400, q: 0.8 });
     },
 
-    menuBed(on: boolean): void {
-      if (on) startBed();
-      else stopBed();
-    },
 
     setRunActive(active: boolean): void {
       const t = ctx.currentTime;
@@ -690,12 +766,55 @@ export function createSound(): Sound {
 
   function setMuted(next: boolean): void {
     muted = next;
-    master.gain.value = muted ? 0 : 1;
+    applySfxGain();
     writeStoredMuted(muted);
+    notifyState();
   }
 
   function isMuted(): boolean {
     return muted;
+  }
+
+  const stateListeners = new Set<() => void>();
+  function notifyState(): void {
+    for (const fn of stateListeners) fn();
+  }
+
+  function setBedMuted(next: boolean): void {
+    bedMuted = next;
+    applyBedGain();
+    writeStoredFlag(BED_MUTE_STORAGE_KEY, next);
+    notifyState();
+  }
+
+  function isBedMuted(): boolean {
+    return bedMuted;
+  }
+
+  /** Clamp once, here, rather than trusting every caller. The profile slider
+   *  is the only one today, but a stored value can be anything. */
+  function clamp01(v: number): number {
+    return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0;
+  }
+
+  function setSfxVolume(v: number): void {
+    sfxVolume = clamp01(v);
+    applySfxGain();
+    writeStoredVolume(SFX_VOL_STORAGE_KEY, sfxVolume);
+  }
+
+  function getSfxVolume(): number {
+    return sfxVolume;
+  }
+
+  function setBedVolume(v: number): void {
+    bedVolume = clamp01(v);
+    applyBedGain();
+    writeStoredVolume(BED_VOL_STORAGE_KEY, bedVolume);
+  }
+
+  function getBedVolume(): number {
+    return bedVolume;
   }
 
   function resume(): void {
@@ -725,6 +844,18 @@ export function createSound(): Sound {
     readyGo,
     setMuted,
     isMuted,
+    setBedMuted,
+    isBedMuted,
+    setSfxVolume,
+    getSfxVolume,
+    setBedVolume,
+    getBedVolume,
+    onStateChange(fn: () => void): () => void {
+      stateListeners.add(fn);
+      return () => stateListeners.delete(fn);
+    },
+    ambience: (kind: AmbienceKind) => ambienceEngine.set(kind),
+    currentAmbience: () => ambienceEngine.current(),
     resume,
     ui,
   };
@@ -748,6 +879,8 @@ export function createSound(): Sound {
 // uses. See src/ui/icons.ts.
 const MUTED_ICON = ICON.soundOff;
 const UNMUTED_ICON = ICON.soundOn;
+const BED_OFF_ICON = ICON.ambienceOff;
+const BED_ON_ICON = ICON.ambienceOn;
 
 /**
  * Wires the HUD's mute button (`#muteBtn` in index.html) to `sound`: reflects
@@ -757,33 +890,53 @@ const UNMUTED_ICON = ICON.soundOn;
  * attachKeyboard/attachTouch, even though the button's lifetime currently
  * matches the whole app (no teardown call site needed yet).
  */
-export function attachMuteButton(root: ParentNode, sound: Sound): () => void {
-  // EVERY .mute-btn on the page, not just #muteBtn.
+/**
+ * IDEA-073: the two sound buttons are ONE mechanism with two configurations.
+ *
+ * `attachMuteButton` and `attachBedButton` differ only in which class they
+ * wire, which pair of glyphs they draw and which flag they flip — so writing
+ * them twice would be two renderers to keep in step, and the one that is
+ * wrong is the one nobody is looking at. The design system's §10 makes the
+ * same argument about press/select being one cue with a pitch argument.
+ */
+interface ToggleSpec {
+  selector: string;
+  /** Read the CURRENT off-state. True means "silenced". */
+  isOff: () => boolean;
+  /** Flip it. */
+  toggle: () => void;
+  glyphOn: string;
+  glyphOff: string;
+  labelOn: string;
+  labelOff: string;
+  missing: string;
+}
+
+function attachToggle(root: ParentNode, sound: Sound, spec: ToggleSpec): () => void {
+  // EVERY matching button on the page, not just the one in the HUD.
   //
   // The screen redesign gave the main menu its own sound control (the in-run
   // one lives in the HUD chrome, which the menu hides), and there is exactly
-  // one mute STATE — so the honest wiring is one handler over both buttons
-  // with a shared render, not two attachments that could disagree about
-  // whether sound is off.
+  // one state per toggle — so the honest wiring is one handler over every
+  // button with a shared render, not two attachments that could disagree
+  // about whether sound is off.
   const scope: ParentNode = root ?? document;
   const found = [
-    ...scope.querySelectorAll<HTMLButtonElement>(".mute-btn"),
-    ...(scope === document ? [] : document.querySelectorAll<HTMLButtonElement>(".mute-btn")),
+    ...scope.querySelectorAll<HTMLButtonElement>(spec.selector),
+    ...(scope === document ? [] : document.querySelectorAll<HTMLButtonElement>(spec.selector)),
   ];
   const buttons = [...new Set(found)];
-  if (buttons.length === 0) {
-    throw new Error("attachMuteButton: no .mute-btn found — check index.html");
-  }
+  if (buttons.length === 0) throw new Error(spec.missing);
 
   function render(): void {
-    const muted = sound.isMuted();
+    const off = spec.isOff();
     for (const btn of buttons) {
       // Writes into the inner <i>, creating it if the markup lacks one — see
       // setGlyph. Setting textContent on the BUTTON would delete the icon
       // element and print the ligature name.
-      setGlyph(btn, muted ? MUTED_ICON : UNMUTED_ICON);
-      btn.setAttribute("aria-pressed", String(muted));
-      btn.setAttribute("aria-label", muted ? "Unmute sound" : "Mute sound");
+      setGlyph(btn, off ? spec.glyphOff : spec.glyphOn);
+      btn.setAttribute("aria-pressed", String(off));
+      btn.setAttribute("aria-label", off ? spec.labelOff : spec.labelOn);
     }
   }
 
@@ -792,17 +945,88 @@ export function attachMuteButton(root: ParentNode, sound: Sound): () => void {
     // a valid place to unlock audio (in case Start/first-input somehow never
     // fired — e.g. a player who lands mid-session via some future deep link).
     sound.resume();
-    sound.setMuted(!sound.isMuted());
+    spec.toggle();
     render();
   }
 
   render(); // reflect the persisted state immediately on load
   for (const btn of buttons) btn.addEventListener("click", onClick);
+  // ...and re-render whenever ANOTHER button moves the same state.
+  const unsubscribe = sound.onStateChange(render);
 
   return () => {
+    unsubscribe();
     for (const btn of buttons) btn.removeEventListener("click", onClick);
   };
 }
+
+export function attachMuteButton(root: ParentNode, sound: Sound): () => void {
+  return attachToggle(root, sound, {
+    selector: ".mute-btn",
+    isOff: () => sound.isMuted(),
+    toggle: () => sound.setMuted(!sound.isMuted()),
+    glyphOn: UNMUTED_ICON,
+    glyphOff: MUTED_ICON,
+    labelOn: "Mute game sounds",
+    labelOff: "Unmute game sounds",
+    missing: "attachMuteButton: no .mute-btn found — check index.html",
+  });
+}
+
+/**
+ * IDEA-073 v2: the MENU's single sound button -- a MASTER toggle over both
+ * layers.
+ *
+ * Nuno: *"on the main menu we can only have one button because we only have
+ * one sound on the menus; on the game yes keep the two buttons."* A run has
+ * both layers going at once and they compete for the same ears, which is the
+ * whole reason the split exists; a menu does not, so two controls there would
+ * be two switches for one decision.
+ *
+ * It moves BOTH flags rather than only the bed, and that is the one judgement
+ * call in this function. The bed is the only thing you HEAR continuously on
+ * the menu, so bed-only is the other honest reading of "one sound" -- but the
+ * interface taps play on this screen too, and the menu is the only place this
+ * button can be reached before a run starts. Bed-only would leave them
+ * unmutable from anywhere except a slider on the account screen, which is a
+ * regression on what this same button did before the layers were split.
+ *
+ * OFF means BOTH are off. Pressing it while only one is muted silences the
+ * rest rather than un-muting half -- "make it quiet" is what a player means by
+ * pressing a speaker with a line through it, and the alternative (toggling
+ * each independently) makes the icon lie about the state it is in.
+ */
+export function attachSoundButton(root: ParentNode, sound: Sound): () => void {
+  return attachToggle(root, sound, {
+    selector: ".sound-btn",
+    isOff: () => sound.isMuted() && sound.isBedMuted(),
+    toggle: () => {
+      const silenced = sound.isMuted() && sound.isBedMuted();
+      sound.setMuted(!silenced);
+      sound.setBedMuted(!silenced);
+    },
+    glyphOn: UNMUTED_ICON,
+    glyphOff: MUTED_ICON,
+    labelOn: "Mute sound",
+    labelOff: "Unmute sound",
+    missing: "attachSoundButton: no .sound-btn found — check index.html",
+  });
+}
+
+/** IDEA-073: the AMBIENCE bed's toggle. Same mechanism, different flag. */
+export function attachBedButton(root: ParentNode, sound: Sound): () => void {
+  return attachToggle(root, sound, {
+    selector: ".bed-btn",
+    isOff: () => sound.isBedMuted(),
+    toggle: () => sound.setBedMuted(!sound.isBedMuted()),
+    glyphOn: BED_ON_ICON,
+    glyphOff: BED_OFF_ICON,
+    labelOn: "Mute ambience",
+    labelOff: "Unmute ambience",
+    missing: "attachBedButton: no .bed-btn found — check index.html",
+  });
+}
+
 
 // ---------------------------------------------------------------------------
 // §10: the interface's one voice, wired once.

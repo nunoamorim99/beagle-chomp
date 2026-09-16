@@ -28,8 +28,15 @@ import { validateRun, MAX_RUN_HOURS } from "../validation/plausibility.js";
 // sends went unread for a whole release without anything noticing.
 import { readSubmission } from "../validation/wire.js";
 import { insertRunStats, type RunStatsInsert } from "../repo/runStats.js";
-import { whoWasOvertaken, rankAlertBody, RANK_ALERT_TITLE, type BoardEntry } from "../notifications/rankAlert.js";
-import { notifyRankAlerts } from "./pushService.js";
+import {
+  whoWasOvertaken,
+  whoToNudge,
+  rankAlertBody,
+  RANK_ALERT_TITLE,
+  type BoardEntry,
+} from "../notifications/rankAlert.js";
+import { notifyRankAlerts, notifyBoardNudge } from "./pushService.js";
+import * as pushSubsRepo from "../repo/pushSubscriptions.js";
 import { invalidateBoardCache } from "./boardCache.js";
 import { CHALLENGE_LEVELS, CHALLENGE_LEVEL_COUNT } from "../catalog.generated.js";
 
@@ -242,6 +249,10 @@ export async function finishSession(
   // the commit — network I/O must never happen while holding a row lock, and a
   // push that fails must not roll back a banked score.
   let rankTargets: { userId: string; title: string; body: string }[] = [];
+  // IDEA-074: and everyone ELSE who plays, told generically that the board
+  // moved. Selected in the same place and for the same reasons — it needs
+  // `rankTargets` to have been decided first, since nobody gets both.
+  let nudgeTargets: string[] = [];
 
   const result = await withTransaction(async (client) => {
     const session = await sessionsRepo.findSessionForUpdate(sessionId, user.id, client);
@@ -385,6 +396,30 @@ export async function finishSession(
         title: RANK_ALERT_TITLE,
         body: rankAlertBody(r),
       }));
+
+      // IDEA-074: the generic nudge, to everyone the specific alert does not
+      // reach. Read inside the transaction like the board above, for one
+      // reason only — it is one more query on a connection already held, and
+      // taking a second from the pool to run it concurrently would be a
+      // needless second connection per accepted personal best. Nothing here
+      // depends on transactional consistency: the candidate set is "who has a
+      // device and has played", which this run does not change.
+      const candidates = await pushSubsRepo.findNudgeCandidates(client);
+      nudgeTargets = whoToNudge(
+        user.id,
+        rankTargets.map((t) => t.userId),
+        candidates.map((c) => ({
+          userId: c.user_id,
+          notifyRank: c.notify_rank,
+          hasPlayed: c.has_played,
+          lastNudgeAt: c.last_board_nudge_at,
+        })),
+        {
+          cooldownHours: env.RANK_NUDGE_COOLDOWN_HOURS,
+          maxRecipients: env.RANK_NUDGE_MAX_RECIPIENTS,
+          now: new Date(),
+        },
+      );
     }
 
     // A challenge clear advances progress — max-write, so replaying an earlier
@@ -445,9 +480,19 @@ export async function finishSession(
   // the player who just finished is waiting on this response, and their rival's
   // phone buzzing is not something they should wait for. pushService swallows
   // its own errors and no-ops entirely when VAPID is unconfigured.
-  if (rankTargets.length > 0) {
-    void notifyRankAlerts(rankTargets).catch((err: unknown) => {
-      console.error("[push] rank alerts failed:", err);
+  //
+  // IDEA-074 added the second fan-out, and the two are CHAINED rather than both
+  // fired off. The sets are disjoint, so the order changes nothing about who
+  // hears what — but sendToAll's CONCURRENCY ceiling is sized for a 384 MB
+  // container holding one fan-out's worth of TLS sessions, and two independent
+  // `void` calls would quietly double it on exactly the runs that produce the
+  // largest nudge list.
+  if (rankTargets.length > 0 || nudgeTargets.length > 0) {
+    void (async () => {
+      if (rankTargets.length > 0) await notifyRankAlerts(rankTargets);
+      if (nudgeTargets.length > 0) await notifyBoardNudge(nudgeTargets);
+    })().catch((err: unknown) => {
+      console.error("[push] board fan-out failed:", err);
     });
   }
 

@@ -151,7 +151,11 @@ const server = serve({ fetch: app.fetch, port: env.PORT }, (info) => {
   console.log(
     `[api] push ${
       env.pushEnabled
-        ? `ENABLED · rank alerts to top ${env.RANK_ALERT_TOP_N}, ${env.RANK_ALERT_COOLDOWN_HOURS}h cooldown`
+        ? `ENABLED · rank alerts to top ${env.RANK_ALERT_TOP_N}, ${env.RANK_ALERT_COOLDOWN_HOURS}h cooldown · board nudge ${
+            env.RANK_NUDGE_MAX_RECIPIENTS > 0
+              ? `to ${env.RANK_NUDGE_MAX_RECIPIENTS} max, ${env.RANK_NUDGE_COOLDOWN_HOURS}h cooldown`
+              : "OFF"
+          }`
         : "disabled (set VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY and VAPID_SUBJECT)"
     }`,
   );

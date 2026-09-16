@@ -1,0 +1,28 @@
+-- IDEA-074: the generic board nudge.
+--
+-- Until now a new personal best sent exactly one kind of push: "you've been
+-- overtaken", to the handful of top-N players the run actually passed
+-- (notifications/rankAlert.ts). Everyone else heard nothing, which means the
+-- board only ever spoke to the people already on top of it. The nudge is the
+-- other half — a single generic line to every subscriber who has at least one
+-- run of their own, saying somebody just moved and inviting them back.
+--
+-- WHY ITS OWN COLUMN AND NOT last_rank_alert_at.
+--
+-- Sharing the existing column was the cheaper change and it is the wrong one,
+-- because the two messages are not interchangeable and the cooldown decides
+-- which you get. A nudge is generic and frequent; an overtake alert is about
+-- YOUR standing and rare. On one column, a nudge stamped at 20:05 silences the
+-- 20:30 message telling a player they had actually been passed — the valuable
+-- one suppressed by the cheap one, and only for the players near the top, who
+-- are precisely the ones the specific alert exists for.
+--
+-- Two columns also let the two cooldowns differ, which they should: the nudge's
+-- default is twice the alert's (RANK_NUDGE_COOLDOWN_HOURS, 12h vs 6h), because
+-- every accepted personal best anywhere on the board triggers one.
+--
+-- NULL means "never nudged", which sorts FIRST when the fan-out is capped —
+-- see whoToNudge(). No backfill: every existing account is correctly described
+-- as never having had one.
+ALTER TABLE users
+  ADD COLUMN last_board_nudge_at timestamptz;

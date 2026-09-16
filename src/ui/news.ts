@@ -31,6 +31,8 @@ import {
   type Announcement,
 } from "../net/endpoints";
 import { ICON, icon } from "./icons";
+import { pushSupport, isSubscribed, enable } from "./push";
+import { installOffer, promptInstall, onInstallChange } from "./install";
 
 export interface NewsHandle {
   open: () => void;
@@ -263,6 +265,289 @@ export function attachNews(callbacks: NewsCallbacks = {}): NewsHandle {
     }
   }
 
+  // -------------------------------------------------------------------------
+  // THE SET-UP CARD (IDEA-074)
+  //
+  // This screen is where a notification LANDS — push-sw.js opens `/?news=1` —
+  // and until v1 of this idea it was the one place in the game that never
+  // mentioned notifications at all. The only switch lives three taps away in
+  // the account screen, under a heading most players will never open, so the
+  // feature's whole audience was "people who went looking for it".
+  //
+  // v2 (Nuno: "add more explicit where to activate the notification and how to
+  // install the beagle chomp, like add a button to install the app if not
+  // installed") makes it a SET-UP card with up to two steps rather than a
+  // single offer. The two belong together and not just by convenience:
+  //
+  //   * on iPhone and iPad, installing is a PREREQUISITE — iOS refuses push
+  //     entirely until the game is on the Home Screen (push.ts rule 2). A card
+  //     that only offered notifications there was offering something the
+  //     player could not have, and said so without saying what to do about it.
+  //   * everywhere else they are independent, so they are two rows with their
+  //     own buttons rather than a numbered sequence.
+  //
+  // The card is not dismissible ON PURPOSE. Nuno's v1 ask was that it
+  // disappears when notifications are active, and finishing the steps is the
+  // only exit it has. It is on a screen you deliberately open, not on the menu,
+  // which is what makes a standing offer acceptable here and would not make a
+  // standing banner acceptable there.
+  //
+  // It says nothing when there is nothing to say: a browser that cannot do
+  // push AND cannot be installed gets no card, and a `denied` permission can
+  // only be reset in browser settings, so a banner about it every single visit
+  // is nagging rather than inviting.
+  //
+  // WHERE, not just WHETHER — the footnote names Account → Notifications,
+  // because "turn them on" with no address leaves a player who later wants
+  // them OFF with nowhere to go, and that is the state that makes someone
+  // block the site at the browser level instead.
+  //
+  // ONE NODE, kept across renders. `shell()` wipes the root and rebuilds, and
+  // `paintInvite` is async (it has to consult the service worker), so a card
+  // rebuilt per render would flash empty every time the list re-renders. The
+  // node lives in this closure and is re-appended instead, painted state and
+  // all.
+  let inviteEl: HTMLElement | null = null;
+
+  function inviteCard(): HTMLElement {
+    if (!inviteEl) {
+      inviteEl = document.createElement("section");
+      inviteEl.className = "news-invite";
+      // The `.hidden` CLASS, never the `hidden` ATTRIBUTE. This project has no
+      // `[hidden]` rule of its own, and the UA's is a plain `display:none` that
+      // ANY author `display:` beats — `.news-invite{display:flex}` does, so the
+      // attribute version rendered a 362x34 empty board at the top of the
+      // screen, visible and carrying nothing. `.hidden` is `!important` and is
+      // what the rest of the UI uses.
+      inviteEl.classList.add("hidden");
+    }
+    return inviteEl;
+  }
+
+  /** The badge beside a step. Same construction as a card's `.news-mark`. */
+  function inviteMark(glyph: string, kind: string): HTMLElement {
+    const mark = document.createElement("span");
+    mark.className = `news-mark news-mark--${kind}`;
+    mark.setAttribute("aria-hidden", "true");
+    // An icon element carries its ligature as TEXT — one of the places in this
+    // file where a textContent write is the correct way to set an icon.
+    const i = document.createElement("i");
+    i.className = "bc-i";
+    i.textContent = glyph;
+    mark.append(i);
+    return mark;
+  }
+
+  interface InviteStep {
+    glyph: string;
+    title: string;
+    copy: string;
+    /** Omitted where the platform gives us no way to act — iOS has no install
+     *  API at all, and a button that cannot work is worse than no button
+     *  (push.ts's own rule). */
+    action?: { label: string; onPress: (btn: HTMLButtonElement) => void };
+  }
+
+  /** Render a list of steps into the card. */
+  function fillInvite(card: HTMLElement, heading: string, steps: InviteStep[], note: string): void {
+    card.textContent = "";
+    card.classList.remove("news-invite--done");
+
+    const h = document.createElement("h2");
+    h.className = "news-invite-head";
+    h.textContent = heading;
+    card.append(h);
+
+    // Exactly one step is the card's REASON and wears the green. Notifications
+    // are that reason whenever they are on offer, because that is what this
+    // screen is; install takes the green only when it is all there is. Two
+    // greens side by side would flatten the pair into one choice, and amber is
+    // not available at all — §04 keeps it for the screen's single next action,
+    // which here is Back.
+    const primary = steps.find((s) => s.title === NOTIFY_STEP_TITLE) ?? steps[0];
+
+    for (const step of steps) {
+      const row = document.createElement("div");
+      row.className = "news-invite-step";
+
+      const body = document.createElement("div");
+      body.className = "news-invite-body";
+      const t = document.createElement("h3");
+      t.textContent = step.title;
+      const p = document.createElement("p");
+      p.className = "news-invite-copy";
+      p.textContent = step.copy;
+      body.append(t, p);
+
+      row.append(inviteMark(step.glyph, "invite"), body);
+
+      if (step.action) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = `${step === primary ? "btn-confirm" : "btn-secondary"} news-invite-cta`;
+        const { label, onPress } = step.action;
+        btn.append(icon(step.glyph), document.createTextNode(label));
+        btn.addEventListener("click", () => onPress(btn));
+        row.append(btn);
+        // The failure line lives on the step, beside the button that caused it.
+        row.dataset.step = step.title;
+      }
+
+      card.append(row);
+    }
+
+    const foot = document.createElement("p");
+    foot.className = "news-invite-note";
+    foot.textContent = note;
+    card.append(foot);
+  }
+
+  /** Replace a step's copy — how a failure is reported, in place. */
+  function setStepCopy(card: HTMLElement, title: string, text: string): void {
+    const row = card.querySelector<HTMLElement>(`.news-invite-step[data-step="${title}"]`);
+    const p = row?.querySelector(".news-invite-copy");
+    if (p) p.textContent = text;
+  }
+
+  /**
+   * The moment after notifications go on.
+   *
+   * The card could simply vanish — that is the ask, and it is what happens on
+   * every later visit. But vanishing AS the direct result of a press reads as
+   * the press having gone wrong, so the one render where the player is looking
+   * straight at it says so instead. It is gone the next time this screen opens.
+   */
+  function fillInviteDone(card: HTMLElement): void {
+    card.textContent = "";
+    card.classList.add("news-invite--done");
+    const row = document.createElement("div");
+    row.className = "news-invite-step";
+    const body = document.createElement("div");
+    body.className = "news-invite-body";
+    const t = document.createElement("h3");
+    t.textContent = "You're on the list";
+    const p = document.createElement("p");
+    p.className = "news-invite-copy";
+    p.textContent = "We'll let you know when something happens. Change it any time in Account.";
+    body.append(t, p);
+    row.append(inviteMark(ICON.check, "invite"), body);
+    card.append(row);
+  }
+
+  const NOTIFY_STEP_TITLE = "Turn on notifications";
+  const INSTALL_STEP_TITLE = "Install the app";
+
+  /** Decide what the card should be right now — including not being there. */
+  async function paintInvite(): Promise<void> {
+    const card = inviteCard();
+    const support = pushSupport();
+    const offer = installOffer();
+
+    // `isSubscribed` is bounded (see push.ts), so this settles even on a device
+    // whose service worker has been unregistered.
+    const subscribed = support.state === "ready" ? await isSubscribed() : false;
+
+    const steps: InviteStep[] = [];
+
+    if (offer === "prompt") {
+      steps.push({
+        glyph: ICON.install,
+        title: INSTALL_STEP_TITLE,
+        // NOT "for offline play": since v5.0 the game needs a connection, so
+        // that would be a straight lie. Same wording discipline as the banner.
+        copy: "Play full screen, with Beagle Chomp on your home screen.",
+        action: {
+          label: "Install",
+          onPress: (btn) => {
+            btn.disabled = true;
+            void promptInstall().then((outcome) => {
+              if (outcome === "accepted") return;
+              // The offer is spent either way — the browser will not replay the
+              // event — so repaint rather than re-enabling a dead button.
+              void paintInvite();
+            });
+          },
+        },
+      });
+    } else if (offer === "ios-steps") {
+      steps.push({
+        glyph: ICON.install,
+        title: "Add it to your Home Screen",
+        copy:
+          support.state === "needs-install"
+            ? "Tap Share, then “Add to Home Screen”. iPhone and iPad only send " +
+              "notifications to installed apps, so this comes first."
+            : "Tap Share, then “Add to Home Screen” to play full screen.",
+      });
+    }
+
+    if (support.state === "ready" && !subscribed) {
+      steps.push({
+        glyph: ICON.news,
+        title: NOTIFY_STEP_TITLE,
+        // Two lines at 390px, deliberately. With both steps showing, this card
+        // is already 40% of a phone screen, and every line of copy pushes the
+        // notes it sits above further down.
+        copy: "Game updates, and when someone raises the bar on the leaderboard.",
+        action: {
+          label: "Turn them on",
+          onPress: (btn) => {
+            // NOTHING may be awaited before enable(): it calls
+            // Notification.requestPermission() synchronously, and a call that
+            // has lost the user gesture fails silently on iOS and Firefox.
+            btn.disabled = true;
+            void enable().then((res) => {
+              if (res.ok) {
+                fillInviteDone(card);
+                return;
+              }
+              btn.disabled = false;
+              // Say why, in place. The browser's own message is never shown —
+              // see push.ts for why Chromium's is actively misleading here.
+              setStepCopy(
+                card,
+                NOTIFY_STEP_TITLE,
+                res.reason ?? "Notifications weren't turned on.",
+              );
+            });
+          },
+        },
+      });
+    }
+
+    if (steps.length === 0) {
+      card.classList.add("hidden");
+      card.classList.remove("news-invite--done");
+      return;
+    }
+
+    // Already showing the confirmation from a press a moment ago — leave it.
+    if (card.classList.contains("news-invite--done")) {
+      card.classList.remove("hidden");
+      return;
+    }
+
+    // The heading names what the card is FOR, which changes with what is left
+    // to do: an install-only card on a device that already has notifications is
+    // not about missing anything.
+    const wantsNotify = steps.some((s) => s.title === NOTIFY_STEP_TITLE);
+    const heading = wantsNotify ? "Don't miss a thing" : "Play it full screen";
+    const note = wantsNotify
+      ? "Change this any time in Account → Notifications."
+      : "Notifications live in Account → Notifications.";
+
+    card.classList.remove("hidden");
+    fillInvite(card, heading, steps, note);
+  }
+
+  // An install offer can arrive at any moment — the browser decides when the
+  // site is installable, and it is usually long after boot. Repaint when it
+  // does, so a card already on screen grows its Install row instead of waiting
+  // for the player to close and reopen the screen.
+  const stopInstallWatch = onInstallChange(() => {
+    if (isOpenState) void paintInvite();
+  });
+
   function shell(children: HTMLElement[], subtitle?: string): void {
     root.textContent = "";
 
@@ -281,6 +566,13 @@ export function attachNews(callbacks: NewsCallbacks = {}): NewsHandle {
       header.append(p);
     }
     sheet.append(header);
+
+    // IDEA-074. Between the header and the LIST, not inside it: the list is the
+    // scroller, and an invitation that scrolls away is one most players never
+    // see. `paintInvite` is async and the node persists, so this is a re-append
+    // of whatever it last painted rather than a rebuild.
+    sheet.append(inviteCard());
+    void paintInvite();
 
     const list = document.createElement("div");
     list.className = "news-list";
@@ -416,6 +708,7 @@ export function attachNews(callbacks: NewsCallbacks = {}): NewsHandle {
     close,
     detach: () => {
       live.abort();
+      stopInstallWatch();
       close();
       setUnread(0);
     },

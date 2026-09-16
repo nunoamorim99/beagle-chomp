@@ -16,6 +16,25 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
 > lines here roll up into the numbered version below and this section is cleared (hold a line back
 > only if you explicitly choose to).
 
+- **[[IDEA-074]] v2** (2026-09-15) - **the same card now shows you how to install the game.**
+  If Beagle Chomp is not installed yet, the What's new screen offers that too - a one-tap
+  Install button where the browser supports it, and on iPhone and iPad the Share -> Add to
+  Home Screen steps, which is worth saying there because iPhones will not send notifications
+  at all until the game is on your Home Screen. The card also says where to find the switch
+  later: Account > Notifications.
+
+- **[[IDEA-074]] v1** (2026-09-15) - **the game asks for the notification now, and a broken
+  record tells everybody.** The What's new screen - the one a notification opens - carries a
+  card inviting you to turn notifications on, with a button that does it right there. It
+  disappears the moment they are on, and it never appears at all on a browser that cannot do
+  them or where you have already said no.
+
+  And beating your own record is news to more than the people you passed. Those players still
+  get the message naming you and their new place; everyone else who has played at least one run
+  gets a quieter one - "Looks like someone just broke their record - can you do better?" Nobody
+  gets both for the same run, nobody is told about their own, and nobody hears from the board
+  more than once every twelve hours however busy the evening.
+
 - **[[IDEA-064]] v3** (2026-09-11) - **the tutorial now explains what each beagle DOES.** A
   seventh and last slide lists all five dogs, each with a paw painted in its own coat, and says
   what that one gives you - Bagel's shield, Cookie's extra life every map, Muffin's doubled

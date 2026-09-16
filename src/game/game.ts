@@ -141,7 +141,14 @@ import {
 } from "../render/characters";
 import { createHud, type Hud } from "../ui/hud";
 import { ICON, iconHtml, plateHtml, setGlyph } from "../ui/icons";
-import { createSound, attachMuteButton, attachUiSounds, type Sound } from "../ui/sound";
+import {
+  createSound,
+  attachMuteButton,
+  attachBedButton,
+  attachSoundButton,
+  attachUiSounds,
+  type Sound,
+} from "../ui/sound";
 import { attachShop, type ShopHandle } from "../ui/shop";
 import { attachLevelMap, type LevelMapHandle } from "../ui/levelMap";
 import {
@@ -328,7 +335,22 @@ export class Game {
   private beagle!: Entity;
   private readonly detachKeyboard: () => void;
   private readonly detachTouch: () => void;
+  /**
+   * IDEA-073: the profile screen's Sound section reads and writes the two
+   * volumes, and main.ts (which wires that screen) has the Game but not the
+   * Sound. A getter rather than making the field public: everything else on
+   * this class exposes behaviour, and this is the one place another module
+   * legitimately needs the audio object itself.
+   */
+  get audio(): Sound {
+    return this.sound;
+  }
+
   private readonly detachMuteButton: () => void;
+  /** IDEA-073: the ambience bed's own toggle. */
+  private readonly detachBedButton: () => void;
+  /** IDEA-073 v2: the MENU's single master toggle. */
+  private readonly detachSoundButton: () => void;
   /** Design system §10: the delegated press/select listener. */
   private readonly detachUiSounds: () => void;
   private readonly detachAudioUnlock: () => void;
@@ -538,6 +560,8 @@ export class Game {
     // mute button — wired below and via attachMuteButton).
     this.sound = createSound();
     this.detachMuteButton = attachMuteButton(document.body, this.sound);
+    this.detachBedButton = attachBedButton(document.body, this.sound);
+    this.detachSoundButton = attachSoundButton(document.body, this.sound);
     // Design system §10: one delegated listener gives every control in the
     // app the same press sound, rather than a call at each of the ~40 places
     // a button gets created.
@@ -661,6 +685,7 @@ export class Game {
         // wants the same one must not re-apply it (and one that wants a
         // different one must).
         this.sceneThemeId = theme.id;
+        this.syncAmbience();
         applyBoardTheme(this.level.board, this.rig.scene, this.level.grid, theme);
         // IDEA-037: re-tint the MENU showcase too. The shop sits over the
         // full-screen menu, so equipping a theme should change the vignette
@@ -833,6 +858,25 @@ export class Game {
     this.rig.applySceneTheme(equipped);
     applyBoardTheme(this.level.board, this.rig.scene, this.level.grid, equipped);
     this.sceneThemeId = equipped.id;
+    this.syncAmbience();
+  }
+
+  /**
+   * IDEA-073: put the EARS in the same place as the eyes.
+   *
+   * Keyed off `sceneThemeId` — what the scene currently WEARS — rather than
+   * off the equipped theme, for exactly the reason that field exists: a
+   * challenge level forces its own theme, owned or not, and a Night City
+   * board under garden birds would be the audio version of the bug
+   * restoreEquippedTheme was written to stop.
+   *
+   * Safe to call as often as is convenient: `sound.ambience` no-ops when the
+   * bed is already the one playing, which is what lets every site that can
+   * change the scene theme call this unconditionally instead of each one
+   * working out whether it needs to.
+   */
+  private syncAmbience(): void {
+    this.sound.ambience(getMazeTheme(this.sceneThemeId).ambience);
   }
 
   private showMenu(): void {
@@ -847,7 +891,10 @@ export class Game {
     document.body.classList.add("menu-open");
     // §10: birds and distant traffic, under the menu ONLY. A run has its own
     // layer, and the bed would sit under a chase where nothing should.
-    this.sound.ui.menuBed(true);
+    // IDEA-073: the menu now stands in the equipped theme's own ambience
+    // rather than in a bed of its own — restoreEquippedTheme just put the
+    // scene back, so this follows it.
+    this.syncAmbience();
     this.sound.ui.setRunActive(false);
 
     const mainMenu = document.getElementById("mainMenu");
@@ -871,7 +918,10 @@ export class Game {
     document.body.classList.remove("menu-open");
     // Leaving the menu means a run is starting: silence the bed and duck the
     // interface layer 6 dB so a tap can never mask a chomp or a death.
-    this.sound.ui.menuBed(false);
+    // The bed deliberately does NOT stop here: a run is starting in the same
+    // place the menu was standing in, and startLevel will set the level's own
+    // theme a moment later (a no-op when it matches). Cutting it here and
+    // restarting it there would be an audible gap on every single Play press.
     this.sound.ui.setRunActive(true);
     // Leaving the menu means a run is starting — put up whichever on-screen
     // control the player asked for. (The CSS hides both under every full-screen
@@ -939,6 +989,9 @@ export class Game {
       this.rig.applySceneTheme(theme);
       this.sceneThemeId = theme.id;
     }
+    // Unconditional, outside the guard above: on the FIRST level the scene
+    // theme already matches (nothing to re-apply) but no bed is playing yet.
+    this.syncAmbience();
 
     const pellets = new Set<string>();
     const fruitTiles: Vec2[] = [];
@@ -1027,9 +1080,13 @@ export class Game {
     this.detachKeyboard();
     this.detachTouch();
     this.detachMuteButton();
+    this.detachBedButton();
+    this.detachSoundButton();
     this.detachUiSounds();
-    // Stop the menu bed, or its looping noise source outlives the Game.
-    this.sound.ui.menuBed(false);
+    // Stop the ambience bed, or its looping noise source outlives the Game.
+    // A leaked AudioBufferSourceNode plays forever and nothing else holds a
+    // handle on it.
+    this.sound.ambience("none");
     this.detachAudioUnlock();
     this.detachPauseButton();
     this.detachHomeButton();

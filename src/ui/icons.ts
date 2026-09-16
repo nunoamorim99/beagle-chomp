@@ -133,6 +133,19 @@ export const ICON = {
   // ---- sound ----
   soundOn: "volume_up",
   soundOff: "volume_off",
+  /** IDEA-073: the AMBIENCE bed's own toggle, beside the effects one.
+   *
+   *  A DIFFERENT glyph on purpose, not a second speaker. Two speaker icons
+   *  side by side is a puzzle -- the player has to press one to find out
+   *  which is which. An equaliser bar reads as "the sound of the place"
+   *  against a speaker's "the sound of the game", and the pair is
+   *  distinguishable at 44px with a thumb over half of it. */
+  ambienceOn: "graphic_eq",
+  /** The OFF state is the same speaker-with-a-slash the effects button uses,
+   *  because "off" has one vocabulary in this interface and inventing a
+   *  second one would make the two controls look unrelated when both are
+   *  silenced. */
+  ambienceOff: "volume_off",
 
   // ---- game objects (also the plate glyphs) ----
   coin: "paid",

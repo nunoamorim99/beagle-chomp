@@ -107,6 +107,20 @@ const EnvSchema = z.object({
   /** Hours before the same player can be told again, so one good evening from
    *  one player cannot fire ten alerts at the same victim. */
   RANK_ALERT_COOLDOWN_HOURS: z.coerce.number().int().min(0).default(6),
+
+  /** IDEA-074. The generic nudge's own cooldown, on its own column
+   *  (users.last_board_nudge_at) — deliberately LONGER than the overtake
+   *  alert's, because every accepted personal best anywhere on the board fires
+   *  one, where an overtake alert needs the run to have actually passed you.
+   *  Zero disables the wait, not the nudge. */
+  RANK_NUDGE_COOLDOWN_HOURS: z.coerce.number().int().min(0).default(12),
+
+  /** Hard ceiling on one run's nudge fan-out, and the switch that turns the
+   *  whole thing off: 0 means never nudge anyone. Sized well above the current
+   *  player base on purpose — the cooldown is what actually bounds the volume,
+   *  and this is the backstop that keeps a single run from becoming a
+   *  thousand HTTPS requests if the game ever gets popular overnight. */
+  RANK_NUDGE_MAX_RECIPIENTS: z.coerce.number().int().min(0).max(5000).default(200),
 });
 
 function parseEnv() {

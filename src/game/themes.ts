@@ -14,6 +14,7 @@
 // coats are BeagleSkins, enemy forms are EnemySkins, and the pickups (bones,
 // fruit, coin, golden bone) keep their fixed identity colors in every theme
 // so their gameplay meaning stays instantly readable.
+import type { AmbienceKind } from "../ui/ambience";
 import { type WallTextureKind } from "../render/wallTexture";
 import { type FloorTextureKind } from "../render/floorTexture";
 import { type FenceKind } from "../render/fence";
@@ -207,6 +208,21 @@ export interface MazeTheme {
    *  purchasable" — the default garden theme, and (IDEA-064) Arcade Night,
    *  which is not bought at all but GRANTED by the Pac-Beagle coat. */
   price: number;
+  /**
+   * IDEA-073: which AMBIENCE BED plays while you are standing in this theme.
+   *
+   * REQUIRED, unlike `secret` and `tunnelArch`, and that is deliberate: a new
+   * theme with no bed would be silent with nothing to tell you, which is the
+   * same class of failure as `wallDecor` hanging Night City's lamps over open
+   * corridor for two releases. Making it required means a sixth theme cannot
+   * be added without someone deciding what the place sounds like -- and
+   * "none" is a real answer (Arcade Night takes it, for the same reason its
+   * `surround` is "none").
+   *
+   * A KIND, never a recipe. The theme answers WHICH, ambience.ts answers HOW
+   * -- exactly the split `tunnelArch` draws for the arch at the tunnel mouth.
+   */
+  ambience: AmbienceKind;
   palette: ThemePalette;
   /** IDEA-030: explicit apron prop placements (was IDEA-026's `props`
    *  density populations). Empty = a bare apron (classic). Each references a
@@ -260,6 +276,7 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
     name: "The Garden",
     blurb: "Hedges and lawn · a bright afternoon",
     price: 0,
+    ambience: "birds",
     tunnelArch: "hedge-arch",
     palette: {
       bg: 0x9ecbe8,
@@ -373,6 +390,7 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
     // visibleMazeThemes lists a secret theme the player owns.
     secret: true,
     price: 0,
+    ambience: "none",
     palette: {
       bg: 0x0b0b16,
       backdropTop: 0x232348,
@@ -419,6 +437,7 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
     name: "Deep Forest",
     blurb: "Deep pines and leaf litter · low light",
     price: 50,
+    ambience: "forest",
     palette: {
       bg: 0x87a998,
       backdropTop: 0xc8dcc8,
@@ -472,6 +491,7 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
     // brightest sun of any theme. Blooms are shoreline finds — shell white,
     // seafoam, coral — with seagrass specks.
     price: 50,
+    ambience: "surf",
     palette: {
       bg: 0xa8d8ef,
       backdropTop: 0xd8f0fa,
@@ -545,6 +565,7 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
     // flowerbeds (highest bloom density of any theme, plus a purple joining
     // the garden's palette) under a slightly brighter sun.
     price: 50,
+    ambience: "park",
     palette: {
       bg: 0x9ecbe8,
       backdropTop: 0xd4ecfa,
@@ -635,6 +656,7 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
     // are rooftop LIGHTS — warm windows, cyan and pink neon — glowing far
     // stronger than any flower, with sparse cool-grey vents as specks.
     price: 50,
+    ambience: "city",
     palette: {
       // Identity note (two tuning passes): the first cuts (cool grey walls +
       // blue window emissive under cool moonlight) kept collapsing into

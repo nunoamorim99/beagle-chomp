@@ -11,6 +11,7 @@
 // Follows the attachX(root, callbacks) => handle pattern; no `three` imports.
 
 import { escapeHtml } from "./escape";
+import type { Sound } from "./sound";
 import { ICON, iconHtml, plateHtml } from "./icons";
 import { getProfileCache, mutateProfileCache } from "../game/profileCache";
 import { pushSupport, isSubscribed, enable, disable } from "./push";
@@ -31,6 +32,16 @@ export interface ProfileHandle {
 }
 
 export interface ProfileCallbacks {
+  /**
+   * IDEA-073: the two volume sliders read and write this directly.
+   *
+   * The audio object rather than a pair of callbacks, because unlike the
+   * control scheme there is no game state involved and nothing to persist
+   * against the ACCOUNT — sound.ts already owns both values and their
+   * localStorage. Routing them through Game would add two pass-through
+   * methods that do nothing but forward.
+   */
+  sound: Sound;
   /** IDEA-038: switch between swipe and the on-screen D-pad. Routed through
    *  Game so the pad appears/disappears immediately rather than at the next
    *  run — the preference itself is persisted against the account. */
@@ -90,6 +101,44 @@ function require<T extends HTMLElement>(id: string): T {
   return el;
 }
 
+/**
+ * IDEA-073: the two volume rows, as a table for CONTROL_OPTIONS' reason — two
+ * near-identical blocks of markup and two near-identical listeners is exactly
+ * what the control scheme was before a third one had to be added to it.
+ *
+ * The pairing with the two mute buttons is deliberate and total: one slider
+ * per button, same split, same words. A third "master" slider was considered
+ * and cut — it would sit on top of two that already reach zero, and the device
+ * already has a volume control of its own.
+ */
+const SOUND_SLIDERS: ReadonlyArray<{
+  id: string;
+  label: string;
+  glyph: string;
+  get: (s: Sound) => number;
+  set: (s: Sound, v: number) => void;
+  /** Played on release so the player hears what they just chose. The ambience
+   *  row needs none — its bed is already playing while this screen is open,
+   *  so the slider is audible as it moves. */
+  preview?: (s: Sound) => void;
+}> = [
+  {
+    id: "sfxVolume",
+    label: "Game sounds",
+    glyph: ICON.soundOn,
+    get: (s) => s.getSfxVolume(),
+    set: (s, v) => s.setSfxVolume(v),
+    preview: (s) => s.ui.select(),
+  },
+  {
+    id: "bedVolume",
+    label: "Ambience",
+    glyph: ICON.ambienceOn,
+    get: (s) => s.getBedVolume(),
+    set: (s, v) => s.setBedVolume(v),
+  },
+];
+
 export function attachProfile(callbacks: ProfileCallbacks): ProfileHandle {
   const root = require<HTMLDivElement>("profile");
 
@@ -141,10 +190,36 @@ export function attachProfile(callbacks: ProfileCallbacks): ProfileHandle {
           )}</p>
         </section>
 
+        <section class="profile-setting">
+          <h2>Sound</h2>
+          <p>
+            Game sounds are the chomps, the bones and the buttons. Ambience is
+            the place you are standing in.
+          </p>
+          ${SOUND_SLIDERS.map(
+            (row) => `
+            <div class="sound-row">
+              <span class="sound-icon bc-i" aria-hidden="true">${row.glyph}</span>
+              <label class="sound-label" for="${row.id}">${row.label}</label>
+              <input type="range" class="sound-range" id="${row.id}"
+                     min="0" max="100" step="5"
+                     value="${Math.round(row.get(callbacks.sound) * 100)}"
+                     aria-label="${row.label} volume">
+              <output class="sound-value" for="${row.id}" id="${row.id}Out">${Math.round(
+                row.get(callbacks.sound) * 100,
+              )}%</output>
+            </div>`,
+          ).join("")}
+          <p class="control-note">
+            The two buttons beside the score mute each one on its own, without
+            losing the level you set here.
+          </p>
+        </section>
+
         <section class="profile-setting" id="notifySection">
           <h2>Notifications</h2>
           <p>
-            Get told when the game updates, or when someone beats your score.
+            Get told when the game updates, and when the leaderboard moves.
           </p>
           <div id="notifyBody">
             <p class="control-note">Checking…</p>
@@ -213,6 +288,27 @@ export function attachProfile(callbacks: ProfileCallbacks): ProfileHandle {
     // Painted after the synchronous render, since it has to consult the service
     // worker — see paintNotifications.
     void paintNotifications();
+
+    for (const row of SOUND_SLIDERS) {
+      const el = root.querySelector<HTMLInputElement>(`#${row.id}`);
+      const out = root.querySelector<HTMLOutputElement>(`#${row.id}Out`);
+      if (!el) continue;
+      // "input" and not "change": the bed is live, so the player should hear
+      // the level while dragging rather than only on release. sound.ts ramps
+      // the bus over 60 ms for exactly this — assigning a live noise bed's
+      // gain on every input event is audible as zipper noise.
+      el.addEventListener("input", () => {
+        const pct = Number(el.value);
+        row.set(callbacks.sound, pct / 100);
+        if (out) out.textContent = `${pct}%`;
+      });
+      // The preview fires on RELEASE. On "input" it would machine-gun one tap
+      // per pixel of travel, which is both unpleasant and a poor guide to how
+      // loud a single cue actually is.
+      if (row.preview) {
+        el.addEventListener("change", () => row.preview?.(callbacks.sound));
+      }
+    }
 
     root.querySelector("#replayTutorialBtn")?.addEventListener("click", () => {
       // Opens the carousel there and then. The older version only set
@@ -353,7 +449,14 @@ export function attachProfile(callbacks: ProfileCallbacks): ProfileHandle {
                </label>
                <label class="notify-kind">
                  <input type="checkbox" id="notifyRank" ${profile.notifyRank ? "checked" : ""} />
-                 <span>When someone beats your score</span>
+                 <!-- IDEA-074 widened what this switch covers: it was only the
+                      "you've been overtaken" alert, and now also carries the
+                      generic "somebody just broke their record" nudge that goes
+                      to every player with a run. One switch, because to a
+                      player these are one kind of message — but the LABEL has
+                      to say so, or it is a control that does more than it
+                      claims. -->
+                 <span>Leaderboard news — records broken, and when you're passed</span>
                </label>
              </div>`
           : ""

@@ -155,6 +155,8 @@ async function startApp(): Promise<void> {
   // game layer knows nothing about accounts, and keeping it that way means all
   // of IDEA-019 stays out of the game loop.
   const profile = attachProfile({
+    // IDEA-073: the Sound section's two sliders read and write this directly.
+    sound: game.audio,
     onSignedOut: () => {
       game.stop();
       clearProfileCache();

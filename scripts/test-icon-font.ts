@@ -70,7 +70,15 @@ function iconNames(): string[] {
  * matched: an allowlist that takes a prefix would quietly accept the next
  * `bc_`-looking icon name somebody invents.
  */
-const ALLOWED_SNAKE_LITERALS = new Set(["bc_last_player", "bc_muted"]);
+const ALLOWED_SNAKE_LITERALS = new Set([
+  "bc_last_player",
+  "bc_muted",
+  // IDEA-073 split the one mute into two and gave each a volume. Same shape
+  // as `bc_muted`, same reason they are written out one at a time.
+  "bc_bed_muted",
+  "bc_vol_sfx",
+  "bc_vol_bed",
+]);
 
 /** Blank comments to SPACES so prose about this very rule cannot trip it —
  *  the doc comment above ENEMY_ICONS names all three offending glyphs on

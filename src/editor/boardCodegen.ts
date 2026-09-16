@@ -37,6 +37,7 @@
 // (not `readonly [number, number]`) so a single-axis assignment
 // (`placement.offset[0] = x`) type-checks.
 import type { MazeTheme, ThemePalette } from "../game/themes";
+import type { AmbienceKind } from "../ui/ambience";
 // IDEA-034 ("💾 Save to themes.ts"): the RAW source text of themes.ts, loaded
 // via Vite's `?raw` import suffix (see fileExport.ts's identical
 // `charactersSource` import for the established precedent — Vite treats a
@@ -135,6 +136,11 @@ export interface WorkingTheme {
    *  saved out of the Board tab. Optional and written only when set, so every
    *  theme without one keeps a byte-identical entry. */
   tunnelArch?: string;
+  /** IDEA-073: MazeTheme.ambience -- WHICH bed plays in this theme. Carried
+   *  for `secret`'s reason, and it bites harder here because the field is
+   *  REQUIRED on MazeTheme: dropping an optional one emits a theme that still
+   *  compiles, dropping this one emits a themes.ts that does not. */
+  ambience: AmbienceKind;
   /** Mutable working copy of MazeTheme.wallDecor (IDEA-031, wall-top
    *  components) — same mutability story as `placements` above, kept as a
    *  SEPARATE array (not a `placements` entry with a "kind" flag) because a
@@ -167,6 +173,7 @@ export function cloneWorkingTheme(theme: MazeTheme): WorkingTheme {
     price: theme.price,
     ...(theme.secret ? { secret: true as const } : {}),
     ...(theme.tunnelArch ? { tunnelArch: theme.tunnelArch } : {}),
+    ambience: theme.ambience,
     palette: { ...theme.palette, bloomColors: [...theme.palette.bloomColors] },
     placements: theme.placements.map((p) => ({
       propId: p.propId,
@@ -339,6 +346,9 @@ export function formatThemeEntry(theme: WorkingTheme, indent = 2): string {
     // uses it — see WorkingTheme.secret for what dropping it cost.
     ...(theme.secret ? [`${i1}secret: true,`] : []),
     `${i1}price: ${theme.price},`,
+    // IDEA-073. Unconditional, because MazeTheme.ambience is required -- a
+    // theme entry emitted without it does not compile.
+    `${i1}ambience: ${str(theme.ambience)},`,
     // IDEA-067. Written after `price` and before `palette` so the emitted
     // order matches MazeTheme's own declaration order, which is what keeps a
     // save diffable against the hand-authored entries.

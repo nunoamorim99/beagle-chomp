@@ -192,7 +192,20 @@ html,body{height:100%;overflow:hidden;background:var(--bc-ink);color:var(--bc-te
      measured offset, purely to stay out of .hud’s three-way space-between —
      which meant re-measuring it whenever anything above it changed height, and
      ignoring the safe-area inset .hud already applies. */
-  display:flex;flex-direction:row;align-items:center;gap:var(--bc-s2);
+  /* IDEA-073 made this FOUR buttons - effects mute, ambience mute, pause,
+     home - taking the row from 148px to 200px.
+     MEASURED rather than reasoned about, because this row is on a documented
+     4px budget and every failure in it has been geometry
+     (scripts/_scratch-hud-band.ts, which measures WITH the new button and
+     again with it hidden): the four stay on ONE line at 360, 390, 414,
+     landscape and desktop, the HUD's own height does not move off 134px, and
+     the map/lives row beside it is unchanged. So no wrap is needed and none
+     happens - `flex-wrap` is here only so that a FIFTH button degrades into a
+     second line instead of pushing itself off the screen, and
+     justify-content:flex-end is what keeps it hard against the right edge if
+     it ever does. */
+  display:flex;flex-direction:row;flex-wrap:wrap;justify-content:flex-end;
+  align-items:center;gap:var(--bc-s2);
   /* The row must not intercept taps meant for the maze behind it — only the
      buttons opt back in, same as .hud does. */
   pointer-events:none;
@@ -210,7 +223,7 @@ html,body{height:100%;overflow:hidden;background:var(--bc-ink);color:var(--bc-te
    icons side by side in the menu bar. Nothing failed and no test caught it; a
    screenshot did. Anything that wants the 44px chrome square takes
    `.chrome-btn`, and `.mute-btn` means "this toggles sound" and nothing else. */
-.mute-btn,.pause-btn,.home-btn,.chrome-btn{
+.mute-btn,.bed-btn,.sound-btn,.pause-btn,.home-btn,.chrome-btn{
   position:static;pointer-events:auto;
   /* 44px, the standard touch minimum: three of them have to sit under the
      map/lives row without making the right column wider than it. */
@@ -225,10 +238,10 @@ html,body{height:100%;overflow:hidden;background:var(--bc-ink);color:var(--bc-te
   transition:transform var(--bc-d-press) var(--bc-ease),
              border-bottom-width var(--bc-d-press) var(--bc-ease);
 }
-.mute-btn:hover,.pause-btn:hover,.home-btn:hover,.chrome-btn:hover{transform:translateY(-2px)}
-.mute-btn:active,.pause-btn:active,.home-btn:active,.chrome-btn:active{
+.mute-btn:hover,.bed-btn:hover,.sound-btn:hover,.pause-btn:hover,.home-btn:hover,.chrome-btn:hover{transform:translateY(-2px)}
+.mute-btn:active,.bed-btn:active,.sound-btn:active,.pause-btn:active,.home-btn:active,.chrome-btn:active{
   transform:translateY(var(--bc-sink-card));border-bottom-width:var(--bc-line)}
-.mute-btn:focus-visible,.pause-btn:focus-visible,.home-btn:focus-visible,.chrome-btn:focus-visible{
+.mute-btn:focus-visible,.bed-btn:focus-visible,.sound-btn:focus-visible,.pause-btn:focus-visible,.home-btn:focus-visible,.chrome-btn:focus-visible{
   outline:var(--bc-line) solid var(--bc-cream);outline-offset:2px}
 
 /* ---------------------------------------------------------------------- */
@@ -433,7 +446,7 @@ body.install-open .menu-top{margin-top:clamp(84px,15vh,132px)}
 .menu-bar .coin-line .bc-plate{width:30px;height:30px;font-size:19px;border-radius:9px}
 /* Square, and exactly as tall as the wallet chip opposite it (see .menu-bar).
    Comfortably past the 44px touch minimum. */
-.menu-bar .mute-btn,.menu-bar .chrome-btn{width:auto;height:auto;aspect-ratio:1;min-width:var(--bc-touch);
+.menu-bar .mute-btn,.menu-bar .bed-btn,.menu-bar .sound-btn,.menu-bar .chrome-btn{width:auto;height:auto;aspect-ratio:1;min-width:var(--bc-touch);
   font-size:26px}
 
 .menu-bottom{display:flex;flex-direction:column;gap:var(--bc-s3);width:100%;
@@ -544,7 +557,7 @@ body.install-open .menu-top{margin-top:clamp(84px,15vh,132px)}
   .menu-top{margin-top:var(--bc-s2)}
   .menu-top h1{font-size:clamp(28px,4.5vw,36px);-webkit-text-stroke-width:4px}
   .menu-top h1 br{display:none}
-  .menu-bar .mute-btn,.menu-bar .chrome-btn{font-size:22px}
+  .menu-bar .mute-btn,.menu-bar .bed-btn,.menu-bar .sound-btn,.menu-bar .chrome-btn{font-size:22px}
   .menu-bottom{gap:var(--bc-s2)}
   .menu-play{font-size:22px;padding:11px;border-bottom-width:8px}
   .menu-play .bc-i{font-size:26px}
@@ -1606,6 +1619,44 @@ button.recovery-copy{padding:9px var(--bc-s3);font-size:14px;flex:0 0 auto}
 .control-note{margin:10px 0 0;font-size:13.5px;line-height:1.45;
   color:var(--bc-text-soft);min-height:2.9em}
 
+/* IDEA-073: the two volume rows in the account screen's Sound section.
+   icon | label | track | readout, on one grid so both rows line up whatever
+   their labels are - "Game sounds" and "Ambience" are different widths and a
+   flex row would stagger the two tracks. */
+.sound-row{display:grid;grid-template-columns:24px 1fr auto;
+  align-items:center;gap:var(--bc-s2);margin-bottom:var(--bc-s2)}
+.sound-icon{font-size:20px;color:var(--bc-text-soft);line-height:1}
+.sound-label{font-size:14px;color:var(--bc-text)}
+/* The readout is monospace and a fixed width: DM Mono is the system's
+   "anything that ticks or lines up" face (tokens.css SS05), and without the
+   width the track resizes as the number goes 5% -> 100%, so the handle drifts
+   under a thumb that is not moving. */
+.sound-value{grid-column:3;font-family:var(--bc-font-mono);font-size:13px;
+  color:var(--bc-text-soft);min-width:4ch;text-align:right}
+.sound-range{grid-column:2 / span 2;width:100%;-webkit-appearance:none;
+  appearance:none;background:transparent;height:var(--bc-touch);
+  margin:0;cursor:pointer}
+/* The track is a sunken groove, and the thumb is a biscuit sitting in it -
+   the same ink outline and thick bottom border the rest of the system uses
+   (SS01/SS02). No opacity anywhere: SS03, dim by PAINT. */
+.sound-range::-webkit-slider-runnable-track{height:10px;border-radius:999px;
+  background:var(--bc-ink);border:2px solid var(--bc-outline)}
+.sound-range::-moz-range-track{height:10px;border-radius:999px;
+  background:var(--bc-ink);border:2px solid var(--bc-outline)}
+.sound-range::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;
+  width:24px;height:24px;margin-top:-9px;border-radius:50%;
+  background:var(--bc-biscuit);border:3px solid var(--bc-outline);
+  box-shadow:0 3px 0 0 var(--bc-wood)}
+.sound-range::-moz-range-thumb{width:24px;height:24px;border-radius:50%;
+  background:var(--bc-biscuit);border:3px solid var(--bc-outline);
+  box-shadow:0 3px 0 0 var(--bc-wood)}
+.sound-range:focus-visible{outline:3px solid var(--bc-amber);outline-offset:3px}
+/* A slider row is two controls wide; put the track under the label rather
+   than beside it once there is no room for both. */
+@media (max-width:360px){
+  .sound-row{grid-template-columns:24px 1fr auto}
+}
+
 .profile-danger{margin-top:26px;padding-top:18px;border-top:2px solid var(--bc-hairline)}
 .profile-danger h2{font-family:var(--bc-font-display);font-weight:700;
   font-size:18px;margin:0 0 var(--bc-s2);color:var(--bc-rose)}
@@ -1865,7 +1916,7 @@ body.paused .dpad{display:none}
 @media (max-width:359px){
   .stat .v{font-size:22px}
   .hud-buttons{gap:6px}
-  .mute-btn,.pause-btn,.home-btn,.chrome-btn{width:40px;height:40px;font-size:20px}
+  .mute-btn,.bed-btn,.sound-btn,.pause-btn,.home-btn,.chrome-btn{width:40px;height:40px;font-size:20px}
 }
 
 /* Landscape phones are short: shrink the pad so it can't crowd the maze.
@@ -2599,6 +2650,64 @@ body.map-open .powerups{display:none}
 
 .news-empty{margin:var(--bc-s5) 0;text-align:center;color:var(--bc-text-soft);
   font-size:14px}
+
+/* IDEA-074: the set-up card above the list — install, and notifications.
+
+   A BOARD LIKE A CARD, NOT A TINTED STRIP. It sits among .news-card boards and
+   has to read as a sibling of them rather than as an alert bar, so it takes the
+   same fill, outline, radius and bottom edge — and is separated by a GREEN left
+   edge, exactly the way .news-card--new is separated by an amber one. §"dim by
+   paint" runs both ways: a translucent highlight over this would pick up the
+   sky behind the screen, which is the glass look the whole system replaced.
+
+   Green and not amber: §04 reserves amber for the single next action on a
+   screen and this screen's is the Back button. --bc-go is the system's own
+   owning/unlocking colour.
+
+   It never scrolls: .news-sheet is the flex column and this is 0 0 auto, so the
+   list below it takes the remaining height. An invitation inside the scroller
+   is one most players never reach. */
+.news-invite{
+  flex:0 0 auto;
+  background:var(--bc-card);
+  border:var(--bc-line) solid var(--bc-outline);
+  border-bottom-width:var(--bc-edge-card);
+  border-left:4px solid var(--bc-go);
+  border-radius:var(--bc-r-card);
+  padding:var(--bc-s3);
+  display:flex;flex-direction:column;gap:var(--bc-s3)}
+/* Belt and braces against the one way this card can go wrong: a display
+   rule here beats the UA's [hidden], so hiding it MUST use .hidden
+   (news.ts does). This makes the attribute work too rather than leaving a
+   plausible-looking write that renders an empty board. */
+.news-invite[hidden]{display:none}
+.news-invite-head{margin:0;font-family:var(--bc-font-display);font-size:17px;
+  line-height:1.2;color:var(--bc-cream)}
+
+/* One step: a badge, its text, and (where the platform allows one) a button on
+   its own row beneath both. At 390px the copy already fills the line, so a
+   button squeezed beside it would be two words wide. */
+.news-invite-step{display:flex;align-items:flex-start;gap:var(--bc-s2);
+  flex-wrap:wrap}
+/* A rule between steps rather than more air: two steps on one board have to
+   read as two, and the card is short enough that spacing alone does not do it. */
+.news-invite-step + .news-invite-step{border-top:2px solid var(--bc-outline);
+  padding-top:var(--bc-s3)}
+.news-mark--invite{background:var(--bc-go);color:var(--bc-cream)}
+.news-invite-body{flex:1 1 180px;min-width:0}
+.news-invite-body h3{margin:0;font-family:var(--bc-font-display);font-size:15px;
+  line-height:1.2;color:var(--bc-cream)}
+.news-invite-copy{margin:4px 0 0;color:var(--bc-text-soft);font-size:13px;
+  line-height:1.5}
+.news-invite-cta{flex:0 0 100%;margin-top:var(--bc-s2);font-size:16px;
+  padding:11px 20px}
+/* WHERE, not just whether. Mono and small: it is an address, not a sales line,
+   and it must not compete with either step's own copy. */
+.news-invite-note{margin:0;font-family:var(--bc-font-mono);font-size:11px;
+  line-height:1.4;color:var(--bc-text-soft)}
+/* The confirmation, for the one render after the press — see fillInviteDone. */
+.news-invite--done{border-left-color:var(--bc-go)}
+
 
 .news-sheet > .btn-primary{flex:0 0 auto;align-self:center;min-width:180px}
 

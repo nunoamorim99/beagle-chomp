@@ -26,6 +26,7 @@ import webpush from "web-push";
 import { env } from "../env.js";
 import * as subs from "../repo/pushSubscriptions.js";
 import type { PushSubscriptionRow } from "../repo/pushSubscriptions.js";
+import { BOARD_NUDGE_TITLE, BOARD_NUDGE_BODY } from "../notifications/rankAlert.js";
 
 let configured = false;
 
@@ -198,5 +199,51 @@ export async function notifyRankAlerts(targets: readonly RankTarget[]): Promise<
     await subs.markRankAlerted(alerted);
   } catch (err) {
     console.error("[push] rank alert fan-out failed:", err);
+  }
+}
+
+/**
+ * Tell everybody else that somebody just broke their own record (IDEA-074).
+ *
+ * ONE PAYLOAD, MANY PEOPLE — the opposite of `notifyRankAlerts` above, where
+ * each message names the reader's own new rank and so cannot be shared. That is
+ * why this one can be sent flat instead of user by user... except for the
+ * cooldown stamp, which needs to know who was actually REACHED. Same reasoning
+ * as the rank alert: a player whose only device is dead has not been nudged and
+ * must not be silenced for twelve hours because of it. So it still walks by
+ * user, and the saving is in the payload rather than in the loop.
+ *
+ * The TAG is deliberately the same `beagle-rank-<user>` the overtake alert
+ * uses. A player should have at most ONE line about the board on their lock
+ * screen at a time, and if both fire the specific one should be what is left.
+ */
+export async function notifyBoardNudge(userIds: readonly string[]): Promise<void> {
+  if (!ensureConfigured() || userIds.length === 0) return;
+  try {
+    const rows = await subs.findForUsers(userIds, "rank");
+    const byUser = new Map<string, PushSubscriptionRow[]>();
+    for (const row of rows) {
+      const list = byUser.get(row.user_id) ?? [];
+      list.push(row);
+      byUser.set(row.user_id, list);
+    }
+
+    const nudged: string[] = [];
+    for (const userId of userIds) {
+      const devices = byUser.get(userId);
+      if (!devices || devices.length === 0) continue;
+      const sent = await sendToAll(devices, {
+        title: BOARD_NUDGE_TITLE,
+        body: BOARD_NUDGE_BODY,
+        url: "/?board=1",
+        icon: "icons/notify-rank.png",
+        tag: `beagle-rank-${userId}`,
+      });
+      if (sent > 0) nudged.push(userId);
+    }
+
+    await subs.markBoardNudged(nudged);
+  } catch (err) {
+    console.error("[push] board nudge fan-out failed:", err);
   }
 }

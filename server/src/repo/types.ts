@@ -35,6 +35,12 @@ export interface UserRow {
   notify_announcements: boolean;
   notify_rank: boolean;
   last_rank_alert_at: Date | null;
+  /** IDEA-074: when this player was last sent the GENERIC board nudge. Its own
+   *  column so the cheap message cannot silence the specific one — migration
+   *  013 has the argument. Listed here because this type mirrors the table,
+   *  not because anything reads it off a UserRow: the nudge fan-out reads it
+   *  directly in repo/pushSubscriptions.ts. */
+  last_board_nudge_at: Date | null;
   /** IDEA-051: may read the metrics portal. Set ONLY by a hand-written UPDATE
    *  — there is deliberately no endpoint that writes it. */
   is_admin: boolean;
@@ -159,6 +165,7 @@ export function userColumns(alias?: string): string {
     "notify_announcements",
     "notify_rank",
     "last_rank_alert_at",
+    "last_board_nudge_at",
     "announcements_seen_at",
     "created_at",
   ]

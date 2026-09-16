@@ -132,3 +132,53 @@ export async function markRankAlerted(userIds: readonly string[]): Promise<void>
   if (userIds.length === 0) return;
   await query(`UPDATE users SET last_rank_alert_at = now() WHERE id = ANY($1::uuid[])`, [userIds]);
 }
+
+/** One row of `whoToNudge`'s input (IDEA-074). */
+export interface NudgeCandidateRow {
+  user_id: string;
+  notify_rank: boolean;
+  has_played: boolean;
+  last_board_nudge_at: Date | null;
+}
+
+/**
+ * Everyone who could conceivably receive a generic board nudge.
+ *
+ * DRIVEN BY THE SUBSCRIPTION TABLE, not by `users`. That is what bounds it:
+ * however many accounts exist, only the ones with a live device can be sent
+ * anything, and that set is small and stays small. The alternative — reading
+ * every user and discovering at send time that most have no device — scans a
+ * table that only grows.
+ *
+ * Deliberately returns `has_played` rather than filtering on it, and applies no
+ * cooldown, no runner exclusion and no cap. All four of those are POLICY and
+ * live in notifications/rankAlert.ts's `whoToNudge`, which is pure and tested
+ * without a database — the same split as `whoWasOvertaken` and the board read
+ * that feeds it. `notify_rank` is the exception and is filtered here as well,
+ * because it is also what bounds the read.
+ */
+export async function findNudgeCandidates(client?: Executor): Promise<NudgeCandidateRow[]> {
+  const sql = `
+    SELECT u.id AS user_id,
+           u.notify_rank,
+           u.last_board_nudge_at,
+           EXISTS (
+             SELECT 1 FROM game_sessions g
+              WHERE g.user_id = u.id AND g.status = 'accepted'
+           ) AS has_played
+      FROM users u
+     WHERE u.notify_rank
+       AND EXISTS (SELECT 1 FROM push_subscriptions s WHERE s.user_id = u.id)`;
+  const res = client
+    ? await client.query<NudgeCandidateRow>(sql)
+    : await query<NudgeCandidateRow>(sql);
+  return res.rows;
+}
+
+/** Stamp the nudge cooldown. Its OWN column — see migration 013 for why
+ *  sharing `last_rank_alert_at` would let the cheap message silence the
+ *  valuable one. */
+export async function markBoardNudged(userIds: readonly string[]): Promise<void> {
+  if (userIds.length === 0) return;
+  await query(`UPDATE users SET last_board_nudge_at = now() WHERE id = ANY($1::uuid[])`, [userIds]);
+}

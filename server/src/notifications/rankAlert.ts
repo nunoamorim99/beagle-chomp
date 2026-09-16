@@ -163,3 +163,104 @@ export function rankAlertBody(r: Recipient): string {
 }
 
 export const RANK_ALERT_TITLE = "You've been overtaken";
+
+// ---------------------------------------------------------------------------
+// THE GENERIC NUDGE (IDEA-074)
+// ---------------------------------------------------------------------------
+//
+// `whoWasOvertaken` above answers "whose standing did this run actually
+// change", and its answer is deliberately tiny — top-N only, no ties, one per
+// cooldown. That is right for a message that makes a CLAIM about the reader's
+// own position, and it means the board only ever speaks to the people already
+// on top of it.
+//
+// The nudge is the other half: one generic line to everyone else who plays,
+// saying somebody just moved. It makes no claim about the reader, so none of
+// the tie-breaking or ranking above applies to it — but for exactly that reason
+// it needs bounding of its own, and this is where a notification feature
+// becomes a muted one. Four bounds, all here rather than in SQL, so they are
+// testable without a database:
+//
+//   * the runner never gets told about their own run;
+//   * nobody who is already getting the SPECIFIC alert gets the generic one too
+//     — two pushes about one run is how you teach someone to turn both off;
+//   * a player who has never finished a run is never nudged, because "can you
+//     do better?" is meaningless to someone with no record of their own;
+//   * one per player per cooldown, and the fan-out is capped.
+
+export interface NudgeCandidate {
+  userId: string;
+  /** Whether this player wants board alerts at all — the same switch the
+   *  overtake alert reads, because to a player these are one kind of message. */
+  notifyRank: boolean;
+  /** Have they ever finished a run that was accepted? */
+  hasPlayed: boolean;
+  /** When they were last NUDGED. Its own column, not the overtake cooldown —
+   *  see migration 013 for why sharing one would suppress the better message. */
+  lastNudgeAt: Date | null;
+}
+
+export interface NudgeOptions {
+  /** Hours since a player's last nudge before they may get another. */
+  cooldownHours: number;
+  /** Hard ceiling on one run's fan-out. */
+  maxRecipients: number;
+  now: Date;
+}
+
+/**
+ * Who should be told, generically, that somebody just beat their own record.
+ *
+ * `alreadyTold` is the userIds `whoWasOvertaken` returned for the SAME run.
+ *
+ * The ordering is the part worth reading. When the cap bites, the players kept
+ * are the ones who have gone LONGEST without hearing from the board, with
+ * never-nudged first — so a capped fan-out rotates through the player base
+ * instead of hitting the same rows every time, which is what sorting by id (or
+ * by nothing at all, i.e. whatever order Postgres returned) would do.
+ */
+export function whoToNudge(
+  runnerId: string,
+  alreadyTold: readonly string[],
+  candidates: readonly NudgeCandidate[],
+  opts: NudgeOptions,
+): string[] {
+  if (opts.maxRecipients <= 0) return [];
+  const told = new Set(alreadyTold);
+
+  const eligible = candidates.filter((c) => {
+    if (c.userId === runnerId) return false;
+    if (told.has(c.userId)) return false;
+    if (!c.notifyRank) return false;
+    if (!c.hasPlayed) return false;
+    if (
+      c.lastNudgeAt !== null &&
+      opts.now.getTime() - c.lastNudgeAt.getTime() < opts.cooldownHours * HOUR_MS
+    ) {
+      return false;
+    }
+    return true;
+  });
+
+  eligible.sort((a, b) => {
+    const at = a.lastNudgeAt?.getTime() ?? -Infinity;
+    const bt = b.lastNudgeAt?.getTime() ?? -Infinity;
+    if (at !== bt) return at - bt;
+    // Deterministic tail, so a capped fan-out is reproducible in a test.
+    return a.userId < b.userId ? -1 : a.userId > b.userId ? 1 : 0;
+  });
+
+  return eligible.slice(0, opts.maxRecipients).map((c) => c.userId);
+}
+
+/** One line, like `rankAlertBody` and for the same reason — every platform
+ *  truncates the rest, and on iOS there is nothing else to lean on.
+ *
+ *  Deliberately does NOT name the player or their score. It goes to everyone
+ *  who plays, most of whom are nowhere near whoever just moved, and "Dave is on
+ *  4,200" told to a player whose best is 900 is a reason to stop rather than to
+ *  start. Anonymous keeps it an invitation. It also means one payload for the
+ *  whole fan-out instead of one per recipient. */
+export const BOARD_NUDGE_TITLE = "Someone's raising the bar";
+export const BOARD_NUDGE_BODY =
+  "Looks like someone just broke their record — can you do better?";

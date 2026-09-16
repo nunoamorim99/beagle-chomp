@@ -89,11 +89,31 @@ export function pushSupport(): PushSupport {
   return { state: "ready" };
 }
 
-/** Is this device currently subscribed? */
+/**
+ * Is this device currently subscribed?
+ *
+ * BOUNDED, and that is not belt-and-braces. `navigator.serviceWorker.ready`
+ * does not reject when there is no worker — it never settles at all, for the
+ * life of the page. That is the normal state after rule 4's stale-shell
+ * recovery has unregistered everything, i.e. exactly the device that has just
+ * silently lost its subscription and most needs to be offered it back. An
+ * unbounded await there leaves the account screen on "Checking…" and the News
+ * screen's invitation hidden, both forever, with nothing logged.
+ *
+ * Six seconds is far longer than a real registration takes and short enough
+ * that a player does not sit in front of a blank section. Timing out answers
+ * "no", which is the safe direction: the worst case is offering a switch to
+ * someone who already has it on, and `enable()` reuses an existing
+ * subscription rather than creating a second.
+ */
 export async function isSubscribed(): Promise<boolean> {
   try {
     if (!("serviceWorker" in navigator)) return false;
-    const reg = await navigator.serviceWorker.ready;
+    const reg = await Promise.race([
+      navigator.serviceWorker.ready,
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 6000)),
+    ]);
+    if (!reg) return false;
     return (await reg.pushManager.getSubscription()) !== null;
   } catch {
     return false;
