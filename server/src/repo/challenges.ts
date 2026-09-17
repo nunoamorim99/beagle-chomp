@@ -58,6 +58,7 @@ interface ModeAggRow {
   run_bones: string | null;
   run_score: string | null;
   run_levels: string | null;
+  run_powerups: string | null;
   run_deathless: string | null;
   total_coins: string | null;
   total_ghosts: string | null;
@@ -65,6 +66,7 @@ interface ModeAggRow {
   total_bones: string | null;
   total_score: string | null;
   total_levels: string | null;
+  total_powerups: string | null;
 }
 
 interface JourneyAggRow {
@@ -91,6 +93,7 @@ function toModeStats(row: ModeAggRow): ModeStats {
     runBones: num(row.run_bones),
     runScore: num(row.run_score),
     runLevels: num(row.run_levels),
+    runPowerups: num(row.run_powerups),
     runDeathlessLevels: num(row.run_deathless),
     totalCoins: num(row.total_coins),
     totalGhosts: num(row.total_ghosts),
@@ -98,6 +101,7 @@ function toModeStats(row: ModeAggRow): ModeStats {
     totalBones: num(row.total_bones),
     totalScore: num(row.total_score),
     totalLevels: num(row.total_levels),
+    totalPowerups: num(row.total_powerups),
   };
 }
 
@@ -122,6 +126,7 @@ export async function statsForUser(
            MAX(bones_eaten)                                       AS run_bones,
            MAX(score)                                             AS run_score,
            MAX(levels_cleared)                                    AS run_levels,
+           MAX(powerups_collected)                                AS run_powerups,
            -- A conditional MAX, not a count: lives_lost is a whole-run total,
            -- so this is "the longest run in which nothing killed you".
            MAX(CASE WHEN lives_lost = 0 THEN levels_cleared ELSE 0 END) AS run_deathless,
@@ -130,7 +135,8 @@ export async function statsForUser(
            SUM(fruit_eaten)                                       AS total_fruit,
            SUM(bones_eaten)                                       AS total_bones,
            SUM(score)                                             AS total_score,
-           SUM(levels_cleared)                                    AS total_levels
+           SUM(levels_cleared)                                    AS total_levels,
+           SUM(powerups_collected)                                AS total_powerups
       FROM run_stats
      WHERE user_id = $1 AND accepted
      GROUP BY mode`;

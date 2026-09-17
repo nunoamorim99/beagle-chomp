@@ -89,6 +89,10 @@ export type ChallengeMetric =
   | "runBones"
   | "runScore"
   | "runLevels"
+  /** IDEA-078 v2: power-ups collected in one run. CLASSIC ONLY by construction
+   *  — maybeSpawnPowerup refuses to spawn outside classic and plausibility.ts
+   *  rejects a Journey run reporting one (IDEA-046). */
+  | "runPowerups"
   /** Levels cleared in one run in which NO life was lost. `lives_lost` is the
    *  run's total, so this is a whole-run property: it is "cleared N maps and
    *  never died", not "N of the maps were deathless". */
@@ -100,6 +104,8 @@ export type ChallengeMetric =
   | "totalBones"
   | "totalScore"
   | "totalLevels"
+  /** IDEA-078 v2: power-ups collected across every run. */
+  | "totalPowerups"
   // --- the Journey, per level ---
   /** users.challenge_progress — how far up the ladder the player has unlocked.
    *  Read off the profile rather than counted from runs, because that column is
@@ -249,6 +255,26 @@ export const CHALLENGES: readonly ChallengeDef[] = [
     name: "Treasure Hound",
     blurb: "Collect 30 coins in a single classic run.",
   },
+  {
+    id: "classic-run-coins-40",
+    category: "collect",
+    mode: "classic",
+    metric: "runCoins",
+    target: 40,
+    reward: 18,
+    name: "Coin Magnet",
+    blurb: "Collect 40 coins in a single classic run — eight maps' worth.",
+  },
+  {
+    id: "classic-run-coins-50",
+    category: "collect",
+    mode: "classic",
+    metric: "runCoins",
+    target: 50,
+    reward: 26,
+    name: "Fifty and Counting",
+    blurb: "Collect 50 coins in a single classic run.",
+  },
 
   // --- classic · enemies in one run ----------------------------------------
   {
@@ -310,6 +336,26 @@ export const CHALLENGES: readonly ChallengeDef[] = [
     reward: 10,
     name: "Top Dog",
     blurb: "Eat 30 enemies in a single classic run.",
+  },
+  {
+    id: "classic-run-ghosts-40",
+    category: "collect",
+    mode: "classic",
+    metric: "runGhosts",
+    target: 40,
+    reward: 14,
+    name: "Nothing Gets Past",
+    blurb: "Eat 40 enemies in a single classic run.",
+  },
+  {
+    id: "classic-run-ghosts-60",
+    category: "collect",
+    mode: "classic",
+    metric: "runGhosts",
+    target: 60,
+    reward: 22,
+    name: "The Whole Garden Ran",
+    blurb: "Eat 60 enemies in a single classic run.",
   },
 
   // --- classic · fruit in one run ------------------------------------------
@@ -373,6 +419,26 @@ export const CHALLENGES: readonly ChallengeDef[] = [
     name: "Harvest Festival",
     blurb: "Eat 30 fruits in a single classic run. Four a map, and they are timed.",
   },
+  {
+    id: "classic-run-fruit-40",
+    category: "collect",
+    mode: "classic",
+    metric: "runFruit",
+    target: 40,
+    reward: 20,
+    name: "Fruit Run",
+    blurb: "Eat 40 fruits in a single classic run.",
+  },
+  {
+    id: "classic-run-fruit-50",
+    category: "collect",
+    mode: "classic",
+    metric: "runFruit",
+    target: 50,
+    reward: 28,
+    name: "Every Bowl on the Way",
+    blurb: "Eat 50 fruits in a single classic run. Four a map, and each one is timed.",
+  },
 
   // --- classic · golden bones in one run -----------------------------------
   {
@@ -435,6 +501,89 @@ export const CHALLENGES: readonly ChallengeDef[] = [
     name: "The Whole Skeleton",
     blurb: "Chomp 30 golden bones in a single classic run. Four a map.",
   },
+  {
+    id: "classic-run-bones-40",
+    category: "collect",
+    mode: "classic",
+    metric: "runBones",
+    target: 40,
+    reward: 18,
+    name: "Bone Hoard",
+    blurb: "Chomp 40 golden bones in a single classic run.",
+  },
+  {
+    id: "classic-run-bones-50",
+    category: "collect",
+    mode: "classic",
+    metric: "runBones",
+    target: 50,
+    reward: 26,
+    name: "Fifty Bones Deep",
+    blurb: "Chomp 50 golden bones in a single classic run — a dozen maps.",
+  },
+
+  // --- classic · power-ups in one run (IDEA-078 v2) -------------------------
+  //
+  // CLASSIC ONLY, and not by choice: maybeSpawnPowerup refuses to spawn outside
+  // classic and plausibility.ts rejects a Journey run that reports one
+  // (IDEA-046). A "both" scope here would be a goal that is uncompletable in
+  // half the game.
+  //
+  // THE SCARCEST PICKUP ON THE BOARD. Four a map (POWERUP_THRESHOLDS), same as
+  // fruit and bones — but they despawn in EIGHTEEN seconds against fruit's
+  // twenty, which makes them the tightest of the three timed pickups. So the
+  // realistic rate is nearer 2-3 a map than 4, and the targets are priced
+  // against fruit rather than against coins.
+  {
+    id: "classic-run-powerups-5",
+    category: "collect",
+    mode: "classic",
+    metric: "runPowerups",
+    target: 5,
+    reward: 3,
+    name: "Well Equipped",
+    blurb: "Collect 5 power-ups in a single classic run.",
+  },
+  {
+    id: "classic-run-powerups-10",
+    category: "collect",
+    mode: "classic",
+    metric: "runPowerups",
+    target: 10,
+    reward: 6,
+    name: "Kitted Out",
+    blurb: "Collect 10 power-ups in a single classic run.",
+  },
+  {
+    id: "classic-run-powerups-15",
+    category: "collect",
+    mode: "classic",
+    metric: "runPowerups",
+    target: 15,
+    reward: 10,
+    name: "Loaded",
+    blurb: "Collect 15 power-ups in a single classic run.",
+  },
+  {
+    id: "classic-run-powerups-20",
+    category: "collect",
+    mode: "classic",
+    metric: "runPowerups",
+    target: 20,
+    reward: 15,
+    name: "Full Arsenal",
+    blurb: "Collect 20 power-ups in a single classic run.",
+  },
+  {
+    id: "classic-run-powerups-30",
+    category: "collect",
+    mode: "classic",
+    metric: "runPowerups",
+    target: 30,
+    reward: 25,
+    name: "Nothing Left on the Floor",
+    blurb: "Collect 30 power-ups in a single classic run. Four a map, and they vanish in 18 seconds.",
+  },
 
   // --- classic · lifetime totals -------------------------------------------
   {
@@ -478,6 +627,26 @@ export const CHALLENGES: readonly ChallengeDef[] = [
     blurb: "Collect 200 coins across all your classic runs.",
   },
   {
+    id: "classic-total-coins-350",
+    category: "collect",
+    mode: "classic",
+    metric: "totalCoins",
+    target: 350,
+    reward: 18,
+    name: "Coin Collector",
+    blurb: "Collect 350 coins across all your classic runs.",
+  },
+  {
+    id: "classic-total-coins-500",
+    category: "collect",
+    mode: "classic",
+    metric: "totalCoins",
+    target: 500,
+    reward: 26,
+    name: "Five Hundred Coins",
+    blurb: "Collect 500 coins across all your classic runs.",
+  },
+  {
     id: "classic-total-ghosts-50",
     category: "collect",
     mode: "classic",
@@ -516,6 +685,26 @@ export const CHALLENGES: readonly ChallengeDef[] = [
     reward: 10,
     name: "Nothing Left to Chase",
     blurb: "Eat 200 enemies across all your classic runs.",
+  },
+  {
+    id: "classic-total-ghosts-350",
+    category: "collect",
+    mode: "classic",
+    metric: "totalGhosts",
+    target: 350,
+    reward: 15,
+    name: "Long Hunt",
+    blurb: "Eat 350 enemies across all your classic runs.",
+  },
+  {
+    id: "classic-total-ghosts-500",
+    category: "collect",
+    mode: "classic",
+    metric: "totalGhosts",
+    target: 500,
+    reward: 22,
+    name: "Five Hundred Chomps",
+    blurb: "Eat 500 enemies across all your classic runs.",
   },
   {
     id: "classic-total-fruit-50",
@@ -558,6 +747,26 @@ export const CHALLENGES: readonly ChallengeDef[] = [
     blurb: "Eat 200 fruits across all your classic runs.",
   },
   {
+    id: "classic-total-fruit-350",
+    category: "collect",
+    mode: "classic",
+    metric: "totalFruit",
+    target: 350,
+    reward: 20,
+    name: "Orchard Keeper",
+    blurb: "Eat 350 fruits across all your classic runs.",
+  },
+  {
+    id: "classic-total-fruit-500",
+    category: "collect",
+    mode: "classic",
+    metric: "totalFruit",
+    target: 500,
+    reward: 30,
+    name: "Five Hundred Fruits",
+    blurb: "Eat 500 fruits across all your classic runs.",
+  },
+  {
     id: "classic-total-bones-50",
     category: "collect",
     mode: "classic",
@@ -596,6 +805,68 @@ export const CHALLENGES: readonly ChallengeDef[] = [
     reward: 12,
     name: "Gold Standard",
     blurb: "Chomp 200 golden bones across all your classic runs.",
+  },
+  {
+    id: "classic-total-bones-350",
+    category: "collect",
+    mode: "classic",
+    metric: "totalBones",
+    target: 350,
+    reward: 18,
+    name: "Bone Archive",
+    blurb: "Chomp 350 golden bones across all your classic runs.",
+  },
+  {
+    id: "classic-total-bones-500",
+    category: "collect",
+    mode: "classic",
+    metric: "totalBones",
+    target: 500,
+    reward: 26,
+    name: "Five Hundred Bones",
+    blurb: "Chomp 500 golden bones across all your classic runs.",
+  },
+
+  // --- classic · power-ups in general (IDEA-078 v2) -------------------------
+  {
+    id: "classic-total-powerups-50",
+    category: "collect",
+    mode: "classic",
+    metric: "totalPowerups",
+    target: 50,
+    reward: 8,
+    name: "Picking Them Up",
+    blurb: "Collect 50 power-ups across all your classic runs.",
+  },
+  {
+    id: "classic-total-powerups-100",
+    category: "collect",
+    mode: "classic",
+    metric: "totalPowerups",
+    target: 100,
+    reward: 14,
+    name: "A Hundred Boosts",
+    blurb: "Collect 100 power-ups across all your classic runs.",
+  },
+  {
+    id: "classic-total-powerups-200",
+    category: "collect",
+    mode: "classic",
+    metric: "totalPowerups",
+    target: 200,
+    reward: 24,
+    name: "Stocked Up",
+    blurb: "Collect 200 power-ups across all your classic runs.",
+  },
+  {
+    id: "classic-total-powerups-350",
+    category: "collect",
+    mode: "classic",
+    metric: "totalPowerups",
+    target: 350,
+    reward: 38,
+    name: "Quartermaster",
+    blurb: "Collect 350 power-ups across all your classic runs.",
   },
 
   // --- classic · score ------------------------------------------------------
@@ -643,6 +914,26 @@ export const CHALLENGES: readonly ChallengeDef[] = [
     reward: 20,
     name: "Name in Lights",
     blurb: "Score 60,000 points in a single classic run.",
+  },
+  {
+    id: "classic-run-score-100000",
+    category: "score",
+    mode: "classic",
+    metric: "runScore",
+    target: 100000,
+    reward: 32,
+    name: "Six Figures",
+    blurb: "Score 100,000 points in a single classic run.",
+  },
+  {
+    id: "classic-run-score-200000",
+    category: "score",
+    mode: "classic",
+    metric: "runScore",
+    target: 200000,
+    reward: 48,
+    name: "Double Century",
+    blurb: "Score 200,000 points in a single classic run.",
   },
 
   // --- classic · maps -------------------------------------------------------
@@ -696,6 +987,26 @@ export const CHALLENGES: readonly ChallengeDef[] = [
     name: "Full Lap",
     blurb: "Clear 30 maps in a single classic run — a whole cycle.",
   },
+  {
+    id: "classic-run-levels-40",
+    category: "levels",
+    mode: "classic",
+    metric: "runLevels",
+    target: 40,
+    reward: 35,
+    name: "Past the Lap",
+    blurb: "Clear 40 maps in a single classic run.",
+  },
+  {
+    id: "classic-run-levels-50",
+    category: "levels",
+    mode: "classic",
+    metric: "runLevels",
+    target: 50,
+    reward: 45,
+    name: "Fifty Maps",
+    blurb: "Clear 50 maps in a single classic run.",
+  },
 
   // --- classic · deathless --------------------------------------------------
   //
@@ -730,6 +1041,26 @@ export const CHALLENGES: readonly ChallengeDef[] = [
     reward: 28,
     name: "Ghost Dog",
     blurb: "Clear 5 maps in one run without losing a single life.",
+  },
+  {
+    id: "classic-deathless-8",
+    category: "levels",
+    mode: "classic",
+    metric: "runDeathlessLevels",
+    target: 8,
+    reward: 40,
+    name: "Eight Clean",
+    blurb: "Clear 8 maps in one run without losing a single life.",
+  },
+  {
+    id: "classic-deathless-10",
+    category: "levels",
+    mode: "classic",
+    metric: "runDeathlessLevels",
+    target: 10,
+    reward: 50,
+    name: "Perfect Ten",
+    blurb: "Clear 10 maps in one run without losing a single life.",
   },
 
   // --- journey · how far up the ladder --------------------------------------
@@ -793,6 +1124,26 @@ export const CHALLENGES: readonly ChallengeDef[] = [
     name: "Grand Tour",
     blurb: "Clear 30 Journey levels — every playable maze in the game.",
   },
+  {
+    id: "journey-unlocked-35",
+    category: "levels",
+    mode: "journey",
+    metric: "journeyUnlocked",
+    target: 35,
+    reward: 32,
+    name: "Into the Twists",
+    blurb: "Clear 35 Journey levels.",
+  },
+  {
+    id: "journey-unlocked-40",
+    category: "levels",
+    mode: "journey",
+    metric: "journeyUnlocked",
+    target: 40,
+    reward: 42,
+    name: "The Whole Journey",
+    blurb: "Clear every Journey level.",
+  },
 
   // --- journey · deathless levels -------------------------------------------
   {
@@ -841,7 +1192,7 @@ export const CHALLENGES: readonly ChallengeDef[] = [
     mode: "journey",
     metric: "journeyDeathless",
     target: 40,
-    reward: 60,
+    reward: 50,
     name: "Flawless Journey",
     blurb: "Clear every Journey level without losing a life.",
   },
@@ -886,6 +1237,26 @@ export const CHALLENGES: readonly ChallengeDef[] = [
     reward: 25,
     name: "Coin Cartographer",
     blurb: "Collect all 5 coins in 20 different Journey levels.",
+  },
+  {
+    id: "journey-allcoins-30",
+    category: "collect",
+    mode: "journey",
+    metric: "journeyAllCoins",
+    target: 30,
+    reward: 34,
+    name: "Thirty Swept",
+    blurb: "Collect all 5 coins in 30 different Journey levels.",
+  },
+  {
+    id: "journey-allcoins-40",
+    category: "collect",
+    mode: "journey",
+    metric: "journeyAllCoins",
+    target: 40,
+    reward: 46,
+    name: "Not One Coin Missed",
+    blurb: "Collect all 5 coins in every Journey level.",
   },
 
   // --- journey · every fruit on the board -----------------------------------
@@ -932,6 +1303,26 @@ export const CHALLENGES: readonly ChallengeDef[] = [
     name: "Orchard Tour",
     blurb: "Eat all 4 fruits in 20 different Journey levels.",
   },
+  {
+    id: "journey-allfruit-30",
+    category: "collect",
+    mode: "journey",
+    metric: "journeyAllFruit",
+    target: 30,
+    reward: 40,
+    name: "Thirty Bowls",
+    blurb: "Eat all 4 fruits in 30 different Journey levels.",
+  },
+  {
+    id: "journey-allfruit-40",
+    category: "collect",
+    mode: "journey",
+    metric: "journeyAllFruit",
+    target: 40,
+    reward: 50,
+    name: "Every Fruit on the Ladder",
+    blurb: "Eat all 4 fruits in every Journey level.",
+  },
 
   // --- journey · hunting ----------------------------------------------------
   {
@@ -973,6 +1364,26 @@ export const CHALLENGES: readonly ChallengeDef[] = [
     reward: 20,
     name: "The Pack Fears You",
     blurb: "Eat 5 enemies in each of 20 different Journey levels.",
+  },
+  {
+    id: "journey-ghosts-30",
+    category: "collect",
+    mode: "journey",
+    metric: "journeyGhosts",
+    target: 30,
+    reward: 28,
+    name: "Thirty Hunts",
+    blurb: "Eat 5 enemies in each of 30 different Journey levels.",
+  },
+  {
+    id: "journey-ghosts-40",
+    category: "collect",
+    mode: "journey",
+    metric: "journeyGhosts",
+    target: 40,
+    reward: 38,
+    name: "The Whole Ladder Hunted",
+    blurb: "Eat 5 enemies in each of 40 different Journey levels.",
   },
 ];
 

@@ -97,6 +97,7 @@ async function recordRun(
     bones?: number;
     levelsCleared?: number;
     livesLost?: number;
+    powerups?: number;
   },
 ): Promise<void> {
   const mode = opts.mode ?? "classic";
@@ -110,8 +111,9 @@ async function recordRun(
     `INSERT INTO run_stats (
        session_id, user_id, finished_at, accepted, mode, challenge_idx,
        score, elapsed_seconds, levels_played, levels_cleared,
-       ghosts_eaten, coins_collected, fruit_eaten, bones_eaten, lives_lost
-     ) VALUES ($1, $2, now(), $3, $4, $5, $6, 60, $7, $7, $8, $9, $10, $11, $12)`,
+       ghosts_eaten, coins_collected, fruit_eaten, bones_eaten, lives_lost,
+       powerups_collected
+     ) VALUES ($1, $2, now(), $3, $4, $5, $6, 60, $7, $7, $8, $9, $10, $11, $12, $13)`,
     [
       rows[0].id,
       userId,
@@ -125,6 +127,7 @@ async function recordRun(
       opts.fruit ?? 0,
       opts.bones ?? 0,
       opts.livesLost ?? 0,
+      opts.powerups ?? 0,
     ],
   );
 }
@@ -274,6 +277,32 @@ async function main(): Promise<void> {
     ok("10 levels cleared is done", valueOf(challenges, "journey-unlocked-10")?.done === true);
     ok("15 is not", valueOf(challenges, "journey-unlocked-15")?.done === false);
     ok("…and shows 12", valueOf(challenges, "journey-unlocked-15")?.value === 12);
+  }
+
+  // -------------------------------------------------------------------------
+  section("Power-ups (IDEA-078 v2)");
+  {
+    const id = await makeUser();
+    await recordRun(id, { powerups: 7 });
+    await recordRun(id, { powerups: 4 });
+    const user = (await usersRepo.findById(id))!;
+    const { challenges } = await challengeService.list(user);
+
+    // The two new columns are the only place a typo would be silent: a wrong
+    // name here returns NULL, `num()` turns it into 0, and every power-up
+    // challenge reports "you have not started" against a player who has.
+    ok(
+      "the best single run is 7, not 11",
+      valueOf(challenges, "classic-run-powerups-10")?.value === 7,
+      valueOf(challenges, "classic-run-powerups-10")?.value,
+    );
+    ok("…so the 5 tier is done", valueOf(challenges, "classic-run-powerups-5")?.done === true);
+    ok("…and the 10 tier is not", valueOf(challenges, "classic-run-powerups-10")?.done === false);
+    ok(
+      "the lifetime total sums to 11",
+      valueOf(challenges, "classic-total-powerups-50")?.value === 11,
+      valueOf(challenges, "classic-total-powerups-50")?.value,
+    );
   }
 
   // -------------------------------------------------------------------------

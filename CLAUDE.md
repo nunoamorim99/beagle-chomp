@@ -418,7 +418,7 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v8.
   (IDEA-078). Nuno: *"develop a logic to create challenges... like In one run get
   5 coins, and this will reward the players 5 coins... a menu with a full list of
   challenges and we can make categories like collect, scores, levels... to
-  motivate the players and give more purpose."* **75 challenges** in
+  motivate the players and give more purpose."* **114 challenges** (75 at v1) in
   `src/game/challenges.ts` — the file [[IDEA-077]]'s rename freed — over three
   categories and both modes, claimed on a full-screen page
   (`src/ui/challenges.ts`) reached from a trophy chip beside the menu's coins.
@@ -524,16 +524,54 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v8.
   what to do next; each is "do it in N DIFFERENT levels" instead — the same
   achievement, one `COUNT(DISTINCT challenge_idx)`, and it reads as a ladder like
   everything else.
-  **The economy is bounded at BOTH ends.** The whole ladder pays 713 against a
-  shop costing ~550, earned across hundreds of maps. The upper bound is the real
-  risk (five coins a map stops being worth detouring for, which is the entire
-  point of [[IDEA-016]] v2 deleting the points conversion); the lower one matters
-  too, because a ladder paying a rounding error is what a well-meaning "let's not
-  unbalance it" retune produces. `test-challenge-ladder.ts` pins the band.
+  **v2 GREW IT TO 114 AND ADDED THE POWER-UP LADDERS** (Nuno: *"add more
+  challenges keeping the same idea, but with higher values... and a challenge
+  for collecting power ups too, with the same logic as the other, per run, in
+  general"*). Two more tiers on almost every existing ladder — 40/50 coins,
+  bones and fruit in a run, 350/500 lifetime, 40/50 maps in one run, 8/10
+  deathless, 100k/200k score, and the Journey's per-level ladders carried up to
+  **40, which is the whole ladder swept**. Plus `runPowerups` and
+  `totalPowerups`.
+  Three things about the power-up ladders:
+  - **CLASSIC ONLY, and not as a preference.** `maybeSpawnPowerup` refuses
+    outside classic and `plausibility.ts` rejects a Journey run reporting one
+    ([[IDEA-046]]) — a `"both"` scope here is a goal uncompletable in half the
+    game. The `journey` half of `ModeStats` is therefore always zero for these
+    two, which is correct rather than a gap.
+  - **THEY ARE THE SCARCEST THING ON THE BOARD, AND THE PRICES SAY SO.** Four a
+    map (`POWERUP_THRESHOLDS`), same as fruit and bones — but they despawn in
+    **18 seconds** against fruit's 20, the tightest of the three timed pickups.
+    So the realistic rate is nearer 2-3 a map than 4, and the targets are priced
+    against FRUIT rather than against coins. Measured, not assumed.
+  - `powerups_collected` is bounded server-side at
+    `POWERUP_THRESHOLDS.length * levelsPlayed`, so rule 3 holds.
+  **AND THE ECONOMY GUARD WAS REPLACED, NOT WIDENED — the first version measured
+  the wrong thing.** It read "the ladder must not out-pay the shop by much"
+  (2x of ~550), on the idea that a generous ladder makes five coins a map
+  pointless. That does not survive the arithmetic at v2's size: completing every
+  challenge means 500 fruit (125 maps at four a map), 500 bones, 350 power-ups,
+  50 maps in one run and all forty Journey levels swept — **300+ maps of classic
+  play, during which the pickups alone pay 1,500+**. The ladder is a ONE-TIME
+  payout earned across all of that and the pickups are recurring, so the ratio
+  between the two totals says very little about whether a coin on the floor is
+  worth detouring for. What actually defends the pickups is bounded per
+  challenge and at the bottom of the ladder, so those are the guards that
+  matter now:
+  1. **No single challenge out-pays the priciest shop item (50).** One goal
+     handing over a whole theme would make the maze's coins decorative however
+     modest the total — and at 114 entries this is the only thing that bounds
+     the blast radius of a typo. "Flawless Journey" came DOWN from 60 to 50 for
+     it.
+  2. **The easiest rung of every ladder still totals less than half the shop**,
+     so the early game cannot be bought out from the free tiers.
+  3. The aggregate band survives only as a runaway guard (0.5x-4x), which is
+     what catches an extra zero. Its LOWER bound is the one doing subtle work
+     now: a ladder paying a rounding error is a screen nobody opens twice.
+  The ladder pays **1,753** at v2. `test-challenge-ladder.ts` pins all three.
   **Four suites, and they overlap on purpose.** `scripts/test-challenge-ladder.ts`
-  (43 checks, in `npm run test`) reads the SOURCE table, so a bad entry fails
+  (44 checks, in `npm run test`) reads the SOURCE table, so a bad entry fails
   before a sync; `server/scripts/test-challenges.ts` (39) reads the GENERATED
-  one; `server/scripts/test-challenges-db.ts` (33) covers what only exists with
+  one; `server/scripts/test-challenges-db.ts` (37) covers what only exists with
   Postgres — the aggregate, the mode mapping, that **bigint comes back as a
   STRING** (`"90" >= 100` is true on a string compare, so a missing `Number()`
   passes some challenges and fails others at random), and two claims racing; and

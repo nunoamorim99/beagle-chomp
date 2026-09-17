@@ -1899,6 +1899,41 @@ Living backlog of ideas. Two purposes:
     so a label does not move its rect by a pixel — the text spills out and the
     title is drawn over the spill. `scrollWidth - clientWidth` sees it; a rect
     comparison never can.
+  - **v2** (2026-09-17) — **75 -> 114, and power-ups joined the board.** Nuno,
+    after testing v1 in production: *"let's add more challenges keeping the same
+    idea, but with higher values... and let's add a challenge for collecting
+    power ups too with the same logic as the other, per run, in general. More
+    challenges is good and let's reach values not too difficult to reach but
+    values that is a really good challenge."*
+    Two more tiers on almost every ladder (40/50 coins, bones and fruit in a
+    run; 350/500 lifetime; 40/50 maps in one run; 8/10 deathless; 100k/200k
+    score) and the Journey's per-level ladders carried to **40 — the whole
+    ladder swept**. Plus `runPowerups` and `totalPowerups`.
+    **THE POWER-UP TARGETS ARE MEASURED, NOT GUESSED.** Four a map
+    (`POWERUP_THRESHOLDS`), the same as fruit and bones — but they despawn in
+    **18 seconds** against fruit's 20, which makes them the tightest of the
+    three timed pickups and the realistic rate nearer 2-3 a map than 4. So they
+    are priced against FRUIT rather than coins. They are also **classic only**
+    and not by preference: `maybeSpawnPowerup` refuses outside classic and the
+    validator rejects a Journey run reporting one, so a `"both"` scope would be
+    a goal uncompletable in half the game.
+    **AND THE ECONOMY GUARD WAS REPLACED RATHER THAN WIDENED**, which is the
+    part worth keeping. v1's check said "the ladder must not out-pay the shop by
+    much" (2x of ~550). At v2's size that does not survive the arithmetic:
+    completing everything means 300+ maps of classic play, during which the
+    PICKUPS alone pay 1,500+. The ladder is a one-time payout earned across all
+    of that and the pickups are recurring, so the ratio between the two totals
+    says very little about whether a coin on the floor is worth detouring for.
+    What actually defends the pickups is bounded per challenge (**no single
+    challenge out-pays the priciest shop item** — "Flawless Journey" came down
+    from 60 to 50 for it, and at 114 entries it is the only thing bounding the
+    blast radius of a typo) and at the bottom of the ladder (the easy rungs
+    still total less than half the shop). The aggregate survives only as a
+    runaway guard at 0.5x-4x. Total payout 1,753.
+    Suites: ladder 43 -> 44 checks, DB 33 -> 37 (the two new columns are the one
+    place a typo would be silent — a wrong name returns NULL, becomes 0, and
+    every power-up challenge reports "not started" against a player who has).
+    Not yet deployed at the time of writing.
 - **Dependencies:** [[IDEA-077]]
 
 > Already in production. Do NOT delete. Each keeps its version history.

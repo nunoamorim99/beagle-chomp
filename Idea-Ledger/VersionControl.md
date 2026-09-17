@@ -16,6 +16,17 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
 > lines here roll up into the numbered version below and this section is cleared (hold a line back
 > only if you explicitly choose to).
 
+- **[[IDEA-078]] v2** (2026-09-17) - **39 more challenges, including power-ups.** Every
+  ladder got a couple of harder rungs on top - 50 coins or 50 golden bones in one run,
+  500 of them across every run you play, 50 maps in a single go, 200,000 points, and the
+  Journey goals now run all the way to all 40 levels. And power-ups are a challenge of
+  their own now, per run and in total, the same way coins and fruit are.
+
+  They are priced as the hardest pickup on the board on purpose: there are four a map,
+  the same as fruit, but they disappear after 18 seconds instead of 20, so they pay more
+  than coins for the same number. Power-ups only exist in classic, so those challenges
+  say Classic on the card. 114 challenges in total now.
+
 - **[[IDEA-078]] v1** (2026-09-17) - **challenges: 75 goals to chase, and coins for
   reaching them.** A new Challenges screen, opened from the trophy beside your coins on the
   main menu, listing everything the game will pay you for - collecting, scoring, and getting

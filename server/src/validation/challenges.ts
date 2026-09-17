@@ -63,6 +63,11 @@ export interface ModeStats {
   runBones: number;
   runScore: number;
   runLevels: number;
+  /** IDEA-078 v2. Power-ups are CLASSIC ONLY, so the `journey` half of this
+   *  bag is always zero for these two — which is correct rather than a gap:
+   *  a Journey run reporting a power-up is rejected outright (IDEA-046), so
+   *  there is nothing for it to count. */
+  runPowerups: number;
   /**
    * The most levels cleared in a run that lost NO lives.
    *
@@ -77,6 +82,7 @@ export interface ModeStats {
   totalBones: number;
   totalScore: number;
   totalLevels: number;
+  totalPowerups: number;
 }
 
 export function emptyModeStats(): ModeStats {
@@ -87,6 +93,7 @@ export function emptyModeStats(): ModeStats {
     runBones: 0,
     runScore: 0,
     runLevels: 0,
+    runPowerups: 0,
     runDeathlessLevels: 0,
     totalCoins: 0,
     totalGhosts: 0,
@@ -94,6 +101,7 @@ export function emptyModeStats(): ModeStats {
     totalBones: 0,
     totalScore: 0,
     totalLevels: 0,
+    totalPowerups: 0,
   };
 }
 
@@ -139,6 +147,7 @@ function combined(a: ModeStats, b: ModeStats): ModeStats {
     runBones: Math.max(a.runBones, b.runBones),
     runScore: Math.max(a.runScore, b.runScore),
     runLevels: Math.max(a.runLevels, b.runLevels),
+    runPowerups: Math.max(a.runPowerups, b.runPowerups),
     runDeathlessLevels: Math.max(a.runDeathlessLevels, b.runDeathlessLevels),
     totalCoins: a.totalCoins + b.totalCoins,
     totalGhosts: a.totalGhosts + b.totalGhosts,
@@ -146,6 +155,7 @@ function combined(a: ModeStats, b: ModeStats): ModeStats {
     totalBones: a.totalBones + b.totalBones,
     totalScore: a.totalScore + b.totalScore,
     totalLevels: a.totalLevels + b.totalLevels,
+    totalPowerups: a.totalPowerups + b.totalPowerups,
   };
 }
 
@@ -156,6 +166,7 @@ const MODE_KEYS = new Set<keyof ModeStats>([
   "runBones",
   "runScore",
   "runLevels",
+  "runPowerups",
   "runDeathlessLevels",
   "totalCoins",
   "totalGhosts",
@@ -163,6 +174,7 @@ const MODE_KEYS = new Set<keyof ModeStats>([
   "totalBones",
   "totalScore",
   "totalLevels",
+  "totalPowerups",
 ]);
 
 /**

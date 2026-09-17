@@ -136,17 +136,46 @@ section("The economy: rewards against what the shop costs");
 
   ok("the shop costs something", shopCost > 0, shopCost);
 
-  // BOUNDED AT BOTH ENDS. The upper bound is the real risk — a ladder paying
-  // several times the shop makes the five coins a map pointless, and the
-  // pickups are the entire economy (IDEA-016 v2 deleted the points conversion
-  // precisely so they would be worth detouring for). The lower bound matters
-  // too: a ladder that pays a rounding error is a screen nobody opens twice,
-  // and it is exactly what a well-meaning "let's not unbalance it" retune
-  // produces.
+  // THE AGGREGATE IS A RUNAWAY GUARD AND NOTHING MORE — widened from 2x to 4x
+  // in IDEA-078 v2, and the reasoning is worth keeping because the first
+  // version of this check was measuring the wrong thing.
+  //
+  // It was written as "the ladder must not out-pay the shop by much", on the
+  // idea that a generous ladder makes the five coins a map pointless. That does
+  // not survive the arithmetic. Completing EVERY challenge means 500 fruit
+  // (125 maps at four a map), 500 bones, 350 power-ups, 50 maps cleared in one
+  // run and all forty Journey levels swept — comfortably 300+ maps of classic
+  // play, during which the pickups alone pay out 1,500+. The ladder is a
+  // ONE-TIME payout earned across all of that; the pickups are recurring. So
+  // the ratio between the two totals says very little about whether a coin on
+  // the floor is still worth detouring for.
+  //
+  // What DOES protect that is bounded per challenge (no single goal out-paying
+  // a purchase) and at the bottom of the ladder (a new player cannot buy the
+  // shop out from the easy rungs) — both checked separately below and both
+  // unchanged. This one is left only to catch the mistake it can actually
+  // catch: an extra zero on a reward, or a retune that ran away. The LOWER
+  // bound is the one doing subtle work now — a ladder paying a rounding error
+  // is a screen nobody opens twice, and it is exactly what a well-meaning
+  // "let's not unbalance it" pass produces.
   ok(
-    `the whole ladder pays ${payout}, between half and twice the shop's ${shopCost}`,
-    payout >= shopCost * 0.5 && payout <= shopCost * 2,
+    `the whole ladder pays ${payout}, within 0.5x-4x the shop's ${shopCost}`,
+    payout >= shopCost * 0.5 && payout <= shopCost * 4,
     `${payout} vs ${shopCost}`,
+  );
+
+  // NO SINGLE CHALLENGE OUT-PAYS A PURCHASE. This is the guard that actually
+  // defends the pickups: one goal handing over a whole theme would make the
+  // maze's coins decorative, however modest the total. It also bounds the blast
+  // radius of a typo, which the aggregate above cannot do at 114 entries.
+  const dearest = Math.max(
+    ...[...BEAGLE_SKINS, ...ENEMY_SKINS, ...MAZE_THEMES].map((i) => i.price),
+  );
+  const tooRich = CHALLENGES.filter((c) => c.reward > dearest);
+  ok(
+    `no challenge pays more than the priciest shop item (${dearest})`,
+    tooRich.length === 0,
+    tooRich.map((c) => `${c.id}=${c.reward}`).join(", "),
   );
 
   // The first rung of every ladder is the one a new player meets, and together
