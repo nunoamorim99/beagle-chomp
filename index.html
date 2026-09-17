@@ -197,10 +197,31 @@
            but the game's name, and the coin count sits where a player already
            looks for a currency. -->
       <div class="menu-bar">
-        <p class="coin-line" id="menuCoinLine" role="img" aria-label="Coins">
-          <span class="bc-plate bc-plate--coin" aria-hidden="true"><i class="bc-i">paid</i></span>
-          <span id="menuCoinCount">0</span>
-        </p>
+        <!-- IDEA-078: wallet and challenges are ONE group. The bar is a
+             two-part space-between layout (wallet | actions), and the comment
+             below already records what a third loose child does to it: coin,
+             trophy and the action buttons would spread evenly across the
+             width. Grouping keeps the two-part split intact. -->
+        <div class="menu-bar-wallet">
+          <p class="coin-line" id="menuCoinLine" role="img" aria-label="Coins">
+            <span class="bc-plate bc-plate--coin" aria-hidden="true"><i class="bc-i">paid</i></span>
+            <span id="menuCoinCount">0</span>
+          </p>
+          <!-- The CHALLENGES chip. A chip beside the coins rather than a fifth
+               destination tile (Nuno's call): the tile row is a fixed 4-up grid
+               whose labels already sit at the 12.5px display-font floor on a
+               390px screen, and test-menu-ui.ts asserts every tile is on screen
+               without scrolling.
+               The badge is what stops a small chip being missed, and it is the
+               reason rewards are CLAIMED rather than auto-paid — an auto-paying
+               version would have nothing to count. It is GREEN, not amber: §04
+               reserves amber for the single next action on a screen, and this
+               screen's is Play. -->
+          <button type="button" class="chrome-btn challenge-btn" id="menuChallengeBtn" aria-label="Challenges">
+            <i class="bc-i" aria-hidden="true">trophy</i>
+            <span class="challenge-badge hidden" id="menuChallengeBadge" aria-hidden="true"></span>
+          </button>
+        </div>
         <!-- IDEA-052: the two chrome controls are grouped so the bar stays a
              two-part layout (wallet | actions) under space-between. A third
              loose child would have spread coin/bell/mute evenly across the
@@ -333,6 +354,14 @@
          bar. A separate container like every other full screen, so opening it
          never clobbers #center or #mainMenu. -->
     <div class="hidden" id="news"></div>
+
+    <!-- IDEA-078: the Challenges screen — every goal, its progress, and the
+         button that takes the reward. Opened from the trophy chip in the menu
+         bar (NOT a fifth destination tile: that row is a hard-coded 4-up grid,
+         which is exactly why IDEA-036 v3 could delete the carousel). Its own
+         container like every other full screen. Entirely rendered by
+         src/ui/challenges.ts. -->
+    <div class="hidden" id="challenges"></div>
 
     <!-- IDEA-040 tutorial v2: the how-to-play carousel. Same "full-screen page
          rendered entirely by its own src/ui module" pattern as #shop and

@@ -58,6 +58,7 @@
     "test:run-queue": "tsx scripts/test-run-queue.ts",
     "test:journey-naming": "tsx scripts/test-journey-naming.ts",
     "test:challenge-ladder": "tsx scripts/test-challenge-ladder.ts",
+    "test:challenges-ui": "tsx scripts/test-challenges-ui.ts",
     "test:progression": "tsx scripts/test-progression.ts",
     "test:progression-ui": "tsx scripts/test-progression-ui.ts",
     "test:tutorial": "tsx scripts/test-tutorial-carousel.ts",

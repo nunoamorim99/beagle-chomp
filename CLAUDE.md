@@ -41,10 +41,12 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v8.
   (IDEA-040 v3). **Every field the client sends must be named in `wire.ts` or it is silently
   dropped** — add a field to `RunSubmission` and you add it there and to the round-trip test.
   Its constants are GENERATED from the real game modules by `server/scripts/sync-game-constants.ts`
-  — so **after changing `config.ts`, `mazes.json` or `challenges.ts`, run `npm run sync` in
-  `server/`**, or honest runs will start being rejected. `npm run test:catalog` fails on drift.
-  `challenges.ts` is parsed as TEXT, so its entry FORMAT is part of that contract — see the
-  40-level ladder note below.
+  — so **after changing `config.ts`, `mazes.json`, `journey.ts` or `challenges.ts`, run
+  `npm run sync` in `server/`**, or honest runs will start being rejected and challenge
+  rewards will be judged against the old table. `npm run test:catalog` fails on drift.
+  **`journey.ts` AND `challenges.ts` are both parsed as TEXT**, so the entry FORMAT of each
+  is part of that contract — two sibling files, two literal arrays, and swapping which one
+  is sliced ships a catalog with neither. See the 40-level ladder note and IDEA-078 below.
 - **The API measures itself** (IDEA-039): every request is timed by the outermost middleware and a
   p95-per-route table goes to the container log every 10 minutes, with `GET /metrics` for the JSON
   form (only exists when `METRICS_TOKEN` is set). Route labels are Hono's matched PATTERN, never
@@ -412,8 +414,167 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v8.
   `test-progression.ts` now both reject repeats), and **the validator never
   asserted `REQUIRED_MAZE_COUNT`** although `progression.ts` had claimed it did
   since IDEA-040.
+- **CHALLENGES ARE GOALS WITH REWARDS, AND THE SERVER DECIDES EVERY ONE OF THEM**
+  (IDEA-078). Nuno: *"develop a logic to create challenges... like In one run get
+  5 coins, and this will reward the players 5 coins... a menu with a full list of
+  challenges and we can make categories like collect, scores, levels... to
+  motivate the players and give more purpose."* **75 challenges** in
+  `src/game/challenges.ts` — the file [[IDEA-077]]'s rename freed — over three
+  categories and both modes, claimed on a full-screen page
+  (`src/ui/challenges.ts`) reached from a trophy chip beside the menu's coins.
+  Nine rules are load-bearing.
+  1. **THE REWARD IS COINS, SO THE SERVER OWNS THE JUDGEMENT.** Coins are
+     server-authoritative — `plausibility.ts` recomputes every award,
+     `scoreService` banks it, and the client reconciles to the returned profile
+     (IDEA-016 v2) — so a challenge the CLIENT judged complete would be a coin
+     the client minted, gone on the next sync. There is exactly **one**
+     evaluator, `server/src/validation/challenges.ts`, and `src/game/challenges.ts`
+     is deliberately not it: it holds the definition TABLE and the screen's view
+     layer and judges nothing. The API returns `value`/`target`/`reward` and the
+     screen draws THOSE, so an unsynced client cannot show a player a target the
+     server is not applying.
+  2. **PROGRESS IS DERIVED, NEVER ACCUMULATED — and that is why the whole
+     feature needed one table and no counters.** [[IDEA-050]]'s `run_stats`
+     already keeps one row per finished run with the validated telemetry, keyed
+     to the account and indexed on `(user_id, finished_at)`. So "in one run" is a
+     `MAX`, "in general" is a `SUM`, and a Journey per-level fact is a
+     `COUNT(DISTINCT challenge_idx)` — **one conditional-aggregate query grouped
+     by mode returns every number the ladder needs**. A per-challenge counter
+     written at run finish would be a second copy of a truth that table already
+     holds. *(The original plan scoped v1 to single-run only on the assumption
+     that lifetime totals needed accumulators; reading migration 006 is what
+     reversed it, and Nuno's own lists were half "in general".)*
+     Two honest costs, both recorded rather than fixed: `run_stats` is written
+     AFTER the finish transaction commits (IDEA-050's invariant is that
+     statistics must never cost a player their score), so a process that dies in
+     that window loses one run's contribution; and rows backfilled by 006 carry
+     zeroed item counts, so lifetime totals start at 006 rather than at a
+     player's first ever game.
+  3. **A CHALLENGE MAY ONLY READ A FIELD THE VALIDATOR ALREADY BOUNDS.** Every
+     metric resolves to a `run_stats` column `plausibility.ts` checks, and the
+     query filters `accepted = true` — that table records REJECTED runs too, so
+     the ceiling on a farmed score has to stay a ceiling on a farmed reward.
+  4. **BOTH MODES HAVE THEIR OWN SET, AND THE MODE SCOPE IS NOT OPTIONAL**
+     (Nuno: *"classic mode and journey mode will have dedicated challenges"*).
+     Power-ups and beagle perks are classic-only and a Journey run reporting one
+     is rejected outright ([[IDEA-046]], [[IDEA-064]] rule 1), so an unscoped
+     goal is either uncompletable in half the game or scored against
+     perk-assisted numbers in one mode and bare ones in the other. `"both"`
+     exists, folds `max` for a personal best and `+` for a lifetime total, and is
+     deliberately unused so far.
+  5. **"ON THE FIRST TRY" IS NOT SHIPPABLE AND "FIRST CLEAR" IS.** Nuno asked
+     for it by name. It is a cross-run fact, and the obvious implementation —
+     count prior `game_sessions` at that `challenge_idx` — is a lie twice over:
+     quitting to the menu is free and leaves an `abandoned` row, so "no prior
+     attempt" stays true after any number of retries; and
+     `deleteOldAbandonedSessions` purges those rows past
+     `SESSION_RETENTION_DAYS` ([[IDEA-039]] P2), so even the leaky count decays.
+     The honest substitute needs nothing new: at finish the transaction holds
+     `session.challenge_idx` and `user.challenge_progress`, and unlocking is
+     strictly sequential, so `challenge_idx === challenge_progress` means "this
+     level was still your frontier". **Do not ship a challenge a retry beats** —
+     a farmable goal is worse than a missing one.
+  6. **`CHALLENGES` IS A LITERAL ARRAY AND MUST STAY ONE.** 75 entries is
+     exactly the size at which a `ladder()` helper is tempting, and that is
+     [[IDEA-063]] rule 6 verbatim: `sync-game-constants.ts` parses this file as
+     TEXT, a generated array regexes to nothing, the catalog ships zero
+     challenges, every local test passes, and nobody can claim anything in
+     production. **Adding or retuning a challenge means `npm run sync` in
+     `server/`**; `npm run test:catalog` fails on drift and the sync's own count
+     guard refuses a short parse. Only the four JUDGED fields cross — id, mode,
+     metric, target, reward. Names, blurbs and categories stay client-side, so
+     rewording a blurb is not a deploy and deliberately does not fail the drift
+     test.
+  7. **THE REWARD IS CLAIMED, NOT AUTO-PAID, AND THAT IS WHAT GIVES THE SCREEN A
+     JOB** (Nuno's call). Auto-paying needs no table and no endpoint — and
+     leaves a list you can only read, which nobody opens twice. The claim is the
+     only new state: `challenge_claims` (migration 014), whose PRIMARY KEY
+     `(user_id, challenge_id)` is what makes a double payout impossible rather
+     than unlikely — two requests racing both read "not claimed", and only the
+     insert decides. `reward_coins` is stored on the row so a later rebalance
+     cannot restate what somebody was actually paid. **An id is therefore never
+     reused**: a retired id leaves its claim rows behind.
+  8. **THE ENTRY POINT IS A CHIP BESIDE THE COINS, NOT A FIFTH TILE.** The
+     destination row is a fixed 4-up grid and [[IDEA-036]] v3 deleted the
+     carousel precisely because five items did not fit 390px; `test-menu-ui.ts`
+     asserts every tile is on screen without scrolling. The wallet and the chip
+     are ONE group in the bar, because `.menu-bar` is space-between with two
+     children and a third loose child spreads coin/trophy/actions evenly across
+     the width. The badge is GREEN (`--bc-go`), never amber: §04 reserves amber
+     for the single next action on a screen and the menu's is Play. The badge is
+     also the reason rewards are claimed — an auto-paying version has nothing to
+     count — and it is refreshed by `Game`'s new `onMenuShown` hook, because a
+     RUN is the only thing that can complete a challenge and every run ends at
+     `showMenu()`. **`Game.refreshWallet()` exists for the other half**: the
+     screen sits ABOVE the menu, so nothing repaints the wallet behind it when a
+     claim lands.
+  9. **PER-MAP CEILINGS ARE MEASURED, AND TWO OF THEM SURPRISE PEOPLE.** A board
+     holds **5 coins** (`COIN_THRESHOLDS`) but only **4 fruit**
+     (`FRUIT_THRESHOLDS`) and every one of the 36 mazes carries **4 bones** — so
+     Nuno's "collect all 5 fruits in each level" is uncompletable and ships as
+     4. It also means the four "in one run" ladders are NOT equally hard at the
+     same number (30 enemies is two or three maps; 30 bones is eight; fruit is
+     hardest because it is TIMED), which is why the reward runs
+     enemies < coins < bones < fruit at every tier. `COINS_PER_MAP` /
+     `FRUIT_PER_MAP` / `JOURNEY_GHOST_TARGET` are named constants checked
+     against `config.ts` itself, and the BLURBS are checked against them too —
+     a correct constant under a card that says "all 5 fruits" is still a lie.
+  **Nuno's forty "do it in each level" goals collapse into ladders.** Four kinds
+  across 40 Journey levels is 120 rows on a screen whose job is telling a player
+  what to do next; each is "do it in N DIFFERENT levels" instead — the same
+  achievement, one `COUNT(DISTINCT challenge_idx)`, and it reads as a ladder like
+  everything else.
+  **The economy is bounded at BOTH ends.** The whole ladder pays 713 against a
+  shop costing ~550, earned across hundreds of maps. The upper bound is the real
+  risk (five coins a map stops being worth detouring for, which is the entire
+  point of [[IDEA-016]] v2 deleting the points conversion); the lower one matters
+  too, because a ladder paying a rounding error is what a well-meaning "let's not
+  unbalance it" retune produces. `test-challenge-ladder.ts` pins the band.
+  **Four suites, and they overlap on purpose.** `scripts/test-challenge-ladder.ts`
+  (43 checks, in `npm run test`) reads the SOURCE table, so a bad entry fails
+  before a sync; `server/scripts/test-challenges.ts` (39) reads the GENERATED
+  one; `server/scripts/test-challenges-db.ts` (33) covers what only exists with
+  Postgres — the aggregate, the mode mapping, that **bigint comes back as a
+  STRING** (`"90" >= 100` is true on a string compare, so a missing `Number()`
+  passes some challenges and fails others at random), and two claims racing; and
+  `npm run test:challenges-ui` (38) drives the real app.
+  **TWO INSTRUMENT FAILURES WORTH THE TALLY, both this project's standing rule.**
+  A `\b` that reached the sync script as a literal BACKSPACE byte made the
+  challenge parse return zero — caught by the count guard, which is the whole
+  reason it exists. And the UI suite's header check **passed on the injected
+  defect**: `.map-back` is a fixed 44px box, so adding a "Menu" label does not
+  move its `getBoundingClientRect` by one pixel — the text spills OUT of it and
+  the title is drawn over the spill. A rect comparison cannot see that; the
+  button's own `scrollWidth - clientWidth` can. Suspect the instrument first.
+  **And a query pair inside a transaction must be SEQUENTIAL.** A single
+  `PoolClient` cannot run two statements at once — pg queues them today and
+  throws in pg@9 — so the claim path awaits its two reads in order while the
+  list endpoint, which has no client, runs them concurrently off the pool. It
+  surfaced only as a DeprecationWarning under a passing test.
+- **THE MODE IS CALLED THE JOURNEY, AND THE RENAME IS COPY-ONLY** (IDEA-077).
+  "Level" already means ONE MAP OF ANY RUN here — the HUD chip says "Map 3",
+  there is `levelIdxSequence`, `startLevel`, `planLevel` and a level MAP — so
+  naming the mode "Levels" (Nuno's other candidate) would have made every
+  sentence ambiguous. It is also what frees the word **Challenges** for
+  IDEA-078's goals-and-rewards screen; two destinations wearing one word and
+  one trophy is how a player learns that neither means anything, so the mode
+  took `ICON.journey` (`route`, the winding path its own level map draws) and
+  the trophy went to Challenges. **What a player READS changed; what crosses
+  the wire or sits in Postgres did not** — `mode: "challenge"`,
+  `PublicProfile.challengeProgress`, `users.challenge_progress`,
+  `game_sessions.challenge_idx` and its named CHECK `challenge_idx_matches_mode`
+  all keep their names, because renaming any of them is a migration plus a
+  lockstep deploy for zero player benefit. The one structural move was
+  `src/game/challenges.ts` -> **`src/game/journey.ts`**, done at rename time
+  rather than later precisely because `challenges.ts` is now IDEA-078's file:
+  `sync-game-constants.ts` opens the ladder **by PATH, as TEXT**, so pointing
+  it at the wrong existing file ships a catalog with zero journey levels while
+  every local test passes. `scripts/test-journey-naming.ts` (28 checks, in
+  `npm run test`) guards all three halves — the path the sync script really
+  opens, the wire/DB names being untouched, and the player-facing copy — and
+  was verified by re-injecting each defect and watching it fail.
 - **CHALLENGE MODE IS 40 LEVELS IN TWO CHAPTERS, AND THE FIRST THIRTY HAVE NO
-  TWISTS** (IDEA-063). `challenges.ts` is still the one place a challenge level
+  TWISTS** (IDEA-063). `journey.ts` is still the one place a Journey level
   is defined, and classic mode still never consults it. Seven rules:
   1. **Levels 1-30 are THE GRAND TOUR: one level per PLAYABLE maze, in maze
      order, at literally `CLASSIC_MODIFIERS`.** Three enemies, classic pace, the
@@ -477,7 +638,7 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v8.
      of the ladder cleared" and the ladder was rebuilt underneath it, so leaving
      it would relabel eight hard-won twist clears as eight easy tour ones.
   **THE LEVEL MAP GREW A CHAPTER RAIL, AND ONE OLD BUG ONLY 40 STONES COULD
-  FIND.** `CHALLENGE_CHAPTERS` (in `challenges.ts`, DERIVED from
+  FIND.** `CHALLENGE_CHAPTERS` (in `journey.ts`, DERIVED from
   `TOUR_LEVEL_COUNT` so a new maze cannot leave a stone with no chapter) is six
   tour stages of five — matching classic's own `MAPS_PER_STAGE`, so "stage 4"
   means the same five mazes in both modes — plus one twist chapter of ten.

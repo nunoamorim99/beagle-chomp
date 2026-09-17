@@ -16,6 +16,26 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
 > lines here roll up into the numbered version below and this section is cleared (hold a line back
 > only if you explicitly choose to).
 
+- **[[IDEA-078]] v1** (2026-09-17) - **challenges: 75 goals to chase, and coins for
+  reaching them.** A new Challenges screen, opened from the trophy beside your coins on the
+  main menu, listing everything the game will pay you for - collecting, scoring, and getting
+  through maps. They run from easy (5 coins in a run) up to things you will be working
+  towards for a long time (200 fruits across every run you ever play, or every Journey level
+  cleared without losing a life), and the harder ones pay more. Classic and the Journey have
+  their own separate sets, so each mode has its own list to work through.
+
+  Finish one and the trophy grows a green badge telling you how many rewards are waiting;
+  open the screen and press Claim to collect. Nothing is paid out automatically - the point
+  is being able to see what you earned. Your progress on every goal is worked out from the
+  runs you have already played, so the list is filled in from your history the first time
+  you open it rather than starting from zero.
+
+- **[[IDEA-077]] v1** (2026-09-17) - **Challenge mode is now the Journey.** The mode where
+  you work up a trail of numbered levels is called the Journey, and it has its own winding
+  path icon on the menu instead of the trophy. Nothing about how it plays has changed -
+  same 40 levels, same progress, same everything - it is a rename, and it frees up the word
+  "Challenges" for the goals-and-rewards screen above.
+
 - **[[IDEA-076]] v1** (2026-09-17) - **the game screen has been rearranged, and the
   power-up tags are out of the maze.** The top of the screen now reads as three clear
   lines: your score and the map number on the first, coins and lives on the second, and

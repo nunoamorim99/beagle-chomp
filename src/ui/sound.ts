@@ -1048,6 +1048,10 @@ const SELECT_SELECTOR = [
   ".shop-tab",
   ".lb-tab",
   ".auth-tab",
+  // IDEA-078: the Challenges screen's category rail. Same kind of control as
+  // the shop's and the leaderboard's tabs, so it takes the same selection cue
+  // rather than the generic press.
+  ".ch-tab",
   ".shop-rail-card",
   ".carousel-item",
   ".tut-dot",

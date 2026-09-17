@@ -29,6 +29,7 @@ import { attachPrivacy } from "./ui/privacy";
 import { attachProfile } from "./ui/profile";
 import { attachLeaderboard } from "./ui/leaderboard";
 import { attachNews } from "./ui/news";
+import { attachChallenges, type ChallengesHandle } from "./ui/challenges";
 import { syncOnBoot as syncPushOnBoot } from "./ui/push";
 import { me } from "./net/endpoints";
 import {
@@ -39,7 +40,7 @@ import {
   assertApiConfigured,
 } from "./net/api";
 import { initRunSubmitQueue } from "./net/runSubmit";
-import { setProfileCache, clearProfileCache } from "./game/profileCache";
+import { setProfileCache, clearProfileCache, replaceProfileCache } from "./game/profileCache";
 import { fromServerProfile } from "./game/profileMapping";
 
 // The app's JavaScript is running, so whatever shell served it was intact.
@@ -134,7 +135,17 @@ async function startApp(): Promise<void> {
   // IDEA-020: the game-over panel offers a link to the board. Passed as a
   // closure rather than the handle itself because `leaderboard` is created
   // below — the closure is only ever called on a click, long after that.
-  const game = new Game(canvas, () => leaderboard.open());
+  // IDEA-078: declared before the game so the menu hook can reach it, and
+  // assigned after so the screen can borrow the game's own sound handle. The
+  // hook fires on every showMenu(), which is where every run ends — the one
+  // moment the badge can be out of date.
+  let challenges: ChallengesHandle | null = null;
+
+  const game = new Game(
+    canvas,
+    () => leaderboard.open(),
+    () => void challenges?.refreshBadge(),
+  );
   game.start();
 
   // Started only AFTER sign-in: a flush needs the bearer token, and firing it
@@ -201,6 +212,28 @@ async function startApp(): Promise<void> {
   });
   void news.refreshBadge();
 
+  // IDEA-078: the Challenges screen, opened from the trophy chip in the menu
+  // bar. It wires its own chip listener (it owns the badge on it), so there is
+  // no click handler here.
+  //
+  // The claim path deliberately routes through here rather than through the UI
+  // module: coins are server-authoritative, so what comes back is the fresh
+  // PROFILE, and reconciling the cache to it is the same move every other coin
+  // change in this game makes (IDEA-016 v2). The screen sits ABOVE the menu, so
+  // the wallet behind it has to be repainted explicitly — nothing re-renders
+  // the menu on the way back.
+  challenges = attachChallenges({
+    onClaimed: (_coins, profile) => {
+      replaceProfileCache(fromServerProfile(profile as Parameters<typeof fromServerProfile>[0]));
+      game.refreshWallet();
+    },
+    onSound: (kind) => {
+      if (kind === "claim") game.audio.ui.purchase();
+      else game.audio.ui.error();
+    },
+  });
+  void challenges.refreshBadge();
+
   // IDEA-052b: re-assert an existing push subscription. Asks for nothing and
   // creates nothing — it only tells the server about a subscription the browser
   // already has, because the server's row can vanish without the browser
@@ -217,6 +250,7 @@ async function startApp(): Promise<void> {
     profile.detach();
     leaderboard.detach();
     news.detach();
+    challenges?.detach();
     clearProfileCache();
     bootApp();
   });

@@ -2844,3 +2844,173 @@ body.map-open .powerups{display:none}
   display:flex;flex-direction:column;gap:var(--bc-s2)}
 .news-detail-sheet > .btn-primary{flex:0 0 auto;align-self:center;min-width:160px}
 
+/* ==========================================================================
+   §  CHALLENGES (IDEA-078) — goals, progress and the button that pays
+   ==========================================================================
+
+   Built on the same vocabulary as the News screen, because it is the same
+   shape of thing: a full-screen page holding a sheet whose LIST scrolls. That
+   is deliberate and not laziness — §"two rendering traps" is explicit that
+   max-height:100% on a sheet inside a scrolling page caps the board at the
+   viewport while the page keeps going, so the sheet is a flex column and only
+   `.ch-list` scrolls.
+
+   AMBER APPEARS NOWHERE ON THIS SCREEN. §04 reserves it for the single next
+   action, and here that is Back. A finished challenge is marked in --bc-go,
+   the system's own owning/unlocking green — the same colour the shop uses for
+   "you have this". Two ambers would mean one of them is wrong.
+   ========================================================================== */
+
+/* The wallet group: coin line + challenge chip. `.menu-bar` is
+   space-between with two children, and this keeps it that way. */
+.menu-bar-wallet{display:flex;align-items:center;gap:var(--bc-s2);min-width:0}
+
+/* position:relative so the badge can hang off the corner — `.chrome-btn` sets
+   position:static, so this has to come AFTER it to win. Same ordering trap the
+   news bell documents one rule up. */
+.challenge-btn{position:relative}
+
+.challenge-badge{
+  position:absolute;top:-4px;right:-4px;min-width:20px;height:20px;padding:0 5px;
+  display:flex;align-items:center;justify-content:center;
+  border-radius:999px;
+  /* GREEN, not amber. The menu's one amber thing is the Play button, and a
+     second amber mark in the top bar competes with it for the same meaning. */
+  background:var(--bc-go);color:var(--bc-cream);
+  border:var(--bc-line) solid var(--bc-outline);
+  font-family:var(--bc-font-mono);font-size:11px;font-weight:700;line-height:1;
+  pointer-events:none}
+
+#challenges{position:fixed;inset:0;z-index:60;
+  display:flex;flex-direction:column;
+  padding:calc(var(--bc-s4) + env(safe-area-inset-top)) calc(var(--bc-gutter) + env(safe-area-inset-right))
+    calc(var(--bc-s4) + env(safe-area-inset-bottom)) calc(var(--bc-gutter) + env(safe-area-inset-left));
+  background:#1E2A1B;
+  background-image:radial-gradient(600px 400px at 50% 0%,#2C3D26 0%,#17130E 70%);
+  overflow:hidden;overscroll-behavior:contain}
+
+.ch-sheet{flex:1 1 auto;min-height:0;width:min(560px,100%);margin:0 auto;
+  display:flex;flex-direction:column;gap:var(--bc-s3)}
+
+.ch-head{flex:0 0 auto;display:flex;align-items:center;gap:var(--bc-s3)}
+.ch-head-text{flex:1 1 auto;min-width:0;text-align:left}
+.ch-head h1{font-family:var(--bc-font-display);font-size:clamp(22px,6vw,30px);
+  margin:0;color:var(--bc-cream);
+  -webkit-text-stroke:4px var(--bc-outline);paint-order:stroke fill}
+.ch-lead{margin:2px 0 0;color:var(--bc-go);font-size:13px;font-weight:700}
+
+/* The whole-ladder bar. A thin rule rather than a card: it is context, not a
+   thing you act on, and a boxed progress panel at the top of a list of boxed
+   progress cards reads as one more card. */
+.ch-overall{flex:0 0 auto;height:8px;border-radius:999px;
+  background:var(--bc-ink);
+  border:var(--bc-line) solid var(--bc-outline);overflow:hidden}
+.ch-overall-fill{height:100%;background:var(--bc-go);
+  /* No transition: this is re-rendered from scratch on every tab change, so an
+     animation would replay on every tap and read as the number recalculating
+     rather than as progress. */
+  min-width:0}
+
+.ch-tabs{flex:0 0 auto;display:flex;gap:var(--bc-s2);flex-wrap:wrap}
+.ch-tab{
+  flex:1 1 0;min-width:74px;
+  display:flex;align-items:center;justify-content:center;gap:6px;
+  padding:8px 10px;
+  font-family:var(--bc-font-display);font-size:14px;font-weight:700;
+  color:var(--bc-cream);background:var(--bc-wood);
+  border:var(--bc-line) solid var(--bc-outline);
+  border-bottom-width:var(--bc-edge-card);
+  border-radius:var(--bc-r-card);
+  cursor:pointer}
+.ch-tab:active{border-bottom-width:var(--bc-line);transform:translateY(var(--bc-sink-card))}
+/* Selected by PAINT, never by opacity — §"dim by paint": a translucent tab
+   over this backdrop picks the sky up and turns blue-grey. */
+.ch-tab.is-on{background:var(--bc-go);color:var(--bc-cream)}
+.ch-tab-count{
+  min-width:18px;height:18px;padding:0 5px;border-radius:999px;
+  display:inline-flex;align-items:center;justify-content:center;
+  background:var(--bc-cream);color:var(--bc-ink);
+  font-family:var(--bc-font-mono);font-size:11px;line-height:1}
+
+.ch-list{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;
+  list-style:none;margin:0;padding:0 2px 0 0;
+  display:flex;flex-direction:column;gap:var(--bc-s3)}
+
+.ch-card{
+  background:var(--bc-card);
+  border:var(--bc-line) solid var(--bc-outline);
+  border-bottom-width:var(--bc-edge-card);
+  border-radius:var(--bc-r-card);
+  padding:var(--bc-s3);
+  display:flex;flex-direction:column;gap:var(--bc-s2)}
+/* A green EDGE for something waiting to be collected, exactly the way
+   .news-card--new takes an amber one. An edge and not a fill: the card still
+   has to read as a sibling of the ones around it. */
+.ch-card.is-ready{border-left:4px solid var(--bc-go)}
+/* Claimed is DIMMER PAINT, not opacity. It stays in the list on purpose — a
+   list that dropped what you had finished would get emptier the better you
+   played. */
+.ch-card.is-claimed{background:#2E2418;color:var(--bc-text-soft)}
+.ch-card.is-claimed .ch-blurb{color:var(--bc-text-soft)}
+
+.ch-card-head{display:flex;align-items:flex-start;gap:var(--bc-s2)}
+.ch-mark{flex:0 0 auto;display:flex;align-items:center}
+.ch-titles{flex:1 1 auto;min-width:0}
+.ch-titles h3{margin:0;font-family:var(--bc-font-display);font-size:16px;
+  line-height:1.2;color:var(--bc-cream);overflow-wrap:anywhere}
+.ch-blurb{margin:2px 0 0;font-size:13px;line-height:1.45;color:var(--bc-cream)}
+
+/* Which mode this counts in. It is a FACT about the challenge, not a state, so
+   it is quiet paint rather than one of the five state hues — §04 keeps those
+   for power-up chips. */
+.ch-mode{flex:0 0 auto;align-self:flex-start;
+  padding:2px 8px;border-radius:999px;
+  background:var(--bc-ink);color:var(--bc-text-soft);
+  border:var(--bc-line) solid var(--bc-outline);
+  font-family:var(--bc-font-mono);font-size:10px;font-weight:700;
+  text-transform:uppercase;letter-spacing:.04em;white-space:nowrap}
+
+.ch-foot{display:flex;align-items:center;gap:var(--bc-s3)}
+.ch-bar{flex:1 1 auto;min-width:0;height:12px;border-radius:999px;
+  background:var(--bc-ink);
+  border:var(--bc-line) solid var(--bc-outline);overflow:hidden}
+.ch-bar-fill{height:100%;background:var(--bc-biscuit)}
+.ch-card.is-ready .ch-bar-fill,
+.ch-card.is-claimed .ch-bar-fill{background:var(--bc-go)}
+
+/* Always occupied — a button, a stamp or the figure. An empty slot makes every
+   unfinished card look like a broken button. */
+.ch-action{flex:0 0 auto;display:flex;align-items:center;min-height:32px}
+
+.ch-count{font-family:var(--bc-font-mono);font-size:14px;font-weight:700;
+  color:var(--bc-cream);white-space:nowrap}
+.ch-of{color:var(--bc-text-soft)}
+
+.ch-claim{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:7px 12px;
+  font-family:var(--bc-font-display);font-size:14px;font-weight:700;
+  color:var(--bc-cream);background:var(--bc-go);
+  border:var(--bc-line) solid var(--bc-outline);
+  border-bottom-width:var(--bc-edge-card);
+  border-radius:var(--bc-r-card);
+  cursor:pointer;white-space:nowrap}
+.ch-claim:active{border-bottom-width:var(--bc-line);transform:translateY(var(--bc-sink-card))}
+.ch-claim:disabled{cursor:default;background:var(--bc-wood)}
+
+.ch-stamp{display:inline-flex;align-items:center;gap:5px;
+  font-family:var(--bc-font-mono);font-size:12px;font-weight:700;
+  color:var(--bc-go);white-space:nowrap}
+
+.ch-empty{margin:var(--bc-s5) 0;text-align:center;color:var(--bc-text-soft);
+  font-size:14px}
+.ch-error{margin:0;font-size:12px;color:var(--bc-amber)}
+
+/* A phone: the tab rail is four items and 74px each does not fit 390px in one
+   row, so it wraps to two — which is fine, and better than shrinking the label
+   below the 12px display floor. */
+@media (max-width:420px){
+  .ch-tab{font-size:13px;min-width:64px;padding:7px 8px}
+  .ch-titles h3{font-size:15px}
+  .ch-blurb{font-size:12px}
+}
