@@ -177,7 +177,7 @@ argument — `scripts/test-sessions.ts` pins it:
 | Status | Kept? | Why |
 |---|---|---|
 | `abandoned` | deleted past the window | A quit-to-menu. Nothing reads it again; past 4 hours (`MAX_RUN_HOURS`) it cannot even be resurrected by a late finish. |
-| `accepted` | **forever** | These ARE the All-runs leaderboard. |
+| `accepted` | **forever** | `run_stats.session_id` is `ON DELETE CASCADE`, so deleting one deletes the row every CHALLENGE's progress is derived from (IDEA-078) — purging these would walk players' challenge progress BACKWARDS. It is also the year-end rewind's only source. *(Until IDEA-078 v3 the reason here was "these ARE the All-runs leaderboard". That board is gone and the leaderboard now reads `users.high_score`, which needs none of these rows — so the old justification stopped applying and the replacement is stronger, not weaker. Worth knowing before they look disposable.)* |
 | `rejected` | **forever** | `score_rejections.session_id` is `ON DELETE CASCADE` — deleting one deletes its anti-cheat audit row. |
 | `open` | **forever** | Possibly a live run; the sweeper decides when it is stale. |
 

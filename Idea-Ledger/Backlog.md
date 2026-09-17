@@ -1934,6 +1934,42 @@ Living backlog of ideas. Two purposes:
     place a typo would be silent — a wrong name returns NULL, becomes 0, and
     every power-up challenge reports "not started" against a player who has).
     Not yet deployed at the time of writing.
+  - **v3** (2026-09-17) — **the chip matches its neighbours, and the leaderboard
+    is one board.** Two notes from Nuno after playing the live build.
+    *"Make the button of the challenges the same size as the button of the sound
+    and the bell."* Measured 44x44 against their 48x48 at every width. A
+    menu-bar button has NO SIZE OF ITS OWN — `.menu-bar .chrome-btn` is
+    `height:auto; aspect-ratio:1`, so it fills whatever its group stretches it
+    to and squares itself off, which is how all three track the wallet pill
+    without anyone hardcoding a number. The wallet group shipped
+    `align-items:center`, so the trophy collapsed to its 44px min-width. Fixed
+    by matching the MECHANISM (`stretch`) rather than writing 48 somewhere.
+    *"On the board let's just have the tab with the best run of each user,
+    forget all the runs, we don't need that."* The All-runs tab is removed end
+    to end — the tab bar, `fetchRunBoard`, `GET /leaderboard/runs`,
+    `profileService.runBoard`, `topRuns`/`acceptedRunCount`, the board cache's
+    `"runs"` half, the `.lb-tab` styles and that class's entry in `sound.ts`'s
+    selection-cue list.
+    **THE RISK WAS A COMMENT, NOT THE CODE.** `gameSessions.ts`'s retention
+    purge justified keeping `accepted` sessions forever with *"these ARE the
+    All-runs leaderboard"*. Remove that board and the stated reason evaporates,
+    leaving a future reader looking at rows that appear disposable — while
+    `run_stats.session_id` references them **ON DELETE CASCADE** and `run_stats`
+    is what every challenge's progress is derived from. Purging them would walk
+    players' challenge progress BACKWARDS and reopen claims already taken. The
+    justification is rewritten in `gameSessions.ts` and `server/README.md` and
+    is stronger than the one it replaced. **When a feature is removed, re-read
+    whatever cited it as a reason** — this project has shipped a stale
+    justification before ([[IDEA-060]]'s `wallDecor`, [[IDEA-068]]'s `flower-`
+    prefix).
+    **AND THE DEPLOY ORDER INVERTS FOR A REMOVAL.** Adding an endpoint means API
+    first; removing one means FRONTEND first, or a client still drawing the tab
+    calls something that has just gone. A precached PWA shell can outlast both,
+    so a stale client's All-runs tab shows its error state until the shell
+    updates — bounded and self-healing.
+    `test-sessions.ts`'s "All-runs board" section was rewritten rather than
+    deleted: the property it was really drawing a contrast against (three runs
+    by one player fold to ONE row, carrying the best) is now the whole contract.
 - **Dependencies:** [[IDEA-077]]
 
 > Already in production. Do NOT delete. Each keeps its version history.

@@ -1046,7 +1046,6 @@ export function attachBedButton(root: ParentNode, sound: Sound): () => void {
  *  the design calls "a lighter act than committing". */
 const SELECT_SELECTOR = [
   ".shop-tab",
-  ".lb-tab",
   ".auth-tab",
   // IDEA-078: the Challenges screen's category rail. Same kind of control as
   // the shop's and the leaderboard's tabs, so it takes the same selection cue

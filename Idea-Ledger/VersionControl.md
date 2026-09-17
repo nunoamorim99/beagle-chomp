@@ -16,6 +16,15 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
 > lines here roll up into the numbered version below and this section is cleared (hold a line back
 > only if you explicitly choose to).
 
+- **[[IDEA-078]] v3** (2026-09-17) - **the trophy button matches the others, and the
+  leaderboard is one list again.** The Challenges button in the top bar was drawing a
+  little smaller than the bell and the speaker beside it; all three are the same size now.
+
+  And the leaderboard has dropped its "All runs" tab. It is one list: every player once,
+  ranked on their best classic run. The old second tab listed individual attempts, so a
+  good evening from one player could fill the top of the board - which answered a
+  different question from the one you open the board to ask.
+
 - **[[IDEA-078]] v2** (2026-09-17) - **39 more challenges, including power-ups.** Every
   ladder got a couple of harder rungs on top - 50 coins or 50 golden bones in one run,
   500 of them across every run you play, 50 maps in a single go, 200,000 points, and the

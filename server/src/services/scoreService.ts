@@ -447,9 +447,12 @@ export async function finishSession(
 
     const fresh = (await usersRepo.findById(user.id, client)) ?? user;
 
-    // Every accepted classic run changes the boards: a new row on All-runs,
-    // and possibly a new personal best on Players. Challenge runs touch
-    // neither (unranked), so they leave the cache alone.
+    // An accepted classic run can change the leaderboard — it is one row per
+    // player, ranked on their personal best, so only a run that BEATS that
+    // best actually moves it. The cache is invalidated on any accepted classic
+    // run rather than only on a new high score: the board also carries the
+    // player COUNT, and a first-ever run adds a row without beating anything.
+    // Challenge runs are unranked and leave the cache alone.
     acceptedClassic = isClassic;
 
     return {

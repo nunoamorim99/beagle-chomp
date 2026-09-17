@@ -524,6 +524,47 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v8.
   what to do next; each is "do it in N DIFFERENT levels" instead — the same
   achievement, one `COUNT(DISTINCT challenge_idx)`, and it reads as a ladder like
   everything else.
+  **v3: THE CHIP IS SIZED BY ITS GROUP, AND THE LEADERBOARD IS ONE BOARD.**
+  - **A MENU-BAR BUTTON HAS NO SIZE OF ITS OWN** (Nuno: *"make the button of the
+    challenges the same size as the button of the sound and the bell"*).
+    `.menu-bar .chrome-btn` is deliberately `width:auto; height:auto;
+    aspect-ratio:1` — it fills whatever its group stretches it to and squares
+    itself off, so all three bar buttons track the wallet pill's height without
+    anyone hardcoding it. `.menu-bar-actions` stretches; the wallet group
+    shipped as `align-items:center`, so the trophy collapsed to its 44px
+    min-width and sat visibly smaller than its two siblings. Measured 44x44
+    against 48x48 at every width. The fix is `align-items:stretch` — matching
+    the MECHANISM rather than writing 48 somewhere, which is what keeps the
+    three in step if the pill's height ever changes.
+  - **THE ALL-RUNS BOARD IS GONE** (Nuno: *"on the board let's just have the tab
+    with the best run of each user, forget all the runs, we don't need that"*).
+    The leaderboard had two tabs — Players (one row each, ranked on personal
+    best) and All runs (one row per attempt, so one player could hold several
+    podium places). Only the first survives, and the tab bar went with it: the
+    screen answers "who is winning", and making a player choose between two
+    boards to find that out is a choice nobody wanted. Removed end to end —
+    the tab, `fetchRunBoard`, `GET /leaderboard/runs`, `profileService.runBoard`,
+    `topRuns`/`acceptedRunCount`, the cache's `"runs"` half and the `.lb-tab`
+    rules (including its entry in `sound.ts`'s SELECT_SELECTOR, which would
+    otherwise have been a selection cue for a class that no longer exists).
+    **THE DANGEROUS PART WAS A COMMENT, NOT CODE.** `gameSessions.ts`'s purge
+    justified keeping `accepted` sessions forever with *"these ARE the All-runs
+    leaderboard"*. Delete that board and the stated reason evaporates, leaving
+    a future reader looking at rows that appear disposable — while
+    `run_stats.session_id` references them **ON DELETE CASCADE**, and
+    `run_stats` is what every challenge's progress is derived from. Purging
+    accepted sessions would walk players' challenge progress BACKWARDS and
+    reopen claims they had already taken. The justification is rewritten in
+    both `gameSessions.ts` and `server/README.md`, and it is STRONGER than the
+    one it replaced. **When a feature is removed, re-read what cited it as a
+    reason** — this codebase has shipped a stale justification before
+    (IDEA-060's `wallDecor`, IDEA-068's `flower-` prefix).
+    **AND THE DEPLOY ORDER INVERTS FOR A REMOVAL.** Adding an endpoint means
+    API first, or the UI calls something that is not there. REMOVING one means
+    FRONTEND first, or a client still showing the tab calls an endpoint that has
+    just gone. An installed PWA can hold a precached shell past both, so a stale
+    client's All-runs tab shows its error state until the shell updates — bounded
+    and self-healing, and the reason the two pushes go in that order.
   **v2 GREW IT TO 114 AND ADDED THE POWER-UP LADDERS** (Nuno: *"add more
   challenges keeping the same idea, but with higher values... and a challenge
   for collecting power ups too, with the same logic as the other, per run, in

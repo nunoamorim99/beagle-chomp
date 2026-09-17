@@ -34,7 +34,7 @@ const TTL_MS = 15_000;
  *  board, and limits are clamped in the service, so this stays tiny. */
 const entries = new Map<string, CacheEntry>();
 
-export function boardCacheGet<T>(board: "players" | "runs", limit: number): T | null {
+export function boardCacheGet<T>(board: "players", limit: number): T | null {
   const key = `${board}:${limit}`;
   const entry = entries.get(key);
   if (!entry) return null;
@@ -45,7 +45,7 @@ export function boardCacheGet<T>(board: "players" | "runs", limit: number): T | 
   return entry.value as T;
 }
 
-export function boardCacheSet(board: "players" | "runs", limit: number, value: unknown): void {
+export function boardCacheSet(board: "players", limit: number, value: unknown): void {
   entries.set(`${board}:${limit}`, { value, expiresAt: Date.now() + TTL_MS });
 }
 

@@ -741,10 +741,10 @@ body.map-open #mainMenu{display:none}
 /* §06 Tab bar: the track is INSET ink, the active tab is a raised amber key.
    One component for shop tabs, leaderboard tabs and auth tabs — the three
    used to be three near-identical rulesets that drifted. */
-.shop-tabs,.lb-tabs,.auth-tabs{pointer-events:auto;display:flex;gap:6px;flex:0 0 auto;
+.shop-tabs,.auth-tabs{pointer-events:auto;display:flex;gap:6px;flex:0 0 auto;
   background:var(--bc-ink);border:var(--bc-line) solid var(--bc-outline);
   border-radius:var(--bc-r-card);padding:5px}
-.shop-tab,.lb-tab,.auth-tab{pointer-events:auto;flex:1 1 0;
+.shop-tab,.auth-tab{pointer-events:auto;flex:1 1 0;
   font-family:var(--bc-font-display);font-weight:800;font-size:15px;
   color:rgba(255,247,232,.68);background:transparent;border:none;
   border-radius:var(--bc-r-chip);padding:10px var(--bc-s2);
@@ -752,15 +752,15 @@ body.map-open #mainMenu{display:none}
   display:inline-flex;align-items:center;justify-content:center;gap:6px;
   transition:background var(--bc-d-state) var(--bc-ease),
              color var(--bc-d-state) var(--bc-ease)}
-.shop-tab:hover,.lb-tab:hover,.auth-tab:hover{color:var(--bc-cream);transform:none}
-.shop-tab:active,.lb-tab:active,.auth-tab:active{transform:none}
-.shop-tab:focus-visible,.lb-tab:focus-visible,.auth-tab:focus-visible{
+.shop-tab:hover,.auth-tab:hover{color:var(--bc-cream);transform:none}
+.shop-tab:active,.auth-tab:active{transform:none}
+.shop-tab:focus-visible,.auth-tab:focus-visible{
   outline:var(--bc-line) solid var(--bc-cream);outline-offset:-1px}
-.shop-tab-active,.lb-tab.is-active,.auth-tab.is-active{
+.shop-tab-active,.auth-tab.is-active{
   background:var(--bc-amber);color:var(--bc-amber-ink);
   border-bottom:var(--bc-edge-chip) solid var(--bc-amber-edge);
   padding-bottom:calc(10px - var(--bc-edge-chip))}
-.shop-tab-active:hover,.lb-tab.is-active:hover,.auth-tab.is-active:hover{
+.shop-tab-active:hover,.auth-tab.is-active:hover{
   color:var(--bc-amber-ink)}
 
 /* The hero region carries NO background of its own — it exists purely so the
@@ -1854,14 +1854,6 @@ button.recovery-copy{padding:9px var(--bc-s3);font-size:14px;flex:0 0 auto}
 .lb-more{flex:0 0 auto;margin-top:var(--bc-s3);width:100%;
   border-radius:18px;font-size:18px;padding:13px}
 
-/* Players / All runs. Two genuinely different boards: one row per PLAYER
-   (personal best) vs one row per RUN, where the same player can hold several
-   places including more than one medal. */
-.lb-tabs{flex:0 0 auto}
-
-/* The run date, under the player's name on the all-runs board. */
-.lb-when{display:block;font-family:var(--bc-font-mono);font-size:11px;font-weight:400;
-  color:var(--bc-text-mute);margin-top:2px}
 
 /* Appended to the game-over panel when a score didn't reach the board — a
    rejected run or a failed submit. Previously console-only, which made a
@@ -2863,7 +2855,16 @@ body.map-open .powerups{display:none}
 
 /* The wallet group: coin line + challenge chip. `.menu-bar` is
    space-between with two children, and this keeps it that way. */
-.menu-bar-wallet{display:flex;align-items:center;gap:var(--bc-s2);min-width:0}
+/* STRETCH, not center — and that is what makes the trophy the same size as the
+   bell and the speaker opposite it.
+   `.menu-bar .chrome-btn` is deliberately `height:auto; aspect-ratio:1`, so a
+   bar button has no size of its own: it fills whatever its group stretches it
+   to and squares itself off. `.menu-bar-actions` stretches, so those two come
+   out 48x48 against the wallet pill. This group was written `center`, so the
+   trophy collapsed to its 44px min-width and sat visibly smaller than its two
+   siblings. Matching the mechanism rather than hardcoding 48 is what keeps all
+   three in step if the wallet pill's height ever changes. */
+.menu-bar-wallet{display:flex;align-items:stretch;gap:var(--bc-s2);min-width:0}
 
 /* position:relative so the badge can hang off the corner — `.chrome-btn` sets
    position:static, so this has to come AFTER it to win. Same ordering trap the
