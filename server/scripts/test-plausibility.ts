@@ -30,7 +30,7 @@ import {
   BONUS_MAZE_START,
   STAGE_COUNT,
   SCORING,
-  CHALLENGE_LEVELS,
+  JOURNEY_LEVELS,
   FRUIT_THRESHOLDS,
   MAX_FRUIT_POINTS,
   MIN_FRUIT_POINTS,
@@ -268,13 +268,13 @@ expectAccept(
 // tour level, which is why this case failed with ITEM_COUNT_IMPOSSIBLE rather
 // than with anything to do with the validator: 18 ghosts eaten off 4 bones is
 // impossible with three of them, and entirely ordinary with five.
-const TOP_DOG_IDX = CHALLENGE_LEVELS.findIndex((l) => l.ghostCount === 5 && l.speedMult === 2);
+const TOP_DOG_IDX = JOURNEY_LEVELS.findIndex((l) => l.ghostCount === 5 && l.speedMult === 2);
 if (TOP_DOG_IDX < 0) throw new Error("test-plausibility: no 5-ghost 2x-speed challenge level in the catalog");
 
 expectAccept(
   "a challenge Top Dog clear (5 ghosts, x2 speed)",
   makeRun({
-    mazeIdxSequence: [CHALLENGE_LEVELS[TOP_DOG_IDX].mazeIdx],
+    mazeIdxSequence: [JOURNEY_LEVELS[TOP_DOG_IDX].mazeIdx],
     levelsCleared: 1,
     pelletsEaten: 176,
     bonesEaten: 4,
@@ -473,13 +473,13 @@ expectReject(
 expectReject(
   "clearing a level the player hasn't unlocked",
   "LEVEL_LOCKED",
-  makeRun({ mazeIdxSequence: [CHALLENGE_LEVELS[7].mazeIdx], levelsCleared: 1, pelletsEaten: 176 }),
+  makeRun({ mazeIdxSequence: [JOURNEY_LEVELS[7].mazeIdx], levelsCleared: 1, pelletsEaten: 176 }),
   classicCtx({ mode: "challenge", challengeIdx: 7, currentChallengeProgress: 0, elapsedServerSeconds: 300 }),
 );
 
 expectAccept(
   "clearing the NEXT unlocked level is fine",
-  makeRun({ mazeIdxSequence: [CHALLENGE_LEVELS[3].mazeIdx], levelsCleared: 1, pelletsEaten: 198, livesLost: 1 }),
+  makeRun({ mazeIdxSequence: [JOURNEY_LEVELS[3].mazeIdx], levelsCleared: 1, pelletsEaten: 198, livesLost: 1 }),
   classicCtx({ mode: "challenge", challengeIdx: 3, currentChallengeProgress: 3, elapsedServerSeconds: 300 }),
 );
 
@@ -1056,7 +1056,7 @@ expectReject(
   "a power-up reported on a challenge run",
   "ITEM_COUNT_IMPOSSIBLE",
   makeRun({
-    mazeIdxSequence: [CHALLENGE_LEVELS[0].mazeIdx],
+    mazeIdxSequence: [JOURNEY_LEVELS[0].mazeIdx],
     levelsCleared: 1,
     powerupsCollected: 1,
     powerupIds: ["shield"],
@@ -1267,7 +1267,7 @@ ok(
   );
   // CLASSIC ONLY, on the money perk specifically.
   const challengeMuffin = validateRun(
-    makeRun({ mazeIdxSequence: [CHALLENGE_LEVELS[0].mazeIdx], coinsCollected: 5 }),
+    makeRun({ mazeIdxSequence: [JOURNEY_LEVELS[0].mazeIdx], coinsCollected: 5 }),
     {
       elapsedServerSeconds: 300,
       mode: "challenge",
@@ -1330,7 +1330,7 @@ ok(
     "a challenge run cannot claim Pepper's bonus",
     "ITEM_COUNT_IMPOSSIBLE",
     makeRun({
-      mazeIdxSequence: [CHALLENGE_LEVELS[0].mazeIdx],
+      mazeIdxSequence: [JOURNEY_LEVELS[0].mazeIdx],
       fruitEaten: eaten,
       fruitKindCounts: [eaten, 0, 0, 0, 0],
       fruitPoints,

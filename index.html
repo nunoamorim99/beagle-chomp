@@ -256,11 +256,14 @@
           <span class="bc-i" aria-hidden="true">play_arrow</span>Play
         </button>
         <div class="menu-tiles">
-          <!-- IDEA-013 Challenge Mode: 8 fixed levels with per-level
-               speed/extra-ghost/short-fright twists. -->
-          <button type="button" id="challengeBtn" class="menu-tile menu-tile--challenge">
-            <span class="menu-tile-icon bc-i" aria-hidden="true">trophy</span>
-            <span class="menu-tile-label">Challenge</span>
+          <!-- IDEA-013/IDEA-063/IDEA-077 JOURNEY mode: a 40-level ladder — a
+               thirty-level tour of every playable maze, then ten twists.
+               Named "Journey" (not "Levels") because "level" already means one
+               map of ANY run here; the word "Challenge" now belongs to
+               IDEA-078's goals-and-rewards screen. -->
+          <button type="button" id="journeyBtn" class="menu-tile menu-tile--journey">
+            <span class="menu-tile-icon bc-i" aria-hidden="true">route</span>
+            <span class="menu-tile-label">Journey</span>
           </button>
           <button type="button" id="menuShopBtn" class="menu-tile menu-tile--shop">
             <span class="menu-tile-icon bc-i" aria-hidden="true">storefront</span>
@@ -299,7 +302,7 @@
     <!-- IDEA-014: the Challenge "garden path" level-select PAGE — same
          "full-screen dedicated page, deliberately separate from #center/
          #mainMenu" pattern as #shop above, entirely (re)rendered by
-         src/ui/levelMap.ts. Opened by #challengeBtn (replacing the old
+         src/ui/levelMap.ts. Opened by #journeyBtn (replacing the old
          auto-continue-at-progress behavior) and closes back to #mainMenu. -->
     <div class="hidden" id="levelMap"></div>
 

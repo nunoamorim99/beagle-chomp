@@ -235,6 +235,7 @@ function numberArray(source: string, constName: string): number[] {
 }
 
 const configSrc = readFileSync(join(GAME_DIR, "config.ts"), "utf-8");
+const journeySrc = readFileSync(join(GAME_DIR, "journey.ts"), "utf-8");
 const challengesSrc = readFileSync(join(GAME_DIR, "challenges.ts"), "utf-8");
 
 const scoring = {
@@ -392,7 +393,7 @@ const configFrightSeconds = numberField(configSrc, "TIMING", "frightSeconds");
 // Parse ENTRY BY ENTRY. A single regex spanning the whole array is greedy
 // across entries and silently merges levels — the count guard below caught
 // exactly that. Each entry is `mazeIdx: N` followed by its own `modifiers: {…}`.
-const challengesArraySrc = sliceArray(challengesSrc, "CHALLENGE_LEVELS");
+const journeyArraySrc = sliceArray(journeySrc, "JOURNEY_LEVELS");
 
 // How many entries the array CLAIMS to have, counted independently of the
 // modifier parse below. IDEA-063 took this from 8 to 40 and the old guard was
@@ -402,10 +403,10 @@ const challengesArraySrc = sliceArray(challengesSrc, "CHALLENGE_LEVELS");
 // `name:` in the sliced array and comparing it against the number of
 // `mazeIdx: N` / `modifiers: {...}` pairs actually found asserts the two agree,
 // whatever the count happens to be.
-const declaredLevelCount = [...challengesArraySrc.matchAll(/^\s*name:\s*"/gm)].length;
+const declaredLevelCount = [...journeyArraySrc.matchAll(/^\s*name:\s*"/gm)].length;
 
 const challengeLevels = [
-  ...challengesArraySrc.matchAll(/mazeIdx:\s*(\d+),\s*\n\s*modifiers:\s*\{([^}]*)\}/g),
+  ...journeyArraySrc.matchAll(/mazeIdx:\s*(\d+),\s*\n\s*modifiers:\s*\{([^}]*)\}/g),
 ].map((m) => {
   const mazeIdx = Number(m[1]);
   const mods = m[2];
@@ -431,10 +432,10 @@ const challengeLevels = [
 
 if (declaredLevelCount === 0 || challengeLevels.length !== declaredLevelCount) {
   console.error(
-    `[sync] extracted ${challengeLevels.length} challenge levels but CHALLENGE_LEVELS ` +
+    `[sync] extracted ${challengeLevels.length} challenge levels but JOURNEY_LEVELS ` +
       `declares ${declaredLevelCount} — the entry format probably changed. Every entry ` +
       `must keep "mazeIdx: N" on its own line immediately followed by ` +
-      `"modifiers: { ... }" on ONE line (see challenges.ts's own note).`,
+      `"modifiers: { ... }" on ONE line (see journey.ts's own note).`,
   );
   process.exit(1);
 }
@@ -553,6 +554,80 @@ const GHOSTS_STAGE_5_6 = progressionConst("GHOSTS_STAGE_5_6");
 const GHOSTS_BONUS_FIRST_LAP = progressionConst("GHOSTS_BONUS_FIRST_LAP");
 const GHOSTS_BONUS_LATER_LAPS = progressionConst("GHOSTS_BONUS_LATER_LAPS");
 
+/**
+ * IDEA-078: the CHALLENGE definitions.
+ *
+ * The server must hold these because it is the only side that can judge them:
+ * progress is derived from `run_stats`, which the client cannot read, and the
+ * reward is coins, which only the server may bank. A client that could name its
+ * own target or its own reward could name any of them.
+ *
+ * Only the four JUDGED fields cross: id, metric, target, reward. The name, the
+ * blurb and the category stay on the client — they are what the screen draws
+ * and the server has no business knowing them, so they are not a wire contract
+ * and rewording a blurb is not a deploy.
+ *
+ * Entry-by-entry via splitEntries (brace matching + comment masking), same as
+ * the skin registries, so a regex can never wander from one entry into the
+ * next. The count guard below is the protection that matters — see
+ * journey.ts's own note: a definition list that quietly parses SHORT ships a
+ * catalog where some challenges simply do not exist, and the only symptom is a
+ * player tapping Claim and being told the challenge is unknown.
+ */
+const challengesArraySrc = sliceArray(challengesSrc, "CHALLENGES");
+const declaredChallengeCount = [...challengesArraySrc.matchAll(/^\s*id:\s*"/gm)].length;
+
+const CHALLENGE_MODES = new Set(["classic", "journey", "both"]);
+
+const challenges = splitEntries(challengesArraySrc)
+  .map((entry) => {
+    const id = /\bid:\s*"([a-z0-9-]+)"/.exec(entry);
+    const mode = /\bmode:\s*"([a-z]+)"/.exec(entry);
+    const metric = /\bmetric:\s*"([A-Za-z]+)"/.exec(entry);
+    const target = /\btarget:\s*(\d+)/.exec(entry);
+    const reward = /\breward:\s*(\d+)/.exec(entry);
+    if (!id || !mode || !metric || !target || !reward) return null;
+    return {
+      id: id[1],
+      mode: mode[1],
+      metric: metric[1],
+      target: Number(target[1]),
+      reward: Number(reward[1]),
+    };
+  })
+  .filter((c): c is NonNullable<typeof c> => c !== null);
+
+if (declaredChallengeCount === 0 || challenges.length !== declaredChallengeCount) {
+  console.error(
+    `[sync] extracted ${challenges.length} challenges but CHALLENGES declares ` +
+      `${declaredChallengeCount} — the entry format probably changed. Every entry must ` +
+      `keep id / mode / metric / target / reward as plain literals on their own lines ` +
+      `(see challenges.ts's own note on why this array may never be generated).`,
+  );
+  process.exit(1);
+}
+
+{
+  const ids = new Set(challenges.map((c) => c.id));
+  if (ids.size !== challenges.length) {
+    console.error("[sync] duplicate challenge id — an id is a claim row's primary key");
+    process.exit(1);
+  }
+  const badMode = challenges.find((c) => !CHALLENGE_MODES.has(c.mode));
+  if (badMode) {
+    console.error(`[sync] challenge "${badMode.id}" has unknown mode "${badMode.mode}"`);
+    process.exit(1);
+  }
+  // A zero target is always already met and a zero reward is a button that
+  // pays nothing — both are almost certainly a typo, and both would ship as a
+  // perfectly valid catalog.
+  const bad = challenges.find((c) => c.target <= 0 || c.reward <= 0);
+  if (bad) {
+    console.error(`[sync] challenge "${bad.id}" has a non-positive target or reward`);
+    process.exit(1);
+  }
+}
+
 const out = `// GENERATED FILE — DO NOT EDIT.
 // Produced by server/scripts/sync-game-constants.ts from src/game/cosmetics.ts
 // and src/game/themes.ts. Run \`npm run sync\` in server/ to regenerate.
@@ -584,7 +659,7 @@ export const DEFAULT_MAZE_THEME_ID = ${JSON.stringify(defaults.theme)};
 
 /** Challenge level count — the upper bound on users.challenge_progress.
  *  The sentinel value itself (== this number) means "all levels cleared". */
-export const CHALLENGE_LEVEL_COUNT = ${challengeLevels.length};
+export const JOURNEY_LEVEL_COUNT = ${challengeLevels.length};
 
 // ---------------------------------------------------------------------------
 // Scoring + timing constants, mirrored from src/game/config.ts (and
@@ -677,14 +752,14 @@ export const MAZE_COUNT = MAZE_FACTS.length;
 /** Per-level challenge modifiers. A challenge run's ghost count and speed
  *  change BOTH the score ceiling and the minimum time, so the validator needs
  *  them to judge a challenge submission at all. */
-export interface ChallengeLevelFacts {
+export interface JourneyLevelFacts {
   readonly mazeIdx: number;
   readonly speedMult: number;
   readonly ghostCount: number;
   readonly frightSeconds: number;
 }
 
-export const CHALLENGE_LEVELS: readonly ChallengeLevelFacts[] = [
+export const JOURNEY_LEVELS: readonly JourneyLevelFacts[] = [
 ${challengeLevels
   .map(
     (l) =>
@@ -693,9 +768,35 @@ ${challengeLevels
   .join("\n")}
 ];
 
+// --- challenges (IDEA-078) ---------------------------------------------------
+//
+// Only what the server JUDGES. Names, blurbs and categories stay client-side:
+// they are presentation, so rewording one is not a deploy and not a drift.
+
+export type ChallengeMode = "classic" | "journey" | "both";
+
+export interface ChallengeFacts {
+  readonly id: string;
+  readonly mode: ChallengeMode;
+  readonly metric: string;
+  readonly target: number;
+  readonly reward: number;
+}
+
+export const CHALLENGES: readonly ChallengeFacts[] = [
+${challenges
+  .map(
+    (c) =>
+      `  { id: "${c.id}", mode: "${c.mode}", metric: "${c.metric}", target: ${c.target}, reward: ${c.reward} },`,
+  )
+  .join("\n")}
+];
+
+export const CHALLENGE_COUNT = CHALLENGES.length;
+
 /** Classic mode's baseline — the explicit modifiers game.ts uses for a classic
- *  run (CLASSIC_MODIFIERS in challenges.ts). */
-export const CLASSIC_MODIFIERS: ChallengeLevelFacts = {
+ *  run (CLASSIC_MODIFIERS in journey.ts). */
+export const CLASSIC_MODIFIERS: JourneyLevelFacts = {
   mazeIdx: -1,
   speedMult: 1,
   ghostCount: 3,
@@ -780,5 +881,6 @@ writeFileSync(OUT_FILE, out, "utf-8");
 
 console.log(
   `[sync] wrote catalog.generated.ts — ${beagleSkins.length} beagle skins, ` +
-    `${enemySkins.length} enemy skins, ${mazeThemes.length} maze themes`,
+    `${enemySkins.length} enemy skins, ${mazeThemes.length} maze themes, ` +
+    `${challenges.length} challenges`,
 );

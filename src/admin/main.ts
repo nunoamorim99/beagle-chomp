@@ -19,7 +19,7 @@ import {
   ENEMY_CATALOG,
   THEME_CATALOG,
   CONTROL_CATALOG,
-  CHALLENGE_LEVEL_COUNT,
+  JOURNEY_LEVEL_COUNT,
   challengeMeta,
   nameShares,
   type CatalogEntry,
@@ -290,7 +290,7 @@ function renderRetention(d: api.Retention): string {
 
 /** One challenge row, named. A bare "C33" is unreadable on a 40-level ladder —
  *  a tour level IS its maze, so the name is what makes a ranking mean anything. */
-function challengeRow(s: api.ChallengeStanding): (string | number)[] {
+function journeyRow(s: api.ChallengeStanding): (string | number)[] {
   const m = challengeMeta(s.challengeIdx);
   return [
     `${m.code} · ${m.name}`,
@@ -304,7 +304,7 @@ function challengeRow(s: api.ChallengeStanding): (string | number)[] {
   ];
 }
 
-const CHALLENGE_COLUMNS = [
+const JOURNEY_COLUMNS = [
   "Level",
   "Chapter",
   "Attempts",
@@ -324,14 +324,14 @@ function renderDifficulty(c: api.Challenges, g: api.Gameplay): string {
   }));
 
   // The one thing importing the game's own ladder cannot catch: the SERVER's
-  // generated catalog falling behind challenges.ts. That is a forgotten
+  // generated catalog falling behind journey.ts. That is a forgotten
   // `npm run sync`, which this dashboard exists to surface — and unflagged it
   // would show as a table that is quietly the wrong length.
   const drift =
-    c.levelCount === CHALLENGE_LEVEL_COUNT
+    c.levelCount === JOURNEY_LEVEL_COUNT
       ? ""
       : `<div class="banner bad"><strong>The server's catalog is out of step.</strong>
-          The game has ${esc(CHALLENGE_LEVEL_COUNT)} challenge levels; the API reports
+          The game has ${esc(JOURNEY_LEVEL_COUNT)} challenge levels; the API reports
           ${esc(c.levelCount)}. That is a <code>npm run sync</code> in <code>server/</code>
           that never ran — the same drift that makes the validator refuse honest runs.
           Everything below is measured against the API's figure.</div>`;
@@ -344,8 +344,8 @@ function renderDifficulty(c: api.Challenges, g: api.Gameplay): string {
   const attempted = c.standings.filter((s) => s.attempts > 0).length;
 
   const hardest = c.ranked.length
-    ? table(CHALLENGE_COLUMNS, c.ranked.map(challengeRow))
-    : empty("No challenge level has enough attempts to rank yet.");
+    ? table(JOURNEY_COLUMNS, c.ranked.map(journeyRow))
+    : empty("No Journey level has enough attempts to rank yet.");
 
   const thin = tried.length
     ? `<h3>Too thin to rank</h3>
@@ -354,7 +354,7 @@ function renderDifficulty(c: api.Challenges, g: api.Gameplay): string {
          and means nothing. Shown so a level being hard is not confused with a
          level being new.
        </p>
-       <div class="scroll">${table(CHALLENGE_COLUMNS, tried.map(challengeRow))}</div>`
+       <div class="scroll">${table(JOURNEY_COLUMNS, tried.map(journeyRow))}</div>`
     : "";
 
   // Per chapter, because the ladder is two different things: thirty tour levels
@@ -386,7 +386,7 @@ function renderDifficulty(c: api.Challenges, g: api.Gameplay): string {
   return `
     ${drift}
     <section class="panel">
-      <h2>Hardest challenge levels</h2>
+      <h2>Hardest Journey levels</h2>
       <p class="sub">
         Ordered by clear rate, hardest first. Every level is counted, including
         the ones nobody has opened — on a ${esc(c.levelCount)}-level ladder, "no
@@ -722,8 +722,8 @@ function showRewind(name: string): void {
             ${statTile("Deaths", fmt(d.livesLost))}
             ${statTile("Maps cleared", fmt(d.levelsCleared))}
             ${statTile(
-              "Challenges",
-              `${fmt(d.challengeProgress)} / ${CHALLENGE_LEVEL_COUNT}`,
+              "Journey",
+              `${fmt(d.challengeProgress)} / ${JOURNEY_LEVEL_COUNT}`,
               "stones cleared",
             )}
           </div>

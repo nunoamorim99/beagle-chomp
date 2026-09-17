@@ -172,7 +172,7 @@ export const BALANCE_GROUPS: readonly BalanceGroup[] = [
   },
   {
     title: "Power-ups",
-    note: "Classic mode only — a challenge run reporting a power-up is rejected outright.",
+    note: "Classic mode only — a Journey run reporting a power-up is rejected outright.",
     fields: [
       {
         path: ["POWERUP_MULTIPLIER"],

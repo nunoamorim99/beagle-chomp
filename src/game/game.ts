@@ -68,10 +68,10 @@ import { shouldFireThreshold } from "./pickups";
 import { type GameMode, createInitialGameState } from "./state";
 import {
   CLASSIC_MODIFIERS,
-  CHALLENGE_LEVEL_COUNT,
-  getChallengeLevel,
-  type ChallengeModifiers,
-} from "./challenges";
+  JOURNEY_LEVEL_COUNT,
+  getJourneyLevel,
+  type JourneyModifiers,
+} from "./journey";
 // IDEA-020 Increment 2: run telemetry + server-issued session tickets.
 import {
   createRunTelemetry,
@@ -362,8 +362,8 @@ export class Game {
   private readonly detachAudioUnlock: () => void;
   private readonly shop: ShopHandle;
   // IDEA-014: the Challenge "garden path" level-select page — opened by
-  // #challengeBtn (see the constructor) instead of the old direct
-  // startChallenge(getChallengeProgress()) auto-continue call.
+  // #journeyBtn (see the constructor) instead of the old direct
+  // startJourney(getChallengeProgress()) auto-continue call.
   private readonly levelMap: LevelMapHandle;
   private readonly dpad: DpadHandle;
   private readonly stick: StickHandle;
@@ -372,7 +372,7 @@ export class Game {
   private readonly detachMenuResize: () => void;
   private readonly detachPlayButton: () => void;
   private readonly detachMenuShopButton: () => void;
-  private readonly detachChallengeButton: () => void;
+  private readonly detachJourneyButton: () => void;
 
   private ghosts: GhostRig[] = [];
 
@@ -394,14 +394,14 @@ export class Game {
   // both of which reset this explicitly) so a stray challenge run can never
   // leak its modifiers into a later classic run. `challengeIdx` is only
   // meaningful while gameKind==="challenge" — it's the index into
-  // CHALLENGE_LEVELS of the level currently being played (see
-  // startChallenge()). `activeModifiers` is what every speed/ghost-count/
+  // JOURNEY_LEVELS of the level currently being played (see
+  // startJourney()). `activeModifiers` is what every speed/ghost-count/
   // fright-duration read in this class threads through — CLASSIC_MODIFIERS
   // for classic (a mathematical no-op on top of the raw config.ts numbers),
-  // or a specific ChallengeLevel's modifiers while gameKind==="challenge".
+  // or a specific JourneyLevel's modifiers while gameKind==="challenge".
   private gameKind: "classic" | "challenge" = "classic";
   private challengeIdx = 0;
-  private activeModifiers: ChallengeModifiers = CLASSIC_MODIFIERS;
+  private activeModifiers: JourneyModifiers = CLASSIC_MODIFIERS;
 
   // IDEA-063: which theme the SCENE ATMOSPHERE (sky, fog, backdrop dome,
   // lights) is currently painted with — NOT which theme is equipped.
@@ -473,7 +473,7 @@ export class Game {
   // Lives on the GAME, not on LevelAssets, and that is the whole design: the
   // two doublers and the shield survive clearing a map, so their state cannot
   // be rebuilt per level like the threshold pointers are. It is reset per RUN
-  // (startClassicRun / startChallenge), which is exactly "until you die" once
+  // (startClassicRun / startJourney), which is exactly "until you die" once
   // the last life goes.
   private powerups: PowerupState = createPowerupState();
 
@@ -530,9 +530,21 @@ export class Game {
    *  the game layer knows nothing about accounts or the network — same reason
    *  #menuProfileBtn is wired out there. Undefined simply means no button. */
   private readonly openLeaderboard?: () => void;
+  private readonly onMenuShown?: () => void;
 
-  constructor(canvas: HTMLCanvasElement, openLeaderboard?: () => void) {
+  constructor(
+    canvas: HTMLCanvasElement,
+    openLeaderboard?: () => void,
+    /** IDEA-078: fired every time the main menu comes up. That is exactly
+     *  when the Challenges chip's badge needs to be current — a run is the
+     *  only thing that can complete a challenge, and every run ends here.
+     *  A hook rather than a poll: the alternative is a request per player
+     *  per interval for a number that only changes when they finish a
+     *  game. */
+    onMenuShown?: () => void,
+  ) {
     this.openLeaderboard = openLeaderboard;
+    this.onMenuShown = onMenuShown;
 
     // Load the persisted profile FIRST — before ANYTHING that builds a
     // beagle. createMenuScene() below bakes the showcase dog from
@@ -714,7 +726,7 @@ export class Game {
     // IDEA-014: the Challenge "garden path" level-select page. Lives
     // alongside this.shop with the same lifecycle (detached in stop() below).
     // Sits over the menu's existing 3D backdrop (mode stays "start" while the
-    // map is open — see #challengeBtn's handler below, which does NOT call
+    // map is open — see #journeyBtn's handler below, which does NOT call
     // hideMenu()), so its own onOpen/onClose only need to toggle
     // body.map-open for HUD/menu chrome-hiding, mirroring the shop's
     // onOpen/onClose exactly (see style.css's body.map-open rules).
@@ -722,11 +734,11 @@ export class Game {
       onPlayLevel: (idx) => {
         // The map has already closed itself AND fired onClose (restoring
         // body.map-open chrome — see levelMap.ts's close()) before this
-        // fires; startChallenge() below hides #mainMenu itself (via
+        // fires; startJourney() below hides #mainMenu itself (via
         // hideMenu()) the same way the other run-start paths do.
         this.sound.resume();
         this.hideMenu();
-        this.startChallenge(idx);
+        this.startJourney(idx);
       },
       onOpen: () => {
         document.body.classList.add("map-open");
@@ -777,26 +789,26 @@ export class Game {
     menuShopBtn.addEventListener("click", onMenuShopClick);
     this.detachMenuShopButton = () => menuShopBtn.removeEventListener("click", onMenuShopClick);
 
-    // IDEA-013/IDEA-014 (Challenge Mode + its level map): #challengeBtn is
+    // IDEA-013/IDEA-014 (Challenge Mode + its level map): #journeyBtn is
     // static markup in index.html's #mainMenu (between Play and Shop), wired
     // once here exactly like playBtn/menuShopBtn above. Previously called
-    // `this.startChallenge(getChallengeProgress())` directly (silently
+    // `this.startJourney(getChallengeProgress())` directly (silently
     // auto-continuing at the highest unlocked level); now OPENS the garden-
     // path level-select page instead, so the player picks which unlocked
     // level to (re)play — the page's own Play button is what actually calls
-    // startChallenge(idx) (see the onPlayLevel callback above). Deliberately
+    // startJourney(idx) (see the onPlayLevel callback above). Deliberately
     // does NOT call hideMenu() here (unlike onPlayClick) — the map sits over
     // the still-visible #mainMenu backdrop (its own CSS hides #mainMenu while
     // body.map-open, see style.css), and hideMenu() only happens once the
     // player actually presses Play on a chosen level.
-    const challengeBtn = document.getElementById("challengeBtn") as HTMLButtonElement | null;
-    if (!challengeBtn) throw new Error("Game: missing #challengeBtn — check index.html");
-    const onChallengeClick = (): void => {
+    const journeyBtn = document.getElementById("journeyBtn") as HTMLButtonElement | null;
+    if (!journeyBtn) throw new Error("Game: missing #journeyBtn — check index.html");
+    const onJourneyClick = (): void => {
       this.sound.resume();
       this.levelMap.open();
     };
-    challengeBtn.addEventListener("click", onChallengeClick);
-    this.detachChallengeButton = () => challengeBtn.removeEventListener("click", onChallengeClick);
+    journeyBtn.addEventListener("click", onJourneyClick);
+    this.detachJourneyButton = () => journeyBtn.removeEventListener("click", onJourneyClick);
 
     // IDEA-021 v2 / IDEA-023: the menu scene's and shop scene's cameras are
     // both plain perspective cams (no maze-fit math) — just need their
@@ -817,7 +829,7 @@ export class Game {
     this.livesAwardedFromScore = 0;
     // IDEA-046: power-ups are RUN-scoped — "until you die" means until the run
     // ends, and a new run must not inherit the last one's doublers. Reset here
-    // (and in startChallenge, where they are simply never granted) rather than
+    // (and in startJourney, where they are simply never granted) rather than
     // per level, which is exactly what lets them survive a cleared map.
     this.powerups = createPowerupState();
     this.hud.setScore(this.score);
@@ -919,6 +931,23 @@ export class Game {
     // this did when the icon was an emoji) would delete it.
     const coinCount = document.getElementById("menuCoinCount");
     if (coinCount) coinCount.textContent = `${getCoins()} coins`;
+
+    this.onMenuShown?.();
+  }
+
+  /**
+   * Repaint every coin readout from the profile cache (IDEA-078).
+   *
+   * Claiming a challenge reward banks coins server-side while the player is
+   * standing on a page ABOVE the menu — so the menu behind it is never
+   * re-rendered, and its wallet would still show the old figure when they came
+   * back. Public because the claim lands in main.ts, which owns the challenges
+   * screen; game.ts owns both readouts and neither is reachable from outside.
+   */
+  refreshWallet(): void {
+    this.hud.setCoins(getCoins());
+    const line = document.getElementById("menuCoinCount");
+    if (line) line.textContent = `${getCoins()} coins`;
   }
 
   /** Leaves the full-screen menu (Play click / any other exit) — hides
@@ -968,14 +997,14 @@ export class Game {
    * Board (walls/floor/pellet meshes), the mutable pellet set, the fruit-tile
    * list, and the P/G spawn tiles. Pure construction — does not touch scene
    * membership of any *previous* level's meshes; callers (constructor,
-   * startLevel, startChallenge) are responsible for removing the old ones
+   * startLevel, startJourney) are responsible for removing the old ones
    * first so nothing leaks across levels.
    *
    * `mazeIdx` is the ALREADY-RESOLVED index into MAZES — this method itself
    * does no progression or lap math. That resolution is entirely the caller's
    * job: startLevel (classic) takes it from `planLevel(idx).mazeIdx`
-   * (IDEA-040), and startChallenge takes the fixed
-   * `CHALLENGE_LEVELS[idx].mazeIdx`. Keeping the resolution outside means one
+   * (IDEA-040), and startJourney takes the fixed
+   * `JOURNEY_LEVELS[idx].mazeIdx`. Keeping the resolution outside means one
    * builder serves both modes and neither can accidentally inherit the
    * other's level maths.
    */
@@ -1106,7 +1135,7 @@ export class Game {
     this.detachMenuResize();
     this.detachPlayButton();
     this.detachMenuShopButton();
-    this.detachChallengeButton();
+    this.detachJourneyButton();
     this.shop.detach();
     this.levelMap.detach();
     this.dpad.detach();
@@ -1197,16 +1226,16 @@ export class Game {
   /**
    * CHALLENGE MODE level flow — mirrors startLevel's shape (dispose old
    * level, build the new one, reset actors, enter "ready") but resolves the
-   * maze from the fixed CHALLENGE_LEVELS table instead of a looping
+   * maze from the fixed JOURNEY_LEVELS table instead of a looping
    * `idx % MAZE_COUNT`, and sets gameKind/challengeIdx/activeModifiers so
    * every speed/ghost-count/fright-duration read elsewhere in this class
    * (resetActors, updatePlay, triggerFright) picks up this level's twist.
-   * `idx` is clamped via getChallengeLevel (never throws for an
+   * `idx` is clamped via getJourneyLevel (never throws for an
    * out-of-range idx, e.g. a corrupt persisted challengeProgress) —
    * `this.challengeIdx`/the HUD label are set from THAT CLAMPED index
-   * (`level`'s own position in CHALLENGE_LEVELS via getChallengeLevel's
+   * (`level`'s own position in JOURNEY_LEVELS via getJourneyLevel's
    * clamp), not the raw `idx` passed in, so a caller passing
-   * CHALLENGE_LEVEL_COUNT (the "all cleared" sentinel — see
+   * JOURNEY_LEVEL_COUNT (the "all cleared" sentinel — see
    * profileStore.ts's StoredProfile doc comment) correctly lands on and
    * tracks the LAST real level (index COUNT-1), not a phantom one-past-the-
    * end level.
@@ -1215,13 +1244,13 @@ export class Game {
    * handler does (createInitialGameState + the same 3 counter resets),
    * since a challenge run is its own self-contained playthrough, not a
    * continuation of whatever classic run (if any) was last in progress.
-   * Called from the #challengeBtn handler (fresh run, entering at the
+   * Called from the #journeyBtn handler (fresh run, entering at the
    * highest unlocked level), the challenge level-complete panel's "Next
    * level" button, and the game-over panel's "Play again" button while
    * gameKind==="challenge" (both restart/advance a challenge run, not a
    * classic one — see gameOver()/levelClear()'s challenge branches below).
    */
-  private startChallenge(idx: number): void {
+  private startJourney(idx: number): void {
     // Every challenge level is its OWN run and its own session (game.ts panels
     // between levels; "Next level" is a fresh run, not a continuation). Gating
     // here rather than at each call site covers all three entry points: the
@@ -1229,7 +1258,7 @@ export class Game {
     const safeIdxForSession = Number.isFinite(idx) ? Math.floor(idx) : 0;
     const resolvedForSession = Math.max(
       0,
-      Math.min(safeIdxForSession, CHALLENGE_LEVEL_COUNT - 1),
+      Math.min(safeIdxForSession, JOURNEY_LEVEL_COUNT - 1),
     );
     // IDEA-046: challenge runs never carry power-ups (maybeSpawnPowerup refuses
     // to spawn them there), but a run started straight after a classic one must
@@ -1237,20 +1266,20 @@ export class Game {
     this.powerups = createPowerupState();
     this.syncPowerupHud();
     void this.beginRunSession("challenge", resolvedForSession).then((ok) => {
-      if (ok) this.startChallengeLevel(resolvedForSession);
+      if (ok) this.startJourneyLevel(resolvedForSession);
     });
   }
 
   /** The actual level setup, once a session exists. */
-  private startChallengeLevel(idx: number): void {
-    // Same clamp getChallengeLevel itself applies internally (see
-    // challenges.ts) — duplicated here (rather than reverse-looking-up the
+  private startJourneyLevel(idx: number): void {
+    // Same clamp getJourneyLevel itself applies internally (see
+    // journey.ts) — duplicated here (rather than reverse-looking-up the
     // returned level's index) so resolvedIdx is unambiguously "the index
     // that produced this exact level", with no reliance on array reference
     // identity between the two calls.
     const safeIdx = Number.isFinite(idx) ? Math.floor(idx) : 0;
-    const resolvedIdx = Math.max(0, Math.min(safeIdx, CHALLENGE_LEVEL_COUNT - 1));
-    const level = getChallengeLevel(resolvedIdx);
+    const resolvedIdx = Math.max(0, Math.min(safeIdx, JOURNEY_LEVEL_COUNT - 1));
+    const level = getJourneyLevel(resolvedIdx);
 
     this.gameKind = "challenge";
     this.challengeIdx = resolvedIdx;
@@ -1272,7 +1301,7 @@ export class Game {
     // Small, readable challenge-level HUD label (e.g. "C3") — distinct from
     // classic's "map · lap" label so the player can always tell which mode
     // they're in from the HUD alone.
-    this.hud.setLevel(`C${resolvedIdx + 1}`);
+    this.hud.setLevel(`J${resolvedIdx + 1}`);
 
     this.resetActors();
     this.mode = "ready";
@@ -1740,7 +1769,7 @@ export class Game {
   private triggerFright(): void {
     // IDEA-013: activeModifiers.frightSeconds replaces the raw
     // TIMING.frightSeconds literal — CLASSIC_MODIFIERS.frightSeconds IS
-    // TIMING.frightSeconds (see challenges.ts), so this is a byte-for-byte
+    // TIMING.frightSeconds (see journey.ts), so this is a byte-for-byte
     // no-op in classic mode.
     this.frightTimer = this.activeModifiers.frightSeconds;
     this.ghostEatChain = 0;
@@ -2099,7 +2128,7 @@ export class Game {
    * infinite looping lap counter. Persists progress first
    * (advanceChallengeProgress — a max-write, so replaying an already-
    * cleared level can never regress the unlock), then shows either:
-   *   - the last level (challengeIdx === CHALLENGE_LEVEL_COUNT-1): an
+   *   - the last level (challengeIdx === JOURNEY_LEVEL_COUNT-1): an
    *     "ALL CLEAR" congratulations panel with only a Menu button (there is
    *     no "next level" to advance to).
    *   - any earlier level: the just-cleared level's own name plus the NEXT
@@ -2129,14 +2158,14 @@ export class Game {
     this.sound.ui.unlocked();
     void this.submitRun();
 
-    const isLast = this.challengeIdx >= CHALLENGE_LEVEL_COUNT - 1;
-    const clearedLevel = getChallengeLevel(this.challengeIdx);
+    const isLast = this.challengeIdx >= JOURNEY_LEVEL_COUNT - 1;
+    const clearedLevel = getJourneyLevel(this.challengeIdx);
 
     if (isLast) {
       const panel = this.hud.showPanel(
-        '<div class="eyebrow">challenge complete</div>' +
+        '<div class="eyebrow">journey complete</div>' +
         `<h1>${plateHtml("trophy", "inline")} All Clear!</h1>` +
-        `<p>You beat every challenge level, finishing with <strong>${clearedLevel.name}</strong>. The whole pack bows to the top dog.</p>` +
+        `<p>You beat every Journey level, finishing with <strong>${clearedLevel.name}</strong>. The whole pack bows to the top dog.</p>` +
         '<div class="menu-actions">' +
         '<button id="challengeMenuBtn" class="btn-secondary">Menu</button>' +
         "</div>",
@@ -2145,7 +2174,7 @@ export class Game {
       return;
     }
 
-    const nextLevel = getChallengeLevel(this.challengeIdx + 1);
+    const nextLevel = getJourneyLevel(this.challengeIdx + 1);
     const panel = this.hud.showPanel(
       `<div class="eyebrow">${clearedLevel.name} cleared</div>` +
       `<h1>Level ${this.challengeIdx + 2}: ${nextLevel.name}</h1>` +
@@ -2158,7 +2187,7 @@ export class Game {
     const nextBtn = panel.querySelector<HTMLButtonElement>("#nextChallengeBtn");
     nextBtn?.addEventListener("click", () => {
       this.sound.resume();
-      this.startChallenge(this.challengeIdx + 1);
+      this.startJourney(this.challengeIdx + 1);
     });
     this.wireChallengeMenuButton(panel);
   }
@@ -2362,7 +2391,7 @@ export class Game {
       // which the server then rejected as LEVEL_SCORE_CAP_EXCEEDED.
       //
       // Omitted rather than sent empty for a challenge run: a challenge level's
-      // modifiers come from CHALLENGE_LEVELS, not from a classic level index,
+      // modifiers come from JOURNEY_LEVELS, not from a classic level index,
       // and `undefined` is what tells the server which of those two it has.
       ...(this.telemetry.levelIdxSequence.length > 0
         ? { levelIdxSequence: this.telemetry.levelIdxSequence }
@@ -2507,9 +2536,9 @@ export class Game {
     againBtn?.addEventListener("click", () => {
       this.sound.resume();
       if (isChallenge) {
-        // startChallenge() itself resets score/lives/livesAwardedFromScore (see its own doc comment) — no need to
+        // startJourney() itself resets score/lives/livesAwardedFromScore (see its own doc comment) — no need to
         // duplicate that here.
-        this.startChallenge(this.challengeIdx);
+        this.startJourney(this.challengeIdx);
         return;
       }
       // Through startClassicRun, NOT startLevel(0): a replay needs its own

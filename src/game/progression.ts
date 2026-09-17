@@ -13,7 +13,7 @@
 // scores in v5.0-v5.1. So this file is generated into the server catalog by
 // server/scripts/sync-game-constants.ts and pinned by the drift test.
 //
-// Classic mode only. Challenge mode (challenges.ts) picks its own mazeIdx per
+// Classic mode only. Challenge mode (journey.ts) picks its own mazeIdx per
 // level and never consults this.
 
 import { MAZE_COUNT } from "./mazes";

@@ -322,6 +322,49 @@ export function markAnnouncementsSeen(): Promise<void> {
   return apiRequest<void>("/api/v1/announcements/seen", { method: "POST" });
 }
 
+// --- challenges (IDEA-078) --------------------------------------------------
+
+/**
+ * One challenge as the SERVER judged it.
+ *
+ * `target` and `reward` are echoed back rather than read from the client's own
+ * table on purpose: those two numbers are the ones a player is actually held
+ * to, and drawing a bar against a different target than the server applied is
+ * the one drift here that could cost somebody a reward they thought they had.
+ * Names, blurbs and categories stay client-side — they are presentation, so
+ * rewording one is not a deploy.
+ */
+export interface ChallengeRowDTO {
+  id: string;
+  value: number;
+  target: number;
+  reward: number;
+  done: boolean;
+  claimed: boolean;
+}
+
+export function fetchChallenges(): Promise<{ challenges: ChallengeRowDTO[] }> {
+  return apiRequest<{ challenges: ChallengeRowDTO[] }>("/api/v1/challenges");
+}
+
+/**
+ * Take one reward.
+ *
+ * Nothing is sent but the id — there is no number in a body the server would
+ * believe, and accepting one would invite a later version to start trusting it.
+ * The response carries the fresh profile so the wallet reconciles the same way
+ * every other coin change in this game does (IDEA-016 v2): the server is the
+ * authority and the client follows it.
+ */
+export function claimChallenge(
+  id: string,
+): Promise<{ challengeId: string; coinsAwarded: number; profile: ServerProfile }> {
+  return apiRequest<{ challengeId: string; coinsAwarded: number; profile: ServerProfile }>(
+    `/api/v1/challenges/${encodeURIComponent(id)}/claim`,
+    { method: "POST" },
+  );
+}
+
 // --- web push (IDEA-052b) ---------------------------------------------------
 
 /** The server's public VAPID key. Served rather than baked in at build time, so

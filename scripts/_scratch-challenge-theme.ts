@@ -79,7 +79,7 @@ async function signUp(page: Page): Promise<string> {
   await page.waitForSelector("#mainMenu:not(.hidden)", { timeout: 20_000 });
 
 
-  await page.click("#challengeBtn");
+  await page.click("#journeyBtn");
   await page.waitForSelector("#levelMap:not(.hidden)");
   await page.waitForTimeout(600);
   await page.screenshot({ path: `${SHOTS}/theme-map-unlocked.png` });

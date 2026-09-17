@@ -38,7 +38,7 @@ import {
 import { notifyRankAlerts, notifyBoardNudge } from "./pushService.js";
 import * as pushSubsRepo from "../repo/pushSubscriptions.js";
 import { invalidateBoardCache } from "./boardCache.js";
-import { CHALLENGE_LEVELS, CHALLENGE_LEVEL_COUNT } from "../catalog.generated.js";
+import { JOURNEY_LEVELS, JOURNEY_LEVEL_COUNT } from "../catalog.generated.js";
 
 /** A run quit mid-game never finishes its session (a quit isn't a score), so
  *  stale ones are swept rather than lingering against the open-session cap.
@@ -156,7 +156,7 @@ export async function startSession(
       throw new ApiError(400, "VALIDATION_FAILED", "Challenge level is required.");
     }
     const idx = challengeIdxInput;
-    if (!Number.isInteger(idx) || idx < 0 || idx >= CHALLENGE_LEVELS.length) {
+    if (!Number.isInteger(idx) || idx < 0 || idx >= JOURNEY_LEVELS.length) {
       throw new ApiError(400, "VALIDATION_FAILED", "Unknown challenge level.");
     }
     // Refuse at issue time as well as at finish time: no point handing out a
@@ -429,7 +429,7 @@ export async function finishSession(
       session.challenge_idx !== null &&
       submission.levelsCleared >= 1
     ) {
-      const next = Math.min(session.challenge_idx + 1, CHALLENGE_LEVEL_COUNT);
+      const next = Math.min(session.challenge_idx + 1, JOURNEY_LEVEL_COUNT);
       await client.query(
         `UPDATE users SET challenge_progress = GREATEST(challenge_progress, $2) WHERE id = $1`,
         [user.id, next],

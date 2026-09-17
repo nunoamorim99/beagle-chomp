@@ -26,6 +26,7 @@ import { sessionRoutes } from "./routes/sessions.js";
 import { adminRoutes } from "./routes/admin.js";
 import { announcementRoutes } from "./routes/announcements.js";
 import { pushRoutes } from "./routes/push.js";
+import { challengeRoutes } from "./routes/challenges.js";
 import { sweepStaleSessions, purgeOldSessions } from "./services/scoreService.js";
 import { metricsMiddleware } from "./http/metrics-middleware.js";
 import { snapshot, resetWindow, formatSnapshotLines } from "./http/metrics.js";
@@ -93,6 +94,7 @@ v1.route("/", announcementRoutes);
 // profileRoutes and sessionRoutes declare their own full paths (/profile,
 // /leaderboard, /sessions/*) because each shares one auth+rate-limit middleware
 // stack across paths that sit at different roots.
+v1.route("/", challengeRoutes);
 v1.route("/", profileRoutes);
 v1.route("/", sessionRoutes);
 app.route("/api/v1", v1);

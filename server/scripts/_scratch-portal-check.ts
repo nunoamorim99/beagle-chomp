@@ -7,14 +7,14 @@
 
 import * as analytics from "../src/repo/analytics.js";
 import { challengeStandings, hardestChallenges, shares } from "../src/analytics/aggregate.js";
-import { CHALLENGE_LEVEL_COUNT } from "../src/catalog.generated.js";
+import { JOURNEY_LEVEL_COUNT } from "../src/catalog.generated.js";
 import { pool } from "../src/db.js";
 
 const rows = await analytics.challengeFunnel();
-const standings = challengeStandings(rows, CHALLENGE_LEVEL_COUNT);
+const standings = challengeStandings(rows, JOURNEY_LEVEL_COUNT);
 const { ranked, insufficient } = hardestChallenges(standings);
 
-console.log(`catalog level count      : ${CHALLENGE_LEVEL_COUNT}`);
+console.log(`catalog level count      : ${JOURNEY_LEVEL_COUNT}`);
 console.log(`rows from SQL            : ${rows.length}  (indices ${rows.map((r) => r.challenge_idx).join(", ") || "none"})`);
 console.log(`dense standings          : ${standings.length}`);
 console.log(`indices are positions    : ${standings.every((s, i) => s.challengeIdx === i)}`);

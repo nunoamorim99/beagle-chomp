@@ -16,7 +16,7 @@ import * as sessionsRepo from "../src/repo/gameSessions.js";
 import { env } from "../src/env.js";
 import * as profileService from "../src/services/profileService.js";
 import { ApiError } from "../src/http/errors.js";
-import { CHALLENGE_LEVELS } from "../src/catalog.generated.js";
+import { JOURNEY_LEVELS } from "../src/catalog.generated.js";
 
 let passed = 0;
 let failed = 0;
@@ -320,7 +320,7 @@ async function main(): Promise<void> {
     ok("classic run sets the high score", afterClassic.high_score === 3350, afterClassic.high_score);
 
     // Now a challenge run that scores HIGHER. It must not touch high_score.
-    const level0 = CHALLENGE_LEVELS[0];
+    const level0 = JOURNEY_LEVELS[0];
     const chSession = await scoreService.startSession(afterClassic, "challenge", 0);
     await backdateSession(chSession.sessionId, 300);
 
@@ -362,7 +362,7 @@ async function main(): Promise<void> {
     // Claim a clear of level 7 using a level-0 session: the maze won't match.
     const result = await scoreService.finishSession(player, session.sessionId, {
       ...goodRun(),
-      mazeIdxSequence: [CHALLENGE_LEVELS[7].mazeIdx],
+      mazeIdxSequence: [JOURNEY_LEVELS[7].mazeIdx],
       levelsCleared: 1,
     });
     ok("a mismatched maze is rejected", !result.accepted);

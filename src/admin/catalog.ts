@@ -18,7 +18,7 @@
 //
 // The one thing a direct import CANNOT catch is the server's catalog drifting
 // behind the game's — that is what `npm run sync` is for, and the Difficulty tab
-// compares its own CHALLENGE_LEVEL_COUNT against the one the API reports so a
+// compares its own JOURNEY_LEVEL_COUNT against the one the API reports so a
 // forgotten sync shows up as a banner rather than as a table that is quietly
 // the wrong length.
 //
@@ -33,14 +33,14 @@
 import { BEAGLE_SKINS, ENEMY_SKINS } from "../game/cosmetics";
 import { MAZE_THEMES } from "../game/themes";
 import {
-  CHALLENGE_LEVELS,
-  CHALLENGE_LEVEL_COUNT,
+  JOURNEY_LEVELS,
+  JOURNEY_LEVEL_COUNT,
   chapterForLevel,
   MAZE_NAMES,
-} from "../game/challenges";
+} from "../game/journey";
 import type { Share } from "./api.js";
 
-export { CHALLENGE_LEVEL_COUNT };
+export { JOURNEY_LEVEL_COUNT };
 
 // ---------------------------------------------------------------------------
 // Names
@@ -158,7 +158,7 @@ export function nameShares(
 // The challenge ladder
 // ---------------------------------------------------------------------------
 
-export interface ChallengeMeta {
+export interface JourneyMeta {
   /** "C7" — the short form the level map and the HUD both use. */
   code: string;
   name: string;
@@ -178,7 +178,7 @@ export interface ChallengeMeta {
  * "C33 is the wall" mean something — and the tour/twist split is the difference
  * between a level being hard and a level being a BOARD players find hard.
  */
-export const CHALLENGE_META: readonly ChallengeMeta[] = CHALLENGE_LEVELS.map((level, idx) => {
+export const JOURNEY_META: readonly JourneyMeta[] = JOURNEY_LEVELS.map((level, idx) => {
   const theme = MAZE_THEMES.find((t) => t.id === level.themeId);
   return {
     code: `C${idx + 1}`,
@@ -196,9 +196,9 @@ export const CHALLENGE_META: readonly ChallengeMeta[] = CHALLENGE_LEVELS.map((le
 
 /** Context for a level index, including one the ladder does not have — which is
  *  the catalog-drift case, and must read as unknown rather than crash. */
-export function challengeMeta(idx: number): ChallengeMeta {
+export function challengeMeta(idx: number): JourneyMeta {
   return (
-    CHALLENGE_META[idx] ?? {
+    JOURNEY_META[idx] ?? {
       code: `C${idx + 1}`,
       name: "Unknown level",
       chapter: "—",

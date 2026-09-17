@@ -146,7 +146,7 @@ async function checkMenu(page: Page, label: string): Promise<void> {
   // Every destination must be visible and pressable WITHOUT scrolling. That is
   // the property the tile row buys, and the one a future fifth item would
   // silently break.
-  for (const id of ["#playBtn", "#challengeBtn", "#menuShopBtn", "#menuLeaderboardBtn", "#menuProfileBtn"]) {
+  for (const id of ["#playBtn", "#journeyBtn", "#menuShopBtn", "#menuLeaderboardBtn", "#menuProfileBtn"]) {
     const box = await page.locator(id).boundingBox();
     const onScreen =
       box !== null && viewport !== null && box.x >= -1 && box.x + box.width <= viewport.width + 1;

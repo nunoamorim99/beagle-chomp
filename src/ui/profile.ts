@@ -19,7 +19,7 @@ import { getControlScheme, type ControlScheme } from "../game/profileStore";
 // The ladder length, never a literal: IDEA-063 took it from 8 to 40 and this
 // line was the one place still saying "/ 8" — a stat that reads as a bug the
 // moment a player clears their ninth stone.
-import { CHALLENGE_LEVEL_COUNT } from "../game/challenges";
+import { JOURNEY_LEVEL_COUNT } from "../game/journey";
 import { logout as logoutRemote, deleteAccount, setNotifyPrefsRemote } from "../net/endpoints";
 import { clearToken, ApiError } from "../net/api";
 import { flushSync, clearSyncQueue } from "../net/profileSync";
@@ -166,7 +166,7 @@ export function attachProfile(callbacks: ProfileCallbacks): ProfileHandle {
         <dl class="profile-stats">
           <div><dt>Coins</dt><dd>${plateHtml("coin", "inline")}${profile.coins}</dd></div>
           <div><dt>Unlocked</dt><dd>${owned} items</dd></div>
-          <div><dt>Challenge</dt><dd>${profile.challengeProgress} / ${CHALLENGE_LEVEL_COUNT} unlocked</dd></div>
+          <div><dt>Journey</dt><dd>${profile.challengeProgress} / ${JOURNEY_LEVEL_COUNT} unlocked</dd></div>
         </dl>
 
         ${error ? `<p class="auth-error" role="alert">${iconHtml(ICON.error)}${escapeHtml(error)}</p>` : ""}

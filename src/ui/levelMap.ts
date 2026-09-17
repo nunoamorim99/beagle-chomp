@@ -1,15 +1,15 @@
 // OWNER: render-artist (IDEA-014 Challenge Level Map)
 //
 // A full-screen "garden path" LEVEL SELECT page, replacing the old
-// #challengeBtn behavior of silently auto-continuing at getChallengeProgress()
-// (src/game/game.ts previously called `this.startChallenge(getChallengeProgress())`
+// #journeyBtn behavior of silently auto-continuing at getChallengeProgress()
+// (src/game/game.ts previously called `this.startJourney(getChallengeProgress())`
 // directly from the button click — that call now opens THIS page instead, and
-// the page's own Play button is what actually calls startChallenge(idx)).
+// the page's own Play button is what actually calls startJourney(idx)).
 //
 // Three-free/pure-DOM, same split as src/ui/shop.ts (this module's structural
 // twin): a dedicated full-screen PAGE (`#levelMap` in index.html, a sibling of
 // `#mainMenu`/`#shop`), entirely (re)rendered here, reading challenge data/
-// progress live from src/game/challenges.ts + src/game/profileStore.ts and
+// progress live from src/game/journey.ts + src/game/profileStore.ts and
 // leaving all mesh/scene work to the caller (there isn't any here — the page
 // sits over the menu's existing 3D backdrop, same as #mainMenu itself does,
 // just with a mostly-opaque sky-gradient panel of its own for readability —
@@ -25,14 +25,14 @@
 // getChallengeProgress() — this module holds no state of its own across opens
 // besides which node is currently *selected* within one open session.
 import {
-  CHALLENGE_CHAPTERS,
-  CHALLENGE_LEVELS,
-  CHALLENGE_LEVEL_COUNT,
+  JOURNEY_CHAPTERS,
+  JOURNEY_LEVELS,
+  JOURNEY_LEVEL_COUNT,
   CLASSIC_MODIFIERS,
   MAZE_NAMES,
   chapterForLevel,
-  type ChallengeLevel,
-} from "../game/challenges";
+  type JourneyLevel,
+} from "../game/journey";
 import { getChallengeProgress } from "../game/profileStore";
 import { getMazeTheme } from "../game/themes";
 import { ICON, iconHtml } from "./icons";
@@ -59,7 +59,7 @@ export interface LevelMapCallbacks {
 
 /** Return shape of {@link attachLevelMap} — mirrors ShopHandle exactly
  *  (`{ open, detach, isOpen }`), same rationale: `open()` lets any caller
- *  (the #challengeBtn click handler) open the page without synthesizing a
+ *  (the #journeyBtn click handler) open the page without synthesizing a
  *  click on some other internal button, `detach()` is the usual teardown,
  *  `isOpen()` lets a frame loop branch on map state if it ever needs to. */
 export interface LevelMapHandle {
@@ -70,7 +70,7 @@ export interface LevelMapHandle {
   open: () => void;
   /** Unwires nothing external (the map has no HUD button of its own — it's
    *  only ever opened via game.ts calling open() directly from
-   *  #challengeBtn's handler) and clears the page's contents. */
+   *  #journeyBtn's handler) and clears the page's contents. */
   detach: () => void;
   /** Whether the page is currently showing. */
   isOpen: () => boolean;
@@ -85,7 +85,7 @@ export interface LevelMapHandle {
  *                                  progress of exactly COUNT means "every
  *                                  level cleared" and every idx is < COUNT
  *    - idx > progress          -> "locked"
- *  When progress === CHALLENGE_LEVEL_COUNT (all cleared), every valid idx
+ *  When progress === JOURNEY_LEVEL_COUNT (all cleared), every valid idx
  *  (0..COUNT-1) is strictly less than progress, so this falls out of the
  *  same `idx < progress` branch automatically — no special-case needed for
  *  "every node cleared and replayable" (see the task brief). */
@@ -117,10 +117,10 @@ function stateLabel(state: LevelNodeState): string {
  *  its CLASSIC_MODIFIERS baseline value (a level that doesn't touch a given
  *  dial shouldn't clutter the list restating the default). Returns an empty
  *  array for a level that matches CLASSIC_MODIFIERS on every field (L1,
- *  "Warm-Up Walkies" — literally the classic baseline; see challenges.ts's
+ *  "Warm-Up Walkies" — literally the classic baseline; see journey.ts's
  *  own comment on it), so callers fall back to a plain "classic pace" label
  *  instead of an empty bullet list. `speedMult` and `ghostSpeedMult` are
- *  always equal in every CHALLENGE_LEVELS entry (see ChallengeModifiers' own
+ *  always equal in every JOURNEY_LEVELS entry (see JourneyModifiers' own
  *  doc comment on why), so this reports them as ONE "×N speed" bullet rather
  *  than two separate near-duplicate ones.
  *
@@ -128,7 +128,7 @@ function stateLabel(state: LevelNodeState): string {
  *  and the IDEA-014 desktop side panel's own "one line per modifier" list —
  *  one source of truth for which dials count as "non-baseline", so the two
  *  presentations can never silently disagree about what counts as a twist. */
-export function twistParts(level: ChallengeLevel): string[] {
+export function twistParts(level: JourneyLevel): string[] {
   const { speedMult, ghostSpeedMult, ghostCount, frightSeconds } = level.modifiers;
   const parts: string[] = [];
 
@@ -152,7 +152,7 @@ export function twistParts(level: ChallengeLevel): string[] {
  *  "×1.5 speed · 4 ghosts · 3s fright". Returns an empty string for a level
  *  with no non-baseline modifiers (see twistParts), so callers fall back to
  *  a plain "classic pace" label instead of an empty string. */
-export function twistSummary(level: ChallengeLevel): string {
+export function twistSummary(level: JourneyLevel): string {
   return twistParts(level).join(" · ");
 }
 
@@ -164,12 +164,12 @@ function trimTrailingZero(n: number): string {
 
 /** Picks which level is selected by default when the page opens: the CURRENT
  *  (next-to-beat) level, or — once every level is cleared
- *  (progress === CHALLENGE_LEVEL_COUNT, so levelNodeState never returns
+ *  (progress === JOURNEY_LEVEL_COUNT, so levelNodeState never returns
  *  "current" for any idx) — the LAST level (index COUNT-1), matching the task
  *  brief's "selects the CURRENT level by default (or C8/last cleared when all
  *  clear)". */
 function resolveDefaultSelection(progress: number): number {
-  if (progress >= CHALLENGE_LEVEL_COUNT) return CHALLENGE_LEVEL_COUNT - 1;
+  if (progress >= JOURNEY_LEVEL_COUNT) return JOURNEY_LEVEL_COUNT - 1;
   return progress;
 }
 
@@ -232,12 +232,12 @@ function buildNodeYs(): number[] {
   // Build downward from the top of the box, then the array is reversed into
   // bottom-up order — going top-down is the only direction in which "add a
   // gap before this chapter" is a plain running sum.
-  const chapterStarts = new Set(CHALLENGE_CHAPTERS.map((c) => c.from));
+  const chapterStarts = new Set(JOURNEY_CHAPTERS.map((c) => c.from));
   const ys: number[] = [];
   let y = SVG_TOP_MARGIN;
 
   // Walk levels from the LAST (top of the trail) down to the first.
-  for (let i = CHALLENGE_LEVEL_COUNT - 1; i >= 0; i--) {
+  for (let i = JOURNEY_LEVEL_COUNT - 1; i >= 0; i--) {
     ys.push(y);
     // The gap belongs BELOW a chapter's first stone, i.e. between it and the
     // last stone of the chapter before it — so it is added after placing that
@@ -256,7 +256,7 @@ function svgHeight(): number {
 /** The (x,y) anchor for node `idx` (0-based). x alternates left/right,
  *  starting left for level 1. */
 function nodeAnchor(idx: number): { x: number; y: number } {
-  const clamped = Math.max(0, Math.min(idx, CHALLENGE_LEVEL_COUNT - 1));
+  const clamped = Math.max(0, Math.min(idx, JOURNEY_LEVEL_COUNT - 1));
   return { x: clamped % 2 === 0 ? LEFT_X : RIGHT_X, y: NODE_Y[clamped] };
 }
 
@@ -267,7 +267,7 @@ function nodeAnchor(idx: number): { x: number; y: number } {
  *  simply spans further, which is what makes the banner sit ON the path
  *  instead of interrupting it. */
 function buildTrailPath(): string {
-  const anchors = Array.from({ length: CHALLENGE_LEVEL_COUNT }, (_, i) => nodeAnchor(i));
+  const anchors = Array.from({ length: JOURNEY_LEVEL_COUNT }, (_, i) => nodeAnchor(i));
   let d = `M ${anchors[0].x} ${anchors[0].y}`;
   for (let i = 1; i < anchors.length; i++) {
     const prev = anchors[i - 1];
@@ -436,7 +436,7 @@ function buildGroundHill(): string {
  *  .map-header rules) as a second line of defence, per the coordinator's
  *  "prefer BOTH belts" guidance. */
 function buildSummitHill(): string {
-  const summitAnchor = nodeAnchor(CHALLENGE_LEVEL_COUNT - 1); // C8
+  const summitAnchor = nodeAnchor(JOURNEY_LEVEL_COUNT - 1); // C8
   const crestY = summitAnchor.y - 24; // the hill's highest point, just above C8's stone
   const { dipY, floorY } = clampDipAndFloor(crestY, 20, 40, 0, -1);
   return (
@@ -466,7 +466,7 @@ function buildSummitHill(): string {
  *  screen reader reading these too would be a third copy. */
 function buildChapterBanners(): string {
   let out = "";
-  for (const ch of CHALLENGE_CHAPTERS) {
+  for (const ch of JOURNEY_CHAPTERS) {
     if (ch.from === 0) continue;
     const below = nodeAnchor(ch.from - 1).y;
     const above = nodeAnchor(ch.from).y;
@@ -498,7 +498,7 @@ const FLOWER_EVERY = 3;
 function buildFlowers(): string {
   let out = "";
   let colorIdx = 0;
-  for (let i = 0; i < CHALLENGE_LEVEL_COUNT; i += FLOWER_EVERY) {
+  for (let i = 0; i < JOURNEY_LEVEL_COUNT; i += FLOWER_EVERY) {
     const { x, y } = nodeAnchor(i);
     const side = x < CENTER_X ? 1 : -1; // flower sits on the FAR side from center
     const offsets: Array<[number, number]> = [
@@ -527,7 +527,7 @@ function buildFlowers(): string {
  *  style (shop.ts's data-card-id pattern) — accessibility is covered via
  *  role="button"/tabindex/aria-disabled/aria-label on the <g> itself, which
  *  is a valid SVG accessibility pattern. */
-function renderNode(level: ChallengeLevel, idx: number, state: LevelNodeState, selected: boolean): string {
+function renderNode(level: JourneyLevel, idx: number, state: LevelNodeState, selected: boolean): string {
   const { x, y } = nodeAnchor(idx);
   const classes = ["map-node", `map-node-${state}`];
   if (selected) classes.push("map-node-selected");
@@ -674,7 +674,7 @@ export function attachLevelMap(root: ParentNode, callbacks: LevelMapCallbacks = 
   }
 
   function renderHeader(): string {
-    const cleared = Math.min(progress, CHALLENGE_LEVEL_COUNT);
+    const cleared = Math.min(progress, JOURNEY_LEVEL_COUNT);
     return (
       '<div class="map-header">' +
       // Back is an icon-only square now: the word "Menu" beside the arrow was
@@ -682,18 +682,18 @@ export function attachLevelMap(root: ParentNode, callbacks: LevelMapCallbacks = 
       // and the header needs that room for the progress bar.
       `<button type="button" class="map-back" id="mapBackBtn" aria-label="Back to menu">${iconHtml(ICON.back)}</button>` +
       '<div class="map-title-block">' +
-      '<div class="map-title">Challenge garden</div>' +
+      '<div class="map-title">The Journey</div>' +
       // Progress as a BAR, not a count. "3 / 8 cleared" is a fact you read;
       // a filled bar is a distance you see, which is what a trail of eight
       // stones is actually about. The exact figure stays beside it, and the
       // track carries the accessible name.
       '<div class="map-progress">' +
       `<div class="map-progress-track" role="progressbar" aria-valuemin="0" ` +
-      `aria-valuemax="${CHALLENGE_LEVEL_COUNT}" aria-valuenow="${cleared}" ` +
-      `aria-label="${cleared} of ${CHALLENGE_LEVEL_COUNT} levels cleared">` +
-      `<div class="map-progress-fill" style="width:${(cleared / CHALLENGE_LEVEL_COUNT) * 100}%"></div>` +
+      `aria-valuemax="${JOURNEY_LEVEL_COUNT}" aria-valuenow="${cleared}" ` +
+      `aria-label="${cleared} of ${JOURNEY_LEVEL_COUNT} levels cleared">` +
+      `<div class="map-progress-fill" style="width:${(cleared / JOURNEY_LEVEL_COUNT) * 100}%"></div>` +
       "</div>" +
-      `<div class="map-progress-count">${cleared}/${CHALLENGE_LEVEL_COUNT}</div>` +
+      `<div class="map-progress-count">${cleared}/${JOURNEY_LEVEL_COUNT}</div>` +
       "</div>" +
       "</div>" +
       renderChapterRail() +
@@ -718,7 +718,7 @@ export function attachLevelMap(root: ParentNode, callbacks: LevelMapCallbacks = 
    *  seeing what is ahead is exactly what a locked chapter is for, and this
    *  screen's job in IDEA-063 is showing the player what the game contains. */
   function renderChapterRail(): string {
-    const chips = CHALLENGE_CHAPTERS.map((ch) => {
+    const chips = JOURNEY_CHAPTERS.map((ch) => {
       const classes = ["map-chapter-chip"];
       if (ch.from === viewChapterFrom) classes.push("map-chapter-chip--on");
       if (ch.from > progress) classes.push("map-chapter-chip--locked");
@@ -736,12 +736,12 @@ export function attachLevelMap(root: ParentNode, callbacks: LevelMapCallbacks = 
   }
 
   function renderPath(): string {
-    const nodes = CHALLENGE_LEVELS.map((level, idx) =>
+    const nodes = JOURNEY_LEVELS.map((level, idx) =>
       renderNode(level, idx, levelNodeState(idx, progress), idx === selectedIdx),
     ).join("");
     return (
       '<div class="map-path-scroll">' +
-      `<svg class="map-path-svg" viewBox="0 0 ${SVG_WIDTH} ${svgHeight()}" preserveAspectRatio="xMidYMid meet" role="group" aria-label="Challenge path">` +
+      `<svg class="map-path-svg" viewBox="0 0 ${SVG_WIDTH} ${svgHeight()}" preserveAspectRatio="xMidYMid meet" role="group" aria-label="Journey path">` +
       // Hills paint FIRST (SVG's painter's model: earlier siblings render
       // behind later ones) so the trail/flowers/nodes always sit on top of
       // them — summit hill behind C8 first (top of the SVG), ground hill
@@ -780,7 +780,7 @@ export function attachLevelMap(root: ParentNode, callbacks: LevelMapCallbacks = 
    * style.css's `.map-panel-info`/`.map-panel-extra` rules and the
    * `min-width:821px` media query, matching the shop's own breakpoint). */
   function renderPanelInfo(): string {
-    const level = CHALLENGE_LEVELS[selectedIdx];
+    const level = JOURNEY_LEVELS[selectedIdx];
     const state = levelNodeState(selectedIdx, progress);
     const summary = twistSummary(level);
     const compactTwistLine = summary || "Classic pace — no twists";
@@ -807,7 +807,7 @@ export function attachLevelMap(root: ParentNode, callbacks: LevelMapCallbacks = 
           : `${iconHtml(ICON.play)}Play stone ${stone}`;
     const mazeName = MAZE_NAMES[level.mazeIdx] ?? MAZE_NAMES[0];
     // getMazeTheme falls back to the default for an unknown id rather than
-    // throwing, so a typo in challenges.ts shows the wrong name here instead of
+    // throwing, so a typo in journey.ts shows the wrong name here instead of
     // taking the page down — and scripts/test-cosmetics.ts fails the build.
     const themeName = getMazeTheme(level.themeId).name;
     const chapter = chapterForLevel(selectedIdx);
@@ -849,7 +849,7 @@ export function attachLevelMap(root: ParentNode, callbacks: LevelMapCallbacks = 
       // "The Pergola" is a line that says nothing. The twists reuse mazes the
       // tour already named, so there the line is real information.
       (level.kind === "twist" ? `<div class="map-panel-maze">on ${mazeName}</div>` : "") +
-      `<div class="map-panel-maze">${chapter.title}, level ${selectedIdx + 1} of ${CHALLENGE_LEVEL_COUNT}</div>` +
+      `<div class="map-panel-maze">${chapter.title}, level ${selectedIdx + 1} of ${JOURNEY_LEVEL_COUNT}</div>` +
       `<div class="map-panel-state">${stateLabel(state)}</div>` +
       "</div>" +
       "</div>" +

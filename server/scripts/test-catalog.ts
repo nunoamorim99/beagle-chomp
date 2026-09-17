@@ -32,6 +32,7 @@ import {
   planLevel as serverPlanLevel,
   BEAGLE_PERK_BY_SKIN,
   BEAGLE_PERKS,
+  CHALLENGES,
   type CatalogItem,
 } from "../src/catalog.generated.js";
 
@@ -362,6 +363,120 @@ for (const [label, source, marker, items] of [
   ok("lap 2's first map really has 5 ghosts",
     serverPlanLevel(LEVELS_PER_LAP).ghostCount === 5,
     serverPlanLevel(LEVELS_PER_LAP).ghostCount);
+}
+
+// ---------------------------------------------------------------------------
+// IDEA-078: the challenge definitions
+// ---------------------------------------------------------------------------
+//
+// Same reasoning as the prices above, one step more direct: a challenge's
+// reward IS money. If src/game/challenges.ts gains a tier, or retunes a target
+// or a reward, and nobody runs `npm run sync`, the server keeps judging against
+// the old table — so the screen shows a goal the server will refuse to pay, or
+// pays a different number than the card promised. Nothing crashes.
+//
+// Only the four JUDGED fields are compared. Names, blurbs and categories stay
+// client-side on purpose (they are presentation), so rewording a blurb must NOT
+// fail this test — if it did, the next person would learn to ignore it.
+console.log("\nChallenges match src/game/challenges.ts (IDEA-078)");
+{
+  const src = readFileSync(join(GAME_DIR, "challenges.ts"), "utf-8");
+
+  // Brace matching rather than one big regex, for the reason the sync script
+  // records: a regex spanning the whole array is greedy across entries and
+  // silently merges them.
+  // Scan from the `=`, NOT from the declaration. The first "[" after
+  // `export const CHALLENGES` is the one in the type annotation
+  // (`readonly ChallengeDef[]`), which slices an empty array and reports every
+  // challenge as missing — sync-game-constants.ts's sliceArray carries this
+  // warning in its own body and this test walked into it anyway.
+  const decl = src.indexOf("export const CHALLENGES");
+  const open = src.indexOf("[", src.indexOf("=", decl));
+  let depth = 0;
+  let close = -1;
+  for (let i = open; i < src.length; i++) {
+    if (src[i] === "[") depth++;
+    else if (src[i] === "]" && --depth === 0) {
+      close = i;
+      break;
+    }
+  }
+  const arr = src.slice(open, close + 1);
+
+  const entries: string[] = [];
+  let d = 0;
+  let start = -1;
+  for (let i = 0; i < arr.length; i++) {
+    if (arr[i] === "{") {
+      if (d === 0) start = i;
+      d++;
+    } else if (arr[i] === "}") {
+      d--;
+      if (d === 0 && start !== -1) {
+        entries.push(arr.slice(start, i + 1));
+        start = -1;
+      }
+    }
+  }
+
+  const clientDefs = entries
+    .map((entry) => {
+      const id = /\bid:\s*"([a-z0-9-]+)"/.exec(entry);
+      const mode = /\bmode:\s*"([a-z]+)"/.exec(entry);
+      const metric = /\bmetric:\s*"([A-Za-z]+)"/.exec(entry);
+      const target = /\btarget:\s*(\d+)/.exec(entry);
+      const reward = /\breward:\s*(\d+)/.exec(entry);
+      if (!id || !mode || !metric || !target || !reward) return null;
+      return {
+        id: id[1],
+        mode: mode[1],
+        metric: metric[1],
+        target: Number(target[1]),
+        reward: Number(reward[1]),
+      };
+    })
+    .filter((c): c is NonNullable<typeof c> => c !== null);
+
+  ok("the game's own table parses", clientDefs.length > 0, clientDefs.length);
+  ok(
+    `the catalog has all ${clientDefs.length} of them`,
+    CHALLENGES.length === clientDefs.length,
+    `catalog ${CHALLENGES.length}, game ${clientDefs.length}`,
+  );
+
+  const byId = new Map(CHALLENGES.map((c) => [c.id, c]));
+  let mismatches = 0;
+  for (const want of clientDefs) {
+    const got = byId.get(want.id);
+    if (!got) {
+      ok(`"${want.id}" is in the catalog`, false, "missing — run `npm run sync` in server/");
+      mismatches++;
+      continue;
+    }
+    const same =
+      got.mode === want.mode &&
+      got.metric === want.metric &&
+      got.target === want.target &&
+      got.reward === want.reward;
+    if (!same) {
+      ok(
+        `"${want.id}" matches`,
+        false,
+        `catalog ${got.mode}/${got.metric}/${got.target}/${got.reward} vs game ${want.mode}/${want.metric}/${want.target}/${want.reward}`,
+      );
+      mismatches++;
+    }
+  }
+  // One line for the happy path rather than 75: a passing run of this suite
+  // should still be readable.
+  ok(`every challenge's mode, metric, target and reward agree`, mismatches === 0, `${mismatches} differ`);
+
+  // The other direction: a challenge the SERVER knows and the game does not is
+  // a row nobody can ever see, and it is invisible to every check above because
+  // they iterate the game's list.
+  const clientIds = new Set(clientDefs.map((c) => c.id));
+  const orphans = CHALLENGES.filter((c) => !clientIds.has(c.id)).map((c) => c.id);
+  ok("the catalog has no challenges the game has never heard of", orphans.length === 0, orphans.join(", "));
 }
 
 console.log(`\n${"-".repeat(60)}`);

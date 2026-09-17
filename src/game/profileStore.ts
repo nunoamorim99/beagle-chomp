@@ -45,7 +45,7 @@ import {
   TRIBUTE_BEAGLE_SKIN_ID,
   TRIBUTE_ENEMY_SKIN_ID,
 } from "./cosmetics";
-import { CHALLENGE_LEVEL_COUNT } from "./challenges";
+import { JOURNEY_LEVEL_COUNT } from "./journey";
 import {
   MAZE_THEMES,
   DEFAULT_MAZE_THEME_ID,
@@ -71,7 +71,7 @@ import {
  *
  *  `challengeProgress` convention: the highest challenge LEVEL INDEX (0-based)
  *  the player has UNLOCKED. 0 means only level 1 is playable; N means levels
- *  0..N are. The sentinel CHALLENGE_LEVEL_COUNT (one past the last index) means
+ *  0..N are. The sentinel JOURNEY_LEVEL_COUNT (one past the last index) means
  *  "every level cleared" — deliberately distinct from COUNT-1, so clearing the
  *  finale is distinguishable from merely having unlocked it. */
 export interface StoredProfile {
@@ -134,7 +134,7 @@ export function sanitizeCoins(value: unknown): number {
 export function sanitizeChallengeProgress(value: unknown): number {
   const n = typeof value === "number" ? value : NaN;
   if (!Number.isFinite(n) || n < 0) return 0;
-  return Math.min(Math.floor(n), CHALLENGE_LEVEL_COUNT);
+  return Math.min(Math.floor(n), JOURNEY_LEVEL_COUNT);
 }
 
 /** The shape a brand-new account starts with: nothing owned but the free
@@ -275,7 +275,7 @@ export function advanceChallengeProgress(clearedIdx: number): void {
   const idx = Number.isFinite(clearedIdx) ? Math.floor(clearedIdx) : -1;
   if (idx < 0) return;
 
-  const next = Math.min(idx + 1, CHALLENGE_LEVEL_COUNT);
+  const next = Math.min(idx + 1, JOURNEY_LEVEL_COUNT);
   mutateProfileCache((p) => ({
     ...p,
     challengeProgress: Math.max(p.challengeProgress, next),

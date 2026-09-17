@@ -67,8 +67,13 @@ export type Fruit = (typeof FRUITS)[number];
 //
 // Spaced 40 apart across a ~179-pellet map, and offset from every other gate
 // the same way those are offset from each other — COIN_THRESHOLDS is
-// 20/60/105/150 and LIFE_THRESHOLDS is 130, so no two pickups can ever fire on
-// the same eaten-pellet tick. scripts/test-fruits.ts pins that.
+// 15/55/90/125/155 (FIVE coins a map) and LIFE_THRESHOLDS is 130, so no two
+// pickups can ever fire on the same eaten-pellet tick. scripts/test-fruits.ts
+// pins that. (This line read "20/60/105/150" until IDEA-078 went looking for
+// the real per-map counts: four numbers, none of them current. The coin ladder
+// gained a fifth entry at some point and the prose here did not follow. Worth
+// a note because a challenge that asks for "all the coins on a board" is sized
+// off exactly this count, and the comment would have made it four.)
 export const FRUIT_THRESHOLDS = [40, 80, 120, 160] as const;
 
 /**
@@ -275,7 +280,7 @@ export const BEAGLE_PERKS = {
 // anchor unseen across a whole session.
 //
 // CLASSIC ONLY. Challenge levels are deliberately pure dial-twists on the same
-// engine (see challenges.ts), and letting power-ups in would make every
+// engine (see journey.ts), and letting power-ups in would make every
 // challenge score already on the board incomparable. The server enforces it:
 // a challenge run reporting any power-up is rejected outright.
 export const POWERUPS = [

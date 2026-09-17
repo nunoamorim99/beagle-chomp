@@ -231,7 +231,7 @@ section("challenge standings — rates, and refusing to guess");
 }
 
 // The count is a FLOOR, not a cap. A row past the end of the catalog means the
-// server's generated catalog has drifted behind challenges.ts — the forgotten
+// server's generated catalog has drifted behind journey.ts — the forgotten
 // `npm run sync` this dashboard exists to surface — so it must survive to be
 // seen rather than being quietly trimmed away.
 {

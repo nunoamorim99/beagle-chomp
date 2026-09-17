@@ -203,7 +203,7 @@ export function recordLevelCleared(t: RunTelemetry): void {
  * Called when a level starts, with the maze index it resolved to.
  *
  * `levelIdx` is the 0-based CLASSIC level index (IDEA-040) and is omitted for
- * challenge runs, whose modifiers come from CHALLENGE_LEVELS rather than the
+ * challenge runs, whose modifiers come from JOURNEY_LEVELS rather than the
  * classic progression. The two arrays stay parallel: the server pairs them by
  * position to check each claimed level really uses the maze it says.
  */

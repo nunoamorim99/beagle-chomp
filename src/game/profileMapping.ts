@@ -19,7 +19,7 @@ import {
   DEFAULT_ENEMY_SKIN_ID,
 } from "./cosmetics";
 import { MAZE_THEMES, DEFAULT_MAZE_THEME_ID } from "./themes";
-import { CHALLENGE_LEVEL_COUNT } from "./challenges";
+import { JOURNEY_LEVEL_COUNT } from "./journey";
 import { CONTROL_SCHEMES, type ControlScheme, type StoredProfile } from "./profileStore";
 import type { ServerProfile } from "../net/endpoints";
 
@@ -103,7 +103,7 @@ export function fromServerProfile(profile: ServerProfile): StoredProfile {
     ownedBeagleSkinIds: ownedBeagle,
     ownedEnemySkinIds: ownedEnemy,
     ownedMazeThemeIds: ownedThemes,
-    challengeProgress: sanitizeCount(profile.challengeProgress, CHALLENGE_LEVEL_COUNT),
+    challengeProgress: sanitizeCount(profile.challengeProgress, JOURNEY_LEVEL_COUNT),
     // Anything unrecognised degrades to the default rather than reaching the
     // input layer, same defensive posture as the cosmetic ids above.
     controlScheme: knownScheme(profile.controlScheme),

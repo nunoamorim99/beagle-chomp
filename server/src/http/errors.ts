@@ -35,7 +35,12 @@ export type ApiErrorCode =
   // sessions (Increment 2)
   | "SESSION_ALREADY_FINISHED"
   | "TOO_MANY_OPEN_SESSIONS"
-  | "LEVEL_LOCKED";
+  | "LEVEL_LOCKED"
+  // challenges (IDEA-078). UNKNOWN_ITEM and ALREADY_OWNED are reused rather
+  // than duplicated -- an unclaimable id and an already-taken reward are the
+  // same two situations the shop already has words for, and a client switching
+  // on codes should not have to learn two names for one outcome.
+  | "NOT_COMPLETE";
 
 export interface ApiErrorBody {
   error: {

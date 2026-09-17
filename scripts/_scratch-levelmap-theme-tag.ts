@@ -26,7 +26,7 @@ async function main(): Promise<void> {
   await page.check("#recoverySavedCheck");
   await page.click("#recoveryContinueBtn");
   await page.waitForSelector("#mainMenu:not(.hidden)", { timeout: 20000 });
-  await page.click("#challengeBtn");
+  await page.click("#journeyBtn");
   await page.waitForSelector("#levelMap:not(.hidden)", { timeout: 15000 });
   await page.waitForTimeout(600);
 

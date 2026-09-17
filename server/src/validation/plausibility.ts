@@ -22,7 +22,7 @@ import {
   SCORING,
   MAZE_FACTS,
   MAZE_COUNT,
-  CHALLENGE_LEVELS,
+  JOURNEY_LEVELS,
   CLASSIC_MODIFIERS,
   planLevel,
   COIN_THRESHOLDS,
@@ -39,7 +39,7 @@ import {
   BEAGLE_PERK_BY_SKIN,
   BEAGLE_PERKS,
   DEFAULT_BEAGLE_SKIN_ID,
-  type ChallengeLevelFacts,
+  type JourneyLevelFacts,
 } from "../catalog.generated.js";
 
 export type RejectionReason =
@@ -72,7 +72,7 @@ export type RejectionReason =
 const MAX_ENEMY_SLOTS = Math.max(
   CLASSIC_MODIFIERS.ghostCount,
   GHOSTS_STAGE_5_6,
-  ...CHALLENGE_LEVELS.map((level) => level.ghostCount),
+  ...JOURNEY_LEVELS.map((level) => level.ghostCount),
 );
 
 /** What the client reports at the end of a run. Everything here is untrusted. */
@@ -357,9 +357,9 @@ function perksFor(ctx: RunContext): {
   }
 }
 
-function modifiersFor(ctx: RunContext): ChallengeLevelFacts {
+function modifiersFor(ctx: RunContext): JourneyLevelFacts {
   if (ctx.mode === "challenge" && ctx.challengeIdx !== null) {
-    return CHALLENGE_LEVELS[ctx.challengeIdx] ?? CLASSIC_MODIFIERS;
+    return JOURNEY_LEVELS[ctx.challengeIdx] ?? CLASSIC_MODIFIERS;
   }
   return CLASSIC_MODIFIERS;
 }
@@ -433,17 +433,17 @@ export function validateRun(input: RunSubmission, ctx: RunContext): ValidationRe
   // --- MAX-6/7: challenge-specific ------------------------------------------
   if (ctx.mode === "challenge") {
     const idx = ctx.challengeIdx;
-    if (idx === null || !CHALLENGE_LEVELS[idx]) {
+    if (idx === null || !JOURNEY_LEVELS[idx]) {
       return { accepted: false, reasonCode: "MALFORMED_SUBMISSION", detail: { ...detail, field: "challengeIdx" } };
     }
 
     // A challenge run is exactly ONE level: game.ts panels between levels and
     // "next level" starts a NEW run (and so a new session).
-    if (levelsPlayed !== 1 || input.mazeIdxSequence[0] !== CHALLENGE_LEVELS[idx].mazeIdx) {
+    if (levelsPlayed !== 1 || input.mazeIdxSequence[0] !== JOURNEY_LEVELS[idx].mazeIdx) {
       return {
         accepted: false,
         reasonCode: "CHALLENGE_MAZE_MISMATCH",
-        detail: { ...detail, expectedMaze: CHALLENGE_LEVELS[idx].mazeIdx },
+        detail: { ...detail, expectedMaze: JOURNEY_LEVELS[idx].mazeIdx },
       };
     }
 

@@ -192,8 +192,11 @@ section("Every beagle's power is taught, and taught from the registry");
   // Perks are CLASSIC ONLY (perks.ts, and the server agrees). A tutorial that
   // did not say so would be selling a power that silently does nothing on the
   // one mode with a ladder and a leaderboard.
+  // IDEA-077 renamed the other mode to JOURNEY. The assertion tests the same
+  // thing it always did — that the slide names BOTH modes, so "classic only"
+  // is a contrast rather than a word the player has to interpret.
   ok("the slide says perks are classic only",
-    /classic/i.test(coats.body) && /challenge/i.test(coats.body), coats.body);
+    /classic/i.test(coats.body) && /journey/i.test(coats.body), coats.body);
 
   // IDEA-016 v2 removed the points-to-coins conversion, so the maze pickups are
   // the ENTIRE economy — and this is the only slide that mentions coins at all.

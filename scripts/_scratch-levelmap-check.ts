@@ -45,7 +45,7 @@ function psql(sql: string): string {
 }
 
 async function openMap(page: Page): Promise<void> {
-  await page.click("#challengeBtn");
+  await page.click("#journeyBtn");
   await page.waitForSelector("#levelMap:not(.hidden)");
   await page.waitForTimeout(500);
 }

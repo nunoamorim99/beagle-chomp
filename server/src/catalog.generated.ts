@@ -48,7 +48,7 @@ export const DEFAULT_MAZE_THEME_ID = "garden";
 
 /** Challenge level count — the upper bound on users.challenge_progress.
  *  The sentinel value itself (== this number) means "all levels cleared". */
-export const CHALLENGE_LEVEL_COUNT = 40;
+export const JOURNEY_LEVEL_COUNT = 40;
 
 // ---------------------------------------------------------------------------
 // Scoring + timing constants, mirrored from src/game/config.ts (and
@@ -180,14 +180,14 @@ export const MAZE_COUNT = MAZE_FACTS.length;
 /** Per-level challenge modifiers. A challenge run's ghost count and speed
  *  change BOTH the score ceiling and the minimum time, so the validator needs
  *  them to judge a challenge submission at all. */
-export interface ChallengeLevelFacts {
+export interface JourneyLevelFacts {
   readonly mazeIdx: number;
   readonly speedMult: number;
   readonly ghostCount: number;
   readonly frightSeconds: number;
 }
 
-export const CHALLENGE_LEVELS: readonly ChallengeLevelFacts[] = [
+export const JOURNEY_LEVELS: readonly JourneyLevelFacts[] = [
   { mazeIdx: 0, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
   { mazeIdx: 1, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
   { mazeIdx: 2, speedMult: 1, ghostCount: 3, frightSeconds: 7 },
@@ -230,9 +230,104 @@ export const CHALLENGE_LEVELS: readonly ChallengeLevelFacts[] = [
   { mazeIdx: 29, speedMult: 2.2, ghostCount: 5, frightSeconds: 1.5 },
 ];
 
+// --- challenges (IDEA-078) ---------------------------------------------------
+//
+// Only what the server JUDGES. Names, blurbs and categories stay client-side:
+// they are presentation, so rewording one is not a deploy and not a drift.
+
+export type ChallengeMode = "classic" | "journey" | "both";
+
+export interface ChallengeFacts {
+  readonly id: string;
+  readonly mode: ChallengeMode;
+  readonly metric: string;
+  readonly target: number;
+  readonly reward: number;
+}
+
+export const CHALLENGES: readonly ChallengeFacts[] = [
+  { id: "classic-run-coins-5", mode: "classic", metric: "runCoins", target: 5, reward: 1 },
+  { id: "classic-run-coins-10", mode: "classic", metric: "runCoins", target: 10, reward: 2 },
+  { id: "classic-run-coins-15", mode: "classic", metric: "runCoins", target: 15, reward: 3 },
+  { id: "classic-run-coins-20", mode: "classic", metric: "runCoins", target: 20, reward: 5 },
+  { id: "classic-run-coins-25", mode: "classic", metric: "runCoins", target: 25, reward: 8 },
+  { id: "classic-run-coins-30", mode: "classic", metric: "runCoins", target: 30, reward: 12 },
+  { id: "classic-run-ghosts-5", mode: "classic", metric: "runGhosts", target: 5, reward: 1 },
+  { id: "classic-run-ghosts-10", mode: "classic", metric: "runGhosts", target: 10, reward: 2 },
+  { id: "classic-run-ghosts-15", mode: "classic", metric: "runGhosts", target: 15, reward: 3 },
+  { id: "classic-run-ghosts-20", mode: "classic", metric: "runGhosts", target: 20, reward: 4 },
+  { id: "classic-run-ghosts-25", mode: "classic", metric: "runGhosts", target: 25, reward: 6 },
+  { id: "classic-run-ghosts-30", mode: "classic", metric: "runGhosts", target: 30, reward: 10 },
+  { id: "classic-run-fruit-5", mode: "classic", metric: "runFruit", target: 5, reward: 2 },
+  { id: "classic-run-fruit-10", mode: "classic", metric: "runFruit", target: 10, reward: 3 },
+  { id: "classic-run-fruit-15", mode: "classic", metric: "runFruit", target: 15, reward: 4 },
+  { id: "classic-run-fruit-20", mode: "classic", metric: "runFruit", target: 20, reward: 6 },
+  { id: "classic-run-fruit-25", mode: "classic", metric: "runFruit", target: 25, reward: 9 },
+  { id: "classic-run-fruit-30", mode: "classic", metric: "runFruit", target: 30, reward: 14 },
+  { id: "classic-run-bones-5", mode: "classic", metric: "runBones", target: 5, reward: 2 },
+  { id: "classic-run-bones-10", mode: "classic", metric: "runBones", target: 10, reward: 2 },
+  { id: "classic-run-bones-15", mode: "classic", metric: "runBones", target: 15, reward: 4 },
+  { id: "classic-run-bones-20", mode: "classic", metric: "runBones", target: 20, reward: 5 },
+  { id: "classic-run-bones-25", mode: "classic", metric: "runBones", target: 25, reward: 8 },
+  { id: "classic-run-bones-30", mode: "classic", metric: "runBones", target: 30, reward: 12 },
+  { id: "classic-total-coins-50", mode: "classic", metric: "totalCoins", target: 50, reward: 3 },
+  { id: "classic-total-coins-100", mode: "classic", metric: "totalCoins", target: 100, reward: 5 },
+  { id: "classic-total-coins-150", mode: "classic", metric: "totalCoins", target: 150, reward: 8 },
+  { id: "classic-total-coins-200", mode: "classic", metric: "totalCoins", target: 200, reward: 12 },
+  { id: "classic-total-ghosts-50", mode: "classic", metric: "totalGhosts", target: 50, reward: 2 },
+  { id: "classic-total-ghosts-100", mode: "classic", metric: "totalGhosts", target: 100, reward: 4 },
+  { id: "classic-total-ghosts-150", mode: "classic", metric: "totalGhosts", target: 150, reward: 6 },
+  { id: "classic-total-ghosts-200", mode: "classic", metric: "totalGhosts", target: 200, reward: 10 },
+  { id: "classic-total-fruit-50", mode: "classic", metric: "totalFruit", target: 50, reward: 4 },
+  { id: "classic-total-fruit-100", mode: "classic", metric: "totalFruit", target: 100, reward: 6 },
+  { id: "classic-total-fruit-150", mode: "classic", metric: "totalFruit", target: 150, reward: 9 },
+  { id: "classic-total-fruit-200", mode: "classic", metric: "totalFruit", target: 200, reward: 14 },
+  { id: "classic-total-bones-50", mode: "classic", metric: "totalBones", target: 50, reward: 3 },
+  { id: "classic-total-bones-100", mode: "classic", metric: "totalBones", target: 100, reward: 5 },
+  { id: "classic-total-bones-150", mode: "classic", metric: "totalBones", target: 150, reward: 8 },
+  { id: "classic-total-bones-200", mode: "classic", metric: "totalBones", target: 200, reward: 12 },
+  { id: "classic-run-score-5000", mode: "classic", metric: "runScore", target: 5000, reward: 2 },
+  { id: "classic-run-score-15000", mode: "classic", metric: "runScore", target: 15000, reward: 5 },
+  { id: "classic-run-score-30000", mode: "classic", metric: "runScore", target: 30000, reward: 10 },
+  { id: "classic-run-score-60000", mode: "classic", metric: "runScore", target: 60000, reward: 20 },
+  { id: "classic-run-levels-5", mode: "classic", metric: "runLevels", target: 5, reward: 3 },
+  { id: "classic-run-levels-10", mode: "classic", metric: "runLevels", target: 10, reward: 6 },
+  { id: "classic-run-levels-15", mode: "classic", metric: "runLevels", target: 15, reward: 10 },
+  { id: "classic-run-levels-20", mode: "classic", metric: "runLevels", target: 20, reward: 16 },
+  { id: "classic-run-levels-30", mode: "classic", metric: "runLevels", target: 30, reward: 30 },
+  { id: "classic-deathless-1", mode: "classic", metric: "runDeathlessLevels", target: 1, reward: 4 },
+  { id: "classic-deathless-3", mode: "classic", metric: "runDeathlessLevels", target: 3, reward: 12 },
+  { id: "classic-deathless-5", mode: "classic", metric: "runDeathlessLevels", target: 5, reward: 28 },
+  { id: "journey-unlocked-5", mode: "journey", metric: "journeyUnlocked", target: 5, reward: 3 },
+  { id: "journey-unlocked-10", mode: "journey", metric: "journeyUnlocked", target: 10, reward: 5 },
+  { id: "journey-unlocked-15", mode: "journey", metric: "journeyUnlocked", target: 15, reward: 8 },
+  { id: "journey-unlocked-20", mode: "journey", metric: "journeyUnlocked", target: 20, reward: 12 },
+  { id: "journey-unlocked-25", mode: "journey", metric: "journeyUnlocked", target: 25, reward: 18 },
+  { id: "journey-unlocked-30", mode: "journey", metric: "journeyUnlocked", target: 30, reward: 25 },
+  { id: "journey-deathless-1", mode: "journey", metric: "journeyDeathless", target: 1, reward: 3 },
+  { id: "journey-deathless-5", mode: "journey", metric: "journeyDeathless", target: 5, reward: 8 },
+  { id: "journey-deathless-10", mode: "journey", metric: "journeyDeathless", target: 10, reward: 15 },
+  { id: "journey-deathless-20", mode: "journey", metric: "journeyDeathless", target: 20, reward: 30 },
+  { id: "journey-deathless-40", mode: "journey", metric: "journeyDeathless", target: 40, reward: 60 },
+  { id: "journey-allcoins-1", mode: "journey", metric: "journeyAllCoins", target: 1, reward: 2 },
+  { id: "journey-allcoins-5", mode: "journey", metric: "journeyAllCoins", target: 5, reward: 6 },
+  { id: "journey-allcoins-10", mode: "journey", metric: "journeyAllCoins", target: 10, reward: 12 },
+  { id: "journey-allcoins-20", mode: "journey", metric: "journeyAllCoins", target: 20, reward: 25 },
+  { id: "journey-allfruit-1", mode: "journey", metric: "journeyAllFruit", target: 1, reward: 3 },
+  { id: "journey-allfruit-5", mode: "journey", metric: "journeyAllFruit", target: 5, reward: 8 },
+  { id: "journey-allfruit-10", mode: "journey", metric: "journeyAllFruit", target: 10, reward: 16 },
+  { id: "journey-allfruit-20", mode: "journey", metric: "journeyAllFruit", target: 20, reward: 32 },
+  { id: "journey-ghosts-1", mode: "journey", metric: "journeyGhosts", target: 1, reward: 2 },
+  { id: "journey-ghosts-5", mode: "journey", metric: "journeyGhosts", target: 5, reward: 5 },
+  { id: "journey-ghosts-10", mode: "journey", metric: "journeyGhosts", target: 10, reward: 10 },
+  { id: "journey-ghosts-20", mode: "journey", metric: "journeyGhosts", target: 20, reward: 20 },
+];
+
+export const CHALLENGE_COUNT = CHALLENGES.length;
+
 /** Classic mode's baseline — the explicit modifiers game.ts uses for a classic
- *  run (CLASSIC_MODIFIERS in challenges.ts). */
-export const CLASSIC_MODIFIERS: ChallengeLevelFacts = {
+ *  run (CLASSIC_MODIFIERS in journey.ts). */
+export const CLASSIC_MODIFIERS: JourneyLevelFacts = {
   mazeIdx: -1,
   speedMult: 1,
   ghostCount: 3,

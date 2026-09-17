@@ -76,6 +76,17 @@ export const ICON = {
    *  changed" do not wear the same mark. */
   announcement: "campaign",
 
+  /** IDEA-077: the JOURNEY — the 40-level ladder. A winding ROUTE, which is
+   *  literally what the level map draws, and deliberately no longer the
+   *  trophy: that mark now belongs to IDEA-078's Challenges, where a trophy
+   *  actually means something. Two destinations wearing one glyph is how a
+   *  player learns that neither of them means anything. */
+  journey: "route",
+  /** IDEA-078: the Challenges screen — goals, progress and rewards. It rides
+   *  in the menu's top bar beside the coin chip rather than in the
+   *  destination row, for ICON.news' reason one item along: that row is a
+   *  hard-coded 4-up grid and a fifth tile is what IDEA-036 v3 deleted the
+   *  carousel to escape. */
   challenge: "trophy",
   shop: "storefront",
   board: "leaderboard",

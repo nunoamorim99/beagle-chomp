@@ -41,7 +41,7 @@ import { snapshot } from "../http/metrics.js";
 import {
   ENEMY_SLOT_LABELS,
   FRUIT_LABELS,
-  CHALLENGE_LEVEL_COUNT,
+  JOURNEY_LEVEL_COUNT,
 } from "../catalog.generated.js";
 import { APP_VERSION } from "../version.js";
 import { env } from "../env.js";
@@ -104,7 +104,7 @@ adminRoutes.get("/challenges", async (c) => {
   // generated figure, so it tracks challenges.ts through `npm run sync`). SQL
   // returns nothing at all for a level nobody has opened, and with a 40-level
   // ladder that is most of them — see challengeStandings for the full argument.
-  const standings = challengeStandings(rows, CHALLENGE_LEVEL_COUNT);
+  const standings = challengeStandings(rows, JOURNEY_LEVEL_COUNT);
   // `insufficient` is returned SEPARATELY rather than merged and sorted, so the
   // portal can grey those rows instead of showing a level nobody has attempted
   // at the top of a "hardest" list on no evidence.
@@ -118,7 +118,7 @@ adminRoutes.get("/challenges", async (c) => {
     // when the two disagree. That disagreement is precisely a forgotten
     // `npm run sync`, which is the failure this whole dashboard was built to
     // make visible — and it would otherwise show as a quietly truncated table.
-    levelCount: CHALLENGE_LEVEL_COUNT,
+    levelCount: JOURNEY_LEVEL_COUNT,
     depth: await analytics.classicDepth(),
   });
 });

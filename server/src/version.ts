@@ -9,4 +9,4 @@
 //
 // Bump this when shipping a change the client must not talk to with a stale
 // shell (an API contract change), not on every deploy.
-export const APP_VERSION = "0.1.0";
+export const APP_VERSION = "0.2.0";

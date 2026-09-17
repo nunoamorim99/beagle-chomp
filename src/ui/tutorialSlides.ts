@@ -203,7 +203,7 @@ export function buildSlides(input: DeviceInput): TutorialSlide[] {
       body:
         "The shop sells dogs, not paint jobs — the one you take in changes how the run plays. " +
         "Coins buy them, and coins come from the maze and nowhere else — grab them before they " +
-        "vanish. Powers work in classic runs; challenge levels are played straight.",
+        "vanish. Powers work in classic runs; Journey levels are played straight.",
       stage: "beagle",
       perks: perkRows(),
     },

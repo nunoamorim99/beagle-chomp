@@ -583,7 +583,7 @@ body.install-open .menu-top{margin-top:clamp(84px,15vh,132px)}
    for state (§01 reserves it for state). The tiles are not chrome surfaces —
    they are four different places — and the redesign assigns these four hues
    deliberately. Amber is excluded: it belongs to Play alone on this screen. */
-.menu-tile--challenge .menu-tile-icon{color:var(--bc-biscuit)}
+.menu-tile--journey .menu-tile-icon{color:var(--bc-biscuit)}
 .menu-tile--shop .menu-tile-icon{color:var(--bc-enemy-green)}
 .menu-tile--board .menu-tile-icon{color:var(--bc-enemy-teal)}
 .menu-tile--account .menu-tile-icon{color:var(--bc-enemy-violet)}
@@ -2843,3 +2843,4 @@ body.map-open .powerups{display:none}
 .news-detail-body{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;
   display:flex;flex-direction:column;gap:var(--bc-s2)}
 .news-detail-sheet > .btn-primary{flex:0 0 auto;align-self:center;min-width:160px}
+
