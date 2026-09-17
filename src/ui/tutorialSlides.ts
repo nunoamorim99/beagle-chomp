@@ -191,7 +191,7 @@ export function buildSlides(input: DeviceInput): TutorialSlide[] {
       // player to do something AFTER the tutorial rather than during the run.
       // It also has to come last because every line in it leans on a slide
       // above: a shield, a life, a fruit and a coin all have to mean something
-      // before "starts every run with a shield" is an offer rather than a
+      // before "starts every map with a shield" is an offer rather than a
       // sentence.
       //
       // The coins line lives here rather than on the biscuits slide because

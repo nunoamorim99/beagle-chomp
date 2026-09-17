@@ -340,7 +340,7 @@ console.log("\n=== cosmetics.ts (IDEA-064 beagle perks) ===");
     "the five perks are distinct — no two coats do the same thing",
     new Set(BEAGLE_SKINS.map((s) => s.perk.id)).size === BEAGLE_SKINS.length,
   );
-  check("bagel -> startShield", getBeagleSkin("bagel").perk.id === "startShield");
+  check("bagel -> shieldPerMap", getBeagleSkin("bagel").perk.id === "shieldPerMap");
   check("cookie -> extraLifePerMap", getBeagleSkin("cookie").perk.id === "extraLifePerMap");
   check("muffin -> doubleCoins", getBeagleSkin("muffin").perk.id === "doubleCoins");
   check("pepper -> fruitBonus", getBeagleSkin("pepper").perk.id === "fruitBonus");
@@ -350,7 +350,7 @@ console.log("\n=== cosmetics.ts (IDEA-064 beagle perks) ===");
   // powers" something you only find out after spending 25 coins.
   check(
     "the default coat's perk is not a placeholder",
-    getBeagleSkin(DEFAULT_BEAGLE_SKIN_ID).perk.id === "startShield",
+    getBeagleSkin(DEFAULT_BEAGLE_SKIN_ID).perk.id === "shieldPerMap",
   );
 }
 

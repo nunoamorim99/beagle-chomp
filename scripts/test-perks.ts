@@ -31,7 +31,7 @@ import { TRIBUTE_MAZE_THEME_ID } from "../src/game/themes";
 import { BEAGLE_PERKS } from "../src/game/config";
 import {
   perkIdOf,
-  perkStartShields,
+  perkShieldsPerMap,
   perkExtraLivesPerMap,
   perkCoinMultiplier,
   perkFruitBonusPoints,
@@ -55,7 +55,7 @@ function check(label: string, ok: boolean): void {
 // ---------------------------------------------------------------------------
 console.log("\n=== perks.ts: the mapping ===");
 {
-  check("bagel carries startShield", perkIdOf("bagel") === "startShield");
+  check("bagel carries shieldPerMap", perkIdOf("bagel") === "shieldPerMap");
   check("cookie carries extraLifePerMap", perkIdOf("cookie") === "extraLifePerMap");
   check("muffin carries doubleCoins", perkIdOf("muffin") === "doubleCoins");
   check("pepper carries fruitBonus", perkIdOf("pepper") === "fruitBonus");
@@ -73,8 +73,12 @@ console.log("\n=== perks.ts: the mapping ===");
 // ---------------------------------------------------------------------------
 console.log("\n=== perks.ts: each perk pays out, and ONLY for its own coat ===");
 {
-  check("bagel starts with a shield", perkStartShields("bagel", "classic") === BEAGLE_PERKS.startShields);
-  check("the shield count is exactly 1 (once per run, not per life)", BEAGLE_PERKS.startShields === 1);
+  check("bagel opens a map with a shield", perkShieldsPerMap("bagel", "classic") === BEAGLE_PERKS.shieldsPerMap);
+  // ONE, and the reason is worth pinning: a shield is `untilHit`, so it survives
+  // a cleared map, and collect() refreshes rather than pushes — so a per-map
+  // grant of 1 tops an unhit player's shield up instead of stacking. Raise this
+  // and that stops being true: the second one would queue behind the first.
+  check("the shield count is exactly 1 (a top-up, never a stack)", BEAGLE_PERKS.shieldsPerMap === 1);
   check("cookie grants a life per map", perkExtraLivesPerMap("cookie", "classic") === BEAGLE_PERKS.extraLivesPerMap);
   check("muffin doubles coins", perkCoinMultiplier("muffin", "classic") === BEAGLE_PERKS.coinMultiplier);
   check("pepper adds to every fruit", perkFruitBonusPoints("pepper", "classic") === BEAGLE_PERKS.fruitBonusPoints);
@@ -85,14 +89,14 @@ console.log("\n=== perks.ts: each perk pays out, and ONLY for its own coat ===")
   check("a non-Muffin coat multiplies coins by 1, not 0", perkCoinMultiplier("bagel", "classic") === 1);
   check("a non-Pepper coat adds 0 to fruit", perkFruitBonusPoints("bagel", "classic") === 0);
   check("a non-Cookie coat grants no per-map life", perkExtraLivesPerMap("muffin", "classic") === 0);
-  check("a non-Bagel coat starts with no shield", perkStartShields("cookie", "classic") === 0);
+  check("a non-Bagel coat opens a map with no shield", perkShieldsPerMap("cookie", "classic") === 0);
 
   // Exactly one coat pays out on each accessor. A perk accidentally pointed at
   // two coats is the kind of thing that looks fine in the shop and quietly
   // doubles somebody's coins.
   const payers = (fn: (id: string) => number, neutral: number): string =>
     BEAGLE_SKINS.filter((s) => fn(s.id) !== neutral).map((s) => s.id).join(",");
-  check("exactly one coat starts shielded", payers((id) => perkStartShields(id, "classic"), 0) === "bagel");
+  check("exactly one coat opens a map shielded", payers((id) => perkShieldsPerMap(id, "classic"), 0) === "bagel");
   check("exactly one coat grants per-map lives", payers((id) => perkExtraLivesPerMap(id, "classic"), 0) === "cookie");
   check("exactly one coat multiplies coins", payers((id) => perkCoinMultiplier(id, "classic"), 1) === "muffin");
   check("exactly one coat bonuses fruit", payers((id) => perkFruitBonusPoints(id, "classic"), 0) === "pepper");
@@ -101,7 +105,7 @@ console.log("\n=== perks.ts: each perk pays out, and ONLY for its own coat ===")
   // during a run — a Pac-Beagle player is on classic's own numbers.
   check(
     "the tribute coat has no run-time effect at all",
-    perkStartShields("pacbeagle", "classic") === 0 &&
+    perkShieldsPerMap("pacbeagle", "classic") === 0 &&
       perkExtraLivesPerMap("pacbeagle", "classic") === 0 &&
       perkCoinMultiplier("pacbeagle", "classic") === 1 &&
       perkFruitBonusPoints("pacbeagle", "classic") === 0,
@@ -119,7 +123,7 @@ console.log("\n=== perks.ts: perks are CLASSIC ONLY ===");
   for (const skin of BEAGLE_SKINS) {
     check(
       `${skin.id}: no perk of any kind reaches a challenge run`,
-      perkStartShields(skin.id, "challenge") === 0 &&
+      perkShieldsPerMap(skin.id, "challenge") === 0 &&
         perkExtraLivesPerMap(skin.id, "challenge") === 0 &&
         perkCoinMultiplier(skin.id, "challenge") === 1 &&
         perkFruitBonusPoints(skin.id, "challenge") === 0,

@@ -108,12 +108,41 @@
          things you collect in the maze two inches away, so drawing them as
          lit objects rather than as glyphs in a text run makes the score and
          the wallet self-labelling. -->
+    <!-- IDEA-076: THREE FULL-WIDTH LINES, not two columns.
+
+         Nuno: "the score can have the same size as map numeration, we can put
+         the label score and in front in one line the score, the maps still on
+         the top right but now score and map is one line the top line of the
+         screen. Then below the coins and lives as it is. Below one row with
+         the controllers buttons."
+
+         The two-column layout it replaces made every row as wide as the
+         WIDEST thing in its column, so IDEA-073's fourth chrome button (200px
+         of row) squeezed the left column until the score chip could not fit
+         and the home button wrapped onto a line of its own — which is exactly
+         what Nuno was looking at. A full-width line has the whole screen to
+         spend, so the button row and the score chip stop competing for it. -->
     <div class="hud">
-      <div class="hud-left">
+      <!-- LINE 1: the two headline figures, one at each end. The score chip is
+           INLINE now (label then figure, at the map's own 22px) rather than a
+           stacked block at 26px — which is what makes it the same height as
+           the map chip, so the two read as one line rather than as a tall
+           block beside a short one. -->
+      <div class="hud-line hud-line--top">
         <div class="hud-chip stat">
           <span class="bc-plate bc-plate--biscuit bc-plate--hud" aria-hidden="true"><i class="bc-i">cookie</i></span>
-          <div><div class="k">Score</div><div class="v" id="score">0</div></div>
+          <span class="k">Score</span><span class="v" id="score">0</span>
         </div>
+        <!-- setLevel splits "Map 3" / "Map 31" into the MAP eyebrow and the
+             figure, and shows "Bonus"/"C5" whole (see hud.ts) — so the chip
+             never reads "MAP Bonus". -->
+        <div class="hud-chip hud-chip--tight" id="levelChip">
+          <span class="k" id="levelLabel">Map</span><span class="v" id="level">1</span>
+        </div>
+      </div>
+
+      <!-- LINE 2: the two secondary readouts, unchanged. -->
+      <div class="hud-line hud-line--mid">
         <!-- IDEA-016/IDEA-017 coin wallet. The plate IS the label now — a coin
              is a thing the player picks up in the maze, so a word beside it was
              saying the same thing twice in a corner with no room to spare. The
@@ -122,45 +151,26 @@
           <span class="bc-plate bc-plate--coin bc-plate--hud" aria-hidden="true"><i class="bc-i">paid</i></span>
           <span class="sr-only">Coins</span><span class="v" id="coins">0</span>
         </div>
+        <!-- Hearts are written by hud.ts’s setLives (one per life, spent ones
+             dimmed rather than removed so the chip never resizes mid-run). -->
+        <div class="hud-chip hud-chip--tight lives" id="lives" role="img" aria-label="Lives"></div>
       </div>
 
-      <!-- The right COLUMN: map + lives on top, chrome underneath. The chrome
-           row used to be a separate fixed element parked at an absolute offset,
-           because .hud was a three-way space-between that a fourth child would
-           re-balance. The redesign makes .hud two columns instead, so the
-           buttons can simply live in the one they belong to and stay aligned
-           with the chips above them at any safe-area inset. -->
-      <div class="hud-right">
-        <div class="hud-row">
-          <!-- setLevel splits "Map 3" / "Map 31" into the MAP eyebrow and the
-               figure, and shows "Bonus"/"C5" whole (see hud.ts) — so the chip
-               never reads "MAP Bonus". -->
-          <div class="hud-chip hud-chip--tight" id="levelChip">
-            <span class="k" id="levelLabel">Map</span><span class="v" id="level">1</span>
-          </div>
-          <!-- Hearts are written by hud.ts’s setLives (one per life, spent ones
-               dimmed rather than removed so the chip never resizes mid-run). -->
-          <div class="hud-chip hud-chip--tight lives" id="lives" role="img" aria-label="Lives"></div>
-        </div>
-        <div class="hud-buttons">
-          <!-- 44px squircles: big enough for a thumb mid-chase, small enough
-               that three of them sit under the map/lives row without widening
-               the column past it. -->
-          <button type="button" class="mute-btn" id="muteBtn" aria-label="Mute game sounds" aria-pressed="false"><i class="bc-i" aria-hidden="true">volume_up</i></button>
-          <!-- IDEA-073: the AMBIENCE bed's own mute, beside the effects one.
-               Nuno: "add a new button to silence the beds on the gaming moment
-               and let the one we have to silence the eating biscuits." A
-               fourth button makes this row WRAP to 2x2 at phone widths on
-               purpose - see .hud-buttons in style.css, where the width was
-               measured rather than guessed. -->
-          <button type="button" class="bed-btn" id="bedBtn" aria-label="Mute ambience" aria-pressed="false"><i class="bc-i" aria-hidden="true">graphic_eq</i></button>
-          <!-- Pause. Replaced the old mid-run shop button: since IDEA-036 the
-               shop has its own place on the menu, so a shop shortcut here was
-               redundant — whereas the game had no way to pause at all. -->
-          <button type="button" class="pause-btn" id="pauseBtn" aria-label="Pause game"><i class="bc-i" aria-hidden="true">pause</i></button>
-          <!-- IDEA-021: abandons the run in progress and returns to the menu. -->
-          <button type="button" class="home-btn" id="homeBtn" aria-label="Back to menu"><i class="bc-i" aria-hidden="true">home</i></button>
-        </div>
+      <!-- LINE 3: the chrome. Its own full-width line, right-aligned, so all
+           four squircles stay on ONE row at every phone width. -->
+      <div class="hud-buttons">
+        <!-- 44px squircles: big enough for a thumb mid-chase. -->
+        <button type="button" class="mute-btn" id="muteBtn" aria-label="Mute game sounds" aria-pressed="false"><i class="bc-i" aria-hidden="true">volume_up</i></button>
+        <!-- IDEA-073: the AMBIENCE bed's own mute, beside the effects one.
+             Nuno: "add a new button to silence the beds on the gaming moment
+             and let the one we have to silence the eating biscuits." -->
+        <button type="button" class="bed-btn" id="bedBtn" aria-label="Mute ambience" aria-pressed="false"><i class="bc-i" aria-hidden="true">graphic_eq</i></button>
+        <!-- Pause. Replaced the old mid-run shop button: since IDEA-036 the
+             shop has its own place on the menu, so a shop shortcut here was
+             redundant — whereas the game had no way to pause at all. -->
+        <button type="button" class="pause-btn" id="pauseBtn" aria-label="Pause game"><i class="bc-i" aria-hidden="true">pause</i></button>
+        <!-- IDEA-021: abandons the run in progress and returns to the menu. -->
+        <button type="button" class="home-btn" id="homeBtn" aria-label="Back to menu"><i class="bc-i" aria-hidden="true">home</i></button>
       </div>
     </div>
 

@@ -125,7 +125,7 @@ export function barChart(data: readonly BarDatum[], opts: { unit?: string } = {}
     })
     .join("");
 
-  return `<svg viewBox="0 0 ${w} ${h}" class="chart" role="img" preserveAspectRatio="xMinYMin meet">${rows}</svg>`;
+  return `<svg viewBox="0 0 ${w} ${h}" class="chart chart--bars" role="img" preserveAspectRatio="xMinYMin meet">${rows}</svg>`;
 }
 
 /**
@@ -185,7 +185,7 @@ export function lineChart(
   const first = points[0].day;
   const last = points[points.length - 1].day;
 
-  return `<svg viewBox="0 0 ${w} ${h}" class="chart" role="img" preserveAspectRatio="xMinYMin meet">
+  return `<svg viewBox="0 0 ${w} ${h}" class="chart chart--line" role="img" preserveAspectRatio="xMinYMin meet">
     ${ticks.join("")}
     <path d="${area}" class="area"/>
     <path d="${path}" fill="none" stroke="${opts.color ?? ACCENT}" stroke-width="2"
@@ -262,7 +262,7 @@ export function cohortGrid(
 
   const w = labelW + offsets.length * cellW;
   const h = headH + matrix.length * cellH;
-  return `<svg viewBox="0 0 ${w} ${h}" class="chart" role="img" preserveAspectRatio="xMinYMin meet">${head}${rows}</svg>`;
+  return `<svg viewBox="0 0 ${w} ${h}" class="chart chart--cohort" role="img" preserveAspectRatio="xMinYMin meet">${head}${rows}</svg>`;
 }
 
 interface CohortLike {

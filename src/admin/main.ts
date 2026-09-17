@@ -124,22 +124,29 @@ function renderLogin(message?: string): void {
 // ---------------------------------------------------------------------------
 
 function renderShell(): void {
+  // Topbar and tabs are ONE element so they can stick together — see
+  // .shell-head. The buttons are grouped too, so that when the bar wraps on a
+  // narrow screen they travel as a pair instead of splitting across two lines.
   app.innerHTML = `
-    <div class="topbar">
-      <h1>Beagle Chomp</h1>
-      <span class="who">metrics · ${esc(username)}</span>
-      <span class="spacer"></span>
-      <button class="ghost" id="refresh">Refresh</button>
-      <button class="ghost" id="signout">Sign out</button>
-    </div>
-    <div class="tabs" role="tablist">
+    <header class="shell-head">
+      <div class="topbar">
+        <h1>Beagle Chomp</h1>
+        <span class="who">metrics · ${esc(username)}</span>
+        <span class="spacer"></span>
+        <span class="row-end">
+          <button class="ghost" id="refresh">Refresh</button>
+          <button class="ghost" id="signout">Sign out</button>
+        </span>
+      </div>
+      <div class="tabs" role="tablist">
       ${TABS.map(
         (t) =>
           `<button class="tab" role="tab" data-tab="${t.id}" aria-selected="${
             t.id === currentTab
           }">${esc(t.label)}</button>`,
       ).join("")}
-    </div>
+      </div>
+    </header>
     <main id="view"></main>`;
 
   app.querySelectorAll<HTMLButtonElement>(".tab").forEach((btn) => {
@@ -631,7 +638,7 @@ function renderPlayers(): void {
     <section class="panel">
       <h2>Players</h2>
       <p class="sub">Search by the start of a username. Pick one for their year in review.</p>
-      <form id="pf" style="display:flex;gap:8px;margin-bottom:12px">
+      <form id="pf" class="form-row">
         <input id="pq" placeholder="username prefix" autocapitalize="off" spellcheck="false" />
         <button class="primary" type="submit">Search</button>
       </form>

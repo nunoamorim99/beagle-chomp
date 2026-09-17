@@ -16,6 +16,45 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
 > lines here roll up into the numbered version below and this section is cleared (hold a line back
 > only if you explicitly choose to).
 
+- **[[IDEA-076]] v1** (2026-09-17) - **the game screen has been rearranged, and the
+  power-up tags are out of the maze.** The top of the screen now reads as three clear
+  lines: your score and the map number on the first, coins and lives on the second, and
+  the sound, pause and home buttons together on a row of their own - the home button used
+  to drop onto a second line by itself on most phones. The score sits on one line too,
+  "SCORE 128 450" at the same size as the map figure, instead of a stacked block.
+
+  All of that was in the way of the real problem: with four power-ups running, the tags
+  spilled down over the top of the maze. They are a size smaller now and the four of them
+  sit on a single row that clears the board - on a 390px phone by about 40 pixels, where
+  before they were 60 pixels into it. Holding all five still takes two rows, and those fit
+  too on everything but the narrowest phones.
+
+- **[[IDEA-064]] v5** (2026-09-17) - **you can see the shield now.** While Bagel is
+  carrying one, a cyan bubble sits around the beagle - the same cyan as the SHIELD tag at the
+  top of the screen - so whether you are protected is something you read off the dog you are
+  already watching, instead of off a tag in the corner. When a ghost hits it, the bubble
+  bursts in a ring rather than quietly disappearing, so a shield that saved you looks
+  different from one that simply ran out.
+
+- **[[IDEA-064]] v4** (2026-09-17) - **Bagel now starts every MAP with a shield, not just
+  the first one.** It used to be one shield for the whole run, which was a nice head start and
+  nothing more by the time you reached map three. Take Bagel in and every new map hands you
+  one - and if you still have the last one, it stays one rather than piling up. Nothing else
+  about the coat changed, and the other four beagles are untouched.
+
+- **[[IDEA-075]] v1** (2026-09-17) - **the metrics dashboard fits your screen now, whatever
+  you are on.** It used to draw itself in a fixed 1200px column pinned to the left, so on a
+  1920px monitor nearly 40% of the window was empty brown and on a 2560px one almost half.
+  It now uses the whole width, and the panels rearrange as the window grows - the Content
+  tab goes from one column to three.
+
+  On a phone it was worse than empty: seven of the eight tabs ran off the side of the
+  screen, taking their own headings with them, and the charts were drawing their labels at
+  under 7px. Wide tables now swipe sideways on their own with a shadow showing there is
+  more to see, chart text lands at a readable size at every width, and the tab bar stays
+  put at the top of the window on a desktop instead of scrolling away. The News screen also
+  puts the editor and its preview side by side on a wide screen.
+
 - **[[IDEA-074]] v2** (2026-09-15) - **the same card now shows you how to install the game.**
   If Beagle Chomp is not installed yet, the What's new screen offers that too - a one-tap
   Install button where the browser supports it, and on iPhone and iPad the Share -> Add to

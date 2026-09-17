@@ -73,7 +73,7 @@ export interface BeagleCoat {
  * print for it like it does for the other four.
  */
 export type BeaglePerkId =
-  | "startShield"
+  | "shieldPerMap"
   | "extraLifePerMap"
   | "doubleCoins"
   | "fruitBonus"
@@ -140,7 +140,7 @@ export const BEAGLE_SKINS: readonly BeagleSkin[] = [
     // starts on, so a blank slot there would make "beagles have powers" a thing
     // you only discover after spending 25 coins — and a shield is the perk that
     // teaches the shield power-up's own rules for free.
-    perk: { id: "startShield", label: "Starts every run with a shield" },
+    perk: { id: "shieldPerMap", label: "Starts every map with a shield" },
     // Default skin: free and always owned (see profileStore.ts's
     // defaultProfile()).
     price: 0,

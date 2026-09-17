@@ -35,6 +35,18 @@
   --s3: 12px;
   --s4: 16px;
   --s5: 24px;
+
+  /* The page gutter shrinks with the screen. A phone cannot spare 16px a side
+   * twice over (main + panel = 64px of a 360px screen, an eighth of it). */
+  --gutter: clamp(10px, 1.6vw, 24px);
+
+  /* How wide a column has to be before a CHART in it is worth drawing. Every
+   * chart here is a fixed-viewBox SVG at width:100%, so its type scales with
+   * its box - see the chart-scale note below. This is the number that stops a
+   * multi-column layout producing columns too narrow to read. */
+  --chart-col: 520px;
+  /* Prose is the one thing a 2560px screen must NOT be allowed to stretch. */
+  --prose: 92ch;
 }
 
 * { box-sizing: border-box; }
@@ -59,17 +71,34 @@ a { color: var(--amber); }
 
 /* --- shell ---------------------------------------------------------------- */
 
+/* Topbar and tabs travel together, so they are ONE sticky header rather than a
+ * sticky bar with the navigation scrolling away beneath it - which is what
+ * shipped, and on a tab like Health, whose tables run several screens, it left
+ * a permanent strip of branding and no way to change tab without scrolling all
+ * the way back up. Sticky is switched OFF on short screens further down: there
+ * the header is a fifth of the viewport and the data matters more. */
+.shell-head { position: sticky; top: 0; z-index: 10; background: var(--bark); }
+
 .topbar {
-  display: flex; align-items: center; gap: var(--s4);
-  padding: var(--s3) var(--s4);
+  display: flex; align-items: center; gap: var(--s3) var(--s4);
+  flex-wrap: wrap;
+  padding: var(--s3) var(--gutter);
   background: var(--bark);
   border-bottom: 3px solid var(--outline);
-  position: sticky; top: 0; z-index: 10;
 }
-.topbar .spacer { flex: 1; }
-.who { color: var(--muted); font-size: 13px; }
+.topbar .spacer { flex: 1 1 0; min-width: 0; }
+/* Without nowrap the flex line squeezes this to ~60px on a 360px phone and it
+ * wraps onto three lines, making the bar 92px tall. Let it move to a line of
+ * its own instead of being crushed on the shared one. */
+.who { color: var(--muted); font-size: 13px; white-space: nowrap; }
+.topbar .row-end { display: flex; gap: var(--s2); margin-left: auto; }
 
-.tabs { display: flex; gap: 4px; flex-wrap: wrap; padding: var(--s3) var(--s4) 0; }
+.tabs {
+  display: flex; gap: 4px; flex-wrap: wrap;
+  padding: var(--s3) var(--gutter);
+  background: var(--bark);
+  border-bottom: 3px solid var(--outline);
+}
 .tab {
   appearance: none; cursor: pointer;
   background: var(--card); color: var(--cream);
@@ -84,23 +113,76 @@ a { color: var(--amber); }
   background: var(--amber); color: #3a2205; border-color: var(--amber-edge); font-weight: 700;
 }
 
-main { padding: var(--s4); display: grid; gap: var(--s4); max-width: 1200px; }
+/* USE THE WHOLE SCREEN. This was `max-width: 1200px` with no auto margin, so a
+ * 1920px monitor showed the dashboard in 63% of its width pinned to the left
+ * edge and a 2560px one in 47% - the complaint that started IDEA-075. There is
+ * no cap now: the panels below reflow into more columns as the screen grows, so
+ * width buys COLUMNS rather than longer lines. The one thing that must not
+ * stretch is prose, and that is bounded by --prose where it is written. */
+main {
+  padding: var(--gutter);
+  display: grid;
+  gap: var(--s4);
+  width: 100%;
+}
+
+/* A grid item takes `min-width: auto`, which resolves to its MIN-CONTENT size,
+ * and a panel holding a nowrap 8-column table has a min-content of ~865px. That
+ * is why seven of the eight tabs overflowed a 390px phone horizontally: the
+ * panel refused to shrink to its track and pushed the whole document wider than
+ * the viewport, dragging its own heading and prose out of frame with it.
+ * `min-width: 0` lets the panel take the track width and hands the overflow to
+ * .scroll, which exists for exactly that and can be swiped. */
+main > *,
+.grid2 > *,
+.stats > * { min-width: 0; }
 
 .panel {
   background: var(--bark);
   border: 3px solid var(--outline);
   border-bottom-width: 5px;
   border-radius: var(--r);
-  padding: var(--s4);
+  padding: var(--gutter);
+  /* The panel is the CONTAINER its charts size themselves against, and it has
+   * to be: the chart that renders smallest on a 1280px laptop is not on a
+   * narrow screen at all, it is in a three-up column on a wide one - so a
+   * viewport media query cannot see the case that needs fixing. Inline-size
+   * containment also makes the panel width independent of its contents, which
+   * is a second guard against the min-content overflow noted above. */
+  container-type: inline-size;
+  container-name: panel;
 }
 .panel > h2 { margin-bottom: 4px; }
-.panel > .sub { color: var(--muted); font-size: 13px; margin: 0 0 var(--s3); }
+.sub { color: var(--muted); font-size: 13px; max-width: var(--prose); }
+.panel > .sub { margin: 0 0 var(--s3); }
 
-.grid2 { display: grid; gap: var(--s4); grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+/* `min(100%, ...)` is not decoration: a bare minmax(520px, 1fr) track cannot
+ * shrink below 520px, so on a 390px phone the grid overflows the page all by
+ * itself. The min() clamps the floor to the space actually available. 520
+ * rather than the old 320 because that is roughly the width below which these
+ * charts stop being readable - see the chart-scale note. */
+.grid2 {
+  display: grid; gap: var(--s4);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--chart-col)), 1fr));
+}
 
 /* --- stat tiles ----------------------------------------------------------- */
 
-.stats { display: grid; gap: var(--s3); grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+/* auto-FIT while there is a sensible amount of room, auto-FILL once there is
+ * too much. The difference is what happens to the tracks nothing occupies:
+ * auto-fit collapses them and the tiles absorb the space, which is right at
+ * 1280px and absurd at 1920, where the Health tab has three tiles and each one
+ * became 600px of empty card around a four-character number. auto-fill keeps
+ * the empty tracks, so a tile stays a tile and a short row simply ends. Below
+ * the breakpoint auto-fill would be the wrong one: it would leave a ragged gap
+ * on a laptop where stretching to fill is exactly what you want. */
+.stats {
+  display: grid; gap: var(--s3);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr));
+}
+@media (min-width: 1500px) {
+  .stats { grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); }
+}
 .stat {
   background: var(--card); border: 2px solid var(--outline); border-bottom-width: 4px;
   border-radius: var(--r); padding: var(--s3);
@@ -111,16 +193,51 @@ main { padding: var(--s4); display: grid; gap: var(--s4); max-width: 1200px; }
 
 /* --- charts --------------------------------------------------------------- */
 
-.chart { width: 100%; height: auto; display: block; overflow: visible; }
-.bar-label { fill: var(--cream); font-size: 12px; }
-.bar-value { fill: var(--muted); font-size: 12px; }
+/* CHART SCALE - the rule this file now turns on.
+ *
+ * Every chart is a fixed-viewBox SVG drawn at width:100%, so the browser scales
+ * the whole coordinate system to the box. A font-size written here is therefore
+ * NOT the size on screen:
+ *
+ *     rendered px  =  declared px  x  (box width / viewBox width)
+ *
+ * Measured before this pass, one stylesheet value of 11px was rendering
+ * anywhere from 6.2px (a bar chart in a three-up column) to 28px (the cohort
+ * grid across a 1200px panel) - a 4.5x spread, and both ends already wrong on a
+ * 1280px laptop, long before anything went full-width. Two levers fix it and
+ * both are needed:
+ *
+ *   1. a MAX-WIDTH per chart kind, which stops the box growing past ~1.35x its
+ *      own viewBox. This is what makes a full-width shell survivable at all.
+ *   2. a per-kind type BUMP when the container is narrow, cancelling the
+ *      shrink. It is a CONTAINER query because the narrow case is a narrow
+ *      COLUMN at least as often as it is a narrow screen.
+ *
+ * `scripts/_scratch-admin-layout.ts` reports the PRODUCT of the two for every
+ * chart at seven framings. Change a number here and re-run it: a render cannot
+ * tell you a 7px axis label from an 11px one, and the measurement can. */
+.chart {
+  width: 100%; height: auto; display: block; overflow: visible;
+  --chart-axis: 11px;
+  --chart-label: 12px;
+}
+.chart--line, .chart--bars { max-width: 720px; }  /* viewBox 560 -> at most x1.29 */
+.chart--cohort { max-width: 620px; }              /* viewBox 444 -> at most x1.40 */
+
+@container panel (max-width: 460px) {
+  .chart--line, .chart--bars { --chart-axis: 19px; --chart-label: 20px; }
+  .chart--cohort { --chart-axis: 15px; --chart-label: 16px; }
+}
+
+.bar-label { fill: var(--cream); font-size: var(--chart-label); }
+.bar-value { fill: var(--muted); font-size: var(--chart-label); }
 .bar-track { fill: #2a2018; }
 .bar-row:hover .bar-track { fill: #372a1e; }
-.axis { fill: var(--muted); font-size: 11px; }
+.axis { fill: var(--muted); font-size: var(--chart-axis); }
 .grid { stroke: var(--wood); stroke-width: 1; }
 .area { fill: rgb(232 162 61 / 0.14); }
 .dot { fill: var(--amber); stroke: var(--bark); stroke-width: 2; }
-.cell-text { fill: var(--cream); font-size: 11px; }
+.cell-text { fill: var(--cream); font-size: var(--chart-axis); }
 /* Ink flips on the brightest ramp steps so the figure stays readable. */
 .cell-text.on-bright { fill: #3a2205; font-weight: 700; }
 .cell-void { fill: transparent; stroke: var(--wood); stroke-width: 1; stroke-dasharray: 3 3; }
@@ -131,8 +248,36 @@ main { padding: var(--s4); display: grid; gap: var(--s4); max-width: 1200px; }
 
 /* --- tables --------------------------------------------------------------- */
 
-.scroll { overflow-x: auto; }
-table.data { width: 100%; border-collapse: collapse; font-size: 13px; }
+/* Chrome uses OVERLAY scrollbars, so a table that scrolls sideways gives no
+ * sign of it at rest and a phone user reads four of eight columns believing
+ * that is all there is. These four layers are the CSS-only scroll shadow: two
+ * `local` covers that travel with the content and two `scroll` shadows pinned
+ * to the edges, so a shadow appears at an edge only while there is something
+ * past it. No JS, no listener, and nothing to keep in sync. */
+.scroll {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  background:
+    linear-gradient(to right, var(--bark) 40%, rgb(47 35 24 / 0)) left center / 28px 100% no-repeat local,
+    linear-gradient(to left, var(--bark) 40%, rgb(47 35 24 / 0)) right center / 28px 100% no-repeat local,
+    radial-gradient(farthest-side at 0 50%, rgb(0 0 0 / 0.45), rgb(0 0 0 / 0)) left center / 14px 100% no-repeat scroll,
+    radial-gradient(farthest-side at 100% 50%, rgb(0 0 0 / 0.45), rgb(0 0 0 / 0)) right center / 14px 100% no-repeat scroll;
+}
+/* A table sizes to its CONTENT, with a floor, rather than stretching to the
+ * panel. `width: 100%` was right while the shell was capped at 1200px and is
+ * wrong now the panel can be 1850px wide: a four-column table stretched across
+ * one puts 700px of empty brown between PERK and RUNS, and reading a row means
+ * tracking across the gap. The floor stops a two-column table looking stranded,
+ * and `min()` keeps it from becoming an overflow of its own on a phone, where
+ * 100% of the scroller is ~320px. Below the floor nothing changes: the cells
+ * are nowrap, so the table is wider than the phone either way and .scroll
+ * carries it. */
+table.data {
+  width: auto;
+  min-width: min(100%, 760px);
+  border-collapse: collapse;
+  font-size: 13px;
+}
 table.data th, table.data td {
   text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--wood); white-space: nowrap;
 }
@@ -186,16 +331,50 @@ button.ghost {
   border: 2px solid var(--outline); border-bottom-width: 4px; border-radius: var(--r); padding: 7px 14px;
 }
 
+/* A search row, not a rigid pair. The input was inline-styled in main.ts with
+ * no flex basis, so on a 360px phone it and its button fought over one line. */
+.form-row { display: flex; gap: var(--s2); flex-wrap: wrap; margin-bottom: var(--s3); }
+.form-row input { flex: 1 1 200px; min-width: 0; }
+
 .error { color: #ffc9d5; background: #4a1f2b; border: 2px solid #7a2740; border-radius: 8px; padding: 10px; font-size: 13px; }
 
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
 
+/* --- small screens --------------------------------------------------------- */
+
+/* A sticky header is worth its cost on a desk and not on a phone: eight tabs
+ * wrap to two rows there, so header plus tabs is ~150px of an 844px screen
+ * permanently, on tabs whose tables already run several viewports. Landscape is
+ * worse again, which is why the height query is here as well as the width one:
+ * at 844x390 a sticky header would eat over a third of the picture. */
+@media (max-width: 700px), (max-height: 560px) {
+  .shell-head { position: static; }
+}
+
+@media (max-width: 560px) {
+  h1 { font-size: 17px; }
+  .who { font-size: 12px; }
+  .tabs { gap: 3px; }
+  .tab { padding: 6px 10px; font-size: 13px; }
+  button.ghost { padding: 6px 10px; font-size: 13px; }
+  .stat-value { font-size: 22px; }
+  /* The outline language survives a pixel thinner; 3px of ink on all four sides
+   * of every panel is 6px of a 360px screen spent twice over. */
+  .panel { border-width: 2px; border-bottom-width: 4px; }
+  table.data th, table.data td { padding: 6px 8px; }
+}
+
 /* --- the composer (IDEA-052) ---------------------------------------------- */
 
 .composer { display: grid; gap: var(--s3); }
 .composer .row { display: flex; gap: var(--s3); align-items: flex-end; flex-wrap: wrap; }
+.composer label { min-width: 0; }
+.composer input, .composer textarea { width: 100%; }
+/* The body is the one field worth the whole width; the title sits with it so
+ * the two do not disagree about where the writing column is. */
+.composer > label { max-width: 90ch; }
 .composer select, .composer textarea {
   font: inherit; padding: 10px 12px; border-radius: 8px;
   border: 2px solid var(--outline); background: var(--ink); color: var(--cream);

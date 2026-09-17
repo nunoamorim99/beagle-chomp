@@ -322,10 +322,12 @@ export function minLevelSeconds(mazeIdx: number, speedMult: number): number {
  * Neutral means 1 for the multiplier and 0 for the addends, so every use site
  * below can multiply and add unconditionally rather than branching on the coat.
  *
- * Bagel's start shield is deliberately absent: it absorbs a hit, cannot add a
- * point, and is never reported as a collected power-up, so there is nothing
- * here for it to widen. A perk that costs the validator nothing should not
- * appear in the validator.
+ * Bagel's shield is deliberately absent: it absorbs a hit, cannot add a point,
+ * and is never reported as a collected power-up, so there is nothing here for
+ * it to widen. A perk that costs the validator nothing should not appear in the
+ * validator — which is why v3 moving that shield from once-a-run to once-a-MAP
+ * needed no change on this side at all, where the same move on Cookie's life
+ * would have been a bound.
  */
 function perksFor(ctx: RunContext): {
   extraLivesPerMap: number;
@@ -345,7 +347,7 @@ function perksFor(ctx: RunContext): {
     case "fruitBonus":
       return { ...neutral, fruitBonusPoints: BEAGLE_PERKS.fruitBonusPoints };
     default:
-      // startShield, unlocksTribute, and anything a future catalog adds that
+      // shieldPerMap, unlocksTribute, and anything a future catalog adds that
       // this server has not been taught. Falling through to neutral is the safe
       // direction for an UNKNOWN perk in a way it is not for a known one: it
       // tightens the bounds rather than loosening them, so the failure is a

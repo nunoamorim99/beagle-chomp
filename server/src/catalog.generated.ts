@@ -15,8 +15,8 @@ export const BEAGLE_SKINS: readonly CatalogItem[] = [
   { id: "bagel", price: 0 },
   { id: "cookie", price: 25 },
   { id: "muffin", price: 25 },
-  { id: "pacbeagle", price: 50 },
   { id: "pepper", price: 25 },
+  { id: "pacbeagle", price: 50 },
 ];
 
 export const ENEMY_SKINS: readonly CatalogItem[] = [
@@ -114,14 +114,14 @@ export const SCORE_DOUBLING_POWERUPS = { biscuit: "doubleBiscuit", ghost: "doubl
  *  client enforces the same rule from its side. If the two ever disagree, an
  *  honest run is rejected rather than quietly mis-scored. */
 export const BEAGLE_PERK_BY_SKIN: Readonly<Record<string, string>> = {
-  "bagel": "startShield",
+  "bagel": "shieldPerMap",
   "cookie": "extraLifePerMap",
   "muffin": "doubleCoins",
-  "pacbeagle": "unlocksTribute",
-  "pepper": "fruitBonus"
+  "pepper": "fruitBonus",
+  "pacbeagle": "unlocksTribute"
 };
 export const BEAGLE_PERKS = {
-  "startShields": 1,
+  "shieldsPerMap": 1,
   "extraLivesPerMap": 1,
   "coinMultiplier": 2,
   "fruitBonusPoints": 100

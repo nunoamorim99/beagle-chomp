@@ -342,7 +342,7 @@ const powerupMultiplier = numberConst(configSrc, "POWERUP_MULTIPLIER");
 // know about is an honest run rejected, which is the exact failure mode this
 // whole generated file exists to prevent.
 const beaglePerkValues = {
-  startShields: numberField(configSrc, "BEAGLE_PERKS", "startShields"),
+  shieldsPerMap: numberField(configSrc, "BEAGLE_PERKS", "shieldsPerMap"),
   extraLivesPerMap: numberField(configSrc, "BEAGLE_PERKS", "extraLivesPerMap"),
   coinMultiplier: numberField(configSrc, "BEAGLE_PERKS", "coinMultiplier"),
   fruitBonusPoints: numberField(configSrc, "BEAGLE_PERKS", "fruitBonusPoints"),

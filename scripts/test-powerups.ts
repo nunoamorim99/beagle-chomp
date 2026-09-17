@@ -11,6 +11,7 @@
 //
 // `npm run test:powerups`.
 
+import { readFileSync } from "node:fs";
 import {
   POWERUPS,
   POWERUP_THRESHOLDS,
@@ -297,6 +298,36 @@ ok(
     "a full level fires exactly one power-up spawn per threshold, however often it is asked",
     fired === POWERUP_THRESHOLDS.length,
     fired,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// IDEA-064 v5: the shield is now stated in TWO places at once - the tray chip
+// and the bubble around the beagle - and they must be one colour, because two
+// cyans read as two different things.
+//
+// They cannot share a constant. hud.ts is the DOM layer and is documented as
+// not being allowed to import from src/game, and shieldBubble.ts is the render
+// layer; there is no module both are permitted to reach. So the literal is
+// hand-copied, exactly like boardCodegen's palette fields and propsCodegen's
+// field list - and like those, the copy gets a test rather than a promise.
+//
+// Read as TEXT on purpose: importing hud.ts would need a DOM, which is the
+// whole reason this suite is fast and pure.
+console.log("\n=== IDEA-064 v5: the shield's two readouts are one colour ===");
+{
+  const hudSrc = readFileSync("src/ui/hud.ts", "utf8");
+  const bubbleSrc = readFileSync("src/render/shieldBubble.ts", "utf8");
+
+  const chip = /shield:\s*\{[^}]*?color:\s*"#([0-9a-fA-F]{6})"/.exec(hudSrc);
+  const bubble = /export const SHIELD_COLOR = 0x([0-9a-fA-F]{6});/.exec(bubbleSrc);
+
+  ok("the HUD declares a colour for the shield chip", chip !== null);
+  ok("the bubble exports SHIELD_COLOR", bubble !== null);
+  ok(
+    "the chip and the bubble are the same cyan",
+    chip !== null && bubble !== null && chip[1].toLowerCase() === bubble[1].toLowerCase(),
+    `hud=#${chip?.[1]} bubble=0x${bubble?.[1]}`,
   );
 }
 

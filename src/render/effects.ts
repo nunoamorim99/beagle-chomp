@@ -6,7 +6,7 @@
 // happened and WHERE (world coords), and we just play a cue.
 //
 // Contract (see game.ts call sites): createEffects(scene, camera, canvas) ->
-// { pelletEaten, scorePopup, ghostEaten, frightStarted, beagleDied,
+// { pelletEaten, scorePopup, ghostEaten, frightStarted, shieldBroke, beagleDied,
 //   levelCleared, update(dt), shakeOffset, dispose() }.
 //
 // Perf notes:
@@ -21,6 +21,7 @@
 // - The screen flash is a single camera-parented plane, toggled/faded via a
 //   uniform-esque opacity field rather than created/destroyed per flash.
 import * as THREE from "three";
+import { SHIELD_COLOR } from "./shieldBubble";
 import { COLORS } from "../game/config";
 
 // ---------------------------------------------------------------------------
@@ -283,6 +284,12 @@ export interface Effects {
   scorePopup(x: number, z: number, amount: number): void;
   ghostEaten(x: number, z: number, chainScore: number): void;
   frightStarted(): void;
+  /** A shield absorbed a hit that would have been a death (IDEA-064 v5).
+   *  Localised at the beagle on purpose: the full-screen `frightStarted()`
+   *  flash this used to lean on says "something happened", and the one thing
+   *  the player needs to know is that it happened TO THE DOG and cost the
+   *  bubble. */
+  shieldBroke(x: number, z: number): void;
   beagleDied(x: number, z: number): void;
   levelCleared(): void;
   update(dt: number): void;
@@ -382,6 +389,14 @@ export function createEffects(
 
   function frightStarted(): void {
     startFlash("fright");
+  }
+
+  function shieldBroke(x: number, z: number): void {
+    // The shield's own cyan, read off the bubble module rather than typed
+    // again — the bubble, the tray chip and this ring are three readouts of
+    // one fact, and two of them can at least share a constant.
+    spawnRingPop(ringPops, scene, x, z, SHIELD_COLOR, 0.34, 1.3);
+    emitBurst(particlePool, x, z, 8, new THREE.Color(SHIELD_COLOR), 1.6);
   }
 
   function beagleDied(x: number, z: number): void {
@@ -504,6 +519,7 @@ export function createEffects(
     scorePopup,
     ghostEaten,
     frightStarted,
+    shieldBroke,
     beagleDied,
     levelCleared,
     update,

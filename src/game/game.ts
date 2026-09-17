@@ -59,6 +59,7 @@ import {
   ghostSpeedMult as powerupGhostSpeedMult,
   beagleSpeedMult as powerupBeagleSpeedMult,
   starActive,
+  hasShield,
   type PowerupState,
 } from "./powerups";
 import { rollFruit, fruitIndexById } from "./fruits";
@@ -110,6 +111,10 @@ import { createScene, type SceneRig } from "../render/scene";
 import { createMenuScene, type MenuScene } from "../render/menuScene";
 import { createShopScene, type ShopScene } from "../render/shopScene";
 import { createEffects, type Effects } from "../render/effects";
+// IDEA-064 v5: the bubble that says a shield is up. Owned here rather than by
+// the level, for the same reason the beagle mesh is — a power-up is RUN-scoped
+// and survives a cleared map, so anything drawing one must outlive the board.
+import { createShieldBubble, type ShieldBubble } from "../render/shieldBubble";
 import {
   buildBoard,
   applyBoardTheme,
@@ -173,7 +178,7 @@ import {
 // — it is the one place the coat-to-number mapping and the CLASSIC-ONLY rule
 // live, and a second copy of either here is how they drift.
 import {
-  perkStartShields,
+  perkShieldsPerMap,
   perkExtraLivesPerMap,
   perkCoinMultiplier,
   perkFruitBonusPoints,
@@ -325,6 +330,7 @@ export class Game {
   private readonly shopScene: ShopScene;
   private readonly hud: Hud;
   private readonly effects: Effects;
+  private readonly shieldBubble: ShieldBubble;
   private readonly sound: Sound;
   private clock = { last: 0 };
   private rafHandle = 0;
@@ -594,6 +600,13 @@ export class Game {
     // default param reads the player's real equipped skin here.
     this.beagleMesh = makeBeagle();
     this.rig.scene.add(this.beagleMesh);
+    // Deliberately a SIBLING of the beagle, not a child of it: that group
+    // breathes, waddles, is scaled to nothing by the death animation and is
+    // strobed invisible during the post-hit grace blink, and a bubble
+    // inheriting any of that would wobble, squash and flicker. It copies the
+    // two channels it wants (position and yaw) in update(). See
+    // src/render/shieldBubble.ts rule 2.
+    this.shieldBubble = createShieldBubble(this.rig.scene);
     // IDEA-013: scaled by activeModifiers.speedMult (1 at boot, since
     // gameKind/activeModifiers default to the classic baseline — see the
     // field declarations above) so this stays a byte-for-byte no-op for
@@ -1100,6 +1113,7 @@ export class Game {
     this.stick.detach();
     this.menuScene.dispose();
     this.shopScene.dispose();
+    this.shieldBubble.dispose();
   }
 
   // ---- level flow (prototype startLevel, line 419) ----
@@ -1143,13 +1157,32 @@ export class Game {
     recordLevelStarted(this.telemetry, plan.mazeIdx, idx);
     this.hud.setLevel(levelLabel(idx));
 
-    // IDEA-064: Cookie's perk — a life at the start of EVERY map, this one
-    // included, so map 1 opens the run on START_LIVES + 1. Routed through
-    // grantLife() like every other bonus life, which is what keeps the
-    // LIVES.max cap, the HUD and the sound in step; at the cap it is simply
-    // wasted, exactly as a golden bone is.
+    // IDEA-064: the two PER-MAP perks, granted together because they are the
+    // same rule wearing two coats — both answer "what do I open a map with",
+    // and gameKind is set to "classic" at the top of this method, so passing it
+    // says the classic-only rule out loud rather than assuming it.
+    //
+    // Cookie: a life at the start of EVERY map, this one included, so map 1
+    // opens the run on START_LIVES + 1. Routed through grantLife() like every
+    // other bonus life, which is what keeps the LIVES.max cap, the HUD and the
+    // sound in step; at the cap it is simply wasted, exactly as a golden bone
+    // is.
     const perkLives = perkExtraLivesPerMap(getEquippedBeagleSkinId(), this.gameKind);
     for (let i = 0; i < perkLives; i++) this.grantLife();
+
+    // Bagel (v4, was once per run): a shield at the start of EVERY map. No
+    // guard against stacking is needed and none should be added — a shield is
+    // `untilHit`, so it SURVIVES a cleared map, and collect() refreshes a held
+    // power-up instead of pushing a second. An unhit player carries exactly one
+    // from map to map.
+    //
+    // Granted through powerups.ts's own collect() so a perk shield is a shield
+    // in every respect, and deliberately NOT passed to recordPowerup: it was
+    // not picked up off the floor, it cannot add a point, and a run reporting a
+    // power-up it never collected is one the server has to price for one.
+    const perkShields = perkShieldsPerMap(getEquippedBeagleSkinId(), this.gameKind);
+    for (let i = 0; i < perkShields; i++) collectPowerup(this.powerups, "shield");
+    if (perkShields > 0) this.syncPowerupHud();
 
     this.resetActors();
     this.mode = "ready";
@@ -1931,6 +1964,14 @@ export class Game {
             this.shieldGrace = POWERUP_SHIELD_GRACE_SECONDS;
             this.reverseGhost(gh);
             this.effects.frightStarted();
+            // IDEA-064 v5: the bubble BURSTS rather than simply going out, and
+            // a cyan ring pops where the dog is standing. Without it the only
+            // local cue that the shield did its job is the grace blink, which
+            // is the same blink an ordinary respawn gives — so a saved life
+            // and a lost one looked alike at the moment they differ most.
+            const hit = entityWorld(this.beagle);
+            this.shieldBubble.burst();
+            this.effects.shieldBroke(hit.x, hit.z);
             this.sound.shieldBreak();
             this.syncPowerupHud();
             return;
@@ -2182,23 +2223,15 @@ export class Game {
     // IDEA-046: power-ups are RUN-scoped, so a fresh run starts with none. It
     // has always been effectively true here (losing the last life clears them
     // via powerupsOnDeath), but it was never STATED on this path, and IDEA-064
-    // now grants one immediately below — which must never land on top of the
+    // grants one in startLevel below — which must never land on top of the
     // previous run's holdings.
+    //
+    // Bagel's shield used to be granted HERE, once per run. It moved to
+    // startLevel in v4 (a shield every map), and this reset stayed: the tray
+    // still has to be emptied before map 1 opens, and it is the only thing
+    // standing between one run's leftover doublers and the next run's score.
     this.powerups = createPowerupState();
     this.shieldGrace = 0;
-
-    // IDEA-064: Bagel's perk. "classic" is passed as a literal rather than
-    // read off this.gameKind because gameKind is only set to classic further
-    // down the call chain (startLevel), so at this point it may still say
-    // "challenge" from the run before — and this method IS the one way a
-    // classic run begins.
-    //
-    // Granted through powerups.ts's own collect() so a perk shield is a shield
-    // in every respect, and deliberately NOT passed to recordPowerup: it was
-    // not picked up off the floor, it cannot add a point, and a run reporting a
-    // power-up it never collected is one the server has to price for one.
-    const shields = perkStartShields(getEquippedBeagleSkinId(), "classic");
-    for (let i = 0; i < shields; i++) collectPowerup(this.powerups, "shield");
     this.syncPowerupHud();
 
     // beginRunSession also resets telemetry — the other half of what the old
@@ -2736,6 +2769,20 @@ export class Game {
 
   private update(dt: number): void {
     this.effects.update(dt);
+
+    // IDEA-064 v5: the shield bubble, driven off the STATE rather than off the
+    // events that change it. Every appearance and disappearance is derived
+    // from this one edge, so no call site can grant, spend, clear or carry a
+    // shield over a map boundary and forget to tell the bubble — which is the
+    // failure the tray chip has had to be hand-synced against at seven sites.
+    // Excluded on the menu, where the game scene is not rendered at all, and
+    // on the game-over panel, which covers the board.
+    this.shieldBubble.update(
+      dt,
+      this.beagleMesh,
+      hasShield(this.powerups) && this.mode !== "start" && this.mode !== "over",
+    );
+
     switch (this.mode) {
       case "start": {
         // IDEA-021 v2: the game scene/HUD are hidden entirely behind the

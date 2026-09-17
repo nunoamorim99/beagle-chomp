@@ -99,11 +99,55 @@ html,body{height:100%;overflow:hidden;background:var(--bc-ink);color:var(--bc-te
    position:fixed elements ignore the body's own safe-area padding (that
    padding insets the body's *box*, not viewport-fixed descendants), so the
    inset has to be added directly here too — otherwise the stats sit flush
-   under a landscape notch/rounded corner on installed PWAs. */
-.hud{position:fixed;top:0;left:0;right:0;display:flex;justify-content:space-between;
-  align-items:flex-start;pointer-events:none;z-index:5;gap:var(--bc-s2);
+   under a landscape notch/rounded corner on installed PWAs.
+
+   IDEA-076: A COLUMN OF FULL-WIDTH LINES, not two columns of stacked chips.
+
+   The two-column version made every row as wide as the WIDEST thing in its
+   column, and IDEA-073's fourth chrome button made that column 200px — so on a
+   390px phone the left column was squeezed below the score chip's own width
+   and the home button wrapped onto a second line (measured: `.hud-buttons`
+   lines=2 at both 390x844 and 360x780, HUD height 228px against 176 at 414).
+   That is two of Nuno's three complaints from one cause.
+
+   Three full-width lines instead: score|map, coins|lives, chrome. Each line
+   has the whole screen to spend, so the button row and the score chip stop
+   competing for the same 362px, and the HUD's height stops depending on
+   whether the chips happened to fit. */
+.hud{position:fixed;top:0;left:0;right:0;display:flex;flex-direction:column;
+  align-items:stretch;pointer-events:none;z-index:5;gap:var(--bc-s2);
   padding:calc(var(--bc-gutter) + env(safe-area-inset-top)) calc(var(--bc-gutter) + env(safe-area-inset-right))
     var(--bc-gutter) calc(var(--bc-gutter) + env(safe-area-inset-left));}
+
+/* One HUD line: something at each end, nothing in between. `align-items:center`
+   rather than flex-start because the two chips on a line are NOT the same
+   height (the score chip carries a 30px plate, the map chip is type only) and
+   a line whose two ends have different baselines reads as two rows. */
+.hud-line{display:flex;justify-content:space-between;align-items:center;
+  gap:var(--bc-s2)}
+
+/* WIDE WINDOWS: THE CHROME ROW REJOINS THE CHIPS.
+
+   Three stacked lines is a PHONE answer — it exists because 200px of buttons
+   and a 196px score chip cannot both fit 362px of row. Above 600px they can,
+   and a HUD that is 180px tall instead of 128 on a screen with room to spare
+   costs something real: the power-up tray lives in the band between the HUD
+   and the board, and at 820x900 (portrait tablet, where the camera pulls the
+   board up to y=181) three lines left that band 1px deep.
+
+   Grid rather than a second flex arrangement, because what changes is which
+   CELL the chrome sits in, not how any line is laid out: the two lines keep
+   their own flex rule untouched and the button row moves from under them to
+   beside them, spanning both. Reading order is unchanged — score/map,
+   coins/lives — so nothing about the desktop HUD moves except the chrome. */
+@media (min-width:600px){
+  .hud{display:grid;grid-template-columns:minmax(0,1fr) auto;
+    grid-template-areas:"top tools" "mid tools";
+    align-items:center;column-gap:var(--bc-s4)}
+  .hud-line--top{grid-area:top}
+  .hud-line--mid{grid-area:mid}
+  .hud-buttons{grid-area:tools}
+}
 
 /* Every HUD readout is a SCRIM CHIP now.
 
@@ -119,13 +163,20 @@ html,body{height:100%;overflow:hidden;background:var(--bc-ink);color:var(--bc-te
 /* Chips with no plate in them (Map, Lives) don't need the left inset. */
 .hud-chip--tight{padding:9px 13px;gap:var(--bc-s2)}
 
-.stat{line-height:1.2}
+/* IDEA-076: the score reads ON ONE LINE — plate, the word SCORE, the figure —
+   at the map chip's own 22px, rather than as a stacked label over a 26px
+   figure. Nuno asked for both halves of that ("the score can have the same
+   size as map numeration, we can put the label score and in front in one
+   line"), and they are one change: a stacked chip is 56px tall against the map
+   chip's 46, so the two could never sit on a line together without one of them
+   looking like a block. Inline at 22px they are 48 and 46. */
+.stat{line-height:1.2;gap:var(--bc-s2)}
 .stat .k{font-family:var(--bc-font-mono);font-size:10px;letter-spacing:.2em;
-  text-transform:uppercase;color:rgba(255,247,232,.65)}
+  text-transform:uppercase;color:rgba(255,247,232,.65);white-space:nowrap}
 /* nowrap is load-bearing: the score is grouped with a thin space, which is a
    legal break opportunity, so a squeezed column broke "11 595" across two
    lines and doubled the chip's height. */
-.stat .v{font-family:var(--bc-font-display);font-weight:800;font-size:26px;
+.stat .v{font-family:var(--bc-font-display);font-weight:800;font-size:22px;
   line-height:1;color:var(--bc-cream);font-variant-numeric:tabular-nums;
   white-space:nowrap}
 /* Map is a single figure with an inline label rather than a stacked block —
@@ -136,11 +187,15 @@ html,body{height:100%;overflow:hidden;background:var(--bc-ink);color:var(--bc-te
    The figure is NOT one character wide any more (IDEA-061): the map number is a
    running count that never resets, so it is two digits for most of a long run
    and three past Map 99. Measured at 390px — chip 75.5px at "5", 88.7 at "30",
-   92.8 at "115" — and the row keeps all of them on one line. "Bonus" is 94.9px,
-   wider than any of them, so a numbered map can never be what wraps this row.
-   Below 390 a three-digit figure wraps, which is the same fallback "Bonus" has
-   always taken there (see .hud-row). scripts/test-progression-ui.ts asserts the
-   390px case. */
+   92.8 at "115". "Bonus" is the widest label of all at ~103px, so a numbered
+   map can never be the thing that overflows this line.
+
+   IDEA-076 gave the map chip a whole LINE to share with the score rather than
+   a column to share with the lives chip, which is what retired the old
+   wrap-to-a-second-row fallback: measured at 390px the two together are 174 +
+   8 + 103 = 285 of 362, and at 360 they are 285 of 332. There is no width at
+   which they need to wrap, so nothing here wraps any more.
+   scripts/test-progression-ui.ts asserts both framings. */
 .hud-chip--tight .k{font-family:var(--bc-font-mono);font-size:10px;letter-spacing:.2em;
   text-transform:uppercase;color:rgba(255,247,232,.65)}
 .hud-chip--tight .v{font-family:var(--bc-font-display);font-weight:800;font-size:22px;
@@ -151,29 +206,24 @@ html,body{height:100%;overflow:hidden;background:var(--bc-ink);color:var(--bc-te
    first run and the chip can never resize mid-run.
 
    18px rather than 22: five hearts at 22 made the right column 245px wide,
-   which ran 12px past the screen edge at 390 and much further at 360. */
-/* Five hearts plus the map chip have to share ONE line at 390px, and the
-   budget is exact: 362px of row, 157 for the score column, 8 of gap, leaving
-   197. Map is 75 and the gap 8, so lives gets 114. At 16px/gap 3/padding 10
-   it measured 118 and the row wrapped — hence gap 2 and padding 8. */
+   which ran 12px past the screen edge at 390 and much further at 360.
+   The chip measures 110px at 16px/gap 2/padding 8, and since IDEA-076 it
+   shares its line with the coin wallet (98px) rather than with the map chip —
+   208 of 362 at 390px, so it has room it never had before. */
 .lives{display:flex;align-items:center;gap:2px;font-size:16px;padding:10px 8px}
 .lives .bc-i{color:var(--bc-rose)}
 .lives .life-spent{color:rgba(255,247,232,.22)}
 
-/* The coin wallet — the same chip as Score, one step smaller, so it reads as
-   a secondary/currency stat rather than a fourth peer. Grouped with Score in
-   .hud-left so it counts as ONE item in the .hud space-between row, keeping
-   Score/Map/Lives exactly as balanced as before. */
-.hud-left{display:flex;flex-direction:column;align-items:flex-start;gap:var(--bc-s2)}
-/* The right column: map + lives on top, chrome underneath, both right-aligned
-   so the column has one edge however wide its rows are. */
-.hud-right{display:flex;flex-direction:column;align-items:flex-end;gap:var(--bc-s2)}
-/* Wraps. The lives chip is a fixed FIVE hearts wide now (it draws the whole
-   ceiling and dims what you have not earned), which fits beside the map chip
-   at 390px but not at 360 — so on a narrow screen lives drops to its own line
-   above the chrome row rather than running off the right edge. */
-.hud-row{display:flex;align-items:flex-start;justify-content:flex-end;
-  flex-wrap:wrap;gap:var(--bc-s2)}
+/* IDEA-076: the score's plate comes down from the shared 38px `--hud` size to
+   32. It is still the biggest plate in the HUD (the wallet's is 26), and it is
+   what makes the chip 50px tall against the map chip's 46 — at 38 the chip was
+   56 and read as a block beside the map rather than as the other end of a
+   line. It also buys 6px of the band the power-up tray lives in.
+
+   `:not(.coin-stat)` rather than letting source order decide: the wallet is a
+   `.stat` too and its own plate rule has the SAME specificity, so this would
+   otherwise be one of those rules that is correct until somebody moves it. */
+.stat:not(.coin-stat) .bc-plate{width:32px;height:32px;border-radius:10px;font-size:20px}
 
 /* The wallet: plate plus figure, no word. One step smaller than Score, so it
    reads as a secondary/currency stat rather than a second headline. */
@@ -181,29 +231,33 @@ html,body{height:100%;overflow:hidden;background:var(--bc-ink);color:var(--bc-te
 .coin-stat .v{font-size:17px}
 .coin-stat .bc-plate{width:26px;height:26px;font-size:17px;border-radius:8px}
 
-/* IDEA-036 v2: mute/pause/home as a HORIZONTAL row sharing the COIN ROW's
-   line. The old vertical stack cost ~120px of height and pushed the maze
-   down — worst on a phone, and worse still with the D-pad taking the bottom.
-   The right half of the coin row is empty (the coin chip only reaches
-   x≈150 on a 390px screen), so the buttons cost the board no extra height at
-   all. Positioning is delegated to the flex row. */
+/* IDEA-036 v2: mute/pause/home as a HORIZONTAL row rather than a vertical
+   stack, which cost ~120px of height and pushed the maze down — worst on a
+   phone, and worse still with the D-pad taking the bottom. */
 .hud-buttons{
-  /* A plain row in the right column now. It used to be position:fixed at a
-     measured offset, purely to stay out of .hud’s three-way space-between —
-     which meant re-measuring it whenever anything above it changed height, and
-     ignoring the safe-area inset .hud already applies. */
-  /* IDEA-073 made this FOUR buttons - effects mute, ambience mute, pause,
-     home - taking the row from 148px to 200px.
-     MEASURED rather than reasoned about, because this row is on a documented
-     4px budget and every failure in it has been geometry
-     (scripts/_scratch-hud-band.ts, which measures WITH the new button and
-     again with it hidden): the four stay on ONE line at 360, 390, 414,
-     landscape and desktop, the HUD's own height does not move off 134px, and
-     the map/lives row beside it is unchanged. So no wrap is needed and none
-     happens - `flex-wrap` is here only so that a FIFTH button degrades into a
-     second line instead of pushing itself off the screen, and
-     justify-content:flex-end is what keeps it hard against the right edge if
-     it ever does. */
+  /* IDEA-076: ITS OWN FULL-WIDTH LINE, and that is what fixed the wrap.
+
+     IDEA-073 made this FOUR buttons — effects mute, ambience mute, pause,
+     home — taking the row from 148px to 200px, and recorded that the four
+     stayed on one line at every framing. They did not. That measurement came
+     from `scripts/_scratch-hud-band.ts`, whose synthetic worst case injected
+     raw <i> hearts and measured them BEFORE the icon font resolved, so five
+     hearts reading the word "favorite" spanned 279px instead of 110 — the
+     inflation that instrument recorded and could not explain. With the layout
+     that far out of shape the button row was never measured in its real
+     context at all.
+
+     Measured properly (`scripts/_scratch-hud-rows.ts`, which awaits
+     `document.fonts.ready`): in the old two-column HUD the home button wrapped
+     onto a line of its own at BOTH 390x844 and 360x780, taking the HUD from
+     176px tall to 228 — because the left column wanted 174px, this row wanted
+     200, and 174 + 8 + 200 is 382 against 362 of usable width.
+
+     A full-width line has no such competition: 200px of buttons against 362,
+     and 332 at 360px. `flex-wrap` stays only so a FIFTH button would degrade
+     into a second line rather than push itself off the screen, and
+     justify-content:flex-end is what keeps the row hard against the right edge
+     if it ever does. */
   display:flex;flex-direction:row;flex-wrap:wrap;justify-content:flex-end;
   align-items:center;gap:var(--bc-s2);
   /* The row must not intercept taps meant for the maze behind it — only the
@@ -2375,7 +2429,11 @@ body.tutorial-open #mainMenu{display:none}
      The fallback covers the moment before the first observation lands, and any
      harness that renders this tray with no HUD behind it. */
   bottom:auto;
-  top:calc(var(--bc-hud-bottom, 96px) + var(--bc-s2));
+  /* --bc-s1, not --bc-s2 (IDEA-076): the tray is chrome and belongs against
+     the chrome, which is IDEA-070's own reasoning, and on a 360px phone with
+     all five power-ups held those four pixels are the difference between the
+     second line clearing the board and not. */
+  top:calc(var(--bc-hud-bottom, 96px) + var(--bc-s1));
   /* A ROW, centred under the maze, wrapping rather than overflowing. Each chip
      is sized to its own content — the floor width a vertical stack wanted made
      three chips wider than a phone. */
@@ -2398,20 +2456,37 @@ body.dpad-on{--bc-pad-block:var(--bc-dpad-block)}
 body.stick-on{--bc-pad-block:var(--bc-stick-block)}
 
 
+/* IDEA-076: A SIZE DOWN. Nuno: "the power ups the tags could be a little
+   smaller."
+
+   It is not a taste change — it is the second half of getting the tray out of
+   the maze, and the arithmetic is what decides how far to go. The tray has
+   exactly the band between the HUD and the board to live in, and how many
+   chips fit ACROSS decides how many LINES deep it is, which is what decides
+   whether it clears the board at all. At the old size four chips measured
+   122 + 115 + 73 + 73 = 383px against 362 of usable width on a 390px phone, so
+   four power-ups — Nuno's exact case — always wrapped to a second line.
+
+   THE NAME IS THE DOMINANT TERM, so that is where the width comes from:
+   9px rather than 10, and the .1em tracking dropped, which together take
+   "x2 Biscuits" from 77px to about 59 with no loss of legibility at arm's
+   length. The plate comes down 30 -> 26, which is what sets the chip's HEIGHT
+   (the stacked name + countdown is shorter than the plate), so a second line
+   costs 36px rather than 42 in the cases where one is still needed. */
 .powerup{position:relative;overflow:hidden;
-  display:flex;align-items:center;gap:6px;
+  display:flex;align-items:center;gap:5px;
   /* A chip with no countdown (a held power-up) is a plate in a box, so the
      padding has to be even rather than leaving a gap where a label was. */
-  padding:5px 9px 7px 5px;border-radius:var(--bc-r-plate);
+  padding:4px 8px 6px 4px;border-radius:var(--bc-r-plate);
   background:var(--bc-scrim);
   border:var(--bc-line) solid var(--pu,var(--bc-outline))}
-.powerup .bc-plate{width:30px;height:30px;border-radius:9px;font-size:18px;
+.powerup .bc-plate{width:26px;height:26px;border-radius:8px;font-size:16px;
   background:var(--pu,var(--bc-amber));color:var(--pu-ink,var(--bc-outline))}
 /* Name over countdown. Stacking rather than sitting side by side is what keeps
    the chip narrow, and chip width is what decides how many fit across a phone. */
-.powerup .name{font-family:var(--bc-font-mono);font-size:10px;letter-spacing:.1em;
+.powerup .name{font-family:var(--bc-font-mono);font-size:9px;letter-spacing:.06em;
   text-transform:uppercase;color:var(--bc-cream);white-space:nowrap;line-height:1.25}
-.powerup .time{display:block;font-family:var(--bc-font-mono);font-size:11px;
+.powerup .time{display:block;font-family:var(--bc-font-mono);font-size:10px;
   letter-spacing:0;text-transform:none;color:var(--bc-text-mute);
   font-variant-numeric:tabular-nums}
 /* The drain bar only exists for the timed ones. Its width IS the remaining
@@ -2425,17 +2500,28 @@ body.stick-on{--bc-pad-block:var(--bc-stick-block)}
 .powerup.expiring .bar{background:var(--bc-expiring)}
 .powerup.expiring .name,.powerup.expiring .time{color:var(--bc-expiring-ink)}
 
-/* NARROW PHONES (<400px). Five chips have to stay on ONE line here too, or the
-   row doubles in height and there is nowhere for the second line to go: with
-   the D-pad showing on a 360px screen the pad already overlaps the board, so
-   the tray is squeezing into space that does not exist. Measured at 360px:
-   344px of room, five chips plus four gaps, so 60px each. */
-@media (max-width:399px){
+/* PHONES (<=480px). The band between the HUD and the board is 84px at 390x844,
+   64 at 360x780 and 100 at 414x896 (IDEA-076 measured all three), so the tray
+   gets at most TWO lines here and wants one. Measured at 360px: 344px of room,
+   and four chips — Nuno's own case — plus three gaps have to fit it. They do:
+   100 + 95 + 63 + 63 + 12 = 333.
+
+   The threshold used to be 399px and is now 480, which takes in the large
+   phones (414, 430). They are not short of WIDTH — 414 has 398px of tray — but
+   at the full-size chips four of them measured 380 against 386 and wrapped to a
+   second line by six pixels, and a large phone's band is no deeper in
+   proportion than a small one's. The compact chip is the PHONE chip.
+
+   The letter-spacing goes to zero rather than the font going smaller again:
+   tracking is what a name at 9px can afford to lose, and 8px type at arm's
+   length on a moving screen is not a readout. */
+@media (max-width:480px){
   .powerups{left:calc(var(--bc-s2) + env(safe-area-inset-left));
     right:calc(var(--bc-s2) + env(safe-area-inset-right));gap:4px}
-  .powerup{gap:4px;padding:4px 7px 6px 4px}
-  .powerup .bc-plate{width:24px;height:24px;font-size:15px;border-radius:7px}
-  .powerup .time{font-size:11px}
+  .powerup{gap:4px;padding:3px 6px 5px 3px}
+  .powerup .bc-plate{width:22px;height:22px;font-size:14px;border-radius:7px}
+  .powerup .name{letter-spacing:0}
+  .powerup .time{font-size:10px}
 }
 
 /* SHORT VIEWPORTS (landscape phones). The board fills essentially the whole
@@ -2466,10 +2552,14 @@ body.stick-on{--bc-pad-block:var(--bc-stick-block)}
     left:calc(var(--bc-gutter) + env(safe-area-inset-left)
              + var(--bc-pad-block) + var(--bc-s2))}
   /* The compact chips again: at full-size the five of them reached x=370 and
-     the centred pad starts at x=347, so a left-aligned row still ran into it. */
-  .powerup{gap:4px;padding:4px 7px 6px 4px}
-  .powerup .bc-plate{width:24px;height:24px;font-size:15px;border-radius:7px}
-  .powerup .time{font-size:11px}
+     the centred pad starts at x=347, so a left-aligned row still ran into it.
+     Kept in lockstep with the narrow-phone block above (IDEA-076 took both
+     down a step) — these two exist for different reasons and have always
+     carried the same numbers. */
+  .powerup{gap:4px;padding:3px 6px 5px 3px}
+  .powerup .bc-plate{width:22px;height:22px;font-size:14px;border-radius:7px}
+  .powerup .name{letter-spacing:0}
+  .powerup .time{font-size:10px}
 }
 
 /* LANDSCAPE WINDOWS (desktop, and any window at least as wide as it is tall):

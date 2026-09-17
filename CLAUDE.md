@@ -51,6 +51,54 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v8.
   the raw path — see `server/src/http/metrics.ts` and `server/README.md` § Observability. The
   `[slow-query]` line at 200 ms is deliberately STACK.md §6's own Redis trigger, so **Redis stays
   deferred until that line actually appears, or a second replica exists** — not on a hunch.
+- **THE ADMIN PORTAL IS RESPONSIVE NOW, AND THE INTERESTING RULE IS ABOUT SVG TYPE**
+  (IDEA-075). Nuno, with a screenshot of a 1879px window: *"we have the screen only half the
+  screen, lets make this dashboard responsive and use all the screen and available to see in
+  all the devices."* The visible half was one declaration — `main` carried
+  `max-width: 1200px` with no auto margin, so the portal sat in 63% of a 1920px monitor and
+  47% of a 2560px one, pinned to the left. Measuring the rest first is what made it a pass
+  rather than a one-line diff. `npm run test:admin-ui` (312 checks, 7 framings x 8 tabs)
+  drives the real app with every API call stubbed — **no database and no API container** —
+  and was verified by re-injecting all four original defects and watching it fail on each.
+  Five rules are load-bearing.
+  1. **A FIXED-VIEWBOX SVG AT `width:100%` SCALES ITS OWN TYPE**, so a font-size in the
+     stylesheet is NOT the size on screen: `rendered = declared x (box / viewBox)`. One
+     value of 11px was rendering anywhere from **6.2px to 28px** depending on which column
+     the chart landed in, and both ends were already wrong on a 1280px laptop, long before
+     anything went full-width. Two levers and both are needed — a **max-width per chart
+     kind** (which is what makes a full-width shell survivable at all) and a **type bump
+     when the container is narrow**.
+  2. **THAT BUMP IS A CONTAINER QUERY, NOT A MEDIA QUERY, and that is the whole point:
+     the chart rendering smallest was not on a narrow SCREEN, it was in a three-up COLUMN
+     on a wide one.** A viewport query cannot see the case it has to fix. `.panel` carries
+     `container-type: inline-size` for it, which also makes the panel width independent of
+     its contents — a second guard against rule 3.
+  3. **A GRID ITEM TAKES `min-width: auto`, WHICH RESOLVES TO ITS MIN-CONTENT SIZE.** A
+     panel holding a nowrap eight-column table has a min-content of ~865px, so it refused
+     to shrink to its track and pushed the DOCUMENT wider than the viewport — seven of the
+     eight tabs overflowed a 390px phone sideways, the Difficulty tab by 475px, dragging
+     their own headings and prose out of frame. This had nothing to do with the 1200px cap
+     and would have survived fixing it. `min-width: 0` hands the overflow to `.scroll`.
+  4. **auto-FIT WHILE THERE IS A SENSIBLE AMOUNT OF ROOM, auto-FILL ONCE THERE IS TOO
+     MUCH.** The difference is what happens to tracks nothing occupies: auto-fit collapses
+     them and the items absorb the space, right at 1280 and absurd at 1920, where three
+     stat tiles each became 600px of empty card around a four-character number. Tables are
+     the same problem from the other side — `width: 100%` put 700px of brown between two
+     columns of a four-column table, so `table.data` sizes to CONTENT with a floor of
+     `min(100%, 760px)`.
+  5. **THE STICKY HEADER IS SWITCHED OFF ON PHONES, AND ITS QUERY NEEDS BOTH CLAUSES.**
+     Topbar and tabs are one `.shell-head` (they were siblings, so branding stuck and the
+     navigation scrolled away on tabs whose tables run several screens), sticky above
+     700px wide AND 560px tall. On a phone header-plus-two-rows-of-tabs is a fifth of the
+     viewport; at 844x390 landscape it would be a third — which is why the suite checks an
+     844px-WIDE framing expecting a STATIC header.
+  Prose is bounded where it is WRITTEN (`--prose: 92ch`), never by bounding the page.
+  `.scroll` draws its own scroll shadow, because Chrome's overlay scrollbars show nothing
+  at rest and a phone reader has no way to know four of eight columns are past the edge.
+  The suite's thresholds are bounded at BOTH ends on purpose: a "nothing is too small"
+  check passes happily on a chart that is far too big, and on a hidden element measuring
+  zero. Its own framing table was wrong once before the code was — suspect the instrument
+  first.
 - **The FRUIT is a LADDER, not a flat 100** (IDEA-045): five fruits — apple 100,
   banana 200, carrot 300, strawberry 400, mango 500 — on a weighted roll
   (`FRUITS` in `config.ts`, `rollFruit` in `fruits.ts`), four per map instead of
@@ -91,10 +139,10 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v8.
   REQUIRED, the five are distinct, and the mapping is an identity of the coat
   (`cosmetics.ts`) while the magnitudes are balance numbers
   (`config.ts`'s `BEAGLE_PERKS`). **`src/game/perks.ts` is the only thing
-  allowed to join them** — Bagel opens each RUN holding a shield, Cookie grants
-  a life at the start of every MAP, Muffin doubles every coin pickup, Pepper
-  adds 100 to every fruit, and the Pac-Beagle's perk is paid at the till (it
-  unlocks the Ghost and the Arcade Night board). Seven rules:
+  allowed to join them** — Bagel opens every MAP holding a shield, Cookie
+  grants a life at the start of every MAP, Muffin doubles every coin pickup,
+  Pepper adds 100 to every fruit, and the Pac-Beagle's perk is paid at the till
+  (it unlocks the Ghost and the Arcade Night board). Nine rules:
   1. **PERKS ARE CLASSIC ONLY, and that rule lives in ONE function.** Every
      accessor in `perks.ts` takes the run's `kind` and returns the NEUTRAL
      value for a challenge run — there is no way to ask without saying which
@@ -120,14 +168,83 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v8.
      every respect, and deliberately not passed to `recordPowerup` — it was not
      picked up off the floor, it cannot add a point, and a challenge run
      reporting a power-up is rejected outright.
-  5. **THE FREE COAT HAS A REAL PERK ON PURPOSE.** Bagel is what every player
+  5. **THAT SHIELD IS PER MAP, AND IT COSTS THE VALIDATOR NOTHING** (v4, Nuno:
+     *"lets make this beagle have a shield in every map"*). It was once per run
+     in v1, which is the other honest reading of "starts with a shield" and the
+     weaker one: one map's protection across a thirty-map classic run stops
+     mattering by map three, where one per map is a coat you keep choosing. The
+     grant moved from `startClassicRun` to `startLevel`, where it now sits
+     beside Cookie's life — the two perks are the same rule wearing two coats,
+     and both read `this.gameKind`, which `startLevel` sets to `"classic"` on
+     its first line. Two things fall out of it:
+     - **STACKING IS UNREPRESENTABLE RATHER THAN CLAMPED.** A shield is
+       `untilHit`, so it SURVIVES a cleared map (IDEA-046's asymmetry), and
+       `collect` REFRESHES a power-up already held instead of pushing a second.
+       A player who reaches map 4 unhit is therefore holding exactly one shield,
+       not four, with no guard anywhere. Raising `shieldsPerMap` above 1 would
+       break that silently — the second would queue behind the first — which is
+       why `test-perks.ts` pins the number and says why.
+     - **THE SERVER NEEDED NO CHANGE AT ALL**, and it is worth knowing which
+       perks have that property. The shield absorbs a hit; it adds no point,
+       grants no life and is never reported as a collected power-up, so
+       `perksFor` has nothing to widen for it. The same move on Cookie's life
+       would have been a bound (`LIVES_IMPOSSIBLE` is per level PLAYED) and a
+       `npm run sync`. Dying does NOT refill it either: the cadence is the MAP,
+       exactly as Cookie's is.
+     The perk id and the balance key were renamed with it — `shieldPerMap` /
+     `BEAGLE_PERKS.shieldsPerMap` / `perkShieldsPerMap`, matching
+     `extraLifePerMap` field for field, because the two now answer the same
+     question and a `startShield` sitting beside them would be the only name in
+     the file that no longer described when it fires.
+  6. **THE FREE COAT HAS A REAL PERK ON PURPOSE.** Bagel is what every player
      starts on; a blank slot there would make "beagles have powers" something
      you only discover after spending 25 coins.
-  6. **THE FLEA IS THE DEFAULT ENEMY SKIN** and the beetle is now a 25-coin
+  7. **THE FLEA IS THE DEFAULT ENEMY SKIN** and the beetle is now a 25-coin
      sibling. The enemy a player meets before buying anything should say what
      THIS game is, and a flea belongs on the dog in a way a beetle in a garden
      does not.
-  7. **CHANGING `DEFAULT_ENEMY_SKIN_ID` IS A MIGRATION, and it was missed
+  8. **A HELD SHIELD IS DRAWN ON THE DOG** (v5, Nuno: *"can we add something
+     visual? Like a buble around the beagle... this way we have a visual
+     indicator"*). `src/render/shieldBubble.ts` carries the full reasoning;
+     four things are worth knowing from here.
+     - **A SPHERE THAT CONTAINS THE BEAGLE IS WIDER THAN THE CORRIDOR.**
+       Measured from vertices (`scripts/_scratch-beagle-bounds.ts`), the dog is
+       0.453 x 0.866 x 0.908 and its tightest enclosing sphere has radius
+       0.553 about y = 0.43 — **1.106 tiles**, against a corridor of one. So
+       the bubble is an ELLIPSOID AIMED ALONG THE DOG'S HEADING: narrow across
+       the corridor, where there is no room, long along it, where there is.
+       The clearance is not uniform either, because IDEA-068's hedge bulges
+       OUTWARD with height (`0.105 * t^1.7`), so the tightest gap (0.055) is
+       at the bubble's own widest point rather than at the floor.
+     - **A TRANSLUCENT SHELL ALONE IS A SMUDGE; THE RINGS ARE WHAT READ.**
+       IDEA-068's lesson at one more scale — at 18.6 CSS px a tile, a shape
+       does not carry and a hard VALUE STEP does. The first build was two
+       shells and rendered as a grey bloom that could have been the dog's own
+       shadow. It ships with two bright HORIZONTAL latitude rings (equator plus
+       one at 0.62 of the half-height, whose radius is DERIVED as
+       `sqrt(1 - h^2)` so it cannot drift off the shell). Horizontal because
+       this camera looks down 59 degrees: a horizontal circle reads face-on at
+       every heading, where a vertical one would swing from a wide ellipse to
+       an edge-on line as the beagle turned a corner — a state readout that
+       comes and goes with the direction of travel.
+     - **IT IS A SIBLING OF THE BEAGLE, NOT A CHILD.** That group breathes,
+       waddles, is scaled to nothing by the death animation and is strobed
+       invisible twelve times a second during the post-hit grace blink. The
+       bubble copies position and yaw and inherits none of it.
+     - **AND IT IS DRIVEN OFF `hasShield()`, NOT OFF THE EVENTS.** Every
+       appearance and disappearance is derived from that one edge in
+       `update()`, so no call site can grant, spend, clear or carry a shield
+       over a map boundary and forget to tell the bubble — the failure mode the
+       tray chip has to be hand-synced against at seven sites. It is
+       `MeshBasicMaterial`, unlit: the second deliberate exception to the
+       cel-shading rule after the eye glint, because a toon ramp would band a
+       bubble into three flat regions and the dark one reads as dirt on the
+       glass. Spent on a hit it BURSTS (`effects.shieldBroke`, a cyan ring at
+       the dog) rather than just going out — otherwise a shield that saved you
+       and a shield that ran out look identical. `powerups.ts` has advertised
+       `hasShield()` as being "for the HUD and for the beagle's bubble" since
+       IDEA-046 and the export sat unused for four releases.
+  9. **CHANGING `DEFAULT_ENEMY_SKIN_ID` IS A MIGRATION, and it was missed
      twice.** `001_init.sql` still defaulted `equipped_enemy_skin_id` and
      `owned_enemy_skin_ids` to **`'ghost'`** — written when the ghost WAS the
      default, and never moved when the beetle took over or when the flea did.
@@ -202,7 +319,25 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v8.
   the drift, `server/scripts/test-plausibility.ts` each perk in both directions,
   and **`scripts/test-beagle-perks-ui.ts` (`npm run test:perks-ui`) drives the
   REAL app** — which is what found the database defaults: no pure test can see
-  a column default, and every rule in `cosmetics.ts` was correct.
+  a column default, and every rule in `cosmetics.ts` was correct. v3 gave it a
+  SECOND map, through the dev-only `window.__game` hook
+  (`test-progression-ui.ts`'s own shortcut), because "the run opens shielded"
+  is the one assertion that would still have passed had the grant never moved.
+  v5 added the bubble's own three (it is in the scene, it is visible while a
+  shield is held, and it is ON the dog), plus the negative on Cookie — an
+  indicator that is always on indicates nothing. The shield's CYAN is
+  hand-copied between `hud.ts`'s tray chip and `shieldBubble.ts` because no
+  module is allowed to be imported by both (`hud.ts` may not reach `src/game`),
+  so `test-powerups.ts` reads both files as TEXT and fails on drift — the same
+  treatment `boardCodegen`'s palette fields get, and verified by flipping one
+  digit and watching it fail.
+  It also stopped waiting on **`networkidle`**: measured on this stack a cold
+  browser context leaves one Vite dep request (`workbox-window`) open
+  indefinitely, so the wait never returned on a page that was fully
+  interactive — and the `waitForSelector` that is the real readiness signal was
+  already on the line below it. The dev server also wants a navigation timeout
+  well past Playwright's 30s default here: a hard reload refetches the whole
+  module graph across a Windows bind mount.
   **THE TUTORIAL TEACHES THE FIVE POWERS, AND ITS LIST IS DERIVED** (v3). The
   carousel's seventh and last slide is the coat list, and every line in it is
   `BeagleSkin.perk.label` read off `cosmetics.ts` — the SAME string the shop
@@ -2782,6 +2917,94 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v8.
   and `npm run test:news-ui` (59 checks) drives the real card in every state,
   install row included — dispatching a real `beforeinstallprompt` the way
   `test-menu-ui.ts` does, so it exercises install.ts rather than a copy of it.
+- **THE GAME SCREEN IS THREE LINES NOW, AND THE TRAY GOT OUT OF THE MAZE**
+  (IDEA-076). Nuno, after a play session: *"the interface now have another
+  button and when the player have 4 power ups the tags of the power ups are
+  above the maze and make hard to play... the score can have the same size as
+  map numeration, we can put the label score and in front in one line the
+  score... Then below the coins and lives as it is. Below one row with the
+  controllers buttons but at this moment the home screen button are below the
+  sounds and play and pause button. Then below this row the power ups but the
+  power ups the tags could be a little smaller."* Three complaints; the first
+  two are ONE cause and the third is what that cause did to the tray.
+  1. **A TWO-COLUMN HUD MAKES EVERY ROW AS WIDE AS THE WIDEST THING IN ITS
+     COLUMN, AND THAT IS WHAT WRAPPED THE HOME BUTTON.** IDEA-073 put a fourth
+     squircle in `.hud-buttons` (148px -> 200), which sat in the right column
+     with map+lives; the left column wanted 174 for the score chip; 174 + 8 +
+     200 is 382 against 362 of usable width at 390px, so the columns shrank and
+     the button row wrapped. `.hud` is a COLUMN of full-width `.hud-line`s
+     instead — score|map, coins|lives, chrome — and each line has the whole
+     screen to spend. Measured: four buttons on ONE row at 360, 390 and 414,
+     and the HUD 228px tall -> **180**.
+  2. **THE SCORE IS INLINE AT THE MAP'S OWN 22px, AND THAT IS ONE CHANGE RATHER
+     THAN TWO.** A stacked label over a 26px figure is a 56px block and cannot
+     share a line with a 46px chip without reading as a block beside it; inline
+     at 22 they are 50 and 46. The plate came down 38 -> 32 with it (still the
+     biggest in the HUD; the wallet's is 26), which also buys 6px of band.
+     `.stat:not(.coin-stat) .bc-plate` rather than relying on source order —
+     the wallet is a `.stat` too and its own plate rule has the same
+     specificity.
+  3. **THE CHIP SIZE IS ARITHMETIC, NOT TASTE.** The tray lives in the band
+     between the HUD and the board, so how many chips fit ACROSS decides how
+     many LINES deep it is, which decides whether it clears the board at all.
+     THE NAME IS THE DOMINANT TERM in a chip's width — 9px with the .1em
+     tracking dropped takes "x2 Biscuits" from 77px to ~59 — and THE PLATE SETS
+     THE HEIGHT, because the stacked name+countdown is shorter than it. Four
+     chips went 383px (always two lines at 390) to **333**, clearing the board
+     by 42px at 390, 22 at 360 and 58 at 414. Five still take two lines, which
+     fit at 390 and 414 and overrun the board's AABB top corner by 20px at 360
+     — inside the one tile of margin `BOARD_CORNERS` carries, so still not over
+     a corridor. The tray's own offset went `--bc-s2` -> `--bc-s1` for the same
+     budget.
+  4. **THE PHONE CHIP BREAKPOINT IS 480px, NOT 399.** A 414px phone is not
+     short of WIDTH, but at the full-size chips four measured 380 against 386
+     and wrapped by six pixels, and a large phone's band is no deeper in
+     proportion than a small one's. The compact chip is the PHONE chip. The
+     landscape block's copy of those numbers is kept in lockstep with it.
+  5. **THREE LINES IS A PHONE ANSWER, SO IT STOPS AT 600px.** Above that the
+     chrome row rejoins the chips in a grid cell of its own (`grid-template-
+     areas:"top tools" "mid tools"`) and the HUD is **128px** — smaller than
+     the 134 it was before this pass. Without that, a portrait tablet at
+     820x900, where the camera pulls the board up to y=181, would have been
+     left a **1px** band for a 42px chip; it has 53. Nothing in the render
+     layer moved: `--bc-board-top` is unchanged.
+  **`scripts/_scratch-hud-rows.ts` IS THE INSTRUMENT**, and it was wrong three
+  times before the code was — which is this project's own standing rule, so
+  suspect it first.
+  - **PUBLISHING A CUSTOM PROPERTY AND READING A `calc()` THAT USES IT IN THE
+    SAME TASK GIVES YOU THE OLD VALUE.** Measured: `--bc-hud-bottom` read back
+    as **500px** on the tray element itself while `getComputedStyle(tray).top`
+    still read **104px** — the 96px fallback plus 8 — and two rAFs later read
+    508. `getBoundingClientRect()` does not flush it either. So setup and
+    measurement are two `page.evaluate` calls across a frame. Without that the
+    instrument reports the tray sitting under a 96px HUD that is actually 180
+    tall, which is a confident wrong answer about the one number the whole
+    feature turns on.
+  - **AWAIT `document.fonts.ready` BEFORE MEASURING ANYTHING HOLDING AN ICON.**
+    An unresolved ligature renders as the WORD: five hearts reading "favorite"
+    span **279px** against a real 110. That is exactly the inflation
+    `_scratch-hud-band.ts` recorded and could not explain — and it is why
+    IDEA-073's "the four buttons stay on ONE line at 360, 390, 414" was wrong.
+    With the layout that far out of shape the button row was never measured in
+    its real context at all.
+  - **"ON ONE LINE" IS VERTICAL OVERLAP, NEVER AN EQUAL `top`.** The two chips
+    on a line are different heights and `align-items:center` offsets the
+    shorter one, so comparing tops reports a correct line as two rows.
+  **AND `test-progression-ui.ts` HAD FOUR SEPARATE STALE THINGS IN IT**, all
+  pre-existing, which together made it un-runnable and one of which made it
+  lie: no `reducedMotion: "reduce"` on the context (so `click("#playBtn")` times
+  out on the bobbing card — it was the last browser suite in the project
+  missing it), `waitUntil: "networkidle"` (never returns here — `workbox-window`
+  stays open), an inner named arrow inside `page.evaluate` (esbuild's `__name`
+  helper, IDEA-074's trap), half its label assertions comparing `#level`'s
+  FIGURE against "Map 6" since IDEA-048 split the chip, and — the one that
+  matters — **the how-to-play carousel opens over the first run and
+  `body.tutorial-open` sets `.hud{display:none}`, so every HUD rect read 0x0
+  while the game ran perfectly.** The old assertion was
+  `Math.abs(chip.top - lives.top) < 4`, which PASSES on 0 - 0: it had been
+  measuring a hidden element and reporting a pass. Every check there is bounded
+  at both ends now, starting with a non-zero width.
+
 - **Input / UI / PWA**: `src/input/{touch,keyboard,dpad,stick}.ts`, `src/ui/{hud,sound,ambience,install}.ts`,
   `public/icons/*` (192, 512, 512-maskable).
 - **THERE ARE THREE TOUCH SCHEMES** (IDEA-049): swipe (default), the D-pad, and the

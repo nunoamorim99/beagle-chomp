@@ -208,10 +208,13 @@ export const LIFE_THRESHOLDS = [130] as const;
 // power-up (see game.ts's startClassicRun), so a challenge run can never report
 // one.
 export const BEAGLE_PERKS = {
-  /** Bagel: shields held at the start of a run. ONCE per run — spend it and it
-   *  is gone until the next one, which is what keeps the default coat's perk a
-   *  head start rather than a permanent safety net. */
-  startShields: 1,
+  /** Bagel: shields held at the start of EVERY map, the first one included —
+   *  the same cadence as Cookie's life below, because both coats answer the
+   *  same question: what do I open a map holding? One rather than a stack, and
+   *  the cap is structural rather than a number: powerups.ts's collect()
+   *  REFRESHES a power-up already held instead of pushing a second, so a shield
+   *  carried through a cleared map is topped up and never doubled. */
+  shieldsPerMap: 1,
   /** Cookie: lives granted at the start of EVERY map, the first one included —
    *  so a run opens on START_LIVES + this. Still bounded by LIVES.max, so the
    *  cap is what stops a long run becoming unlosable. */

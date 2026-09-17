@@ -80,7 +80,12 @@ function listHtml(): string {
 
 function composerHtml(): string {
   const d = editing;
+  // The composer and its preview share a .grid2, so on anything wider than
+  // about 1100px they sit side by side and you can see what you are writing as
+  // you write it — which is the whole point of a preview, and was impossible
+  // while they were stacked a screen apart. Below that they stack as before.
   return `
+  <div class="grid2">
   <section class="panel">
     <h2>${d.id ? "Edit note" : "Write a note"}</h2>
     <p class="sub">
@@ -126,6 +131,7 @@ function composerHtml(): string {
       <div id="p-body"></div>
     </article>
   </section>
+  </div>
 
   <section class="panel">
     <h2>Everything written</h2>

@@ -11,6 +11,15 @@
 // starts on four lives. Every one of those is a call site, and a call site that
 // was never added looks exactly like a feature that works.
 //
+// v4 added the one that needs a SECOND map: Bagel's shield is granted per MAP
+// rather than per run, so the check that matters is not "the run opens
+// shielded" (v2 already proved that and would still pass if the grant had
+// stayed in startClassicRun) but "map 2 opens shielded, having spent map 1's".
+// It jumps maps through the dev-only window.__game hook for the same reason
+// test-progression-ui.ts does — clearing a board honestly means eating every
+// biscuit on it, which is minutes of real play per map and depends on the bot
+// surviving, i.e. slow and flaky about something that is not the subject.
+//
 // It needs the real stack because sign-in is required before play and the
 // profile comes from the server.
 //
@@ -42,6 +51,59 @@ function ok(label: string, condition: boolean, detail?: unknown): void {
 function section(title: string): void {
   console.log(`\n${title}`);
 }
+
+/** The power-up tray, as the player reads it. */
+const heldPowerups = (page: Page): Promise<string[]> =>
+  page.$$eval("#powerups .powerup .name", (els) =>
+    els.map((e) => (e.textContent ?? "").trim()),
+  );
+
+/**
+ * Is the shield BUBBLE on screen, and where?
+ *
+ * Found by NAME rather than by shape: "the group in the scene with four mesh
+ * children" is a description that goes stale the first time the bubble gains
+ * or loses a ring.
+ */
+const bubbleState = (page: Page): Promise<{ found: boolean; visible: boolean; near: boolean } | null> =>
+  page.evaluate(() => {
+    const g = (window as unknown as { __game?: Record<string, unknown> }).__game;
+    if (!g) return null;
+    const anyG = g as unknown as {
+      rig: { scene: { getObjectByName(n: string): { visible: boolean; position: { x: number; y: number; z: number } } | undefined } };
+      beagleMesh: { position: { x: number; z: number } };
+    };
+    const b = anyG.rig.scene.getObjectByName("shield-bubble");
+    if (!b) return { found: false, visible: false, near: false };
+    const dx = b.position.x - anyG.beagleMesh.position.x;
+    const dz = b.position.z - anyG.beagleMesh.position.z;
+    return { found: true, visible: b.visible, near: Math.hypot(dx, dz) < 0.05 };
+  });
+
+/** Jump the running game to a classic map through the dev-only debug hook. */
+const gotoMap = (page: Page, levelIdx: number): Promise<boolean> =>
+  page.evaluate((idx) => {
+    const g = (window as unknown as { __game?: Record<string, unknown> }).__game;
+    if (!g) return false;
+    (g as unknown as { startLevel: (i: number) => void })["startLevel"](idx);
+    return true;
+  }, levelIdx);
+
+/**
+ * Empty the tray, standing in for the shield having absorbed a hit.
+ *
+ * Reaching into the state rather than driving a real catch is deliberate and
+ * bounded: powerups.ts's own suite owns what a shielded hit DOES (it is that
+ * module's whole reason to exist), and what is under test here is the GRANT
+ * cadence — that map 2 hands out a shield to a player who no longer has one.
+ */
+const clearPowerups = (page: Page): Promise<void> =>
+  page.evaluate(() => {
+    const g = (window as unknown as { __game?: Record<string, unknown> }).__game;
+    if (!g) return;
+    (g as unknown as { powerups: { active: unknown[] } }).powerups.active.length = 0;
+    (g as unknown as { syncPowerupHud: () => void })["syncPowerupHud"]();
+  });
 
 const uniqueName = (): string =>
   `pk${Date.now().toString(36)}${Math.floor(Math.random() * 1000)}`.slice(0, 20);
@@ -118,7 +180,12 @@ async function main(): Promise<void> {
   try {
     section("Sign up");
 
-    await page.goto(BASE_URL, { waitUntil: "networkidle" });
+    // NOT `networkidle`. Measured on this stack, a cold browser context leaves
+    // one Vite dep request (workbox-window) open indefinitely, so the page is
+    // fully interactive and the wait never returns — which reads as the app
+    // being broken. The selector below is the real readiness signal and was
+    // already here; the navigation wait was only ever standing in front of it.
+    await page.goto(BASE_URL, { waitUntil: "domcontentloaded", timeout: 90_000 });
     await page.waitForSelector("#authGate:not(.hidden)", { timeout: 20_000 });
     await page.waitForSelector("#signupForm");
     await page.fill("#signupUsername", username);
@@ -256,7 +323,7 @@ async function main(): Promise<void> {
 
     grantCoins(username, 500);
     // The wallet lives on the server; reload so the profile cache rehydrates.
-    await page.reload({ waitUntil: "networkidle" });
+    await page.reload({ waitUntil: "domcontentloaded", timeout: 90_000 });
     await page.waitForSelector("#mainMenu:not(.hidden)", { timeout: 20_000 });
     await page.click("#menuShopBtn");
     await page.waitForSelector("#shop:not(.hidden)", { timeout: 10_000 });
@@ -301,7 +368,7 @@ async function main(): Promise<void> {
     );
 
     // -----------------------------------------------------------------------
-    section("Bagel: a run opens holding a shield");
+    section("Bagel: EVERY map opens holding a shield");
 
     await page.click("#shopBackBtn");
     await page.waitForSelector("#mainMenu:not(.hidden)", { timeout: 10_000 });
@@ -318,6 +385,42 @@ async function main(): Promise<void> {
     // unearned ones, so a count of elements is the CAP, not the lives held.
     const bagelLives = await page.getAttribute("#lives", "aria-label");
     ok("Bagel starts on the usual three lives", bagelLives === "3 of 5 lives", bagelLives);
+
+    // IDEA-064 v5: the shield is now stated on the DOG as well as in the tray.
+    // Checked in the real app because the whole feature is a call site — the
+    // bubble module could be perfect and never be updated, and a bubble that is
+    // never updated looks exactly like one that was never built.
+    const bagelBubble = await bubbleState(page);
+    ok("the shield bubble exists in the scene", bagelBubble?.found === true, bagelBubble);
+    ok("…and it is on screen while the shield is held", bagelBubble?.visible === true, bagelBubble);
+    ok("…and it is on the dog, not parked at the origin", bagelBubble?.near === true, bagelBubble);
+
+    const hasHook = await gotoMap(page, 1);
+    if (!hasHook) {
+      console.log("  SKIP — window.__game is dev-only; the per-map grant needs it.");
+    } else {
+      await page.waitForTimeout(400);
+
+      // Map 2 WITHOUT having spent map 1's. A shield is `untilHit`, so it
+      // survives a cleared map and is still held here — and collect() refreshes
+      // rather than pushes, so the second grant must top it up, not stack.
+      const kept = await heldPowerups(page);
+      ok("carrying an unspent shield into map 2 leaves ONE, not two", kept.length === 1, kept.join(","));
+      ok("…and it is still the shield", kept[0]?.toLowerCase().includes("shield") === true, kept[0]);
+
+      // And the rule itself: spend it, and the next map hands out another. This
+      // is the whole of v3 — under v2 the tray would stay empty from here to
+      // the end of the run.
+      await clearPowerups(page);
+      const spent = await heldPowerups(page);
+      ok("a spent shield really leaves the tray empty", spent.length === 0, spent.join(","));
+
+      await gotoMap(page, 2);
+      await page.waitForTimeout(400);
+      const regranted = await heldPowerups(page);
+      ok("map 3 opens with a fresh shield", regranted.length === 1, regranted.join(","));
+      ok("…and it is the shield", regranted[0]?.toLowerCase().includes("shield") === true, regranted[0]);
+    }
 
     // -----------------------------------------------------------------------
     section("Cookie: a run opens on four lives and no shield");
@@ -341,8 +444,24 @@ async function main(): Promise<void> {
     const cookieLives = await page.getAttribute("#lives", "aria-label");
     ok("Cookie starts on four lives", cookieLives === "4 of 5 lives", cookieLives);
 
-    const cookieChips = await page.$$eval("#powerups .powerup", (els) => els.length);
-    ok("Cookie holds no shield — one coat, one perk", cookieChips === 0, cookieChips);
+    const cookieChips = await heldPowerups(page);
+    ok("Cookie holds no shield — one coat, one perk", cookieChips.length === 0, cookieChips.join(","));
+
+    // The other half of the readout: no shield, no bubble. An indicator that is
+    // always on indicates nothing.
+    const cookieBubble = await bubbleState(page);
+    ok("…and no bubble either", cookieBubble?.visible === false, cookieBubble);
+
+    // The per-map rule is now shared by two coats, so the "one coat, one perk"
+    // half has to hold on the second map too: Cookie takes another LIFE there
+    // and still no shield.
+    if (await gotoMap(page, 1)) {
+      await page.waitForTimeout(400);
+      const cookieLives2 = await page.getAttribute("#lives", "aria-label");
+      ok("Cookie's second map grants another life", cookieLives2 === "5 of 5 lives", cookieLives2);
+      const cookieChips2 = await heldPowerups(page);
+      ok("…and still no shield", cookieChips2.length === 0, cookieChips2.join(","));
+    }
 
     // -----------------------------------------------------------------------
     ok("no console errors along the way", consoleErrors.length === 0, consoleErrors.join(" | "));

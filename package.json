@@ -51,6 +51,7 @@
     "test:icon-font": "tsx scripts/test-icon-font.ts",
     "test:sw": "tsx scripts/test-service-worker.ts",
     "test:news-ui": "tsx scripts/test-news-ui.ts",
+    "test:admin-ui": "tsx scripts/test-admin-ui.ts",
     "test:menu-ui": "tsx scripts/test-menu-ui.ts",
     "test:stick-ui": "tsx scripts/test-stick-ui.ts",
     "test:perks-ui": "tsx scripts/test-beagle-perks-ui.ts",

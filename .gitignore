@@ -4,6 +4,8 @@ dist-ssr
 # IDEA-051: the metrics portal build — its own Cloudflare Pages project
 dist-admin
 dev-dist
+# Review screenshots written by scripts/_scratch-*.ts — evidence, not source.
+.scratch
 *.local
 .DS_Store
 .vite

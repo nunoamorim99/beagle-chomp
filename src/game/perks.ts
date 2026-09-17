@@ -58,21 +58,30 @@ function active(skinId: string, kind: RunKind, perk: BeaglePerkId): boolean {
 }
 
 /**
- * Shields the run starts holding (Bagel).
+ * Shields granted at the start of each MAP (Bagel) — the first map included, so
+ * a run opens holding one.
  *
- * ONCE per run, not per life and not per map: game.ts grants these in
- * startClassicRun, which is the one way a classic run may begin. Spend it and
- * it is gone, which is what leaves the rest of the run playing by the ordinary
- * rules — Nuno's words, "then follow the normal behaviour of the game".
+ * PER MAP, not per run and not per life (IDEA-064 v4, Nuno: "lets make this
+ * beagle have a shield in every map"). It was once per run first, and the two
+ * readings of "starts with a shield" are worth separating: one map's worth of
+ * protection across a whole classic run is a head start that stops mattering
+ * by map three, where one per map is a coat you keep choosing. Dying does NOT
+ * refill it — the cadence is the map, exactly as Cookie's life is, so the
+ * grant is spent by the first contact and the rest of that map plays by the
+ * ordinary rules.
  *
- * Granted through powerups.ts's own `collect`, so the shield behaves as a
- * shield in every respect, and deliberately NOT recorded in the run telemetry:
- * it was not picked up off the floor, it cannot add a point, and a run
- * reporting a power-up it did not collect is a run the server would have to
- * price for one.
+ * It cannot stack, and that is structural rather than clamped here: powerups.ts
+ * carries the shield as `untilHit`, which SURVIVES clearing a map, and its
+ * `collect` refreshes a held power-up rather than pushing a second — so a
+ * Bagel player who reaches map 4 unhit is holding one shield, not four.
+ *
+ * Granted through that same `collect`, so the shield behaves as a shield in
+ * every respect, and deliberately NOT recorded in the run telemetry: it was not
+ * picked up off the floor, it cannot add a point, and a run reporting a
+ * power-up it did not collect is a run the server would have to price for one.
  */
-export function perkStartShields(skinId: string, kind: RunKind): number {
-  return active(skinId, kind, "startShield") ? BEAGLE_PERKS.startShields : 0;
+export function perkShieldsPerMap(skinId: string, kind: RunKind): number {
+  return active(skinId, kind, "shieldPerMap") ? BEAGLE_PERKS.shieldsPerMap : 0;
 }
 
 /**

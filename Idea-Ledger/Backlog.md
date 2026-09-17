@@ -28,7 +28,7 @@ Living backlog of ideas. Two purposes:
   header now carries the before-table.
 
 ## Backlog (open ideas)
-> New registered ideas go here. Next free ID: IDEA-075
+> New registered ideas go here. Next free ID: IDEA-077
 > (054 went to the crab and 055 to the mosquito — built in parallel by two sessions, which is
 > why the ids were split up front rather than both taking the next free one. 056 and 057 are the
 > sushi pair, registered together because neither is buildable without the other as its
@@ -936,6 +936,36 @@ Living backlog of ideas. Two purposes:
     of the seven slides**: `#tutorial` justified its column to `flex-end`, so a card taller than
     the screen overflowed at the TOP, where a scroll container cannot reach it - the title and
     the copy were simply gone. It now overflows downward and scrolls.
+  - **v4** (2026-09-17) - **Bagel's shield is per MAP, not per run** (Nuno: "lets make this
+    beagle have a shield in every map"). v1 granted it once, in `startClassicRun`; it now sits
+    in `startLevel` beside Cookie's life, because the two coats answer the same question and
+    one map's protection across a thirty-map run stopped mattering by map three. It cannot
+    stack and needs no guard to stop it: a shield is `untilHit`, so it survives a cleared map,
+    and `collect` refreshes a held power-up rather than pushing a second - an unhit player
+    carries exactly one from map to map. **The server needed no change at all**, which is the
+    part worth recording: the shield adds no point, grants no life and is never reported as a
+    collected power-up, so `plausibility.ts` has nothing to widen for it - where the same move
+    on Cookie's life would have been a bound and a `npm run sync`. The perk id and its balance
+    key were renamed to `shieldPerMap` / `shieldsPerMap` to match `extraLifePerMap`. The
+    browser suite gained a SECOND map (through the dev-only `window.__game` hook), since "the
+    run opens shielded" is the one check that would have passed even if nothing had moved.
+  - **v5** (2026-09-17) - **a held shield is now drawn on the dog** (Nuno: "can we add
+    something visual? Like a buble around the beagle... this way we have a visual indicator").
+    `src/render/shieldBubble.ts`. Two measurements decided the shape. A sphere containing the
+    beagle is **1.106 tiles** across against a one-tile corridor, so it is an ellipsoid aimed
+    along the dog's heading - narrow where there is no room, long where there is. And two
+    translucent shells ALONE rendered as a grey smudge that could have been the dog's own
+    shadow, which is IDEA-068's lesson at one more scale: at 18.6px a tile a shape does not
+    read, a value step does. It ships with two bright horizontal latitude rings; horizontal
+    because this camera looks down 59 degrees, so they read face-on at every heading where a
+    vertical ring would vanish to a line every time the beagle turned a corner. The bubble is a
+    SIBLING of the beagle rather than a child (that group breathes, waddles, is scaled to
+    nothing by the death animation and strobes during the grace blink) and is driven off
+    `hasShield()` rather than off the events that change it, so no call site can forget it.
+    Spent on a hit it BURSTS with a cyan ring instead of just going out - a shield that saved
+    you and a shield that expired should not look alike. `powerups.ts` has advertised
+    `hasShield()` as being "for the HUD and for the beagle's bubble" since IDEA-046; the bubble
+    half had never been built and the export was unused for four releases.
 
 ### IDEA-062 — An editor you can actually finish a thing in 🔨
 - **Priority:** 🔴
@@ -1620,6 +1650,150 @@ Living backlog of ideas. Two purposes:
 
 ## Delivered ✅
 > Already in production. Do NOT delete. Each keeps its version history.
+
+### IDEA-076 — The game screen in three lines, and the tray off the maze ✅
+- **Priority:** 🔴
+- **Area:** ux
+- **Registered:** 2026-09-17
+- **Delivered:** 2026-09-17.
+- **Description:** Nuno, after a play session with [[IDEA-073]]'s fourth chrome button in:
+  *"the interface now have another button and when the player have 4 power ups the tags of
+  the power ups are above the maze and make hard to play. So lets make some adjustments
+  like the score can have the same size as map numeration, we can put the label score and
+  in front in one line the score, the maps still on the top right but now score and map is
+  one line the top line of the screen. Then below the coins and lives as it is. Below one
+  row with the controllers buttons but at this moment the home screen button are below the
+  sounds and play and pause button. Then below this row the power ups but the power ups
+  the tags could be a little smaller."*
+- **Notes:** three separate complaints, and the first two are ONE cause — the HUD's
+  two-column layout made every row as wide as the widest thing in its column, so
+  [[IDEA-073]]'s 200px button row and the 174px score chip were competing for 362px of
+  phone and the loser wrapped. The third is what that cost the power-up tray, which lives
+  in the band between the HUD and the board: the wrap took the HUD from 176px tall to 228
+  and left 36px of band for a 42px chip.
+- **Dependencies:** [[IDEA-048]], [[IDEA-046]], [[IDEA-069]], [[IDEA-070]], [[IDEA-073]]
+- **History:**
+  - **v1** (2026-09-17) — **three full-width lines, and four power-ups that fit one row.**
+    1. **THE HUD IS A COLUMN OF LINES, NOT TWO COLUMNS OF CHIPS.** score|map,
+       coins|lives, chrome. A full-width line has the whole screen to spend, so the
+       button row and the score chip stop competing for the same 362px and the HUD's
+       height stops depending on whether the chips happened to fit. Measured at 390x844:
+       the home button was on a second line and the HUD was **228px** tall; it is **180**
+       now, with all four buttons on one row at 360, 390 and 414.
+    2. **THE SCORE IS INLINE AT THE MAP'S OWN 22px**, which is both halves of what Nuno
+       asked for and one change: a stacked label over a 26px figure is a 56px block, and
+       a 56px block cannot share a line with a 46px chip without looking like a block.
+       Inline at 22 they are 50 and 46. The plate came down 38 -> 32 with it.
+    3. **THE CHIPS ARE A SIZE DOWN, AND THE ARITHMETIC IS WHAT SET IT.** The name is the
+       dominant term in a chip's width, so it went to 9px with the .1em tracking dropped;
+       the plate went 30 -> 26 (22 on a phone), which is what sets the chip's HEIGHT.
+       Four chips measured 383px against 362 of usable width and always wrapped; they
+       measure **333** and clear the board by 42px at 390, 22 at 360 and 58 at 414.
+       Five still take two lines, which now fit the band at 390 and 414 and overrun the
+       board's own AABB corner by 20px at 360 — inside the one tile of margin
+       `BOARD_CORNERS` carries, so still not over a corridor.
+    4. **THE PHONE CHIP BREAKPOINT WENT 399 -> 480px.** A 414px phone is not short of
+       WIDTH, but at the full-size chips four of them measured 380 against 386 and wrapped
+       by six pixels, and a large phone's band is no deeper in proportion. The compact
+       chip is the PHONE chip.
+    5. **WIDE WINDOWS KEEP A TWO-LINE HUD.** Three lines is a phone answer to a phone
+       problem; above 600px the chrome row rejoins the chips in a grid cell of its own and
+       the HUD is **128px** — smaller than the 134 it was before this pass. Without it a
+       portrait tablet at 820x900, where the camera pulls the board up to y=181, would
+       have been left a 1px band; it has 53.
+    Also: `--bc-board-top` is unchanged — nothing in the render layer moved.
+  - **Instrument:** `scripts/_scratch-hud-rows.ts` measures the four chips, the button
+    row, the HUD height, the band and the tray at six framings and any chip count
+    (`CHIPS=4`). It caught three of its own defects first, and the third is the one worth
+    keeping: **publishing `--bc-hud-bottom` and reading the tray's `top` in the SAME task
+    returns the value `calc()` had BEFORE the custom property moved** — measured, the
+    variable read back as 500px on the tray while `top` still read 104px (the 96px
+    fallback plus 8), and two rAFs later it read 508. So setup and measurement are two
+    calls across a frame. The other two: it inflated the lives chip to 279px by measuring
+    injected hearts before `document.fonts.ready` (the same inflation
+    `_scratch-hud-band.ts` recorded and could not explain — which is why IDEA-073's
+    "the four fit on one line" was wrong), and it compared chip TOPS to decide whether
+    two chips shared a line, which `align-items:center` makes false for two chips of
+    different heights.
+  - **Four stale things fixed in `test-progression-ui.ts`**, all pre-existing and all
+    making the suite un-runnable: no `reducedMotion` on the context (so `click("#playBtn")`
+    timed out on the bobbing card — the last browser suite in the project still missing
+    it), `waitUntil: "networkidle"` (which never returns here — `workbox-window` stays
+    open), an inner named arrow inside `page.evaluate` (esbuild's `__name` helper), and
+    the map/lives assertion itself, which now checks that map shares the TOP line, lives
+    the one below it, and the chrome row sits under both.
+
+### IDEA-075 — The dashboard was using half the screen, and none of a phone ✅
+- **Priority:** 🟡
+- **Area:** ux · tooling
+- **Registered:** 2026-09-17
+- **Delivered:** 2026-09-17.
+- **Description:** Nuno, with a screenshot of the Overview tab on a 1879px window:
+  *"On the dashboard admin page we have the screen only half the screen, lets make this
+  dashboard responsive and use all the screen and available to see in all the devices the
+  admin dashboard."*
+- **Notes:** the visible half of the complaint was one declaration — `main` carried
+  `max-width: 1200px` with no auto margin, so the portal sat in 63% of a 1920px monitor
+  and 47% of a 2560px one, pinned to the left edge. Measuring the other half first is
+  what made this worth a whole pass rather than a one-line diff: **seven of the eight
+  tabs overflowed a 390px phone sideways**, and every chart on the page was rendering its
+  type at a size nobody had chosen.
+- **Dependencies:** [[IDEA-051]], [[IDEA-052]], [[IDEA-039]]
+- **History:**
+  - **v1** (2026-09-17) — **full-width shell, no sideways scroll on a phone, and chart
+    type that lands in the same range at every framing.** Five things, and only the first
+    is the one that was asked for.
+    1. **THE CAP IS GONE, NOT RAISED.** There is no `max-width` on `main` at all: the
+       panels reflow into more columns as the screen grows, so width buys COLUMNS rather
+       than longer lines. `.grid2` goes 2-up at 1280 and 3-up at 1920 on the Content tab.
+       The one thing that must NOT stretch is prose, which is bounded by `--prose: 92ch`
+       where it is written rather than by bounding the page.
+    2. **A GRID ITEM TAKES `min-width: auto`, WHICH IS ITS MIN-CONTENT SIZE.** A panel
+       holding a nowrap eight-column table has a min-content of ~865px, so it refused to
+       shrink to its track and pushed the whole document wider than a 390px viewport —
+       dragging its own heading and prose out of frame with it. Seven tabs did this;
+       measured, the Difficulty tab was **475px wider than the phone it was on**. This
+       had nothing to do with the 1200px cap and would have survived fixing it.
+       `min-width: 0` on the grid children hands the overflow to `.scroll`, which exists
+       for exactly that.
+    3. **A FIXED-VIEWBOX SVG AT `width:100%` SCALES ITS OWN TYPE, so a size in the
+       stylesheet is not the size on screen** — `rendered = declared x (box / viewBox)`.
+       One value of 11px was rendering between **6.2px and 28px** depending on which
+       column the chart landed in, and both ends were already wrong on a 1280px laptop,
+       long before anything went full-width. Two levers, both needed: a **max-width per
+       chart kind** (which is what makes a full-width shell survivable at all), and a
+       **type bump when the container is narrow**. The second is a CONTAINER query, not a
+       media query, and that is the load-bearing part: **the chart that rendered smallest
+       was not on a narrow screen, it was in a three-up column on a wide one**, so a
+       viewport query cannot see the case it needs to fix. Charts now land 11.1–15.4px
+       at every one of seven framings.
+    4. **auto-FIT WHILE THERE IS A SENSIBLE AMOUNT OF ROOM, auto-FILL ONCE THERE IS TOO
+       MUCH.** The difference is what happens to tracks nothing occupies: auto-fit
+       collapses them and the tiles absorb the space, which is right at 1280 and absurd
+       at 1920, where the Health tab has three tiles and each became 600px of empty card
+       around a four-character number. Tables got the same treatment from the other side
+       — `width: 100%` stretched a four-column table across an 1850px panel and put
+       700px of brown between PERK and RUNS, so they size to CONTENT with a floor.
+    5. **THE TABS JOINED THE STICKY HEADER, AND THE HEADER LEFT THE PHONE.** They were
+       siblings, so the branding stuck and the navigation scrolled away — on Health,
+       whose tables run several screens. They are one `.shell-head` now, sticky above
+       700px wide AND 560px tall, static below: on a phone the header plus two rows of
+       tabs is a fifth of the viewport, and on a 844x390 landscape it would be a third.
+       That query needs both clauses, which is why the suite checks a 844px-WIDE framing
+       expecting a STATIC header.
+    Also: the News composer and its preview now share a `.grid2`, so above ~1100px you
+    can see what you are writing as you write it — the point of a preview, and impossible
+    while they were stacked a screen apart. And `.scroll` draws its own scroll shadow,
+    because Chrome's overlay scrollbars show nothing at rest and a phone reader has no
+    way to know four of the eight columns are past the edge.
+    **`npm run test:admin-ui` (312 checks, 7 framings x 8 tabs) is the instrument and the
+    guard.** It drives the real app with every API call stubbed — no database, no API
+    container — and it was **verified by re-injecting all four original defects and
+    watching it fail on each**. Its thresholds are bounded at BOTH ends on purpose: a
+    "nothing is too small" check passes happily on a chart that is far too big, and on a
+    hidden element measuring zero. Its own framing table was wrong once (it expected a
+    768px tablet to be non-sticky when the breakpoint is 700px) — the instrument, not the
+    code, which is the thing to suspect first here.
 
 ### IDEA-074 — Ask for the notification, and tell everyone the board moved ✅
 - **Priority:** 🟡
