@@ -25,7 +25,7 @@ the safety net for the trickiest logic and run without a browser.
 - Balance numbers live in `src/game/config.ts`. Don't scatter magic numbers.
 
 ## What is BUILT (do not rewrite lightly)
-The full game is built, shipped, and deployed (playable since v1.0; **now on v8.0 "Paying Attention"**).
+The full game is built, shipped, and deployed (playable since v1.0; **now on v9.0 "A New Look"**).
 
 **v5.0 made this a full-stack app.** It is no longer a static offline PWA:
 - **Frontend** — `beaglechomp.nunoamorim.dev` (Cloudflare Pages). Needs `VITE_API_URL` at build time.
@@ -33,7 +33,7 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v8.
   deployed by Dokploy from this same repo — see `server/README.md` and root `STACK.md`).
 - **Sign-in is required before play.** `src/main.ts` awaits the auth gate before `new Game()` exists;
   there is no guest mode. `profileStore.ts` kept all 19 synchronous signatures but now reads an
-  in-memory cache hydrated from the server, so `game.ts`/`shop.ts`/`levelMap.ts` were untouched.
+  in-memory cache hydrated from the server, so `game.ts`/`shop.ts`/the journey map were untouched.
 - **Scores are server-validated** (`server/src/validation/plausibility.ts`, pure + heavily tested).
   Reading a submission off the wire is `validation/wire.ts` — also pure, and pure ON PURPOSE:
   it used to live in `scoreService.ts`, which opens a Postgres pool on import, so no DB-free
@@ -716,61 +716,47 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v8.
      `challenge_progress` to 0** (Nuno's call): the stored number means "levels
      of the ladder cleared" and the ladder was rebuilt underneath it, so leaving
      it would relabel eight hard-won twist clears as eight easy tour ones.
-  **THE LEVEL MAP GREW A CHAPTER RAIL, AND ONE OLD BUG ONLY 40 STONES COULD
-  FIND.** `CHALLENGE_CHAPTERS` (in `journey.ts`, DERIVED from
-  `TOUR_LEVEL_COUNT` so a new maze cannot leave a stone with no chapter) is six
-  tour stages of five — matching classic's own `MAPS_PER_STAGE`, so "stage 4"
-  means the same five mazes in both modes — plus one twist chapter of ten.
-  Four things:
-  - **A LOCKED STONE IS SELECTABLE** (v2, Nuno). `selectNode` used to
-    early-return on one, so for a new player thirty-nine of the forty levels
-    were padlocks with nothing behind them — on the screen whose whole job is
-    now showing what the game contains. Tapping one fills the panel with its
-    name, blurb, theme and twists; only `playSelected` still refuses. It is
-    therefore NOT `aria-disabled` (it is a control that does something) and NOT
-    `tabindex="-1"`; what it cannot do is said on the disabled Play button,
-    which reads **"Clear stone N first"** — unlocking is strictly sequential, so
-    `progress + 1` is the one fact a disabled "Play stone 27" leaves the player
-    to work out for themselves.
-  - **The rail SCROLLS, it never SELECTS.** Selection arms the Play button, and
-    a chip that did both would let a player tap "jump to stage 4" then "Play
-    stone 16" without ever having looked at stone 16. Looking ahead at a locked
-    chapter is exactly what the screen is for, so a locked chip is dimmed by
-    PAINT and still clickable.
-  - **A STONE'S FACE IS CENTRED BY A MEASURED `dy`, NEVER BY
-    `dominant-baseline`** (v2, Nuno: the padlocks are not in the middle of their
-    dots). `dominant-baseline="middle"` offsets by half the X-HEIGHT, a Latin
-    typography notion an ICON font has no opinion about. Baloo 2's digits landed
-    within a third of a pixel of centre that way, so the numbers looked right and
-    the construction looked correct — while the padlock, whose ink spans nearly
-    the whole em box, sat ~4px high on a 40px stone. `scripts/_scratch-glyph-center.ts`
-    draws each glyph into a 2D canvas and scans the alpha channel for its real
-    ink box: the padlock runs -0.985em to -0.055em off the baseline (so
-    `dy="0.52em"`) and the digits -0.605em to +0.005em (`dy="0.3025em"`). In EM
-    so it tracks font-size — a two-digit stone already renders smaller. That
-    script also carries its own cautionary tale: `parseFloat("700 200px ...")`
-    returns the WEIGHT, and the first run reported a full-em glyph as 0.27em
-    with four decimal places of confidence.
-  - **A chip click must NOT call `render()`.** `render()` ends by scrolling the
-    SELECTED node into view, so re-rendering scrolls the trail straight back and
-    the jump looks like a dead button. Only the lit chip is written to the DOM.
-  - **`.map-page` had to become `flex:0 0 auto` on desktop.** It was
-    `flex:1 1 auto` inside a fixed-height `#levelMap`, i.e. exactly one viewport
-    tall while the trail overflowed it — and a sticky element cannot leave its
-    containing block, so past the first screen the sticky header AND the sticky
-    side panel both scrolled away, leaving a bare trail with no back button and
-    no Play. At 8 stones the trail was ~700px and the page barely scrolled, so
-    nothing ever tested it; at 40 it is ~4 000px.
-  - **The side panel's sticky offset is MEASURED, not a literal.** It was `72px`
-    — the height of a one-row header — and the rail's second row slid the
-    panel's own title under it. `levelMap.ts` publishes the header's measured
-    height as `--map-header-h` after every render; the header also grows when
-    the title wraps.
-  Node y positions are one precomputed TABLE (`NODE_Y`), not
-  `height - idx * spacing`, because the chapter gaps make the spacing
-  non-uniform and three readers (node, trail path, banner) must not each answer
-  "how many boundaries are below me" for themselves. `scripts/_scratch-levelmap-check.ts`
-  measures the rail, stones and panel at 390x844 and 1280x800;
+  **THE LADDER IS SHOWN AS AN ISLAND CHAIN NOW — see IDEA-079 below.**
+  `JOURNEY_CHAPTERS` (in `journey.ts`, DERIVED from `TOUR_LEVEL_COUNT` so a new
+  maze cannot leave a level with no chapter) is six tour stages of five —
+  matching classic's own `MAPS_PER_STAGE`, so "stage 4" means the same five
+  mazes in both modes — plus one twist chapter of ten. IDEA-063 built that
+  ladder as a scrolling SVG trail of stepping stones; **IDEA-079 replaced the
+  trail with a 3D archipelago and deleted `src/ui/levelMap.ts`, its ~65 CSS
+  rules and its chapter jump rail.** Three of its findings outlived it and are
+  the reason this paragraph is still here:
+  - **A LOCKED LEVEL IS SELECTABLE** (v2, Nuno), and the island map kept the
+    rule. Selection used to early-return on a locked stone, so for a new player
+    thirty-nine of the forty levels were padlocks with nothing behind them — on
+    the screen whose whole job is showing what the game contains. Tapping one
+    fills the panel with its name, blurb, theme and twists; only Play refuses,
+    and what it cannot do is said on the disabled button, which reads **"Clear
+    stone N first"** — unlocking is strictly sequential, so `progress + 1` is
+    the one fact a disabled "Play stone 27" leaves the player to work out for
+    themselves.
+  - **A GLYPH IS CENTRED BY A MEASURED `dy`, NEVER BY `dominant-baseline`**
+    (v2, Nuno: the padlocks are not in the middle of their dots).
+    `dominant-baseline="middle"` offsets by half the X-HEIGHT, a Latin
+    typography notion an ICON font has no opinion about. Baloo 2's digits
+    landed within a third of a pixel of centre that way, so the numbers looked
+    right and the construction looked correct — while the padlock, whose ink
+    spans nearly the whole em box, sat ~4px high on a 40px stone.
+    `scripts/_scratch-glyph-center.ts` draws each glyph into a 2D canvas and
+    scans the alpha channel for its real ink box: the padlock runs -0.985em to
+    -0.055em off the baseline (so `dy="0.52em"`) and the digits -0.605em to
+    +0.005em (`dy="0.3025em"`). In EM so it tracks font-size. That script also
+    carries its own cautionary tale: `parseFloat("700 200px ...")` returns the
+    WEIGHT, and the first run reported a full-em glyph as 0.27em with four
+    decimal places of confidence.
+  - **GOING PAST 8 LEVELS IS A MIGRATION, AND TWO COLUMNS BOUND IT** —
+    `users.challenge_progress` (CHECK 0..8) and, the dangerous one,
+    `game_sessions.challenge_idx` (CHECK 0..7), which is checked when a run
+    STARTS: without it, tapping Play on stone 9 fails at `beginRunSession` with
+    the error nowhere near the level map that produced the index.
+    `010_challenge_levels_40.sql` widens both, dropping the old CHECKs by
+    LOOKUP (005's reasoning) while deliberately sparing the NAMED
+    `challenge_idx_matches_mode`, which mentions the same column and says
+    something else entirely.
   `scripts/_scratch-challenge-theme.ts` unlocks the ladder straight in the dev
   DB and photographs a forced-theme run — **it carries no canvas colour probe on
   purpose**: the renderer runs without `preserveDrawingBuffer`, so reading a
@@ -779,6 +765,12 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v8.
   feature did not work.
 - **Render layer** (`src/render/*`): `scene.ts`, `board.ts`, `characters.ts`,
   `effects.ts`, plus `toon.ts` — the shared 3-step cel ramp.
+- **Everything is AUTHORED cel-shaded, and IDEA-079 restyles it at runtime.**
+  Read that entry before changing anything here: the shipped look is matcap now,
+  but **the source stays `toon()` and must** — the swap happens in
+  `madboxStyle.ts` at build-the-scene time, nothing is authored as a matcap, and
+  codegen could not honestly emit one. So every rule below is still the rule you
+  write to; it is simply no longer the whole of what a player sees.
 - **The whole scene is CEL-SHADED** (IDEA-024 v2): every lit surface is a
   `MeshToonMaterial` on the one gradient from `src/render/toon.ts`, and the
   renderer runs with `NoToneMapping` — a filmic curve re-compresses the ramp's
@@ -792,6 +784,13 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v8.
   model its new `shading` dropdown can produce (toon/standard/phong/lambert/
   basic), and controls for channels a given model lacks — `roughness`,
   `emissive` — are omitted rather than shown wired to nothing (IDEA-041's rule).
+  The dropdown's fifth entry, **"New style"**, is IDEA-079's look and is the
+  DEFAULT on every stage — an editor that draws a different art direction from
+  the one that ships is a tool you have to correct for in your head on every
+  edit. It is a SHADING MODE rather than a material option, which is the whole
+  safety of it: shading here has always been "a way of LOOKING, never a saved
+  property", so `withRealMaterials` keeps codegen, the material registry and
+  both inspectors on the real `toon()` materials whatever the viewport draws.
 - **THE BEAGLE IS A REFERENCE REBUILD** (IDEA-047, branch `rework-beagle-character`):
   `makeBeagle()` is built over `src/render/beagleSculpt.ts` — station-swept solids
   (`taperedSweepGeometry`), revolved profiles (`latheFromProfile`) and
@@ -1360,7 +1359,7 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v8.
      - **Address glyphs by LIGATURE NAME, never by codepoint** — including
        inside SVG `<text>`, where ligatures do resolve. Subsetting does not
        preserve Material Symbols' private-use codepoints (`U+E668` survived the
-       cut, `U+E899` did not), which is the opposite of what `levelMap.ts`
+       cut, `U+E899` did not), which is the opposite of what the level map
        originally assumed.
      - An icon element holds its ligature name as its TEXT, so writing
        `textContent` on a button containing one deletes the icon — pause, mute
@@ -3245,6 +3244,183 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v8.
   measuring a hidden element and reporting a pass. Every check there is bounded
   at both ends now, starting with a non-zero width.
 
+- **THE GAME HAS A NEW ART DIRECTION, AND IT IS THE DEFAULT** (IDEA-079). Nuno,
+  after seeing the Journey island spike: *"I just see the journey and the looks
+  of the island and the props is incredible, can we apply that look in all the
+  game?"* — then, on the rules this would break: *"if the rules say nothing
+  black we add a rule that allow the beagle have the black color… we can work on
+  both rules and styles."* So this is the one entry in this file that **rewrites
+  standing rules rather than extending them**, and the cel-shading rule above is
+  no longer the whole story. `src/render/madboxStyle.ts` is the system,
+  `scripts/test-madbox-style.ts` (258 checks, in `npm run test`) guards it.
+  **CLASSIC IS STILL SHIPPED.** `src/render/madboxFlag.ts` reads one flag:
+  nothing stored means the new style, `bc_style = "classic"` is the stored
+  OPT-OUT, and `?style=classic` / `?style=madbox` force either way. The profile
+  screen's "Look" section is the switch, and it exists to collect a preference
+  before one of the two is deleted. The `catch` returns **true**, so a device
+  that refuses storage and every headless test see what a player sees.
+  Ten rules are load-bearing.
+  1. **A MATCAP IS A SECOND SHADING MODEL, NOT A REPLACEMENT.** `matcap.ts`
+     generates a 64px sphere-lit texture on a canvas per (base, bounce) pair —
+     generated, never fetched, exactly as every other surface in this PWA is.
+     `MeshMatcapMaterial`'s shader is `diffuseColor.rgb * matcapColor.rgb`, so
+     the material's own `color` still TINTS it, and that is what makes both
+     modes below possible from one texture.
+  2. **BAKE FOR SCENERY, TINT FOR ANYTHING WHOSE COLOUR MEANS SOMETHING.** In
+     BAKE mode the snapped palette colour goes into the matcap and the material
+     is held white — which is what makes a board look like one place. In TINT
+     mode a neutral white-base matcap is shared and the colour stays ON the
+     material. **Enemies, the beagle's coat, the pickups and the showcase heroes
+     are all TINT**, because every one of them is recoloured at runtime and a
+     baked colour would make `color.setHex()` silently do nothing. The pickups
+     were BAKED for one release and the snap repainted them: the carrot's
+     `#e8721f` came out as `wood`, a TAN, the mango's gold as `sand`, and two
+     mango tones collapsed onto one `lime` — i.e. IDEA-045's 100 and its 500
+     stopped looking different, which is that feature's own recorded failure.
+  3. **THE ENEMY CAST IS SKIPPED WHOLE, AND THAT IS A GAMEPLAY RULE.** Detected
+     from `GhostUserData.bodyMat` rather than by naming eleven skins, because
+     that field already means "this character's colour is driven from outside".
+     Three reasons, in the order they were found: `applyGhostState` would stop
+     turning them blue, a matcap has NO EMISSIVE CHANNEL and every body carries
+     one at 0.14-0.15 (the eyes at 0.45), and — the one that settles it —
+     **the team hues are already in the style**, measured at l 0.506-0.629 and
+     s 0.44-0.79 against a palette band of 0.46-0.98. There was no colour
+     correction to apply. A caller that styles a character MUST also run
+     `remapBeagleCoatMats` / `remapEnemyMaterials`, or the state machine's
+     `userData` references point at materials nothing draws — which is how
+     equipping a coat silently stopped working for one build.
+  4. **THE SNAP IS HUE-DOMINANT AND REWARDS THE HIGH KEY.** 19 palette entries
+     plus 3 INK entries unreachable from an ordinary snap (that is the rule Nuno
+     authorised: the beagle keeps its black). The metric weights hue at 3.0
+     against 0.3 for saturation and 0.1 for lightness, plus a standing 0.22
+     reward for the lighter candidate — so a tie between two entries of one hue
+     always resolves upward. "Saturation lives in hue, not in value", written as
+     arithmetic. A NEUTRAL (s below `NEUTRAL_MAX_S` 0.18) is matched against
+     neutrals only: without that gate Night City's `#3a3640` roads snapped to a
+     purple.
+  5. **THE PALETTE LIFT IS THE HALF A MATERIAL SWAP CANNOT REACH.** The maze
+     wall, the floor and the surround ground are TEXTURED — `wallTexture.ts` and
+     `floorTexture.ts` bake a palette colour into their canvas — so the swap
+     skips them and `liftPaletteForMadbox` raises those five slots toward
+     `SURFACE_LIFT` instead (floor 0.46, wall 0.56, outside 0.6; **sand gets its
+     own 0.66/0.74**, because the beach's floor was already above the generic
+     target and the lift did literally nothing to it). Applied at boot in
+     `main.ts`, **before anything reads a palette**, because a texture bakes its
+     colour at generation time. `wallTexture.ts` also carries its own per-style
+     tone tables and keys its cache on the flag.
+  6. **THE LIFT IS AUTHORED DATA, SO THE EDITOR MUST PUT IT BACK.** The Board
+     tab renders from a lifted palette and reverts the five slots in a `finally`
+     — lift `workingTheme` in place and the next save commits the lifted number
+     to `themes.ts`, the session after lifts that again, and every theme
+     brightens a step each time anyone opens the tab. Same rule for the tunnel
+     arch's fence timber, which is a `props.ts` param rather than a palette slot
+     and so was NOT lifted for one build: the maze fence went to `#c28f5c` and
+     the arch's own footing stayed `#a9743f`, two visibly different browns
+     meeting at the one joint the footing exists to hide (IDEA-067 rule 3).
+     `buildTunnelArches` now runs the authored value through `liftSurfaceColor`.
+  7. **A NIGHT THEME IS EXEMPT, DECIDED FROM THE SKY.** `shouldStyleBoard`
+     returns false when `palette.bg` is below `NIGHT_SKY_MAX_L`, so Night City
+     and Arcade Night keep their boards entirely — both halves of the style
+     contradict them, the lift brightening the ground and the snap pushing their
+     buildings high-key. Decided from the palette rather than by naming two
+     themes, so a future dark theme is exempt by being dark.
+  8. **THE BOUNCE IS THE BOARD'S, NOT THE OCEAN'S.** The bounce fills the area
+     outside the matcap's normal disk, so it becomes the rim at every grazing
+     angle and the fill on every turned-away face. `MADBOX_BOUNCE` is a
+     saturated sea-cyan that is true on the island map and nowhere else; used on
+     a board it was what Nuno reported as *"all the components have a blue
+     glowing or shadow."* `boardBounce(palette)` derives one per theme from the
+     sky and the ground. Measured on 6,900 samples of the garden's props, the
+     blue cast (mean B−R) went from −25.8 in classic to **−28.2**, i.e. warmer
+     than classic rather than bluer.
+  9. **THE SWAP MUST BE IDEMPOTENT, AND THE FIRST VERSION WAS NOT.** A
+     `MeshMatcapMaterial` holds its colour at white by convention, so a second
+     pass reads `0xffffff`, snaps it to the `white` entry and replaces a correct
+     matcap with a white one. `buildLevel` runs the swap on the whole scene every
+     level and the SURROUND is cached across levels (IDEA-066), so it was styled
+     once correctly and whitened on the very next pass — while the apron props
+     beside it, which ARE rebuilt per level, looked perfect. That asymmetry is
+     what made it read as a fog or distance problem.
+  10. **RESTYLE AFTER ANYTHING THAT REBUILDS SCENE CONTENT, NEVER ONCE AT
+     CONSTRUCTION.** This project has now shipped that ordering bug four times.
+     `showcaseSurround.apply` rebuilds from `setMazeTheme` and left 49 unstyled
+     materials in the shop; `applyBoardTheme` rebuilds the props and the hedge
+     decor, and `Game.buildLevel` styled BEFORE it, so a forced-theme Journey
+     level had unstyled props while classic — which never takes that branch —
+     looked perfect. `menuScene`/`shopScene` restyle in TWO passes (tint the
+     patch and the dog, then bake the scene) and again after `setHero` and after
+     `applyPatchTheme`.
+  **`mergeBySignature` WAS DROPPING `uv`**, one attribute along from the vertex
+  colours IDEA-067 found. A merged geometry with no UVs samples texel (0, 0) for
+  every vertex, so a TEXTURED material comes back as one flat colour — the corner
+  of its own canvas. Latent through the whole surround, because nothing out there
+  carries a map, and it surfaced the instant a showcase stood the real maze wall
+  behind the beagle: eleven hedge blocks as plain green boxes.
+  **THE EDITOR DRAWS THE SHIPPED STYLE ON ALL THREE STAGES** (Nuno: *"how I will
+  edit the components of the game if I cannot see the editor with the right
+  materials?"*). `viewportExtras`' shading dropdown defaults to `styled`, and
+  Board & Themes, World and Props route through the SAME path as the character
+  stage rather than getting a second styling call — because that path stashes
+  each mesh's real material and `withRealMaterials` hands it back. Styling a root
+  directly would leave the props part inspector binding its colour control's
+  closure to a MATCAP: the control would either vanish or record the matcap's
+  white as the part's authored colour and codegen it into `props.ts`. For the
+  same reason the props restyle runs **after** `snapshot()`, which reads every
+  part's material to record its baseline. `StyleOpts` rides on the root, so a
+  later restore/re-apply uses the options that root was styled with.
+  **AND A COLOUR CONTROL OVER A BAKED MATERIAL HAS TO GO THROUGH THE PALETTE.**
+  A baked matcap is one generated canvas per distinct colour, so the board's and
+  the prop inspector's colour swatches re-derive on FINISH rather than on change
+  — the rule `buildWallsFolder` already had, now for a second reason. The
+  biscuit's emissive pair is labelled **"(classic style only)"** rather than
+  deleted: a matcap has no emissive channel, but both still author a real number
+  that classic uses, so IDEA-041's omit-a-control-wired-to-nothing rule does not
+  apply and labelling is the honest treatment.
+  **THE JOURNEY IS AN ARCHIPELAGO** — `src/render/journeyScene.ts` is a fourth
+  showcase scene, one island per level on a swinging chain (`CHAIN`: 7 units
+  apart, 2.6 of swing, a 5-unit gap between chapters), with `journeyIsland.ts`,
+  `journeySea.ts`, `journeyWater.ts` and `journeyCamera.ts` under it. It replaced
+  the 2D SVG trail entirely: `src/ui/levelMap.ts`, its ~65 CSS rules and its
+  chapter jump rail are all deleted, and `#levelMap` is reused as the DOM root so
+  nothing else had to learn a new name. Six things:
+  - **THE PINS ARE HTML OVER THE CANVAS** (`src/ui/journeyPins.ts`), projected
+    each frame. `journeyCamera.project()` returns RAW WORLD UNITS, not a
+    far-plane fraction, because the depth fade and the label collapse are both
+    distance decisions.
+  - **`frame(z)` NEEDS BOTH TERMS.** The camera sits `baseDistance` BEHIND the
+    pan point and looks `lookAhead` PAST it; missing the first opened the map
+    three islands early.
+  - **THE LISTENERS GO ON THE CANVAS, NOT `document.body`.** They were on the
+    body, and `onTap` (pointerup) cleared the selection before `click` could
+    fire — so **Play did nothing**. `close()` also fires `onClose`
+    unconditionally, because it did not, and `body.map-open` survived into the
+    run with the HUD hidden for the whole level.
+  - **THE WATER IS A FLAT UNLIT PLANE WITH A WORLD-SPACE RADIAL GRADIENT**, plus
+    one merged coastline ribbon doing pnoise foam and a `pow(vUv.y, 7)` contact
+    shadow. It replaced a displaced, toon-lit, canvas-textured sea and that A/B
+    is settled, so the loser is gone rather than left as a second sea to keep
+    working. The ribbon's winding is not the obvious order — wound the obvious
+    way it faces DOWN and renders nothing.
+  - **CLOUDS SHROUD A LOCKED CHAPTER AND LIFT WHEN IT OPENS**
+    (`journeyClouds.ts`, `npm run test:journey-clouds`, 10 checks). One mesh per
+    chapter, because a chapter is what unlocks. They are MATCAP, not
+    `MeshBasicMaterial`: unlit means no shading, so every face of a blob returns
+    the same white and they rendered as flat plates. The first `setProgress`
+    SNAPS and later ones ease — built locked, so without that the first open
+    lifts weather off every chapter the player finished weeks ago.
+  - **THE BACKDROP DOME RENDERS ~40% DARKER THAN ITS PALETTE SAYS**, and has
+    since IDEA-021: those gradient shaders set `gl_FragColor` with no colour-space
+    conversion, so the sky is displayed as its LINEAR triple read raw. Measured,
+    `0x9ecbe8` displays as `(87, 152, 206)`. Deliberately NOT fixed — correcting
+    it would change the sky on the menu, both shop stages and the game's own
+    backdrop at once. It matters because FOG *is* converted properly, so a fog
+    colour taken from the palette lands ~40% too light and paints a pale band
+    exactly where a horizon has to be invisible.
+  `npm run test:journey-map-ui` (27 checks) drives the real screen;
+  `preview-journey/` is the harness and **defaults to the shipped style**, with
+  `?style=classic` as the A/B and `?style=one` styling a single island so the
+  before and after sit in one frame.
+
 - **Input / UI / PWA**: `src/input/{touch,keyboard,dpad,stick}.ts`, `src/ui/{hud,sound,ambience,install}.ts`,
   `public/icons/*` (192, 512, 512-maskable).
 - **THERE ARE THREE TOUCH SCHEMES** (IDEA-049): swipe (default), the D-pad, and the
@@ -3711,6 +3887,13 @@ The pack ships generic WebGPU/TSL advice. **This project is not that stack**, an
   materials do not render on WebGL. Proposing TSL is proposing a renderer migration.
 - **`MeshToonMaterial` via `toon()`, `NoToneMapping`, one shared 3-step ramp** — see
   the cel-shading rules above. Not a style preference; the three are one system.
+  **AUTHOR IN `toon()` EVEN THOUGH THE SHIPPED LOOK IS MATCAP** — IDEA-079 swaps
+  materials at runtime from the colour a `toon()` call declares, so a matcap
+  written into a source file is a material the swap cannot read, the editor
+  cannot inspect and codegen cannot emit. Nothing CONSTRUCTS one outside
+  `madboxStyle.ts` and `journeyClouds.ts`; `characters.ts` only widens two type
+  aliases (`CoatMaterial`, `SkinMaterial`) so a remapped reference can hold
+  either, which is what lets `applyBeagleSkin` keep working after a swap.
 - **No glTF assets, no physics engine, no post-processing.** Meshes and textures are
   built in code, movement is tile-stepping on the grid. Adding any of those three is a
   stack change: raise it, don't slip it in.
