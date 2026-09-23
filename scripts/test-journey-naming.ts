@@ -141,9 +141,20 @@ section("What a player reads says Journey");
   ok("…and no tile is labelled Challenge", !html.includes('menu-tile-label">Challenge<'));
   ok("…and its id is #journeyBtn", html.includes('id="journeyBtn"'));
 
-  const map = read("src/ui/levelMap.ts");
-  ok("the level-map page is titled The Journey", map.includes(">The Journey<"));
-  ok('…and its path aria-label says Journey', map.includes('aria-label="Journey path"'));
+  // IDEA-079 replaced the SVG trail (src/ui/levelMap.ts) with the island map.
+  // The SVG's "Journey path" aria-label went with the path it described — the
+  // route is geometry in a 3D scene now, and the accessible naming moved onto
+  // the PINS, which are real buttons carrying their own level names. So the
+  // check follows the thing rather than the file: the page is still titled,
+  // and every pin still announces which level it is.
+  const map = read("src/ui/journeyMap.ts");
+  ok("the journey map page is titled The Journey", map.includes(">The Journey<"));
+  const pins = read("src/ui/journeyPins.ts");
+  ok(
+    "…and a pin announces its own level, locked or not",
+    pins.includes("${level.number}. ${level.name}, locked") &&
+      pins.includes("${level.number}. ${level.name}`"),
+  );
 
   ok("the account screen's stat row says Journey", read("src/ui/profile.ts").includes("<dt>Journey</dt>"));
 }

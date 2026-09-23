@@ -21,6 +21,9 @@
 import "./style.css";
 import { registerSW } from "virtual:pwa-register";
 import { Game } from "./game/game";
+import { MADBOX_STYLE_ON } from "./render/madboxFlag";
+import { liftPaletteForMadbox } from "./render/madboxStyle";
+import { MAZE_THEMES } from "./game/themes";
 import { initInstallPrompt } from "./ui/install";
 import { attachBootScreen } from "./ui/boot";
 import { attachAuthGate } from "./ui/auth";
@@ -140,6 +143,23 @@ async function startApp(): Promise<void> {
   // hook fires on every showMenu(), which is where every run ends — the one
   // moment the badge can be out of date.
   let challenges: ChallengesHandle | null = null;
+
+  // IDEA-079 — THE REFERENCE MATERIAL SYSTEM, OPT-IN WHILE IT IS JUDGED.
+  //
+  // `?style=madbox` (or once, `localStorage.bc_style = "madbox"`). Two halves
+  // and the ORDER IS LOAD-BEARING: the palette lift has to run before anything
+  // reads a palette, because `wallTexture.ts` and `floorTexture.ts` BAKE their
+  // colour in at generation time and a lift applied afterwards changes a number
+  // nothing reads again. The material swap then happens per level, in
+  // Game.buildLevel.
+  //
+  // A flag rather than a default because two things are still unfinished and
+  // both are named in applyMadboxStyle: the enemy cast is skipped (its colours
+  // are driven at runtime, and a matcap would stop the frightened blue from
+  // appearing at all) and the editor has no matcap support yet.
+  if (MADBOX_STYLE_ON) {
+    for (const t of MAZE_THEMES) liftPaletteForMadbox(t.id, t.palette);
+  }
 
   const game = new Game(
     canvas,

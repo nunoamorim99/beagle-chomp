@@ -28,6 +28,8 @@ import { Grid, COLS, ROWS, worldX, worldZ } from "../game/grid";
 // IDEA-045: the fruit ids the board can spawn. Render importing pure game
 // data is the allowed direction (CLAUDE.md); the reverse never happens.
 import { type FruitId, type PowerupId } from "../game/config";
+import { styleSpawned, liftSurfaceColor, shouldStyleBoard } from "./madboxStyle";
+import { MADBOX_STYLE_ON } from "./madboxFlag";
 import { getEquippedMazeTheme, type MazeTheme, type ThemePalette, type PropPlacement, type WallDecorPlacement } from "../game/themes";
 import {
   getPropDef,
@@ -3455,6 +3457,31 @@ export function buildTunnelArches(
   const group = new THREE.Group();
   group.name = "tunnelArches";
 
+  // IDEA-079: THE FOOTING'S TIMBER IS LIFTED WITH THE MAZE FENCE'S.
+  //
+  // The arch runs three real fence panels round each foot, and that shared
+  // identity is the whole reason it does (IDEA-067 rule 3): the arch stands
+  // exactly where the maze wall's own fence ends, so the two have to read as
+  // ONE fence. `palette.fenceColor` is lifted for the high-key style and this
+  // param — authored in props.ts, and for the Hedge Arch authored to BE the
+  // palette's shipped value — was not, so the maze fence went to #c28f5c and
+  // the footing stayed #a9743f: two visibly different browns meeting at the
+  // one joint the footing exists to hide.
+  //
+  // Lifting the AUTHORED value rather than assigning the palette's, because
+  // the arch is also placeable by hand into a theme with no fence at all, and
+  // reading a slot the board may not be using is how a prop ends up the wrong
+  // colour somewhere nobody looked. In practice all three arches land within a
+  // few units of each other here — their timbers are one hue differing almost
+  // entirely in lightness, and the lift is a floor they all sit below — which
+  // is correct rather than a loss:
+  // what separates the three is head curve, rise and proportion, never timber.
+  // Applied to the built prop, never written back to props.ts.
+  const archDef =
+    MADBOX_STYLE_ON && shouldStyleBoard(theme.palette) && typeof def.params?.fenceColor === "number"
+      ? { ...def, params: { ...def.params, fenceColor: liftSurfaceColor(def.params.fenceColor) } }
+      : def;
+
   // ONE hash for BOTH mouths, deliberately — everywhere else in this file a
   // prop is varied by its own tile so a row does not read as clones. These
   // two are the two ends of ONE tunnel, and a gate that is a different green
@@ -3463,7 +3490,7 @@ export function buildTunnelArches(
   // differently-tinted ones weld to none.
   const instanceHash = hash01(0, 0, ARCH_INSTANCE_HASH_SEED);
   for (const m of mouths) {
-    const mesh = makePropFromDef(def, instanceHash);
+    const mesh = makePropFromDef(archDef, instanceHash);
     const at = archTransformFor(m);
     mesh.position.set(at.x, ARCH_PARAMS.lift, at.z);
     mesh.rotation.y = at.rotationY;
@@ -3787,6 +3814,9 @@ export function spawnFruit(
   if (board.fruit) clearFruit(board, scene);
   const fruit = FRUIT_BUILDERS[kind]();
   fruit.position.set(worldX(tx), 0.35, worldZ(ty));
+  // [[IDEA-079]]: styled here, because a pickup spawned mid-run arrives
+  // long after buildLevel's scene-wide pass and nothing else reaches it.
+  styleSpawned(fruit, getEquippedMazeTheme().palette);
   scene.add(fruit);
   board.fruit = fruit;
 }
@@ -3812,6 +3842,9 @@ export function spawnCoin(board: Board, scene: THREE.Object3D, tx: number, ty: n
   if (board.coin) clearCoin(board, scene);
   const coin = makeCoin();
   coin.position.set(worldX(tx), 0.35, worldZ(ty));
+  // [[IDEA-079]]: styled here, because a pickup spawned mid-run arrives
+  // long after buildLevel's scene-wide pass and nothing else reaches it.
+  styleSpawned(coin, getEquippedMazeTheme().palette);
   scene.add(coin);
   board.coin = coin;
 }
@@ -3863,6 +3896,9 @@ export function spawnPowerup(
   const mesh = POWERUP_BUILDERS[kind]();
   mesh.position.set(worldX(tx), 0.4, worldZ(ty));
   mesh.userData.powerupId = kind;
+  // [[IDEA-079]]: styled here, because a pickup spawned mid-run arrives
+  // long after buildLevel's scene-wide pass and nothing else reaches it.
+  styleSpawned(mesh, getEquippedMazeTheme().palette);
   scene.add(mesh);
   board.powerup = mesh;
 }

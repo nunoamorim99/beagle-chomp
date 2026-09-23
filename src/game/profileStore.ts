@@ -14,7 +14,7 @@
 //
 // Every one of the exports below kept its EXACT signature — still synchronous,
 // still returning the same types, still never throwing. That was the whole
-// design goal: game.ts, ui/shop.ts and ui/levelMap.ts call these ~27 times
+// design goal: game.ts, ui/shop.ts and ui/journeyMap.ts call these ~27 times
 // across hot paths (including inside the frame loop), and threading async
 // through all of that would have meant touching the game loop, the shop
 // rendering and the level map for no player-visible benefit.

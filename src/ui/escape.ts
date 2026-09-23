@@ -3,7 +3,7 @@
 // HTML escaping for any string that did not originate in this codebase.
 //
 // Why this exists: every full-screen page in src/ui/* renders by assigning
-// innerHTML (shop.ts, levelMap.ts, hud.showPanel). That was entirely safe while
+// innerHTML (shop.ts, journeyMap.ts, hud.showPanel). That was entirely safe while
 // every interpolated value was a hardcoded constant. With accounts and a shared
 // leaderboard, OTHER PLAYERS' USERNAMES now enter that pipeline — the first
 // server-controlled, user-authored strings the UI has ever rendered.

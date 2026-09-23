@@ -35,13 +35,8 @@
 import * as THREE from "three";
 import { toon } from "./toon";
 import { lobedFoliageGeometry } from "./foliage";
-import { type RGB, lit, mix, rgbOf } from "./paint";
+import { hexOf, lit, mix, rgbOf } from "./paint";
 
-/** RGB back to a packed hex — paint.ts only goes the other way. */
-function hexOf(c: RGB): number {
-  const b = (v: number): number => Math.max(0, Math.min(255, Math.round(v * 255)));
-  return (b(c[0]) << 16) | (b(c[1]) << 8) | b(c[2]);
-}
 
 /**
  * The surround's whole palette, as ONE shared set.

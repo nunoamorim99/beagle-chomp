@@ -80,7 +80,7 @@ import { COLS, type Grid, ROWS, TILE, worldX, worldZ } from "../game/grid";
 import { toon } from "./toon";
 import { lobedFoliageGeometry } from "./foliage";
 import { FENCE_H, fencePanelGeometry } from "./fence";
-import { lit, rgbOf } from "./paint";
+import { hexOf, lit, rgbOf } from "./paint";
 
 /** Deterministic per-instance variation from the placement hash — the same
  *  generator gardenProps.ts and forestProps.ts use, so an arch looks the same
@@ -113,8 +113,10 @@ function pick<T>(list: readonly T[], h: number): T {
  * that is actually on screen rather than the number it was generated from.
  */
 function brighten(hex: number, k: number): number {
-  const [r0, g0, b0] = lit(rgbOf(hex), k);
-  return (Math.round(r0 * 255) << 16) | (Math.round(g0 * 255) << 8) | Math.round(b0 * 255);
+  // THROUGH paint.ts's CLAMPED PACKER. Doing the shift by hand here is what
+  // turned this arch magenta: `lit()` does not clamp, so a foliage green of
+  // 216 times 1.34 packed as 289 and wrapped round to 33, carrying into red.
+  return hexOf(lit(rgbOf(hex), k));
 }
 
 /** A named mesh, so IDEA-033's part editor and the outliner have something to

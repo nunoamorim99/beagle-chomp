@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Journey archipelago preview</title>
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #8fc3e8; }
+      canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+      #hud {
+        position: fixed; left: 10px; top: 10px; z-index: 10;
+        font: 600 11px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
+        color: #14201a; background: #ffffffd0; padding: 8px 10px;
+        border-radius: 8px; box-shadow: 0 2px 10px #0003; white-space: pre;
+      }
+
+      /* --- the pin layer -------------------------------------------------
+         Written in the design system's idiom (ink outline, sunk bottom
+         border, dim BY PAINT never by opacity) so it ports to style.css
+         rather than being thrown away. Colours are literals here only
+         because a dev-only page does not load tokens.css. */
+      .jp-list { position: fixed; inset: 0; margin: 0; padding: 0; list-style: none; z-index: 5; }
+      .jp-list.is-dragging .jp-item { opacity: 0; transition: opacity .12s ease; }
+
+      .jp-item {
+        position: absolute; left: 0; top: 0;
+        /* --depth (0 near, 1 at the cull distance) shrinks and fades the pin, so
+           the far end of the chain recedes instead of piling labels on top of
+           each other. The scale is the important half: at 0.72 a distant pin is
+           small enough that its neighbours clear it. */
+        --shrink: calc(1 - 0.28 * var(--depth, 0));
+        transform: translate(-50%, -50%) translate(var(--x, 0px), var(--y, 0px))
+                   scale(var(--shrink));
+        opacity: 0; transition: opacity .18s ease;
+        transform-origin: center;
+      }
+      .jp-item.is-visible { opacity: calc(1 - 0.45 * var(--depth, 0)); }
+      /* The one you are on and the one you picked stay full strength however
+         far away they are — they are the two the screen is about. */
+      .jp-item.is-current.is-visible,
+      .jp-item.is-selected.is-visible { opacity: 1; }
+
+      /* The NAME is what collides; the number never does. Past the halfway
+         point of the cull distance the label is dropped and the pin collapses
+         to its badge, which is the same information at a size that fits. */
+      .jp-item { --label-max: 150px; }
+      .jp-label {
+        max-width: var(--label-max); overflow: hidden;
+        transition: max-width .18s ease, opacity .12s ease;
+      }
+      .jp-item.is-far .jp-label { max-width: 0; opacity: 0; }
+      .jp-item.is-far .jp-pin { padding-right: 5px; }
+
+      .jp-pin {
+        display: flex; align-items: center; gap: 7px;
+        padding: 5px 11px 5px 5px;
+        font: 800 14px/1 system-ui, sans-serif;
+        color: #FFF7E8;
+        background: #4A3928;
+        border: 3px solid #1B1512;
+        border-bottom-width: 6px;
+        border-radius: 999px;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .jp-pin:active { border-bottom-width: 3px; transform: translateY(3px); }
+      .jp-num {
+        display: grid; place-items: center;
+        width: 24px; height: 24px; border-radius: 50%;
+        background: #F0CF8E; color: #1B1512;
+        font-family: ui-monospace, monospace; font-size: 12px;
+      }
+      .jp-label { font-size: 13px; }
+
+      /* Dim by PAINT, never opacity: anything translucent over the live 3D
+         picks up the sea and turns blue-grey, which is the glass look the
+         whole system replaced. */
+      .is-locked .jp-pin { background: #2E2418; color: rgba(255,247,232,.55); }
+      .is-locked .jp-num { background: #4A3928; color: rgba(255,247,232,.55); }
+      .is-cleared .jp-num { background: #3F8F3A; color: #FFF7E8; }
+      .is-current .jp-pin { background: #E8A23D; color: #3A2205; }
+      .is-current .jp-num { background: #1B1512; color: #F0CF8E; }
+      .is-selected .jp-pin { outline: 3px solid #FFF7E8; outline-offset: 2px; }
+
+      /* --- the card ------------------------------------------------------ */
+      #card {
+        position: fixed; left: 12px; right: 12px; bottom: 12px; z-index: 6;
+        background: #3B2C1E; color: #FFF7E8;
+        border: 3px solid #1B1512; border-bottom-width: 7px; border-radius: 16px;
+        padding: 14px; font: 500 14px/1.45 system-ui, sans-serif;
+        transform: translateY(140%); transition: transform .28s cubic-bezier(.2,.8,.3,1);
+      }
+      #card.is-open { transform: translateY(0); }
+      #card h2 { margin: 0 0 2px; font-size: 18px; }
+      #card .sub { margin: 0 0 10px; font-size: 12px; color: rgba(255,247,232,.7);
+                   font-family: ui-monospace, monospace; }
+      #card .row { display: flex; gap: 8px; }
+      #card button {
+        flex: 1 1 0; padding: 10px; border-radius: 12px; cursor: pointer;
+        font: 800 14px/1 system-ui, sans-serif;
+        border: 3px solid #1B1512; border-bottom-width: 6px;
+        background: #E8A23D; color: #3A2205;
+      }
+      #card button.secondary { background: #4A3928; color: #FFF7E8; flex: 0 0 auto; }
+      #card button:disabled { background: #2E2418; color: rgba(255,247,232,.5); cursor: default; }
+    </style>
+  </head>
+  <body>
+    <canvas id="c"></canvas>
+    <div id="hud"></div>
+    <div id="pins"></div>
+    <div id="card">
+      <h2 id="cardTitle">—</h2>
+      <p class="sub" id="cardSub">—</p>
+      <div class="row">
+        <button id="cardPlay">Play</button>
+        <button id="cardClose" class="secondary">Back</button>
+      </div>
+    </div>
+    <script type="module">
+      // IDEA-079 phase 0 — dev-only viewer for the Journey ARCHIPELAGO.
+      // Never a rollup input, so it never ships (same construction as /editor/,
+      // /preview/, /preview-rework/ and /preview-board/).
+      //
+      // This exists to answer the cost question with the REAL renderer rather
+      // than with the headless model in scripts/_scratch-journey-spike.ts —
+      // `renderer.info.render.calls` is the number that decides whether forty
+      // dressed islands are affordable, and a count of meshes is only a model
+      // of it.
+      //
+      //   ?merge=signature|material|none   which collapse (default signature)
+      //   ?cull=0                          disable frustum culling, to see the
+      //                                    UNCULLED cost — the whole question
+      //   ?pan=<z>                         park the camera down the chain
+      //   ?flat=1                          map-stripped clay
+      //   ?all=1                           pull back far enough to see all 40
+      import * as THREE from "three";
+      import { JOURNEY_LEVELS, JOURNEY_CHAPTERS } from "/src/game/journey.ts";
+      import { makeJourneyIsland, PIN_ANCHOR_Y } from "/src/render/journeyIsland.ts";
+      import { getMazeTheme } from "/src/game/themes.ts";
+      import { ISLAND_PARAMS } from "/src/render/journeyIsland.ts";
+      import { makeJourneySea, SEA_PARAMS } from "/src/render/journeySea.ts";
+      import { updateJourneyWater } from "/src/render/journeyWater.ts";
+      import { applyMadboxStyle, makeMadboxCaches, MADBOX_BOUNCE } from "/src/render/madboxStyle.ts";
+      import { attachJourneyCamera, JOURNEY_CAMERA, deriveFocusPoints } from "/src/render/journeyCamera.ts";
+      import { attachJourneyPins } from "/src/ui/journeyPins.ts";
+
+      const q = new URLSearchParams(location.search);
+      const merge = q.get("merge") ?? "signature";
+      const culling = q.get("cull") !== "0";
+      const seeAll = q.get("all") === "1";
+      const flat = q.get("flat") === "1";
+
+      const canvas = document.getElementById("c");
+      const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+      renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+      // NoToneMapping: a filmic curve re-compresses the cel ramp's bands and
+      // undoes the point of it (CLAUDE.md's cel-shading rule).
+      renderer.toneMapping = THREE.NoToneMapping;
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x8fc3e8);
+
+      // --- THE CHAIN ------------------------------------------------------
+      // A serpentine: z advances steadily, x oscillates. One island per level,
+      // with a wider gap at every chapter boundary so a stage reads as a group
+      // rather than as five of forty. The gaps are why a position TABLE beats
+      // `idx * spacing` — the same reasoning NODE_Y carries in levelMap.ts.
+      const SPAN = 7.0;          // along-chain spacing between islands
+      const SWING = 5.2;         // how far the chain wanders sideways
+      const CHAPTER_GAP = 5.0;   // extra room at a stage boundary
+      const starts = new Set(JOURNEY_CHAPTERS.map((c) => c.from));
+
+      const POS = [];
+      let z = 0;
+      for (let i = 0; i < JOURNEY_LEVELS.length; i++) {
+        if (i > 0) z += SPAN + (starts.has(i) ? CHAPTER_GAP : 0);
+        POS.push(new THREE.Vector3(Math.sin(i * 0.72) * SWING, 0, -z));
+      }
+      const chainEnd = z;
+
+      // --- the sea ----------------------------------------------------------
+      // src/render/journeySea.ts carries the whole argument: a flat plane has
+      // ONE normal, so the three-step toon ramp paints the entire ocean a single
+      // value — which is what "an empty screen with some islands" actually was.
+      const sea = makeJourneySea(
+        POS.map((v, i) => ({
+          position: v,
+          radius: ISLAND_PARAMS.radius,
+          tint: getMazeTheme(JOURNEY_LEVELS[i].themeId).palette.bg,
+        })),
+        45,
+        -chainEnd - 45,
+        SEA_PARAMS,
+      );
+      scene.add(sea.group);
+      const WATER_Y = SEA_PARAMS.waterY;
+      const seaCenter = new THREE.Vector2();
+      // How far ahead of the camera the middle of the frame lands on the water
+      // — the same arithmetic journeyCamera.frame() uses, and the reason the
+      // bright centre of the gradient sits where the player is looking rather
+      // than under the camera's own feet.
+      const SEA_LOOK_AHEAD =
+        JOURNEY_CAMERA.baseHeight / Math.tan(-JOURNEY_CAMERA.basePitch);
+
+      // --- the islands ------------------------------------------------------
+      // THE DEFAULT IS WHAT SHIPS. This harness spent its first few sessions
+      // defaulting to the unstyled build with the style behind `?style=madbox`,
+      // which was right while the style was the thing being decided. It is the
+      // game's normal state now, so a harness that still opened unstyled would
+      // be a review instrument disagreeing with the product — the "harness
+      // mismatch reports as a model defect" trap this project has hit four
+      // times. `?style=classic` is the A/B in the same direction the game's own
+      // flag reads, and `?style=one` styles a SINGLE island so the before and
+      // after sit in one frame.
+      const styleMode = q.get("style") ?? "";
+      const soloCompare = styleMode === "one";
+      const soloIsland = Number(q.get("solo") ?? 6);
+      const madboxCaches = makeMadboxCaches();
+      const islands = [];
+      for (let i = 0; i < JOURNEY_LEVELS.length; i++) {
+        const island = makeJourneyIsland(JOURNEY_LEVELS[i], i, undefined, merge);
+        island.group.position.copy(POS[i]);
+        // THE SHIPPED PATH, not a lookalike: the palette SNAPS to a fixed
+        // high-key library, the deck gets a drawn "bake" and everything else a
+        // matcap over one shared sea bounce. Going through `applyMadboxStyle`
+        // rather than a harness-local matcap pass is the point — a preview with
+        // its own styling code can only ever drift from the game's.
+        if (styleMode !== "classic" && (!soloCompare || i === soloIsland)) {
+          applyMadboxStyle(island.group, MADBOX_BOUNCE, madboxCaches);
+        }
+        if (!culling) island.group.traverse((o) => (o.frustumCulled = false));
+        scene.add(island.group);
+        islands.push(island);
+      }
+
+      if (flat) {
+        const clay = new THREE.MeshToonMaterial({ color: 0xbfc0bb });
+        scene.traverse((o) => { if (o.isMesh) o.material = clay; });
+      }
+
+      // --- light ----------------------------------------------------------
+      // The garden's own key/hemi, so an island is lit the way its board is.
+      const pal = getMazeTheme("garden").palette;
+      const hemi = new THREE.HemisphereLight(pal.hemiSky, pal.hemiGround, pal.hemiIntensity);
+      scene.add(hemi);
+      const key = new THREE.DirectionalLight(pal.sunColor, pal.sunIntensity);
+      key.position.set(6, 20, 10);
+      scene.add(key);
+
+      // --- camera -----------------------------------------------------------
+      // src/render/journeyCamera.ts — a fixed base pose with damped channels on
+      // top, per the madbox teardown's step 1. Its own header carries the four
+      // places this deviates from the reference (exponential damping, no rotate
+      // channel, pan clamped to the chain, no GSAP).
+      //
+      // `?all=1` keeps the old fixed overview: it is a MEASURING view for the
+      // uncurled cost, not a thing a player ever sees, so it does not want a
+      // rig with clamps and inertia.
+      const overview = new THREE.PerspectiveCamera(42, 1, 0.5, 900);
+      const rigTapHandlers = [];
+      const rig = attachJourneyCamera(canvas, {
+        chain: POS,
+        onTap: (x, y) => {
+          lastTap = `${Math.round(x)},${Math.round(y)}`;
+          for (const h of rigTapHandlers) h(x, y);
+        },
+      });
+      let lastTap = "-";
+      const camera = seeAll ? overview : rig.camera;
+
+      const CAM_H = seeAll ? 150 : JOURNEY_CAMERA.baseHeight;
+      rig.frame(-Number(q.get("pan") ?? 0));
+
+      // --- fog --------------------------------------------------------------
+      // Without it every island in the frame is equally crisp and the chain
+      // reads as a repeating pattern rather than as distance.
+      //
+      // SCALED BY THE CAMERA'S OWN DISTANCE, exactly as scene.ts's resize() does
+      // (`dist / baseDist`). Tuned only for the panning rig, `?all=1` — which
+      // pulls back to 150 units to see all forty — fell entirely past the far
+      // plane and rendered as a BLANK BLUE SCREEN. Fog is measured from the
+      // camera, so a fixed pair is only ever right for one dolly.
+      const FOG_NEAR = 26;
+      const FOG_FAR = 96;
+      const FOG_SCALE = seeAll ? CAM_H / JOURNEY_CAMERA.baseHeight : 1;
+      scene.fog = new THREE.Fog(0x8fc3e8, FOG_NEAR * FOG_SCALE, FOG_FAR * FOG_SCALE);
+
+      function resize() {
+        const w = innerWidth, h = innerHeight;
+        renderer.setSize(w, h, false);
+        rig.resize(w, h);
+        overview.aspect = w / h;
+        overview.position.set(0, CAM_H, 10);
+        overview.lookAt(0, 0, -chainEnd / 2);
+        overview.updateProjectionMatrix();
+      }
+      addEventListener("resize", resize);
+      resize();
+
+      // --- focus points + pins ----------------------------------------------
+      // DERIVED from the chain rather than hand-authored: forty islands on one
+      // rail all want the same composition, and eighty typed poses would go
+      // stale the first time the spacing changed. See deriveFocusPoints' own
+      // note on why the reference hand-tuned its six and we do not.
+      const PIN_POS = POS.map((v) => v.clone().setY(PIN_ANCHOR_Y));
+      const focusPoints = deriveFocusPoints(POS, JOURNEY_LEVELS.map((_, i) => `l${i}`));
+
+      // Faked here; the real screen reads getChallengeProgress().
+      const progress = Number(q.get("progress") ?? 6);
+      const stateOf = (i) =>
+        i < progress ? "cleared" : i === progress ? "current" : "locked";
+
+      const card = document.getElementById("card");
+      const cardTitle = document.getElementById("cardTitle");
+      const cardSub = document.getElementById("cardSub");
+      const cardPlay = document.getElementById("cardPlay");
+      let selectedIdx = -1;
+
+      const pins = attachJourneyPins(document.getElementById("pins"), {
+        levels: JOURNEY_LEVELS.map((lv, i) => ({
+          id: `l${i}`,
+          number: i + 1,
+          name: lv.name,
+          state: stateOf(i),
+        })),
+        // Above the deck, not on it — see PIN_ANCHOR_Y.
+        project: (i) => rig.project(PIN_POS[i]),
+        isDragging: () => rig.isDragging(),
+        onSelect: (level, i) => {
+          selectedIdx = i;
+          pins.setSelected(level.id);
+          rig.focus(focusPoints[i]);
+          cardTitle.textContent = `${i + 1}. ${level.name}`;
+          const st = stateOf(i);
+          cardSub.textContent = `${JOURNEY_LEVELS[i].themeId} · ${st}`;
+          // A LOCKED level still opens the card — looking ahead is what this
+          // screen is for. Only Play refuses, and it says why (IDEA-063 v2).
+          cardPlay.disabled = st === "locked";
+          cardPlay.textContent = st === "locked" ? `Clear stone ${progress + 1} first` : "Play";
+          card.classList.add("is-open");
+        },
+      });
+
+      function closeCard() {
+        card.classList.remove("is-open");
+        pins.setSelected(null);
+        rig.focus(null);
+        selectedIdx = -1;
+      }
+      document.getElementById("cardClose").addEventListener("click", closeCard);
+      // Tapping the water is the other way out, which is what a map should do.
+      // The rig only reports a TAP past its own drag threshold test, so this
+      // cannot fire at the end of a pan.
+      rigTapHandlers.push(() => { if (selectedIdx >= 0) closeCard(); });
+
+      // Open framed on the level you are actually on, rather than at the start
+      // of a chain you have already walked.
+      rig.frame(POS[Math.min(progress, POS.length - 1)].z);
+
+      const hud = document.getElementById("hud");
+      let peakCalls = 0, peakTris = 0;
+      let frames = 0, acc = 0, fps = 0, last = performance.now();
+
+      function tick(now) {
+        const dt = now - last; last = now;
+        acc += dt; frames++;
+        if (acc >= 500) { fps = Math.round((frames * 1000) / acc); frames = 0; acc = 0; }
+
+        if (!seeAll) {
+          rig.update(dt / 1000);
+          pins.update();
+        }
+        // MILLISECONDS. Feeding seconds leaves uSpeed = -0.0004 looking
+        // perfectly frozen rather than erroring — journeyWater.ts's own note.
+        // The gradient's centre is the camera's ground point, so the sea's
+        // composition holds while the map pans.
+        seaCenter.set(camera.position.x, camera.position.z - SEA_LOOK_AHEAD);
+        updateJourneyWater(sea.animated, performance.now(), seaCenter);
+        renderer.render(scene, camera);
+
+        const r = renderer.info.render;
+        peakCalls = Math.max(peakCalls, r.calls);
+        peakTris = Math.max(peakTris, r.triangles);
+        if (q.get("hud") !== "0") {
+          hud.textContent =
+            `merge ${merge}   culling ${culling ? "on" : "OFF"}\n` +
+            `viewport ${innerWidth}x${innerHeight}\n` +
+            `cam z ${camera.position.z.toFixed(1)}   drag ${rig.isDragging() ? "yes" : "no"}   tap ${lastTap}\n` +
+            `draw calls ${r.calls}   (peak ${peakCalls})\n` +
+            `triangles  ${r.triangles.toLocaleString()}   (peak ${peakTris.toLocaleString()})\n` +
+            `geometries ${renderer.info.memory.geometries}  textures ${renderer.info.memory.textures}\n` +
+            `fps ${fps}`;
+        }
+        requestAnimationFrame(tick);
+      }
+      requestAnimationFrame(tick);
+
+      // For the measuring script.
+      window.__journeySpike = {
+        setPan: (v) => rig.frame(-v),
+        chainEnd,
+        read: () => ({
+          calls: renderer.info.render.calls,
+          triangles: renderer.info.render.triangles,
+          geometries: renderer.info.memory.geometries,
+          textures: renderer.info.memory.textures,
+          fps,
+        }),
+      };
+    </script>
+  </body>
+</html>

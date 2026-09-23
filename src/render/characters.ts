@@ -84,19 +84,29 @@ export interface BeagleParts {
 const DEFAULT_NOSE = 0x4a3028;
 const DEFAULT_IRIS = 0xa2672e;
 
+/**
+ * A coat channel's material.
+ *
+ * A UNION, because [[IDEA-079]]'s restyle swaps these for matcaps and
+ * `applyBeagleSkin` has to keep working through whichever is in place. Both
+ * carry `.color`, which is every field that path touches — checked, not
+ * assumed.
+ */
+export type CoatMaterial = THREE.MeshToonMaterial | THREE.MeshMatcapMaterial;
+
 export interface BeagleCoatMats {
-  tan: THREE.MeshToonMaterial;
-  white: THREE.MeshToonMaterial;
-  black: THREE.MeshToonMaterial;
-  ear: THREE.MeshToonMaterial;
+  tan: CoatMaterial;
+  white: CoatMaterial;
+  black: CoatMaterial;
+  ear: CoatMaterial;
   /** Paws only. Falls back to the coat's `white` when a skin omits it. */
-  paw: THREE.MeshToonMaterial;
+  paw: CoatMaterial;
   /** Brows only. Meaningless while the brows are hidden, which is the default. */
-  brow: THREE.MeshToonMaterial;
+  brow: CoatMaterial;
   /** Nose leather. Per-skin: it does NOT follow `black`. */
-  nose: THREE.MeshToonMaterial;
+  nose: CoatMaterial;
   /** Iris. Per-skin, like the nose. */
-  iris: THREE.MeshToonMaterial;
+  iris: CoatMaterial;
 }
 
 /**
@@ -291,6 +301,16 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
   const irisMat = toon({ color: coat.iris ?? DEFAULT_IRIS });
   const pupilMat = toon({ color: 0x1c110c });
   const glintM = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  // MARKINGS, DECLARED. [[IDEA-079]]'s high-key palette lifts every dark
+  // SURFACE, and these are not surfaces — a tricolor beagle without its saddle
+  // is a different dog, and a pupil that lifts is a blank stare. Nothing can
+  // infer this from the colour: Cookie's saddle and Deep Forest's foliage
+  // measure within two hundredths of each other in both lightness and
+  // saturation (see madboxStyle.ts's MADBOX_INK). The tag is cheap, it is inert
+  // in the shipped toon renderer, and it is the only thing standing between a
+  // restyle and a cast of blank-eyed dogs.
+  for (const m of [black, browMat, pupilMat, noseMat]) m.userData.madboxRole = "ink";
+
   // Named so the editor can find their declarations and save colour edits
   // in place (a material's `.name` is the variable name that made it).
   noseMat.name = "noseMat";
@@ -658,6 +678,33 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
  * skin-switch UI calls; `makeBeagle`'s `skin` param is only for the initial
  * build (e.g. booting with the persisted skin already equipped).
  */
+/**
+ * Re-point `userData.coatMats` after something replaced the dog's materials.
+ *
+ * REPLACING `mesh.material` DOES NOT UPDATE ANYTHING HOLDING THE OLD OBJECT,
+ * and this group holds eight of them so `applyBeagleSkin` can recolour the
+ * whole coat in place without walking the graph. [[IDEA-079]]'s restyle swaps
+ * every material for a matcap; without this call the references survive
+ * pointing at materials nothing draws any more, and equipping a coat stops
+ * changing the dog — silently, because writing a colour to an orphaned
+ * material is not an error.
+ *
+ * Lives here rather than in the restyle because `coatMats` is this file's
+ * private arrangement; the restyle only promises to say WHICH material it
+ * replaced with WHAT.
+ */
+export function remapBeagleCoatMats(
+  group: THREE.Object3D,
+  swaps: ReadonlyMap<THREE.Material, THREE.Material>,
+): void {
+  const mats = group.userData.coatMats as Record<string, CoatMaterial> | undefined;
+  if (!mats) return;
+  for (const k of Object.keys(mats)) {
+    const next = swaps.get(mats[k] as unknown as THREE.Material);
+    if (next) mats[k] = next as CoatMaterial;
+  }
+}
+
 export function applyBeagleSkin(group: THREE.Group, skin: BeagleSkin): void {
   const mats = group.userData.coatMats as BeagleCoatMats | undefined;
   if (!mats) return;
@@ -716,8 +763,16 @@ export interface EnemyBehaviour {
   onRestore?(): void;
 }
 
+/** Any material an enemy is built from — toon today, matcap under the
+ *  restyle. Both carry `.color`; only one carries `.emissive`, which is why
+ *  every emissive write on these goes through a guard. */
+export type SkinMaterial = THREE.MeshToonMaterial | THREE.MeshMatcapMaterial;
+
 export interface GhostUserData {
-  bodyMat: THREE.MeshToonMaterial;
+  /** A UNION for the same reason `BeagleCoatMats` is one — [[IDEA-079]]'s
+   *  restyle swaps these for matcaps, and every state the enemy can be in
+   *  has to keep working through whichever is in place. */
+  bodyMat: SkinMaterial;
   /** Every node the "eaten" state must re-show â€” the eye parts and any group
    *  they hang from, since an invisible parent hides its children outright.
    *  Object3D, not Mesh: some of those are Groups. */
@@ -732,16 +787,16 @@ export interface GhostUserData {
   /** Every material of the body, dimmed to a translucent spirit while eaten.
    *  Collected by traversal at build time so a character never has to keep a
    *  hand-written list of its own materials in sync. */
-  spiritMats: THREE.MeshToonMaterial[];
+  spiritMats: SkinMaterial[];
   /** Materials left SOLID while eaten â€” the eyes, which are what a player
    *  actually tracks as an eaten enemy runs home. */
-  eyeMats: THREE.MeshToonMaterial[];
+  eyeMats: SkinMaterial[];
   /** Extra materials that must follow the frightened/normal recolour along
    *  with `bodyMat`. Small fixed accents (a dark antenna, a wing) deliberately
    *  stay their own colour â€” but when an accent is a LARGE share of the
    *  silhouette, leaving it un-recoloured would weaken the "this one is edible
    *  now" read, which matters more than the styling. Undefined = none. */
-  accentMats?: THREE.MeshToonMaterial[];
+  accentMats?: SkinMaterial[];
   /** Pupil dart PIVOTS, one per eye. A decal cap has to stay centred on the
    *  form to hug it, so it can never be TRANSLATED the way the old ball pupils
    *  were â€” instead its pivot is ROTATED, sweeping the cap across the surface
@@ -749,7 +804,7 @@ export interface GhostUserData {
    *  they all share this one pivot convention, which is why a single editor
    *  rule covers all four. */
   pupPivots: THREE.Object3D[];
-  pupM: THREE.MeshToonMaterial;
+  pupM: SkinMaterial;
   baseColor: number;
   /** The 5 wavy-hem spheres, in build order â€” wobbled (y bob + scale) by syncToEntity. */
   hem: THREE.Mesh[];
@@ -805,9 +860,9 @@ function collectSpiritMats(
         transparent: m.transparent,
         opacity: m.opacity,
         depthWrite: m.depthWrite,
-        emissiveIntensity: m.emissiveIntensity,
+        emissiveIntensity: skinEmissiveIntensity(m),
         color: m.color.getHex(),
-        emissive: m.emissive.getHex(),
+        emissive: skinEmissiveHex(m),
       };
       out.push(m);
     }
@@ -7800,6 +7855,64 @@ function smoothTo(from: number, to: number, rate: number, dt: number): number {
  * time, and changing that contract is out of scope for this pass; it's left
  * for the effects layer, which is better positioned to key off a timer.
  */
+/**
+ * Emissive on a skin material, where it HAS one.
+ *
+ * A matcap has no emissive channel — the shading IS the texture — so every
+ * write in the enemy state machine goes through this. Widening `GhostUserData`
+ * for [[IDEA-079]] made the compiler point at all ELEVEN of them at once,
+ * which is the whole argument for the union type: this collision was
+ * previously invisible, because the materials are reached through a `userData`
+ * bag and `.emissive.setHex()` sailed past unchecked.
+ *
+ * What is lost under the restyle is a flat lift on top of a colour — the body
+ * glow at 0.14-0.15 and the eyes at 0.45. A matcap is already high-key and the
+ * sclera is white either way, so the frightened/eaten READS survive; they are
+ * carried by colour, which still works.
+ */
+function skinEmissive(m: SkinMaterial, hex: number, intensity?: number): void {
+  if (!("emissive" in m)) return;
+  m.emissive.setHex(hex);
+  if (intensity !== undefined) m.emissiveIntensity = intensity;
+}
+
+/** Read an emissive back, or black where there is none. */
+function skinEmissiveHex(m: SkinMaterial): number {
+  return "emissive" in m ? m.emissive.getHex() : 0x000000;
+}
+
+/** Read an emissive intensity back, or 1 where there is none. */
+function skinEmissiveIntensity(m: SkinMaterial): number {
+  return "emissiveIntensity" in m ? m.emissiveIntensity : 1;
+}
+
+/**
+ * Re-point an enemy's material references after something replaced them.
+ *
+ * The same job `remapBeagleCoatMats` does, over `GhostUserData`'s five
+ * material-holding fields — and it matters more here, because what breaks is
+ * not cosmetic. `applyGhostState` drives these to show FRIGHTENED and EATEN:
+ * miss the remap and the enemies stop turning blue when you eat a bone, which
+ * is the player losing the signal that says when they can chase.
+ *
+ * Lives here because the shape of that bag is this file's business; the
+ * restyle only promises to say which material it replaced with what.
+ */
+export function remapEnemyMaterials(
+  group: THREE.Object3D,
+  swaps: ReadonlyMap<THREE.Material, THREE.Material>,
+): void {
+  const ud = group.userData as Partial<GhostUserData> | undefined;
+  if (!ud || !ud.bodyMat) return;
+  const one = (m: SkinMaterial): SkinMaterial =>
+    (swaps.get(m as unknown as THREE.Material) as SkinMaterial | undefined) ?? m;
+  ud.bodyMat = one(ud.bodyMat);
+  ud.pupM = ud.pupM ? one(ud.pupM) : ud.pupM;
+  ud.spiritMats = ud.spiritMats?.map(one);
+  ud.eyeMats = ud.eyeMats?.map(one);
+  ud.accentMats = ud.accentMats?.map(one);
+}
+
 export function applyGhostState(mesh: THREE.Object3D, state: GhostState, dir: Vec2): void {
   const ud = mesh.userData as GhostUserData;
 
@@ -7886,13 +7999,13 @@ function applyEnemyLook(mesh: THREE.Object3D, ud: GhostUserData, look: LookKind)
         m.transparent = base?.transparent ?? false;
         m.opacity = base?.opacity ?? 1;
         m.depthWrite = base?.depthWrite ?? true;
-        m.emissiveIntensity = base?.emissiveIntensity ?? 1;
+        if ("emissiveIntensity" in m) m.emissiveIntensity = base?.emissiveIntensity ?? 1;
         // Put the authored colours back too. bodyMat and the accents are in
         // this list as well and get repainted a few lines below, so this is
         // the full undo for every OTHER material — the ones no branch owns.
         if (base) {
           m.color.setHex(base.color);
-          m.emissive.setHex(base.emissive);
+          skinEmissive(m, base.emissive);
         }
         m.needsUpdate = true;
       }
@@ -7905,14 +8018,13 @@ function applyEnemyLook(mesh: THREE.Object3D, ud: GhostUserData, look: LookKind)
 
   if (look === "frightened") {
     ud.bodyMat.color.setHex(COLORS.frightened);
-    ud.bodyMat.emissive.setHex(0x101c66);
-    ud.bodyMat.emissiveIntensity = 0.15;
+    skinEmissive(ud.bodyMat, 0x101c66, 0.15);
     // Large accent masses (the beetle's teal head, legs and antennae) turn too,
     // or a third of the silhouette would stay its normal colour and blunt the
     // "edible now" read. Small fixed accents simply do not register here.
     ud.accentMats?.forEach((m) => {
       m.color.setHex(COLORS.frightened);
-      m.emissive.setHex(0x101c66);
+      skinEmissive(m, 0x101c66);
     });
     ud.pupM.color.setHex(0xffffff);
     return;
@@ -7933,8 +8045,7 @@ function applyEnemyLook(mesh: THREE.Object3D, ud: GhostUserData, look: LookKind)
       // depth-buffer holes in each other and flicker as it turns.
       m.depthWrite = false;
       m.color.setHex(ud.baseColor);
-      m.emissive.setHex(ud.baseColor);
-      m.emissiveIntensity = EATEN_GLOW;
+      skinEmissive(m, ud.baseColor, EATEN_GLOW);
       m.needsUpdate = true;
     }
     // A spirit that still drops a solid shadow gives the whole illusion away,
@@ -7949,12 +8060,10 @@ function applyEnemyLook(mesh: THREE.Object3D, ud: GhostUserData, look: LookKind)
 
   // normal
   ud.bodyMat.color.setHex(ud.baseColor);
-  ud.bodyMat.emissive.setHex(ud.baseColor);
-  ud.bodyMat.emissiveIntensity = 0.15;
+  skinEmissive(ud.bodyMat, ud.baseColor, 0.15);
   ud.accentMats?.forEach((m) => {
     m.color.setHex(m.userData.baseColor as number);
-    m.emissive.setHex(0x000000);
-    m.emissiveIntensity = 1;
+    skinEmissive(m, 0x000000, 1);
   });
   ud.pupM.color.setHex(ud.pupBaseColor);
 }

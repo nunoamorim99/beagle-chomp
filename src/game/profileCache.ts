@@ -2,7 +2,7 @@
 //
 // The in-memory profile. This is what makes the move from localStorage to a
 // server survivable: profileStore.ts's 19 SYNCHRONOUS exports read and write
-// this object, so game.ts, shop.ts and levelMap.ts keep calling them exactly as
+// this object, so game.ts, shop.ts and the journey map keep calling them exactly as
 // before — no async plumbing threaded through the game loop, no await in a
 // render path, ~27 call sites untouched.
 //

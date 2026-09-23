@@ -53,6 +53,9 @@
       import { Grid } from "/src/game/grid.ts";
       import { MAZES } from "/src/game/mazes.ts";
       import { MAZE_THEMES, setEquippedMazeThemeId, getEquippedMazeTheme } from "/src/game/themes.ts";
+      import { applyMadboxStyle, makeMadboxCaches, boardBounce, liftPaletteForMadbox, shouldStyleBoard } from "/src/render/madboxStyle.ts";
+      import { makeBeagle, makeEnemy, applyGhostState } from "/src/render/characters.ts";
+      import { COLORS } from "/src/game/config.ts";
 
       const q = new URLSearchParams(location.search);
       const themeId = q.get("theme") ?? "garden";
@@ -66,6 +69,23 @@
         for (const t of MAZE_THEMES) t.palette.fence = "none";
       }
 
+      // THE SURFACE LIFT HAS TO RUN BEFORE buildBoard(). The wall and floor
+      // textures BAKE their palette colour in at generation time, so a lift
+      // applied afterwards would change a number nothing reads again. This is
+      // also why ?style=madbox cannot be a pure material swap — see
+      // liftPaletteForMadbox's own note.
+      // THE DEFAULT IS WHAT SHIPS (IDEA-079 made the style the game's normal
+      // state), with `?style=classic` as the A/B in the same direction the
+      // game's own flag reads. It defaulted to CLASSIC for a while after the
+      // style landed, which made every unparameterised shot of this harness a
+      // picture of the old game — and one of them was read as a defect in the
+      // new one. Fourth instrument-mismatch in this feature; suspect the
+      // harness first.
+      const madbox = q.get("style") !== "classic";
+      if (madbox) {
+        for (const t of MAZE_THEMES) liftPaletteForMadbox(t.id, t.palette);
+      }
+
       const canvas = document.getElementById("c");
       const rig = createScene(canvas);
       rig.applySceneTheme(getEquippedMazeTheme());
@@ -73,6 +93,69 @@
       const mazeIdx = Number(q.get("maze") ?? 0) % MAZES.length;
       const grid = new Grid(MAZES[mazeIdx]);
       const board = buildBoard(rig.scene, grid);
+
+      // ?cast=1 stages the CHARACTERS on the board.
+      //
+      // Behind a flag because this page's day job is reviewing a BOARD, and
+      // five enemies parked in a corridor are exactly the thing in the way of
+      // that. It exists because the question "does this style work for the
+      // whole game" is mostly a question about the characters, and neither a
+      // turntable nor a running game can hold them still at play scale.
+      if (q.get("cast") === "1") stageCast();
+
+      function stageCast() {
+      const dog = makeBeagle();
+      // Stood where the `close` view is aimed, so the one review angle that can
+      // actually judge a character has one in it.
+      dog.position.set(-3.5, 0, -3.5);
+      dog.rotation.y = Math.PI;
+      rig.scene.add(dog);
+
+      // THE CAST, ON THE BOARD, AT PLAY SCALE.
+      //
+      // [[IDEA-079]] leaves the enemies on toon materials while everything
+      // around them becomes matcaps, and the only question that decision turns
+      // on is whether the mixed shading READS at the size a player sees it. A
+      // turntable cannot answer that and a running game is awkward to hold
+      // still, so they are staged here instead: four teams plus one FRIGHTENED,
+      // which is the state the whole argument is about.
+      const enemyRow = [
+        ["flea", COLORS.ghostRose, "normal"],
+        ["beetle", COLORS.ghostTeal, "normal"],
+        ["crab", COLORS.ghostAmber, "normal"],
+        ["pizza", COLORS.ghostViolet, "normal"],
+        ["burger", COLORS.ghostLeaf, "frightened"],
+      ];
+      enemyRow.forEach(([skin, hue, state], i) => {
+        const e = makeEnemy(skin, hue);
+        // Along the corridor the `close` camera is aimed down, so all five are
+        // in frame together — the frightened one especially, since "can you
+        // still tell it is edible" is the whole reason this sheet exists.
+        e.position.set(-4.5, 0, -1.0 - i * 1.0);
+        applyGhostState(e, state, { x: 0, y: 1 });
+        rig.scene.add(e);
+      });
+      }
+
+      // ?style=madbox restyles everything the island map restyles: the palette
+      // snaps to the high-key library and every LIT, UNTEXTURED material
+      // becomes a matcap over one shared bounce. Textured surfaces (the hedge
+      // wall, the grid-derived floor) are skipped by contract — see
+      // madboxStyle.ts — so this is the honest picture of what a straight
+      // application to the board actually does, holes included.
+      // A night theme keeps its own look — see shouldStyleBoard.
+      // boardBounce, NOT the global MADBOX_BOUNCE — which is the ocean's, true
+      // on the island map and nowhere else. This harness used it for a while
+      // and so reproduced the exact blue cast the game was fixed for, i.e. it
+      // would have reported a corrected board as still broken.
+      if (madbox && shouldStyleBoard(getEquippedMazeTheme().palette)) {
+        const caches = makeMadboxCaches();
+        applyMadboxStyle(rig.scene, boardBounce(getEquippedMazeTheme().palette), caches);
+      }
+
+      // Dev-only hook so a measuring script can read renderer.info — the same
+      // shortcut test-progression-ui.ts uses for `window.__game`.
+      window.__rig = rig;
 
       rig.resize();
       addEventListener("resize", () => rig.resize());

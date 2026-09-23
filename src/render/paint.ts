@@ -23,6 +23,29 @@ export function css(c: RGB): string {
 }
 
 /** Linear blend; t = 0 keeps `a`, t = 1 reaches `b`. */
+/**
+ * RGB back to a packed hex. **CLAMPED, and that is the entire reason this
+ * exists as a shared function.**
+ *
+ * `lit()` is a plain multiply and can hand back a channel above 1. Packing
+ * that by hand with `(r << 16) | (g << 8) | b` does not saturate — it OVERFLOWS
+ * into the next byte and carries, so a colour that is merely too bright comes
+ * back as a different HUE.
+ *
+ * That is not hypothetical. `archway.ts` packed by hand and the menu's hedge
+ * arch rendered MAGENTA: its foliage green (216) times its own 1.34 lift is
+ * 289, and 289 - 256 = 33, which was the green byte on screen. It sat latent
+ * for releases because the shipped palette happened to stay under the line —
+ * [[IDEA-079]]'s brighter surfaces crossed it, which is how it surfaced. Two
+ * other modules had already written the same clamped helper privately
+ * (`surroundProps.ts` even noting "paint.ts only goes the other way"), so this
+ * is the third time it was needed and the first time it is shared.
+ */
+export function hexOf(c: RGB): number {
+  const b = (v: number): number => Math.max(0, Math.min(255, Math.round(v * 255)));
+  return (b(c[0]) << 16) | (b(c[1]) << 8) | b(c[2]);
+}
+
 export function mix(a: RGB, b: RGB, t: number): RGB {
   return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
 }

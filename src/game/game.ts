@@ -143,6 +143,8 @@ import {
   setBeagleDeath,
   resetBeagleScale,
   applyBeagleSkin,
+  remapBeagleCoatMats,
+  remapEnemyMaterials,
 } from "../render/characters";
 import { createHud, type Hud } from "../ui/hud";
 import { ICON, iconHtml, plateHtml, setGlyph } from "../ui/icons";
@@ -155,7 +157,15 @@ import {
   type Sound,
 } from "../ui/sound";
 import { attachShop, type ShopHandle } from "../ui/shop";
-import { attachLevelMap, type LevelMapHandle } from "../ui/levelMap";
+import { attachJourneyMap, type JourneyMapHandle } from "../ui/journeyMap";
+import { createJourneyScene, type JourneyScene } from "../render/journeyScene";
+import { MADBOX_STYLE_ON } from "../render/madboxFlag";
+import {
+  applyMadboxStyle,
+  makeMadboxCaches,
+  shouldStyleBoard,
+  boardBounce,
+} from "../render/madboxStyle";
 import {
   initProfileFromStorage,
   getCoins,
@@ -364,7 +374,34 @@ export class Game {
   // IDEA-014: the Challenge "garden path" level-select page — opened by
   // #journeyBtn (see the constructor) instead of the old direct
   // startJourney(getChallengeProgress()) auto-continue call.
-  private readonly levelMap: LevelMapHandle;
+  private readonly levelMap: JourneyMapHandle;
+  // IDEA-079: the island map's own scene. Built once and kept, like menuScene
+  // and shopScene — forty islands is ~160k triangles, and rebuilding that on
+  // every open would stall the one screen a player crosses between runs.
+  private readonly journeyScene: JourneyScene;
+  /** Shared across every level so the map's matcaps are generated once. */
+  private readonly madboxCaches = makeMadboxCaches();
+
+  /**
+   * [[IDEA-079]]: restyle an enemy as it is created.
+   *
+   * At the BUILD SITE rather than in the scene-wide pass, for the same reason
+   * the beagle is: enemies are rebuilt per level and the scene pass does not
+   * run again afterwards, so anything created later would simply never be
+   * styled. Doing it here also makes the ordering irrelevant.
+   *
+   * The remap is not optional — `applyGhostState` reaches these materials
+   * through `userData` references, and leaving them pointing at replaced
+   * objects stops the frightened blue appearing at all.
+   */
+  // Typed off the builder rather than as `THREE.Object3D`: src/game may not
+  // import three, and this is the one place in the file that needed a mesh
+  // type at all.
+  private styleEnemy(mesh: ReturnType<typeof makeEnemy>): void {
+    if (!MADBOX_STYLE_ON || !shouldStyleBoard(getEquippedMazeTheme().palette)) return;
+    const swaps = applyMadboxStyle(mesh, boardBounce(getEquippedMazeTheme().palette), this.madboxCaches);
+    remapEnemyMaterials(mesh, swaps);
+  }
   private readonly dpad: DpadHandle;
   private readonly stick: StickHandle;
   private readonly detachPauseButton: () => void;
@@ -612,6 +649,33 @@ export class Game {
     // default param reads the player's real equipped skin here.
     this.beagleMesh = makeBeagle();
     this.rig.scene.add(this.beagleMesh);
+
+    // THE DOG IS STYLED HERE, ONCE, AND NOT IN buildLevel — for two reasons
+    // and the first one crashed.
+    //
+    //  1. `buildLevel` runs from THIS constructor before this line does, so
+    //     `this.beagleMesh` was still undefined and the restyle walked an
+    //     undefined root. Loudly, at least: the app refused to start.
+    //  2. The dog is built once and lives for the session, so styling it per
+    //     level was wasted work anyway.
+    //
+    // It must be TINT mode and the coat references must be remapped.
+    // `makeBeagle` keeps its eight coat materials in `userData.coatMats` so
+    // `applyBeagleSkin` can recolour the dog in place when a coat is equipped;
+    // a plain swap leaves those pointing at materials nothing draws and
+    // equipping silently stops working. Doing it here also means the
+    // scene-wide BAKE in buildLevel finds the dog already styled and skips it,
+    // which is the ordering that keeps the tint.
+    if (MADBOX_STYLE_ON) {
+      const swaps = applyMadboxStyle(
+        this.beagleMesh,
+        boardBounce(getEquippedMazeTheme().palette),
+        this.madboxCaches,
+        undefined,
+        { tint: true },
+      );
+      remapBeagleCoatMats(this.beagleMesh, swaps);
+    }
     // Deliberately a SIBLING of the beagle, not a child of it: that group
     // breathes, waddles, is scaled to nothing by the death animation and is
     // strobed invisible during the post-hit grace blink, and a bubble
@@ -730,10 +794,11 @@ export class Game {
     // hideMenu()), so its own onOpen/onClose only need to toggle
     // body.map-open for HUD/menu chrome-hiding, mirroring the shop's
     // onOpen/onClose exactly (see style.css's body.map-open rules).
-    this.levelMap = attachLevelMap(document.body, {
+    this.journeyScene = createJourneyScene();
+    this.levelMap = attachJourneyMap(document.body, this.journeyScene, canvas, {
       onPlayLevel: (idx) => {
         // The map has already closed itself AND fired onClose (restoring
-        // body.map-open chrome — see levelMap.ts's close()) before this
+        // body.map-open chrome — see journeyMap.ts's close()) before this
         // fires; startJourney() below hides #mainMenu itself (via
         // hideMenu()) the same way the other run-start paths do.
         this.sound.resume();
@@ -818,6 +883,9 @@ export class Game {
       const aspect = window.innerWidth / window.innerHeight;
       this.menuScene.resize(aspect);
       this.shopScene.resize(aspect);
+      // Width AND height, not an aspect: this one projects world points to CSS
+      // pixels for the pin layer, so it needs the real viewport.
+      this.journeyScene.resize(window.innerWidth, window.innerHeight);
     };
     window.addEventListener("resize", onMenuResize);
     onMenuResize();
@@ -1011,6 +1079,21 @@ export class Game {
   private buildLevel(mazeIdx: number, forcedTheme?: MazeTheme): LevelAssets {
     const grid = new Grid(MAZES[mazeIdx]);
     const board = buildBoard(this.rig.scene, grid);
+    // IDEA-079 (opt-in): the reference material system over the real board.
+    // Applied to the SCENE after the board is built, because the wall and
+    // floor textures have already baked their (lifted) palette colour in by
+    // then and the swap only has to reach what is left — props, pickups,
+    // fence, ground detail and the beagle. Enemies are skipped inside
+    // applyMadboxStyle; see its note on why that is a gameplay rule.
+    // The beagle and the enemies are styled where they are BUILT, not here.
+    //
+    // A NIGHT THEME IS LEFT ALONE. Its darkness is the theme, and both halves
+    // of the style contradict it: the lift brightens its ground and the snap
+    // pushes its distant buildings to high-key palette entries. See
+    // shouldStyleBoard for why that is decided from the SKY rather than by
+    // naming Night City and Arcade Night.
+    //
+    // ORDER: this runs BELOW applyBoardTheme, not above it. See the note there.
 
     // IDEA-063: a challenge level is dressed by its OWN theme, owned or not.
     //
@@ -1023,6 +1106,22 @@ export class Game {
     const theme = forcedTheme ?? getEquippedMazeTheme();
     if (theme.id !== getEquippedMazeThemeId()) {
       applyBoardTheme(board, this.rig.scene, grid, theme);
+    }
+    // IDEA-079: THE STYLE GOES ON AFTER THE THEME, AND IT USED TO GO ON
+    // BEFORE. `applyBoardTheme` REBUILDS the props and the hedge decor, so a
+    // swap applied above it reached meshes that were then thrown away — on a
+    // forced-theme Journey level every prop on the board came back unstyled,
+    // while classic (which never takes that branch) looked perfect. That
+    // asymmetry is why it survived: the bug only exists on the levels nobody
+    // was staring at while tuning the style.
+    //
+    // It is also keyed off `theme`, not off the equipped theme, for the same
+    // reason — a Journey level forces a theme the player may not own, so the
+    // bounce and the night-theme exemption both have to come from what the
+    // board is WEARING. Asking `getEquippedMazeTheme()` here would light an
+    // Arcade Night board with the garden's bounce.
+    if (MADBOX_STYLE_ON && shouldStyleBoard(theme.palette)) {
+      applyMadboxStyle(this.rig.scene, boardBounce(theme.palette), this.madboxCaches);
     }
     // The atmosphere, unlike the board, is not rebuilt per level — see
     // sceneThemeId's own comment. This is what puts the sky back after a
@@ -1142,6 +1241,7 @@ export class Game {
     this.stick.detach();
     this.menuScene.dispose();
     this.shopScene.dispose();
+    this.journeyScene.dispose();
     this.shieldBubble.dispose();
   }
 
@@ -1338,6 +1438,7 @@ export class Game {
     // ghosts, in the same order, as before this refactor.
     this.ghosts = GHOST_DEFS.slice(0, this.activeModifiers.ghostCount).map((def, i) => {
       const mesh = makeEnemy(enemySkinId, def.color);
+      this.styleEnemy(mesh);
       this.rig.scene.add(mesh);
       // IDEA-013: scaled by activeModifiers.ghostSpeedMult for the same
       // "byte-for-byte no-op in classic" reason as the beagle above — the
@@ -1448,6 +1549,7 @@ export class Game {
     this.ghosts = this.ghosts.map((rig, i) => {
       this.rig.scene.remove(rig.mesh);
       const mesh = makeEnemy(skinId, GHOST_DEFS[i].color);
+      this.styleEnemy(mesh);
       this.rig.scene.add(mesh);
       return { ...rig, mesh };
     });
@@ -2906,6 +3008,27 @@ export class Game {
     // renders through the same branch — one renderer, one scene at a time.
     // Ordered first so opening it from the menu shows the illustration rather
     // than the menu vignette behind the card.
+    // IDEA-079: the island map, ahead of the shop branch because it is the
+    // only one of the three that is INTERACTIVE — it reads a live camera the
+    // player is dragging, and a frame it does not get is a frame that drops out
+    // of the pan. It cannot be open at the same time as the shop or the
+    // tutorial (all three are opened from the menu, which they each cover), so
+    // the ordering is about clarity rather than arbitration.
+    if (this.levelMap.isOpen()) {
+      this.journeyScene.update(dt, performance.now());
+      // AFTER the camera, never before: the pins are projected THROUGH it, so
+      // reading them first draws every pin one frame behind the islands they
+      // are pinned to — which on a flicked pan is a visible lag between the
+      // labels and the map.
+      this.levelMap.tick();
+      this.rig.renderer.render(this.journeyScene.scene, this.journeyScene.camera);
+      // Reschedule. Every other early return in this function does, and a
+      // branch that forgets does not error — it silently stops the whole game
+      // loop the moment that screen opens.
+      this.rafHandle = requestAnimationFrame(this.tick);
+      return;
+    }
+
     if (this.shopOpen || this.tutorial.isOpen()) {
       this.shopScene.update(dt);
       this.rig.renderer.render(this.shopScene.scene, this.shopScene.camera);

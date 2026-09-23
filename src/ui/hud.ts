@@ -112,8 +112,10 @@ export function createHud(root: HTMLElement, maxLives: number): Hud {
   // bottom of that band, on the neighbourhood. Anchoring to the HUD instead
   // puts it at the top of the same band, against the chrome it belongs with.
   //
-  // MEASURED, NOT A CONSTANT, for the reason levelMap.ts publishes its own
-  // header height: this row's height is content-dependent. The lives chip is
+  // MEASURED, NOT A CONSTANT, because this row's height is content-dependent.
+  // (The 2D level map used to publish its own header height for the same
+  // reason and was cited here; IDEA-079 deleted it, so the reason is stated
+  // rather than borrowed.) The lives chip is
   // a fixed five hearts, but the map chip grows from "5" to "115" to "Bonus",
   // the score column grows with the figure, and a narrow phone can wrap the
   // whole row — and a literal offset here is one that has to be re-tuned

@@ -941,34 +941,28 @@ body.map-open #mainMenu{display:none}
   .shop-rail-card-body{flex:1 1 auto}
 }
 
-/* ---------------------------------------------------------------------- */
-/* IDEA-014: the Challenge "garden path" level-select PAGE
-   (src/ui/levelMap.ts). Same full-screen page shell as #shop, but — unlike
-   the shop's transparent hero stage — this page carries a MOSTLY-OPAQUE
-   sky backdrop of its own: the menu's 3D scene keeps rendering behind it
-   while mode stays "start", so text needs real contrast rather than relying
-   on hiding what's underneath. Colours echo the sky token at the top fading
-   toward the hedge-green hill silhouette pinned to the bottom.
+/* The JOURNEY map page (src/ui/journeyMap.ts). Same full-screen page shell as
+   #shop, and the #levelMap id is deliberately unchanged — the 3D map reuses
+   the element the 2D one had, so nothing else on the page had to learn a new
+   name.
 
-   IDEA-014 desktop rework: mobile (≤820px, this base ruleset) is a fixed
-   flex column with the header pinned top, a scrollable `.map-body` trail in
-   the middle, and the info block pinned to the bottom as a footer bar. On
-   desktop (>820px, see the query far below) the whole PAGE becomes the
-   scroll container instead, the header goes sticky + full width, and the
-   info block moves into a right side panel. */
+   IDEA-079 REPLACED WHAT THIS SECTION USED TO STYLE. It was a scrolling SVG
+   trail of stepping stones (IDEA-014, extended by IDEA-063) — roughly 65
+   rules covering `.map-node`, `.map-trail`, `.map-page`, `.map-body`,
+   `.map-stage`, `.map-panel-*` and the chapter rail — and all of it went with
+   `src/ui/levelMap.ts`. The islands are 3D now: the map is a WebGL scene and
+   the only DOM left is chrome over it, so what survives here is the header,
+   the progress bar, the pin layer (`.jp-*`, src/ui/journeyPins.ts) and the
+   selected-level card.
+
+   `.map--islands` is the modifier that switches this element from the old
+   page shell to a transparent hole over the canvas — see journeyMap.ts's own
+   note on why the page is a hole rather than a surface. */
 #levelMap{position:fixed;inset:0;z-index:20;display:flex;flex-direction:column;
   pointer-events:none;
   background:linear-gradient(180deg,#bfe0f2 0%,var(--bc-sky) 45%,#7fb9dd 100%);
   padding:calc(var(--bc-gutter) + env(safe-area-inset-top)) calc(var(--bc-s4) + env(safe-area-inset-right))
     calc(var(--bc-gutter) + env(safe-area-inset-bottom)) calc(var(--bc-s4) + env(safe-area-inset-left));}
-.map-page{flex:1 1 auto;display:flex;flex-direction:column;min-height:0;gap:var(--bc-s3);
-  max-width:560px;width:100%;margin:0 auto}
-
-/* .map-stage wraps the trail body + the shared info block (renderPanelInfo) —
-   on mobile a plain column, on desktop a flex ROW with the trail centred in
-   the space left of a fixed-width side panel. Mirrors shop.ts's
-   `.shop-stage` structure/naming intentionally. */
-.map-stage{flex:1 1 auto;display:flex;flex-direction:column;min-height:0;gap:var(--bc-s3)}
 
 .map-header{pointer-events:auto;display:flex;flex-wrap:wrap;align-items:center;gap:var(--bc-s3);
   padding:var(--bc-s2) var(--bc-s3);border-radius:var(--bc-r-card);flex:0 0 auto;
@@ -990,226 +984,6 @@ body.map-open #mainMenu{display:none}
 .map-progress-count{flex:0 0 auto;font-family:var(--bc-font-mono);font-size:11px;
   color:var(--bc-biscuit)}
 
-/* --- IDEA-063: the chapter jump rail ------------------------------------
-   Seven chips under the title, on their OWN header row. `.map-header` is a
-   flex row and the rail carries `flex:1 0 100%`, so it wraps below the back
-   button and the title block rather than competing with them for the same
-   ~358px — at 390px seven chips beside a title is about 210px of chips in
-   roughly 90px of space, i.e. not a layout at all.
-
-   Chips are `flex:1 1 0` so the seven of them SHARE the row: ~44px each at
-   390px, which is the touch-target floor rather than a coincidence. Do not
-   give them a fixed width — an eighth chapter would then overflow silently
-   instead of getting narrower. */
-/* No margin-top: `.map-header` is a wrapping flex row with `gap:var(--bc-s3)`,
-   which is already the ROW gap between the title row and this one. */
-.map-chapter-rail{flex:1 0 100%;display:flex;gap:6px}
-.map-chapter-chip{flex:1 1 0;min-width:0;height:32px;padding:0;
-  display:inline-flex;align-items:center;justify-content:center;
-  font-family:var(--bc-font-display);font-weight:800;font-size:14px;
-  color:var(--bc-text-soft);background:var(--bc-ink);
-  border:2px solid var(--bc-outline);border-bottom-width:var(--bc-edge-chip);
-  border-radius:var(--bc-r-chip);cursor:pointer;
-  transition:background var(--bc-d-state) var(--bc-ease),
-             color var(--bc-d-state) var(--bc-ease)}
-.map-chapter-chip .bc-i{font-size:16px}
-.map-chapter-chip:active{border-bottom-width:2px;transform:translateY(2px)}
-/* The chapter currently IN VIEW — not the one holding the selected level. The
-   two are the same until a chip is tapped, and keeping them the same would
-   make the rail feel dead: you tap the star, the trail moves, and the "1" chip
-   stays lit. Hedge-green, not amber: amber is this screen's single action
-   colour (the Play button), and a "where am I" marker must not compete with
-   it (§08). */
-.map-chapter-chip--on{background:var(--bc-hedge);color:var(--bc-cream);
-  border-color:var(--bc-outline)}
-/* Dimmed by PAINT, never opacity (§03) — this chip sits over the page's own
-   sky gradient and a translucent one turns blue-grey. Still clickable: seeing
-   what is ahead is exactly what a locked chapter is for. */
-.map-chapter-chip--locked{background:#241D16;color:var(--bc-text-mute)}
-.map-chapter-chip--locked.map-chapter-chip--on{background:var(--bc-hedge);color:var(--bc-cream)}
-
-/* --- IDEA-063: chapter banners on the trail ------------------------------
-   A signpost the path runs past. Bark plate, ink outline, cream lettering —
-   the same three-part construction as every other board on the screen, drawn
-   in SVG because it has to scroll with the trail (the hills' own lesson). */
-.map-chapter-plate{fill:var(--bc-bark);stroke:var(--bc-outline);stroke-width:3}
-.map-chapter-label{font-family:var(--bc-font-display);font-weight:800;
-  font-size:14px;fill:var(--bc-cream);letter-spacing:.02em}
-/* The twists are not a numbered stage, and the banner says so before you
-   reach the first stone: a warm rim where the six tour banners have an ink
-   one. */
-.map-chapter--twist .map-chapter-plate{stroke:var(--bc-amber)}
-.map-chapter--twist .map-chapter-label{fill:var(--bc-amber)}
-
-/* Two digits in a 20px-radius disc. The display font at 16px overflows the
-   circle's usable inner width at "40"; 13.5px with a tighter track fits with
-   room to spare, and only the stones that need it pay for it. */
-.map-node-num--wide{font-size:13.5px;letter-spacing:-.04em}
-
-/* --- IDEA-063: the tag row ----------------------------------------------
-   A tour level carries ONE tag (its theme) and a twist level carries two, so
-   the row wraps rather than assuming a count. `min-height` holds the panel's
-   height steady as the selection moves between the two chapters — the thing
-   the old "quiet variant instead of no tag" rule existed to protect. */
-.map-tag-row{display:flex;flex-wrap:wrap;gap:6px;align-items:center;
-  margin-top:var(--bc-s2);min-height:26px}
-.map-tag-row .map-twist-tag{margin-top:0}
-/* The theme tag. Hedge-green rather than the twist tag's warning orange,
-   because a forced theme is not a warning — it is the tour telling you which
-   of the shop's six looks you are about to be shown, owned or not. */
-.map-theme-tag{display:inline-flex;align-items:center;gap:6px;
-  background:var(--bc-ink);border:2px solid var(--bc-enemy-green);
-  border-radius:var(--bc-r-pill);padding:4px 11px;
-  font-family:var(--bc-font-mono);font-size:11px;color:var(--bc-enemy-green)}
-.map-theme-tag .bc-i{font-size:14px}
-
-
-/* Body region: the scrollable path. #levelMap itself is pointer-events:none
-   (only its own header/footer buttons opt back in), so this region has to
-   explicitly re-enable pointer events for BOTH its own vertical scroll
-   gesture AND the node taps inside it — without this, clicks on a node fall
-   straight through to the canvas behind the page. `overflow-y:auto` here is
-   the MOBILE scroll container; the desktop query below switches this to
-   `overflow:visible` (scroll then lives on #levelMap itself instead). */
-.map-body{position:relative;flex:1 1 auto;min-height:0;overflow-y:auto;
-  overflow-x:hidden;border-radius:var(--bc-r-card);-webkit-overflow-scrolling:touch;
-  pointer-events:auto;touch-action:pan-y}
-
-.map-path-scroll{position:relative;z-index:1;display:flex;justify-content:center;
-  padding:var(--bc-s2) 0 18px}
-.map-path-svg{width:100%;max-width:340px;height:auto;overflow:visible}
-
-/* Ground/summit hills: drawn AS PART OF the SVG (see levelMap.ts's
-   buildGroundHill/buildSummitHill), not a separately absolutely-positioned
-   HTML element — that previous version was pinned to the bottom of
-   .map-body's VIEWPORT, so at any scroll position other than "all the way
-   down" it floated mid-trail like a slab instead of sitting behind C1 where
-   the journey starts. Being real SVG content means these two shapes scroll
-   with the trail and are geometrically anchored to C1/C8's own coordinates.
-   The summit hill is deliberately smaller and paler so it reads as a distant
-   peak peeking over the top edge, not a second full band. */
-.map-ground-hill path{fill:var(--bc-hedge);opacity:.92}
-.map-summit-hill path{fill:#8fc98c;opacity:.55}
-
-.map-trail{fill:none;stroke:var(--bc-soil);stroke-width:14;stroke-linecap:round;
-  stroke-linejoin:round;stroke-dasharray:1 15;opacity:.9}
-.map-flower{pointer-events:none}
-
-/* Stepping-stone nodes. `.map-node` is the shared shape; state modifiers
-   recolour the stone + number, and `-selected` adds a bright ring so the
-   currently footer-bound node is obvious among several cleared/locked stones.
-
-   Owner bug report: clicking a node showed a hard BLACK RECTANGULAR outline
-   around the circular stone. Root-caused live: `.map-node` is an SVG
-   <g role="button"> — SVG groups have no border-radius concept, so the
-   browser's OWN native focus outline renders as a plain rectangle around the
-   <g>'s bounding box. A previous fix only suppressed this on :focus-visible,
-   but a mouse/touch CLICK focuses the element WITHOUT matching
-   :focus-visible in Chromium, so that suppression never fired for exactly
-   the "tap a node" case. Fix: suppress the native outline UNCONDITIONALLY,
-   and provide a deliberate CIRCULAR ring only for real keyboard focus.
-
-   Both rings use an SVG `stroke` on the <circle>, NOT box-shadow —
-   box-shadow is computed but does NOT PAINT on bare SVG shape elements in
-   Chromium/Firefox, so it would be an invisible ring here. */
-/* Every stone is interactive, LOCKED INCLUDED (IDEA-063 v2) — tapping one
-   shows its details in the panel even though Play stays disabled, so a new
-   player can read what is ahead instead of facing a wall of padlocks. So no
-   `cursor:default` on the locked variant any more, and the hover lift below
-   applies to all three states. */
-.map-node{cursor:pointer;pointer-events:auto;outline:none}
-.map-node-stone{stroke:var(--bc-outline);stroke-width:3;
-  transition:transform var(--bc-d-press) var(--bc-ease),
-             stroke var(--bc-d-state) var(--bc-ease),
-             stroke-width var(--bc-d-state) var(--bc-ease)}
-.map-node:hover .map-node-stone{transform:scale(1.06)}
-.map-node:focus-visible .map-node-stone{stroke:var(--bc-amber);stroke-width:5}
-
-.map-node-cleared .map-node-stone{fill:var(--bc-go)}
-.map-node-current .map-node-stone{fill:var(--bc-amber)}
-/* A locked stone is a DARKER STONE, not a faded one. At the old `opacity:.62`
-   the trail's dashes showed straight through the disc, which read as a
-   rendering fault rather than as "not yet". */
-.map-node-locked .map-node-stone{fill:#6E6A63}
-
-.map-node-num{font-family:var(--bc-font-display);font-weight:800;
-  font-size:16px;fill:var(--bc-outline)}
-.map-node-locked .map-node-num{fill:rgba(255,247,232,.72)}
-
-/* The state badge on a stone's shoulder — a check when cleared, a padlock
-   when locked. It straddles the stone's edge, so it is over green, grey OR
-   bare sky depending on the node, and needs to hold on all three: cream fill
-   behind an ink stroke, the same trick the centre banners use. Without the
-   stroke it inherited SVG's default black and read as a blot hanging off the
-   side of the disc. */
-/* A locked stone's padlock IS its face, centred where the number would be,
-   so it needs no stroke to survive an edge it no longer straddles. */
-.map-node-glyph{font-family:'Material Symbols Rounded';font-size:20px;
-  font-variation-settings:'FILL' 1,'wght' 700;fill:var(--bc-ink)}
-
-/* §09 Beacon: marks the CURRENT node on the challenge trail, and nothing
-   else. A full ease-in-out breathing loop — fades smoothly in, expands,
-   fades smoothly back out, with no keyframe holding flat and no instant snap
-   anywhere in the cycle. (The previous version held at 0 opacity for the last
-   30% then SNAPPED back to 60%, which read as a flicker.) Kept as a pure
-   circular <circle r> animation rather than transform:scale/box-shadow,
-   since r-scaling a circle is circular at every frame by construction. */
-.map-node-glow{fill:none;stroke:var(--bc-amber);stroke-width:3;opacity:0;
-  animation:map-pulse 1.8s ease-in-out infinite}
-@keyframes map-pulse{
-  0%{r:21;opacity:0}
-  50%{r:29;opacity:.45}
-  100%{r:21;opacity:0}
-}
-
-.map-node-selected .map-node-stone{stroke:var(--bc-cream);stroke-width:4}
-
-/* .map-panel-info: the shared info-block markup — on mobile this IS the
-   footer bar, on desktop it becomes the right side panel content (see the
-   min-width:821px query below, which restyles this same selector rather than
-   introducing a parallel ruleset). A BOARD rather than a scrim: it sits on
-   the page's own opaque sky, not on the live 3D. */
-.map-panel-info{pointer-events:auto;flex:0 0 auto;display:flex;
-  flex-direction:column;align-items:stretch;
-  gap:0;padding:var(--bc-s3) var(--bc-s4) var(--bc-s4);
-  background:var(--bc-bark);border:var(--bc-line) solid var(--bc-outline);
-  border-bottom-width:var(--bc-edge-board);border-radius:var(--bc-r-board)}
-.map-panel-info-body{flex:1 1 auto;min-width:0}
-.map-panel-head{display:flex;align-items:center;gap:var(--bc-s2);margin-bottom:6px}
-/* The stone's number, drawn the way the trail draws it. */
-.map-panel-num{flex:0 0 auto;width:26px;height:26px;border-radius:8px;
-  background:var(--bc-amber);border:2px solid var(--bc-outline);
-  display:inline-flex;align-items:center;justify-content:center;
-  font-family:var(--bc-font-display);font-weight:800;font-size:14px;
-  color:var(--bc-amber-ink)}
-.map-footer-title{font-family:var(--bc-font-display);font-weight:800;
-  font-size:19px}
-
-/* The twist TAG. Warning-orange, the same colour a power-up wears in its
-   last three seconds — both say "this changes what you expect". A level
-   IDEA-063 removed the "quiet variant" this tag used to fall back to on a
-   level with no twists. It existed to hold the panel's height steady, and the
-   thing that does that now is `.map-tag-row`'s own min-height — while a
-   warning-orange tag reading "Classic pace" on all thirty tour levels was a
-   warning about nothing, which is the fastest way to teach a player to stop
-   reading it. A tour level shows only its theme tag. */
-.map-twist-tag{display:inline-flex;align-items:center;gap:6px;
-  align-self:flex-start;margin-top:var(--bc-s2);
-  background:var(--bc-ink);border:2px solid var(--bc-expiring);
-  border-radius:var(--bc-r-pill);padding:4px 11px;
-  font-family:var(--bc-font-mono);font-size:11px;color:var(--bc-expiring)}
-.map-twist-tag .bc-i{font-size:14px}
-.map-footer-blurb{color:var(--bc-text-soft);font-size:13px;line-height:1.5}
-
-/* .map-panel-extra: the richer desktop-only content (full twist LIST, maze
-   name, explicit state label) — hidden on mobile (no room in the compact
-   footer bar; the compact .map-footer-twist line covers the same info
-   there), shown only inside the desktop side panel. */
-.map-panel-extra{display:none}
-.map-panel-twist-line{font-family:var(--bc-font-mono);font-size:12px;
-  color:var(--bc-amber);line-height:1.6}
-.map-panel-maze{font-size:12px;color:var(--bc-text-mute);margin-top:var(--bc-s2)}
-.map-panel-state{font-size:12px;font-weight:700;margin-top:2px}
 /* Full width, under the info rather than beside it: the panel now carries
    a number, a name, a blurb and a tag, and a button squeezed into the
    right of that had nowhere to grow. */
@@ -1219,64 +993,142 @@ body.map-open #mainMenu{display:none}
 @media (max-width:480px){
   #levelMap{padding:calc(10px + env(safe-area-inset-top)) calc(10px + env(safe-area-inset-right))
     calc(10px + env(safe-area-inset-bottom)) calc(10px + env(safe-area-inset-left))}
-  .map-page{gap:var(--bc-s2)}
   .map-title{font-size:18px}
-
-  .map-panel-info{padding:var(--bc-s3);gap:10px}
-  .map-footer-title{font-size:15px}
   .map-play-btn{padding:12px;font-size:18px}
 }
 
-/* Desktop / wide (>820px) — mirroring the shop's own desktop pattern in three
-   ways: a FULL-WIDTH sticky top bar; a fixed-width (340px) sticky RIGHT SIDE
-   PANEL carrying the richer .map-panel-extra content (with the compact
-   mobile-only .map-footer-twist hidden instead); and PAGE-LEVEL SCROLL —
-   #levelMap itself becomes the scroll container and .map-body switches to
-   overflow:visible so it is no longer a COMPETING inner scroller.
-   scrollIntoView() in levelMap.ts needs no change for this: it already walks
-   up to whichever ancestor is actually scrollable. */
+/* Desktop / wide (>820px). Most of what this query used to do belonged to the
+   scrolling trail — a page-level scroll container and a fixed-width sticky
+   side panel — and went with it. What is left is the sticky top bar, which
+   the island map still wants for the same reason the trail did: it is the
+   only way back. */
 @media (min-width:821px){
   #levelMap{overflow-y:auto;overflow-x:hidden}
-  .map-page{max-width:none;gap:var(--bc-s4)}
   /* The sticky header passes over scrolling SVG content, so on desktop it is
      fully OPAQUE bark rather than the mobile scrim, and sits above the
      trail's own (unpositioned, stacking-order-only) SVG content. */
   .map-header{position:sticky;top:0;z-index:5;background:var(--bc-bark)}
-  /* IDEA-063: `.map-page` must size to its CONTENT here, not to the viewport.
-     A sticky element cannot leave its own containing block, and `.map-page` is
-     a `flex:1 1 auto` child of a fixed-height `#levelMap` — so it was exactly
-     one viewport tall while the trail overflowed it. At 8 stones the trail was
-     ~700px and the page barely scrolled, so nothing ever tested it; at 40 it is
-     ~4 000px, and past the first screen the sticky header and the sticky side
-     panel BOTH hit the bottom of that box and scrolled away with it, leaving a
-     bare trail on bare sky with no back button and no Play. `flex:0 0 auto`
-     makes the box as tall as the trail, which is what both sticky elements
-     need to travel the whole scroll. */
-  .map-page{flex:0 0 auto}
-  .map-stage{flex-direction:row;align-items:flex-start;gap:var(--bc-s4)}
-  .map-body{overflow:visible;flex:1 1 auto;min-width:0;display:flex;justify-content:center}
-  .map-path-scroll{max-width:520px;width:100%}
-  /* Sticks BELOW the sticky header, whatever height that is — levelMap.ts
-     measures the header after every render and publishes it as
-     `--map-header-h` on #levelMap. The fallback is the pre-IDEA-063 literal,
-     so a render that somehow never measured degrades to the old behaviour
-     rather than to zero (a panel stuck under the header). */
-  .map-panel-info{flex:0 0 340px;position:sticky;
-    top:calc(var(--map-header-h,72px) + var(--bc-s3) + env(safe-area-inset-top));
-    align-self:flex-start;flex-direction:column;align-items:stretch;gap:var(--bc-s4);
-    padding:20px calc(18px + env(safe-area-inset-right)) 18px 18px}
-  .map-panel-info-body{flex:0 0 auto}
-  .map-footer-title{font-size:20px}
-  .map-footer-blurb{font-size:13.5px}
   /* The compact "·"-joined line is a mobile-footer affordance only — the
      desktop panel shows the same data as a real one-line-per-modifier list
      instead, so this would otherwise be a duplicate. */
-  .map-twist-tag{display:none}
-  .map-panel-extra{display:block;padding-top:10px;border-top:2px solid var(--bc-hairline)}
   .map-play-btn{width:100%;padding:14px 22px;font-size:16px}
 }
 
-/* ====================================================================== */
+/* ======================================================================
+   THE JOURNEY MAP'S ISLAND VARIANT (IDEA-079, src/ui/journeyMap.ts)
+   ----------------------------------------------------------------------
+   `.map--islands` is a MODIFIER on #levelMap rather than a new page id, and
+   that is what keeps `body.map-open`, the z-index and the hedge-wipe
+   `::before` working with no change to any of them. What it turns off is
+   everything that assumed the page was opaque:
+
+     * the sky gradient — the 3D scene IS the background now, and a gradient
+       over it would hide the thing the screen exists to show;
+     * the flex column and its padding on the body — the pins are absolutely
+       positioned from projected world coordinates and must not be laid out.
+
+   #levelMap is already `pointer-events:none` with `.map-header` opting back
+   in. That was a nicety for the SVG version and is load-bearing here: the
+   scene behind is DRAGGED, so every pixel that is not a control has to pass
+   its pointer through to the canvas.
+   ====================================================================== */
+#levelMap.map--islands{background:none;display:block;padding:0}
+.map--islands .map-header{
+  pointer-events:auto;position:absolute;z-index:2;
+  top:calc(var(--bc-gutter) + env(safe-area-inset-top));
+  left:calc(var(--bc-s4) + env(safe-area-inset-left));
+  right:calc(var(--bc-s4) + env(safe-area-inset-right));
+  max-width:560px;margin:0 auto}
+
+/* The pin layer. Fixed to the viewport because the coordinates it writes are
+   viewport-projected; a positioned ancestor would offset every one of them. */
+.jp-layer{position:fixed;inset:0;z-index:1;pointer-events:none}
+.jp-list{position:absolute;inset:0;margin:0;padding:0;list-style:none}
+/* Faded while the map is being dragged: a surface you are dragging should not
+   also be offering buttons under your thumb. */
+.jp-list.is-dragging .jp-item{opacity:0;transition:opacity .12s var(--bc-ease)}
+
+.jp-item{
+  position:absolute;left:0;top:0;
+  /* --depth (0 near, 1 at the cull distance) shrinks the pin so the far end of
+     the chain recedes instead of piling labels on top of each other. */
+  --shrink:calc(1 - .28 * var(--depth, 0));
+  transform:translate(-50%,-50%) translate(var(--x,0px),var(--y,0px)) scale(var(--shrink));
+  transform-origin:center;
+  opacity:0;transition:opacity .18s var(--bc-ease)}
+.jp-item.is-visible{opacity:calc(1 - .45 * var(--depth, 0))}
+/* The level you are on and the one you picked stay full strength however far
+   away they are — they are the two the screen is about. */
+.jp-item.is-current.is-visible,.jp-item.is-selected.is-visible{opacity:1}
+
+/* THE NAME is what collides; the number never does. Past halfway to the cull
+   distance the label is dropped and the pin collapses to its badge — the same
+   information at a size that fits. */
+.jp-label{max-width:150px;overflow:hidden;white-space:nowrap;
+  transition:max-width .18s var(--bc-ease),opacity .12s var(--bc-ease)}
+.jp-item.is-far .jp-label{max-width:0;opacity:0}
+.jp-item.is-far .jp-pin{padding-right:5px}
+
+.jp-pin{
+  pointer-events:auto;
+  display:flex;align-items:center;gap:7px;
+  padding:5px 12px 5px 5px;min-height:0;
+  font-family:var(--bc-font-display);font-weight:800;font-size:14px;
+  color:var(--bc-text);
+  background:var(--bc-wood);
+  border:var(--bc-line) solid var(--bc-outline);
+  border-bottom:var(--bc-edge-btn) solid var(--bc-outline);
+  border-radius:var(--bc-r-pill)}
+.jp-num{display:grid;place-items:center;width:24px;height:24px;border-radius:50%;
+  background:var(--bc-biscuit);color:var(--bc-outline);
+  font-family:var(--bc-font-mono);font-size:12px;font-weight:700}
+
+/* Dim by PAINT, never by opacity — anything translucent over the live 3D picks
+   up the sea and turns blue-grey, which is the glass look the whole system
+   replaced. A locked pin gets a darker fill. */
+.jp-item.is-locked .jp-pin{background:var(--bc-soil);color:var(--bc-text-mute)}
+.jp-item.is-locked .jp-num{background:var(--bc-wood);color:var(--bc-text-mute)}
+.jp-item.is-cleared .jp-num{background:var(--bc-enemy-green);color:var(--bc-text)}
+/* Amber marks the single next action on a screen (§04), and on this one it is
+   the level you are about to play. */
+.jp-item.is-current .jp-pin{background:var(--bc-amber);color:var(--bc-amber-ink)}
+.jp-item.is-current .jp-num{background:var(--bc-outline);color:var(--bc-biscuit)}
+.jp-item.is-selected .jp-pin{outline:3px solid var(--bc-cream);outline-offset:2px}
+
+/* The card. A sheet pinned to the bottom, because the thing it describes is
+   behind it and must stay visible — this is the one screen where covering the
+   picture to talk about it defeats the picture. */
+.map-card{
+  pointer-events:auto;position:absolute;z-index:3;
+  left:calc(var(--bc-s4) + env(safe-area-inset-left));
+  right:calc(var(--bc-s4) + env(safe-area-inset-right));
+  bottom:calc(var(--bc-gutter) + env(safe-area-inset-bottom));
+  max-width:560px;margin:0 auto;
+  padding:var(--bc-s3);
+  background:var(--bc-scrim-raised);
+  border:var(--bc-line) solid var(--bc-outline);
+  border-bottom:var(--bc-edge-card) solid var(--bc-outline);
+  border-radius:var(--bc-r-card);
+  transform:translateY(calc(100% + var(--bc-gutter) + 8px));
+  transition:transform var(--bc-d-screen) var(--bc-ease)}
+.map-card.is-open{transform:translateY(0)}
+.map-card-head{display:flex;align-items:center;gap:var(--bc-s2)}
+.map-card-num{flex:0 0 auto;display:grid;place-items:center;
+  width:30px;height:30px;border-radius:50%;
+  background:var(--bc-biscuit);color:var(--bc-outline);
+  font-family:var(--bc-font-mono);font-size:14px;font-weight:700}
+.map-card-title{margin:0;font-family:var(--bc-font-display);font-weight:800;
+  font-size:19px;line-height:1.15;min-width:0}
+.map-card-sub{margin:4px 0 0;font-size:12px;color:var(--bc-text-mute);
+  font-family:var(--bc-font-mono)}
+.map-card-row{display:flex;gap:var(--bc-s2)}
+
+@media (max-width:480px){
+  .jp-pin{font-size:13px;padding:4px 10px 4px 4px}
+  .jp-num{width:22px;height:22px;font-size:11px}
+  .map-card-title{font-size:17px}
+}
+
 /* IDEA-019 accounts: auth gate, blocking recovery-code screen, profile,
    privacy notice and the boot/offline splash.
 
@@ -2640,7 +2492,6 @@ body.map-open .powerups{display:none}
      the bob and the beacon end MID-cycle, which would leave the Play icon
      lifted and the beacon ring frozen at 45% opacity. Cancel those outright. */
   .menu-play{animation:none;transform:none}
-  .map-node-glow{animation:none;opacity:0}
   .tut-swipe-dot{animation:none}
 }
 
