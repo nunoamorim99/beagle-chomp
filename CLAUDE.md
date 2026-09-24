@@ -3259,7 +3259,7 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v9.
   screen's "Look" section is the switch, and it exists to collect a preference
   before one of the two is deleted. The `catch` returns **true**, so a device
   that refuses storage and every headless test see what a player sees.
-  Ten rules are load-bearing.
+  Eleven rules are load-bearing.
   1. **A MATCAP IS A SECOND SHADING MODEL, NOT A REPLACEMENT.** `matcap.ts`
      generates a 64px sphere-lit texture on a canvas per (base, bounce) pair —
      generated, never fetched, exactly as every other surface in this PWA is.
@@ -3350,6 +3350,38 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v9.
      looked perfect. `menuScene`/`shopScene` restyle in TWO passes (tint the
      patch and the dog, then bake the scene) and again after `setHero` and after
      `applyPatchTheme`.
+  11. **A TINT MATERIAL IS 1:1 WITH ITS SOURCE, AND IT CARRIES THAT SOURCE'S
+     `userData`.** Nuno, after the style shipped: *"on the shop they have the
+     right colors but on the game they are all black… the crab should be orange
+     like he is on the shop, the beetle should have the blue tone."* Measured,
+     **52 of the flea's 74 materials rendered `#000000` in a run against
+     `#4a2510` in the shop**, and the beetle lost its teal `#1d6f7d` the same
+     way. Two separate causes, and the shop/game asymmetry is what hid both —
+     a shop hero is STATIC, while a run drives `applyGhostState`.
+     - **The character layer stamps state ON THE MATERIAL** — `userData.baseColor`
+       on every accent, `userData.spiritBase` on every spirit material — and
+       `applyEnemyLook` reads them back for the normal and post-eaten looks. A
+       freshly built matcap has an empty bag, so
+       `m.color.setHex(m.userData.baseColor)` became `setHex(undefined)`, which
+       is not a no-op: **it is BLACK.** The swap now copies the source's
+       `userData` wholesale, so anything stamped in future survives by default.
+       Only safe in TINT mode — the bake branch shares one material per palette
+       entry, where the same copy would let the last caller win.
+     - **The tint cache was keyed on the source COLOUR**, which made it the
+       exact opposite of what its own comment claimed: every part authored in
+       one hue, across every character in the game, shared ONE material object.
+       Measured, three ghosts in a run shared **132** materials. Everything
+       tinted is recoloured in place by design, so a shared tint material is
+       one character painting another. The key is the source material's
+       IDENTITY now, in a **WeakMap** (these are per-instance, so a strong map
+       would hold every material of every level a session ever played), with
+       only the TEXTURE still shared — one neutral canvas per bounce, and a
+       colour is a uniform rather than a shader feature, so it costs no draw
+       call.
+     `test-madbox-style.ts` drives an unstyled and a styled copy of EVERY skin
+     through chase → frightened → eaten → chase and compares their colour
+     multisets: the style may change the shading model, it may not change a
+     single colour. Both defects re-injected and caught (17 and 35 failures).
   **`mergeBySignature` WAS DROPPING `uv`**, one attribute along from the vertex
   colours IDEA-067 found. A merged geometry with no UVs samples texel (0, 0) for
   every vertex, so a TEXTURED material comes back as one flat colour — the corner

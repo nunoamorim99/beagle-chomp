@@ -587,6 +587,97 @@ console.log("A restyled enemy still turns blue when you eat a bone");
 }
 
 console.log("");
+console.log("A restyled enemy keeps EVERY authored colour, not just the blue");
+// Nuno, after the style shipped: "on the shop they have the right colors but
+// on the game they are all black... the crab should be orange like he is on
+// the shop." Measured, 52 of the flea's 74 materials rendered #000000 in a run
+// against #4a2510 in the shop.
+//
+// TWO CAUSES, AND THE SHOP/GAME ASYMMETRY IS WHAT HID BOTH. A shop hero is
+// static; a run drives `applyGhostState`, which repaints an enemy from state
+// the character layer stamps ON THE MATERIAL -- `userData.baseColor` on every
+// accent, `userData.spiritBase` on every spirit material. A swapped-in matcap
+// had an empty bag, so `m.color.setHex(m.userData.baseColor)` became
+// `setHex(undefined)`, which is not a no-op: it is BLACK. And the tint cache
+// was keyed on the source COLOUR, so three ghosts shared 132 material objects
+// and each recolour painted the others.
+//
+// The check that catches both is the same one: style a second copy of a skin
+// and drive it through the looks, then compare its colours against an
+// UNSTYLED copy driven through the same looks. The style may change the
+// shading model; it may not change a single colour.
+{
+  installCanvasStub();
+  const caches = makeMadboxCaches();
+  const dir = { x: 0, y: 1 };
+
+  /** Every material colour under a group, as a sorted multiset. */
+  const census = (o: THREE.Object3D): string => {
+    const counts = new Map<string, number>();
+    o.traverse((n) => {
+      const m = n as THREE.Mesh;
+      if (!m.isMesh) return;
+      for (const mat of Array.isArray(m.material) ? m.material : [m.material]) {
+        const c = (mat as THREE.MeshToonMaterial).color;
+        if (!c) continue;
+        const k = c.getHexString();
+        counts.set(k, (counts.get(k) ?? 0) + 1);
+      }
+    });
+    return [...counts.entries()].sort().map(([c, n]) => `${c}x${n}`).join(" ");
+  };
+
+  let compared = 0;
+  const seenMaterials = new Map<unknown, string>();
+  let crossSkinShares = 0;
+
+  for (const skin of ENEMY_SKINS) {
+    const plain = makeEnemy(skin.id, COLORS.ghostRose);
+    const styled = makeEnemy(skin.id, COLORS.ghostRose);
+    const swaps = applyMadboxStyle(styled, MADBOX_BOUNCE, caches);
+    remapEnemyMaterials(styled, swaps);
+    if (swaps.size === 0) continue;
+    compared++;
+
+    // The three looks in the order a run actually visits them, because the
+    // post-eaten RESTORE is a separate path from the first normal paint and
+    // reads a different userData key (`spiritBase`, not `baseColor`).
+    // "chase" is the normal look; there is no "normal" state (ghostAI.ts).
+    for (const look of ["chase", "frightened", "eaten", "chase"] as const) {
+      applyGhostState(plain, look, dir);
+      applyGhostState(styled, look, dir);
+      ok(
+        `${skin.id}: colours survive the style at "${look}"`,
+        census(styled) === census(plain),
+        `styled ${census(styled)} | plain ${census(plain)}`,
+      );
+    }
+
+    // NO TWO SKINS MAY SHARE A MATERIAL OBJECT. Everything tinted is
+    // recoloured in place, so a shared material is one character painting
+    // another -- and it is invisible until two of them are on screen at once.
+    styled.traverse((n) => {
+      const m = n as THREE.Mesh;
+      if (!m.isMesh) return;
+      for (const mat of Array.isArray(m.material) ? m.material : [m.material]) {
+        const owner = seenMaterials.get(mat);
+        if (owner !== undefined && owner !== skin.id) crossSkinShares++;
+        else seenMaterials.set(mat, skin.id);
+      }
+    });
+  }
+
+  ok("no material is shared between two skins", crossSkinShares === 0,
+    `${crossSkinShares} shared`);
+  // VACUITY GUARD, twice over: with no canvas the swap is a no-op and every
+  // comparison above passes by doing nothing, and an empty census compares
+  // equal to an empty census.
+  ok("the skins really were restyled", compared > 0, `${compared} of ${ENEMY_SKINS.length}`);
+  ok("…and the census actually sees materials",
+    census(makeEnemy(ENEMY_SKINS[0]!.id, COLORS.ghostRose)).length > 0);
+}
+
+console.log("");
 console.log("-".repeat(60));
 console.log("");
 console.log("The hedge's tone table is high-key but not flat");

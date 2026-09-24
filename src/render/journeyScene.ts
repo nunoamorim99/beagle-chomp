@@ -272,6 +272,11 @@ export function createJourneyScene(): JourneyScene {
         m.map?.dispose();
         m.dispose();
       }
+      // The tint materials themselves live in a WeakMap keyed by their source
+      // and go with the meshes that hold them; their shared TEXTURE does not,
+      // so it is freed here with the rest of this scene's caches.
+      for (const t of caches.tintTex.values()) t.dispose();
+      caches.tintTex.clear();
       tapHandlers.length = 0;
     },
   };

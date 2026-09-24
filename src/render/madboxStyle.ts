@@ -402,6 +402,25 @@ const NEUTRAL_BASE = 0xffffff;
 export interface MadboxCaches {
   matcap: Map<string, THREE.MeshMatcapMaterial>;
   deck: Map<number, THREE.MeshBasicMaterial>;
+  /**
+   * The neutral tint TEXTURE, one per bounce.
+   *
+   * The texture is the expensive half of a tint and the ONLY half that is safe
+   * to share, because it is generated from `NEUTRAL_BASE` and carries no
+   * colour of its own. Keyed by bounce alone, so a board's worth of tinted
+   * characters costs exactly one 64px canvas.
+   */
+  tintTex: Map<number, THREE.Texture>;
+  /**
+   * One matcap material per SOURCE MATERIAL — the half that must NEVER be
+   * shared. See the tint branch in `applyMadboxStyle` for what sharing cost.
+   *
+   * A WeakMap rather than a Map because these are per-INSTANCE now: a level
+   * builds five enemies and throws them away, so a strong map would hold every
+   * material of every level a session ever played. Keyed by the source
+   * material, the entry leaves when the level does.
+   */
+  tint: WeakMap<THREE.Material, THREE.MeshMatcapMaterial>;
 }
 
 /**
@@ -450,7 +469,7 @@ export function styleSpawned(obj: THREE.Object3D, palette: object): void {
 }
 
 export function makeMadboxCaches(): MadboxCaches {
-  return { matcap: new Map(), deck: new Map() };
+  return { matcap: new Map(), deck: new Map(), tintTex: new Map(), tint: new WeakMap() };
 }
 
 function matcapFor(
@@ -652,18 +671,59 @@ export function applyMadboxStyle(
         const hex = lit.color.getHex();
 
         if (hooks.tint || tintHere) {
-          // One shared neutral texture, but a material PER SOURCE MATERIAL —
-          // never per mesh and never shared across different source materials,
-          // because the whole point is that each keeps its own `color` for a
-          // later recolour to write to.
-          const key = `tint|${bounce}|${lit.color.getHexString()}`;
-          let tm = caches.matcap.get(key);
+          // ONE SHARED TEXTURE, AND A MATERIAL PER SOURCE MATERIAL. The
+          // second half is the whole point of tint mode — each keeps its own
+          // `color` for a later recolour to write to — and the first version
+          // keyed the cache on that COLOUR, which quietly made it the
+          // opposite: every part authored in one hue, across every character
+          // in the game, shared ONE material object.
+          //
+          // Measured, three ghosts in a run shared 132 materials, and the
+          // flea's warm-brown creases rendered #000000 in a run against
+          // #4a2510 in the shop — because something else holding the same
+          // object had recoloured it. Everything tinted is recoloured in
+          // place by design (`applyGhostState` drives the team hues and the
+          // frightened blue, `applyBeagleSkin` the coat, `applyEnemyLook`'s
+          // restore path writes every `spiritMats` entry), so a shared tint
+          // material is one character painting another.
+          //
+          // The key is therefore the SOURCE MATERIAL's identity. Characters
+          // already build their own materials per instance, so this restores
+          // the 1:1 mapping they had before the style and costs no draw call:
+          // the matcap TEXTURE is still shared, and a material's colour is a
+          // uniform rather than a shader feature.
+          let tm = caches.tint.get(m);
           if (!tm) {
-            const tex = makeMatcapTexture(NEUTRAL_BASE, bounce, opts);
-            if (!tex) return m;
+            let tex = caches.tintTex.get(bounce);
+            if (!tex) {
+              const made = makeMatcapTexture(NEUTRAL_BASE, bounce, opts);
+              if (!made) return m;
+              tex = made;
+              caches.tintTex.set(bounce, tex);
+            }
             tm = new THREE.MeshMatcapMaterial({ matcap: tex, color: hex });
             tm.name = `matcap-tint-${lit.color.getHexString()}`;
-            caches.matcap.set(key, tm);
+            // THE SOURCE'S userData COMES WITH IT, AND THAT IS NOT A DETAIL.
+            //
+            // The character layer stamps state ON THE MATERIAL: every enemy
+            // accent carries `userData.baseColor` and every spirit material a
+            // `userData.spiritBase`, and `applyEnemyLook` reads them back to
+            // repaint an enemy for its NORMAL and post-eaten looks. A fresh
+            // matcap has an empty bag, so `m.color.setHex(m.userData.baseColor)`
+            // became `setHex(undefined)` — which is not a no-op, it is BLACK.
+            //
+            // Measured on the flea: 52 of its 74 materials rendered #000000 in
+            // a run against #4a2510 in the shop, because the shop's hero is
+            // static and never calls `applyGhostState`. That asymmetry is the
+            // whole reason it looked like a shop-versus-game problem.
+            //
+            // Copied wholesale rather than by naming the two keys, so anything
+            // the character layer stamps in future survives by default. Safe
+            // ONLY because a tint material is 1:1 with its source — the bake
+            // branch shares one material per palette entry, so the same copy
+            // there would let the last caller win.
+            Object.assign(tm.userData, lit.userData);
+            caches.tint.set(m, tm);
           }
           swaps.set(m, tm);
           return tm;
