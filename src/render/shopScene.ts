@@ -28,7 +28,13 @@ import * as THREE from "three";
 import { COLORS } from "../game/config";
 import { type BeagleSkin } from "../game/cosmetics";
 import { getEquippedMazeTheme, getMazeTheme, type MazeTheme } from "../game/themes";
-import { makeBeagle, makeEnemy, applyBeagleSkin, type BeagleParts } from "./characters";
+import {
+  makeBeagle,
+  makeEnemy,
+  applyBeagleSkin,
+  remapBeagleCoatMats,
+  type BeagleParts,
+} from "./characters";
 import {
   makePropById,
   makeLifeBone,
@@ -46,6 +52,14 @@ import {
 } from "./showcaseSurface";
 import { SHOWCASE_FOG_REACH, createShowcaseSurround } from "./showcaseSurround";
 import { toon } from "./toon";
+import { MADBOX_STYLE_ON } from "./madboxFlag";
+import {
+  applyMadboxStyle,
+  makeMadboxCaches,
+  setEmissiveIfPresent,
+  boardBounce,
+  type StyleableMat,
+} from "./madboxStyle";
 import { wallTextureFor } from "./wallTexture";
 
 // Same cheap inward-facing skydome technique as menuScene.ts's own
@@ -108,10 +122,13 @@ const BLOOM_COLOR = 0xf2d43a;
 interface GardenPatch {
   group: THREE.Group;
   surfaces: ShowcaseSurfaces;
-  soilMat: THREE.MeshToonMaterial;
-  grassMat: THREE.MeshToonMaterial;
-  hedgeMat: THREE.MeshToonMaterial;
-  bloomMat: THREE.MeshToonMaterial;
+  // Widened for the same reason menuScene's ThemedBits is: [[IDEA-079]]'s
+  // restyle swaps these for matcaps and `applyPatchTheme` must keep working
+  // through whichever is in place.
+  soilMat: StyleableMat;
+  grassMat: StyleableMat;
+  hedgeMat: StyleableMat;
+  bloomMat: StyleableMat;
 }
 
 function makeGardenPatch(): GardenPatch {
@@ -208,15 +225,13 @@ function applyPatchTheme(patch: GardenPatch, theme: MazeTheme): void {
   // again would square it) — see showcaseSurface.ts.
   applyShowcaseSurfaces(patch.surfaces, p);
 
-  patch.soilMat.emissive.setHex(p.floorEmissive);
-  patch.soilMat.emissiveIntensity = p.floorEmissiveIntensity;
+  setEmissiveIfPresent(patch.soilMat, p.floorEmissive, p.floorEmissiveIntensity);
 
   // hedgeMat's colour belongs to applyShowcaseSurfaces (it wears the wall
   // texture); the grass rim is untextured and keeps the palette's wall colour.
   patch.grassMat.color.setHex(p.wall);
   for (const mat of [patch.grassMat, patch.hedgeMat]) {
-    mat.emissive.setHex(p.wallEmissive);
-    mat.emissiveIntensity = p.wallEmissiveIntensity;
+    setEmissiveIfPresent(mat, p.wallEmissive, p.wallEmissiveIntensity);
   }
 
   // Arcade Night ships an empty bloom palette (deliberately clean/propless),
@@ -224,8 +239,7 @@ function applyPatchTheme(patch: GardenPatch, theme: MazeTheme): void {
   // fallback menuScene's own vignette uses.
   const bloom = p.bloomColors.length > 0 ? p.bloomColors[0] : p.biscuit;
   patch.bloomMat.color.setHex(bloom);
-  patch.bloomMat.emissive.setHex(bloom);
-  patch.bloomMat.emissiveIntensity = p.bloomEmissiveIntensity;
+  setEmissiveIfPresent(patch.bloomMat, bloom, p.bloomEmissiveIntensity);
 }
 
 // ---------------------------------------------------------------------------
@@ -772,6 +786,7 @@ export function createShopScene(): ShopScene {
   // toggle its `.visible` rather than add/remove it from the scene (cheaper,
   // and avoids re-triggering shadow-map/matrix churn on every tab switch).
   const patch = makeGardenPatch();
+  const madboxCaches = makeMadboxCaches();
   const gardenPatch = patch.group;
   scene.add(gardenPatch);
 
@@ -790,6 +805,23 @@ export function createShopScene(): ShopScene {
   // is hydrated before Game is constructed) as menuScene's own first-paint
   // applyTheme.
   applyPatchTheme(patch, getEquippedMazeTheme());
+
+  // [[IDEA-079]], two passes, same order and same reason as menuScene's: TINT
+  // the patch first (applyPatchTheme repaints it on every theme change, so its
+  // colours must stay on the materials and its references must point at what
+  // is drawn), then BAKE everything else.
+  if (MADBOX_STYLE_ON) {
+    const swaps = applyMadboxStyle(patch.group, boardBounce(getEquippedMazeTheme().palette), madboxCaches, undefined, {
+      tint: true,
+    });
+    const pick = (m: StyleableMat): StyleableMat =>
+      (swaps.get(m as unknown as THREE.Material) as StyleableMat | undefined) ?? m;
+    patch.soilMat = pick(patch.soilMat);
+    patch.grassMat = pick(patch.grassMat);
+    patch.hedgeMat = pick(patch.hedgeMat);
+    patch.bloomMat = pick(patch.bloomMat);
+    applyMadboxStyle(scene, boardBounce(getEquippedMazeTheme().palette), madboxCaches);
+  }
   surround.apply(getEquippedMazeTheme());
 
   // IDEA-026: default atmosphere values, captured once, so showBeagle/
@@ -868,6 +900,21 @@ export function createShopScene(): ShopScene {
    *  gardenPatch's doc comment above), and re-applying camera framing
    *  immediately in case `kind` changed the active rig. */
   function setHero(next: THREE.Group, kind: HeroKind): void {
+    // [[IDEA-079]]: style the hero as it arrives. It is REBUILT on every tab
+    // switch (see showBeagle's note on why), so this is the one place that
+    // catches all of them — and TINT mode rather than the baked palette snap,
+    // because the hero is the player's own coat or the enemy they are being
+    // sold, and snapping it would quietly show them a colour they did not buy.
+    //
+    // Enemies are skipped inside applyMadboxStyle whatever is asked, so a
+    // shop enemy stays toon exactly as it does in a run — which is what keeps
+    // the preview honest about what the player is getting.
+    if (MADBOX_STYLE_ON) {
+      const swaps = applyMadboxStyle(next, boardBounce(getEquippedMazeTheme().palette), madboxCaches, undefined, {
+        tint: true,
+      });
+      if (kind === "beagle") remapBeagleCoatMats(next, swaps);
+    }
     disposeHero(hero);
     hero = next;
     heroKind = kind;
@@ -890,6 +937,19 @@ export function createShopScene(): ShopScene {
         : { bandScale: 1, camDist: BASE_DIST, fogReach: SHOWCASE_FOG_REACH },
     );
     applyCameraFraming(kind, lastAspect);
+
+    // RESTYLE AFTER THE SURROUND IS STAGED, not just at construction.
+    //
+    // `surround.setStage` REBUILDS the horizon band and the stage dressing —
+    // and it is called from here, which runs after the construction-time pass.
+    // So the band was never styled at all: the shop kept forty-nine toon
+    // materials while everything in front of them was matcap, and it read as
+    // a styled hero standing in an unstyled world. Exactly the ordering bug
+    // the beagle hit in `buildLevel`.
+    //
+    // Safe to run on every tab switch because the swap is IDEMPOTENT — a
+    // material that is already a matcap is skipped.
+    if (MADBOX_STYLE_ON) applyMadboxStyle(scene, boardBounce(getEquippedMazeTheme().palette), madboxCaches);
   }
 
   // Same local idle-animation approach as menuScene.ts's animateIdle: the
@@ -1038,6 +1098,15 @@ export function createShopScene(): ShopScene {
     },
     setMazeTheme(theme: MazeTheme): void {
       applyPatchTheme(patch, theme);
+      // AND HERE TOO. `applyPatchTheme` reaches `showcaseSurround.apply`,
+      // which REBUILDS the horizon band and the stage dressing from scratch —
+      // so a theme change hands the scene a fresh set of toon materials after
+      // every earlier pass has run. This is the third place the same ordering
+      // bug turned up (the beagle in buildLevel, the band in setHero), and the
+      // rule behind all three is one line: **restyle after anything that
+      // rebuilds scene content, not once at construction.** It is affordable
+      // because the swap is idempotent.
+      if (MADBOX_STYLE_ON) applyMadboxStyle(scene, boardBounce(getEquippedMazeTheme().palette), madboxCaches);
       surround.apply(theme);
     },
     dispose(): void {

@@ -53,6 +53,7 @@
 //     history pattern in main.ts's keydown handler.
 import GUI from "lil-gui";
 import * as THREE from "three";
+import { MADBOX_STYLE_ON } from "../render/madboxFlag";
 import { type BoardSlotId } from "./boardTree";
 import type { WorkingTheme, WorkingPropPlacement, WorkingWallDecorPlacement } from "./boardCodegen";
 import { propOptionsFor, type PlacementSelection } from "./boardPlacement";
@@ -554,17 +555,35 @@ export function createBoardInspector(
     const folder = gui.addFolder("Biscuits");
     folders.biscuits = folder;
     const p = theme.palette;
+    // Bound to the PALETTE with a rebuild on FINISH, exactly like the wall and
+    // floor colours above — and for a second reason of its own since
+    // [[IDEA-079]]: under the new style a pellet is a BAKED matcap, so its
+    // colour lives in a generated texture and the material is held white.
+    // Writing `biscuit.color` would land on the stashed toon material, which
+    // is not what is drawn, so the swatch would do nothing visible at all.
+    // Going through the palette and re-deriving is what makes it work in both
+    // styles. On FINISH because a baked matcap is one generated canvas per
+    // distinct colour, and a colour drag produces hundreds.
     folder
-      .addColor(colorProxy(biscuit.color), "color")
+      .addColor({ color: "#" + p.biscuit.toString(16).padStart(6, "0") }, "color")
       .name("biscuit color")
-      .onChange((v: string) => { p.biscuit = new THREE.Color(v).getHex(); });
+      .onChange((v: string) => { p.biscuit = new THREE.Color(v).getHex(); })
+      .onFinishChange(() => cb.onDecorChange());
+    // THE EMISSIVE PAIR IS CLASSIC-ONLY, AND SAYS SO RATHER THAN BEING HIDDEN.
+    // A matcap has no emissive channel, so neither of these changes anything
+    // under the new style — but both still author a real number that the
+    // classic look uses, and classic is still shipped (the profile screen's
+    // opt-out). IDEA-041's rule is to omit a control wired to nothing; these
+    // are wired to something, just not to what is currently on screen, so the
+    // honest treatment is to label them rather than delete them.
+    const emissiveSuffix = MADBOX_STYLE_ON ? " (classic style only)" : "";
     folder
       .addColor(colorProxy(biscuit.emissive), "color")
-      .name("biscuit emissive")
+      .name("biscuit emissive" + emissiveSuffix)
       .onChange((v: string) => { p.biscuitEmissive = new THREE.Color(v).getHex(); });
     folder
       .add(biscuit, "emissiveIntensity", 0, 2, 0.01)
-      .name("emissive intensity")
+      .name("emissive intensity" + emissiveSuffix)
       .onChange((v: number) => { p.biscuitEmissiveIntensity = v; });
   }
 

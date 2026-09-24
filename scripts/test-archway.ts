@@ -42,6 +42,8 @@ import * as THREE from "three";
 import { Grid, COLS, ROWS, TILE, worldX, worldZ } from "../src/game/grid";
 import { MAZES } from "../src/game/mazes";
 import { MAZE_THEMES } from "../src/game/themes";
+import { liftSurfaceColor } from "../src/render/madboxStyle";
+import { hexOf, lit, rgbOf } from "../src/render/paint";
 import { PROP_SHAPE_FIELDS, getPropDef, type PropParams } from "../src/game/props";
 import {
   ARCH_DEFAULTS,
@@ -344,5 +346,149 @@ for (const file of ["src/render/archway.ts", "src/render/surround.ts"]) {
 }
 
 console.log(`\n${"-".repeat(60)}`);
+
+// ---------------------------------------------------------------------------
+section("A brightened colour SATURATES; it never wraps");
+// ---------------------------------------------------------------------------
+//
+// This arch renders its foliage by multiplying a base colour up (IDEA-067's
+// note: the maze hedge bakes into a texture that comes out far lighter than
+// the value it was built from, so flat foliage beside it reads dark). The
+// multiply is `lit()`, which does NOT clamp — and for several releases the
+// result was packed by hand with `(r << 16) | (g << 8) | b`.
+//
+// That does not saturate. It OVERFLOWS into the next byte and carries, so a
+// colour that is merely too bright comes back as a different HUE. It stayed
+// latent only because the shipped palettes happened to sit under the line;
+// the moment [[IDEA-079]] raised the garden's wall the menu's arch rendered
+// MAGENTA. The arithmetic: foliage green 216 x 1.34 = 289, and 289 - 256 = 33,
+// which was exactly the green byte on screen.
+//
+// Pinned on `hexOf` directly AND through a built arch, because the first is
+// the mechanism and the second is the thing a player sees.
+{
+  // Every channel over the top, from a colour that is unambiguously green.
+  const packed = hexOf(lit(rgbOf(0x74d86d), 1.34));
+  const r = (packed >> 16) & 255;
+  const g = (packed >> 8) & 255;
+  const b = packed & 255;
+  ok("a channel over 255 clamps", g === 255, `g ${g}`);
+  ok("…without carrying into the channel above", r < 255 && r === Math.round((0x74 * 1.34)), `r ${r}`);
+  ok("…and the result is still GREEN", g > r && g > b, `#${packed.toString(16).padStart(6, "0")}`);
+  ok("nothing exceeds a 24-bit colour", packed <= 0xffffff && packed >= 0);
+}
+{
+  // And through the real builder, which is what actually broke.
+  const arch = makeArchway(
+    {
+      height: 0.6,
+      foliageColors: [0x74d86d, 0x6dcd67, 0x7ae473],
+      blossomColor: 0xf4efe6,
+      stoneColor: 0xc28f5c,
+    } as never,
+    7,
+  );
+  let greenish = 0;
+  let wrong = 0;
+  arch.traverse((o: THREE.Object3D) => {
+    const m = o as THREE.Mesh;
+    if (!m.isMesh) return;
+    for (const mat of Array.isArray(m.material) ? m.material : [m.material]) {
+      const c = (mat as THREE.MeshToonMaterial).color;
+      if (!c) continue;
+      const hex = c.getHex();
+      const r = (hex >> 16) & 255;
+      const g = (hex >> 8) & 255;
+      const b = hex & 255;
+      // Only the FOLIAGE is asserted — blossoms are cream and the footing is
+      // timber, both legitimately not green.
+      if (g > 150 && g >= r && g >= b) greenish++;
+      else if (r > g && b > g && r > 120 && b > 120) wrong++; // magenta
+    }
+  });
+  ok("a bright-green arch has green foliage", greenish > 0, `${greenish} green materials`);
+  ok("…and nothing on it came out magenta", wrong === 0, `${wrong} magenta materials`);
+}
+
+
+// ---------------------------------------------------------------------------
+// IDEA-079: THE FOOTING AND THE MAZE FENCE ARE STILL ONE FENCE
+// ---------------------------------------------------------------------------
+//
+// Rule 3 above: the arch runs three real fence panels round each foot, and the
+// shared identity with the maze wall's fence is the whole reason it does — the
+// arch stands exactly where that fence ends, so the joint has to disappear.
+//
+// The high-key style lifts `palette.fenceColor`, and the arch's timber is a
+// PROP PARAM in props.ts rather than a palette slot, so it was not lifted with
+// it: measured, the maze fence went to #c28f5c and the footing stayed at the
+// authored #a9743f. Two different browns meeting at the one joint the footing
+// exists to hide, and visible in `?view=arch` at a glance.
+//
+// What is asserted is the RELATIONSHIP, not either number — a retune of
+// SURFACE_LIFT.wallL or of the garden's own fence timber should move both
+// together and keep this passing.
+{
+  const garden = MAZE_THEMES.find((t) => t.id === "garden");
+  if (!garden) throw new Error("test-archway: the garden theme is gone?");
+  const authoredFence = garden.palette.fenceColor;
+  const hedgeArch = getPropDef("hedge-arch");
+  const archTimber = hedgeArch.params?.fenceColor;
+
+  ok("the Hedge Arch authors a fence timber", typeof archTimber === "number");
+  ok("…and it IS the garden's own fence timber", archTimber === authoredFence,
+    `arch #${archTimber?.toString(16)} vs palette #${authoredFence.toString(16)}`);
+
+  // Both sides through the SAME lift, which is what buildTunnelArches now does
+  // to the arch's param and what liftPaletteForMadbox does to the palette's.
+  const liftedPalette = liftSurfaceColor(authoredFence);
+  const liftedArch = liftSurfaceColor(archTimber as number);
+  ok("…so under the style they still match", liftedPalette === liftedArch,
+    `#${liftedPalette.toString(16)} vs #${liftedArch.toString(16)}`);
+  // BOUNDED AT BOTH ENDS: equal-after-lift is also true of a lift that does
+  // nothing at all, which would mean the footing never joined the style.
+  ok("…and the lift actually moved it", liftedPalette !== authoredFence,
+    `#${authoredFence.toString(16)} -> #${liftedPalette.toString(16)}`);
+
+  // ALL THREE ARCHES LAND ON THE MAZE FENCE UNDER THE STYLE, to within a few
+  // units of 255, and that is the right outcome rather than a loss. The three
+  // authored timbers are one hue differing almost entirely in LIGHTNESS
+  // (0x8a5f34 / 0xa9743f / 0xb78450) and `liftSurface` is a lightness FLOOR
+  // they all sit below, so the lift closes most of the gap between them.
+  //
+  // TWO EARLIER VERSIONS OF THIS BLOCK CLAIMED SOMETHING STRONGER AND THE
+  // CHECK CAUGHT BOTH: first that each arch KEEPS its relationship to the
+  // others (it does not — the Gothic Arbour lands exactly on the Hedge Arch's
+  // value), then that all three converge EXACTLY (they do not — the Topiary
+  // Gate's fractionally different hue leaves it on #be8f60 against #c28f5c).
+  // The property that actually matters is neither: it is that the JOINT
+  // DISAPPEARS, which is IDEA-067 rule 3's own terms. So the bound is
+  // perceptual, and what separates the three arches is pinned above by head
+  // curve, rise and proportion — never by timber.
+  const gothic = getPropDef("hedge-arch-gothic").params?.fenceColor;
+  const topiary = getPropDef("hedge-arch-topiary").params?.fenceColor;
+  ok("the three arches author three different timbers",
+    new Set([gothic, archTimber, topiary]).size === 3);
+  ok("…all of the same hue, differing in lightness",
+    typeof gothic === "number" && typeof topiary === "number" && gothic < (archTimber as number) &&
+      (archTimber as number) < topiary);
+  /** Largest per-channel difference, in 0..255. */
+  const channelGap = (a: number, b: number): number =>
+    Math.max(
+      Math.abs(((a >> 16) & 255) - ((b >> 16) & 255)),
+      Math.abs(((a >> 8) & 255) - ((b >> 8) & 255)),
+      Math.abs((a & 255) - (b & 255)),
+    );
+  // The unlifted footing was 25 channel units off the lifted maze fence and
+  // plainly visible in ?view=arch, so the bound is set well inside that.
+  ok("the bug this bound describes was really that big",
+    channelGap(authoredFence, liftedPalette) > 20,
+    `${channelGap(authoredFence, liftedPalette)} units unlifted`);
+  for (const [name, hex] of [["Gothic Arbour", gothic], ["Topiary Gate", topiary]] as const) {
+    const gap = typeof hex === "number" ? channelGap(liftSurfaceColor(hex), liftedPalette) : 255;
+    ok(`the ${name}'s footing meets the maze fence invisibly`, gap <= 8, `${gap} channel units`);
+  }
+}
+
 console.log(`ARCHWAY: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

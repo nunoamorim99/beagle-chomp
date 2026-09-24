@@ -15,7 +15,7 @@ import * as THREE from "three";
 import { COLORS } from "../game/config";
 import { type BeagleSkin, getEquippedBeagleSkin } from "../game/cosmetics";
 import { type MazeTheme, getEquippedMazeTheme } from "../game/themes";
-import { makeBeagle, applyBeagleSkin, type BeagleParts } from "./characters";
+import { makeBeagle, applyBeagleSkin, remapBeagleCoatMats, type BeagleParts } from "./characters";
 import {
   VIGNETTE_CELLS,
   applyShowcaseSurfaces,
@@ -28,6 +28,14 @@ import {
   type ShowcaseSurround,
 } from "./showcaseSurround";
 import { toon } from "./toon";
+import { MADBOX_STYLE_ON } from "./madboxFlag";
+import {
+  applyMadboxStyle,
+  makeMadboxCaches,
+  setEmissiveIfPresent as setEmissive,
+  boardBounce,
+  type StyleableMat,
+} from "./madboxStyle";
 
 // Vertical-gradient backdrop, the same cheap inward-facing skydome technique
 // as scene.ts's makeBackdrop (kept as its own small copy here rather than an
@@ -246,16 +254,14 @@ function applyTheme(bits: ThemedBits, theme: MazeTheme): void {
   }
 
   // colour is applyShowcaseSurfaces' — see above.
-  bits.soil.emissive.setHex(p.floorEmissive);
-  bits.soil.emissiveIntensity = p.floorEmissiveIntensity;
+  setEmissive(bits.soil, p.floorEmissive, p.floorEmissiveIntensity);
 
   // The grass rim and hedges both read as the board's walls. Only the RIM's
   // colour is set here — the hedge wears the wall texture, so its colour
   // belongs to applyShowcaseSurfaces (a textured material stays white).
   bits.grass.color.setHex(p.wall);
   for (const mat of [bits.grass, bits.hedge]) {
-    mat.emissive.setHex(p.wallEmissive);
-    mat.emissiveIntensity = p.wallEmissiveIntensity;
+    setEmissive(mat, p.wallEmissive, p.wallEmissiveIntensity);
   }
 
   // Blooms cycle the theme's own decor colours. Arcade Night ships an empty
@@ -265,8 +271,7 @@ function applyTheme(bits: ThemedBits, theme: MazeTheme): void {
   bits.blooms.forEach((mat, i) => {
     const hex = palette[i % palette.length];
     mat.color.setHex(hex);
-    mat.emissive.setHex(hex);
-    mat.emissiveIntensity = p.bloomEmissiveIntensity;
+    setEmissive(mat, hex, p.bloomEmissiveIntensity);
   });
 
   // Lighting is most of what makes a theme feel different — Night City's
@@ -340,16 +345,23 @@ void TURNTABLE_SPEED;
  *  Collected once at build time so applyTheme() can mutate materials IN PLACE
  *  — the same approach applyBoardTheme uses for the real board, which is what
  *  makes re-theming instant and allocation-free. */
+type ShowcaseMat = StyleableMat;
+
+
 interface ThemedBits {
   backdrop: THREE.ShaderMaterial | THREE.MeshBasicMaterial;
   /** IDEA-072: the ground and the horizon band this vignette stands in. */
   surround: ShowcaseSurround;
   /** The wall/floor stand-ins, for the procedural surfaces pass. */
   surfaces: ShowcaseSurfaces;
-  soil: THREE.MeshToonMaterial;
-  grass: THREE.MeshToonMaterial;
-  hedge: THREE.MeshToonMaterial;
-  blooms: THREE.MeshToonMaterial[];
+  // A UNION for the same reason BeagleCoatMats is one: [[IDEA-079]]'s restyle
+  // swaps these for matcaps and `applyTheme` must keep working through
+  // whichever is in place. Both carry `.color` and `.emissive`... except a
+  // matcap does NOT carry `emissive`, so applyTheme guards it — see there.
+  soil: ShowcaseMat;
+  grass: ShowcaseMat;
+  hedge: ShowcaseMat;
+  blooms: ShowcaseMat[];
   hemi: THREE.HemisphereLight;
   key: THREE.DirectionalLight;
   rim: THREE.DirectionalLight;
@@ -382,6 +394,7 @@ export interface MenuScene {
  * setBeagleSkin() on every subsequent menu visit — never rebuild.
  */
 export function createMenuScene(): MenuScene {
+  const madboxCaches = makeMadboxCaches();
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(COLORS.bg);
   const backdrop = makeBackdrop();
@@ -461,6 +474,47 @@ export function createMenuScene(): MenuScene {
   let beagleMesh = makeBeagle(getEquippedBeagleSkin());
   scene.add(beagleMesh);
 
+  /**
+   * [[IDEA-079]]'s material system over the menu vignette.
+   *
+   * TWO PASSES, AND THE ORDER IS THE WHOLE DESIGN.
+   *
+   *  1. TINT first, over the things this scene RECOLOURS at runtime — the
+   *     patch (soil, grass, hedge, blooms, repainted by `applyTheme` on a
+   *     theme change) and the dog (repainted by `applyBeagleSkin` when a coat
+   *     is equipped). Tint mode keeps the colour on the material, so those
+   *     writes still mean something, and the references are remapped so they
+   *     reach what is actually drawn.
+   *  2. BAKE second, over everything else — the stage dressing, the landmarks,
+   *     the horizon band. Those never change, so they get the snapped palette,
+   *     which is what gives the style its grip.
+   *
+   * Reversing the order breaks it silently: the bake would claim the patch
+   * first, and the tint pass would then skip it as already-styled (the
+   * idempotency guard), leaving a menu whose theme switch repaints nothing.
+   */
+  function restyle(): void {
+    if (!MADBOX_STYLE_ON) return;
+    const swaps = applyMadboxStyle(patch.group, boardBounce(getEquippedMazeTheme().palette), madboxCaches, undefined, {
+      tint: true,
+    });
+    const dogSwaps = applyMadboxStyle(beagleMesh, boardBounce(getEquippedMazeTheme().palette), madboxCaches, undefined, {
+      tint: true,
+    });
+    remapBeagleCoatMats(beagleMesh, dogSwaps);
+    const pick = (m: ShowcaseMat): ShowcaseMat =>
+      (swaps.get(m as unknown as THREE.Material) as ShowcaseMat | undefined) ?? m;
+    themed.soil = pick(themed.soil);
+    themed.grass = pick(themed.grass);
+    themed.hedge = pick(themed.hedge);
+    themed.blooms = themed.blooms.map(pick);
+    // `surfaces` points at the same patch materials, and applyShowcaseSurfaces
+    // puts a TEXTURE on them — which the restyle skips by contract, so those
+    // entries are still the originals and must not be repointed.
+    applyMadboxStyle(scene, boardBounce(getEquippedMazeTheme().palette), madboxCaches);
+  }
+  restyle();
+
   // The idle-animation path (syncToEntity in characters.ts) reads an Entity's
   // dir/facing/tx/ty via entityWorld() to place the model â€” but the showcase
   // beagle isn't a real game Entity stepping around a grid, it just stands at
@@ -529,6 +583,10 @@ export function createMenuScene(): MenuScene {
     },
     setMazeTheme(theme: MazeTheme): void {
       applyTheme(themed, theme);
+      // A theme change rebuilds the horizon band and the stage dressing —
+      // see shopScene's note on the same line. Restyle after anything that
+      // rebuilds scene content, never once at construction.
+      restyle();
     },
     setBeagleSkin(skin: BeagleSkin): void {
       applyBeagleSkin(beagleMesh, skin);

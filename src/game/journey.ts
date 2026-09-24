@@ -556,18 +556,20 @@ export function getJourneyLevel(idx: number): JourneyLevel {
 /**
  * One band of the level map's trail (IDEA-063).
  *
- * Forty stones on one scrolling trail is roughly 3 700px of scroll, which is a
- * journey rather than a menu — fine to walk down, impossible to navigate. So
- * the trail is broken into CHAPTERS with a banner between them and a row of
- * jump chips in the header (see src/ui/levelMap.ts).
+ * A chapter is a band of the ladder. It was invented for the 2D trail, where
+ * forty stones was roughly 3 700px of scroll — a journey rather than a menu —
+ * and the chapters carried a banner between bands plus a row of jump chips in
+ * the header. [[IDEA-079]] replaced that trail with the 3D island map and both
+ * of those went with it; what still reads chapters is the map's CLOUD BANKS
+ * (src/render/journeyClouds.ts), which shroud a chapter you have not reached
+ * and lift as a block when it opens. The band is still the right unit for that
+ * because a chapter is what UNLOCKS.
  *
  * The six tour chapters are five levels each, matching classic's own stages
  * (progression.ts's MAPS_PER_STAGE) so the two modes describe the thirty maps
  * with the same vocabulary — "stage 4" means mazes 15-19 in both places. The
  * twists are one chapter of ten.
  *
- * `short` is what the header chip shows; it has to fit a ~34px chip at 390px,
- * so it is a figure and nothing else.
  */
 export interface JourneyChapter {
   /** Index of the chapter's first level in JOURNEY_LEVELS. */
@@ -576,8 +578,6 @@ export interface JourneyChapter {
   count: number;
   /** Full title, shown on the trail banner and read by screen readers. */
   title: string;
-  /** One or two characters for the header jump chip. */
-  short: string;
   kind: JourneyKind;
 }
 
@@ -598,7 +598,6 @@ function buildChapters(): JourneyChapter[] {
       from,
       count: Math.min(PER_STAGE, TOUR_LEVEL_COUNT - from),
       title: `Stage ${s + 1}`,
-      short: String(s + 1),
       kind: "tour",
     });
   }
@@ -607,11 +606,6 @@ function buildChapters(): JourneyChapter[] {
     from: TOUR_LEVEL_COUNT,
     count: JOURNEY_LEVEL_COUNT - TOUR_LEVEL_COUNT,
     title: "The Twists",
-    // Not a figure, because it is not a numbered stage. The level map draws
-    // this chip as a STAR GLYPH (see renderChapterRail) rather than as this
-    // string — which stays as the text fallback, and as something a non-DOM
-    // caller can print.
-    short: "T",
     kind: "twist",
   });
 

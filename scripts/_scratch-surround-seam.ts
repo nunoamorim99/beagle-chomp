@@ -18,9 +18,14 @@
 //   npm run dev
 //   npx tsx scripts/_scratch-surround-seam.ts
 import { chromium } from "playwright";
+import { shouldStyleBoard } from "../src/render/madboxStyle.js";
+import { getMazeTheme } from "../src/game/themes.js";
 
 const themes = (process.env.THEMES ?? "garden,classic,forest,park,city,beach").split(",");
 const base = process.env.BASE ?? "http://127.0.0.1:5173";
+/** IDEA-079's style is the game's default, so it is this probe's default too.
+ *  STYLE=classic measures the other one. */
+const madbox = (process.env.STYLE ?? "madbox") !== "classic";
 
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 390, height: 844 }, reducedMotion: "reduce" });
@@ -28,10 +33,13 @@ const page = await browser.newPage({ viewport: { width: 390, height: 844 }, redu
 console.log("  theme     palette.floor   TEXTURE MEAN   lum    surroundGround now   verdict");
 let bad = 0;
 for (const t of themes) {
-  await page.goto(`${base}/preview-board/?theme=${t}&maze=0&view=game&hud=0`, {
-    waitUntil: "load",
-    timeout: 90000,
-  });
+  await page.goto(
+    `${base}/preview-board/?theme=${t}&maze=0&view=game&hud=0&style=${madbox ? "madbox" : "classic"}`,
+    {
+      waitUntil: "load",
+      timeout: 90000,
+    },
+  );
   await page.waitForFunction(() => document.title.includes("ready"), null, { timeout: 20000 });
 
   const r = (await page.evaluate(() => {
@@ -97,21 +105,66 @@ for (const t of themes) {
   // Perceptual distance between what the surround is painted and what the
   // board actually looks like. 24/255 per channel is roughly where a flat
   // plane starts reading as a different surface at the game camera.
-  const dr = Math.abs(((pal >> 16) & 0xff) - r.r);
-  const dg = Math.abs(((pal >> 8) & 0xff) - r.g);
-  const db = Math.abs((pal & 0xff) - r.b);
-  const worst = Math.max(dr, dg, db);
-  const okk = worst <= 24;
+  const dr = ((pal >> 16) & 0xff) - r.r;
+  const dg = ((pal >> 8) & 0xff) - r.g;
+  const db = (pal & 0xff) - r.b;
+  const worst = Math.max(Math.abs(dr), Math.abs(dg), Math.abs(db));
+  // THE RULE CHANGED UNDER IDEA-079, AND THIS HAD TO CHANGE WITH IT.
+  //
+  // In the classic style the two must MATCH: `surroundGround` is simply the
+  // floor texture's mean, and any gap draws a ring around the maze.
+  //
+  // The high-key style lifts them to DIFFERENT targets on purpose —
+  // `SURFACE_LIFT.floorL` 0.46 for the board, `outsideL` 0.6 for everything
+  // beyond it, because the outside is atmosphere rather than something the
+  // biscuits are read against. So the outside is deliberately LIGHTER, by 41
+  // to 71 of 255 on the three lawn themes, and on screen that reads as brighter
+  // meadow around a mown board rather than as a seam. Held to equality this
+  // probe failed three sound themes — and an instrument that cries wolf about
+  // the configuration it is calibrated against is one people stop reading
+  // (`fenceReadability`'s 1.95px floor, same lesson).
+  //
+  // What still matters, and what is checked instead: the outside may never be
+  // DARKER than the board (that IS the ring bug, and it is what a wrong base
+  // colour produces), and it may not run away — past ~0.2 of lightness the
+  // board stops looking like it is standing on the same ground.
+  //
+  // Sand is the case that still matches exactly, because `sandFloorL` and the
+  // sand branch of `surroundGround` share one target.
+  const signed = Math.max(dr, dg, db);     // + = outside lighter than the board
+  const darker = Math.min(dr, dg, db) < -12;
+  // A NIGHT THEME IS EXEMPT FROM THE STYLE (shouldStyleBoard), so it keeps the
+  // classic relationship and has to be judged by the classic rule. Night City
+  // sits 19/255 darker outside, which is within the old tolerance and was
+  // being failed by the new one — the exemption has to reach the instrument
+  // too, or the probe reports the one theme the style deliberately does not
+  // touch as the only broken one.
+  const styled = madbox && shouldStyleBoard(getMazeTheme(t).palette);
+  const okk = styled ? !darker && worst <= 90 : worst <= 24;
   if (!okk) bad++;
   console.log(
     `  ${t.padEnd(8)}  0x${floorHex.toString(16).padStart(6, "0")}      ` +
       `0x${hex.toString(16).padStart(6, "0")}     ${lum.toFixed(3)}  ` +
       `0x${pal.toString(16).padStart(6, "0")}           ` +
-      `${okk ? "ok" : `MISMATCH by ${Math.round(worst)}/255 -> use 0x${hex.toString(16).padStart(6, "0")}`}`,
+      `${
+        okk
+          ? styled
+            ? `ok (outside +${Math.round(signed)})`
+            : "ok"
+          : `MISMATCH by ${Math.round(worst)}/255${darker ? " (outside DARKER)" : ""}` +
+            ` -> use 0x${hex.toString(16).padStart(6, "0")}`
+      }`,
   );
 }
 await browser.close();
-console.log(`\n  ${bad} theme(s) whose surround does not match their board floor.`);
-console.log(`  The texture mean is the value to use: it is what the player SEES,`);
-console.log(`  which is not palette.floor once a painter has covered it.`);
+console.log(`\n  ${bad} theme(s) whose surround does not sit right against their board floor.`);
+if (madbox) {
+  console.log("  Under the style the outside is meant to be LIGHTER");
+  console.log("  (SURFACE_LIFT.outsideL against floorL), so what is checked is that it");
+  console.log("  is never DARKER and never runs away. A night theme is exempt from the");
+  console.log("  style and is held to the classic match rule instead.");
+} else {
+  console.log("  The texture mean is the value to use: it is what the player SEES,");
+  console.log("  which is not palette.floor once a painter has covered it.");
+}
 if (bad) process.exitCode = 1;

@@ -97,8 +97,9 @@
    does not preserve Material Symbols' original private-use codepoints: cutting
    to a few dozen icons kept U+E668 (check) working and broke U+E899 (lock), which came
    out as a tofu box. Ligatures survive subsetting by construction, and they
-   resolve inside SVG <text> as well as in HTML — both measured, after
-   levelMap.ts had been written the other way round on a wrong assumption.
+   resolve inside SVG <text> as well as in HTML — both measured, after the
+   2D level map (since replaced, IDEA-079) had been written the other way
+   round on a wrong assumption.
 
    Paths are RELATIVE on purpose: Vite then hashes these files, emits them
    into assets/, and rewrites the URLs for `base: "./"`. Dropping them in

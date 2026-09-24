@@ -410,6 +410,112 @@ async function run(): Promise<void> {
     check("stop rewinds to zero", (await page.$eval(".tl-readout", (e) => e.textContent ?? "")).startsWith("0.00"));
 
     // ---------------------------------------------------------------------
+    console.log("\n=== IDEA-079: every stage draws what ships ===");
+    // Nuno, opening the editor once the style became the default: "yes the
+    // beagle have the new style but the rest of the editor components don't."
+    // Measured at the time: Character 48 matcap and Pickups 5, against Board
+    // 356 TOON and Props 3. The style was wired to the character root alone.
+    //
+    // These checks are bounded at BOTH ends on purpose. "Some matcap exists"
+    // passes on a stage that is one-tenth converted, and "no toon remains"
+    // passes on an EMPTY root -- which is exactly how the first version of
+    // this probe reported a board that had never been built as fully styled.
+    {
+      const census = (root: string) =>
+        page.evaluate(`window.__styleTestHook.census(${JSON.stringify(root)})`) as Promise<
+          Record<string, number>
+        >;
+      const stillLit = (root: string) =>
+        page.evaluate(`window.__styleTestHook.unstyled(${JSON.stringify(root)})`) as Promise<string>;
+
+      check("the style hook is present", await page.evaluate("!!window.__styleTestHook"));
+      // EXPLICITLY, because the shading section above leaves the dropdown on
+      // whichever mode it tested last. Without this the whole block measured a
+      // SOLID viewport and reported every stage as unstyled -- a confident
+      // wrong answer about the feature under test, from the instrument rather
+      // than the code.
+      await page.selectOption("#shadingSelect", "styled");
+      await page.waitForTimeout(1200);
+      check("the viewport is in styled mode",
+        (await page.inputValue("#shadingSelect")) === "styled");
+
+      const character = await census("character");
+      check(`the character stage has meshes at all (${JSON.stringify(character)})`,
+        (character.Matcap ?? 0) + (character.Toon ?? 0) > 20);
+      check(`...and draws matcap, not toon (${JSON.stringify(character)})`,
+        (character.Matcap ?? 0) > 20 && (character.Toon ?? 0) === 0);
+
+      await page.click("#modeBoardBtn");
+      await page.waitForTimeout(4000);
+      const board = await census("board");
+      check(`the board stage really built a board (${JSON.stringify(board)})`,
+        (board.Matcap ?? 0) + (board.Toon ?? 0) > 200);
+      check(`...and draws matcap (${JSON.stringify(board)})`, (board.Matcap ?? 0) > 200);
+      // A HANDFUL OF LIT MATERIALS IS CORRECT AND THE COUNT IS BOUNDED. The
+      // shipped swap deliberately skips a TEXTURED or VERTEX-COLOURED
+      // material -- in both the colour is not in `material.color`, so a matcap
+      // generated from it would be a matcap of the wrong colour. Measured:
+      // three maps (wall, floor, surroundGround) and two vertex-coloured (the
+      // fence rails and one merged surround bucket).
+      const lit = await stillLit("board");
+      const litCount = lit === "(none)" ? 0 : lit.split("  ").length;
+      check(`...and what stays lit is only the skips (${lit})`, litCount > 0 && litCount <= 8);
+      check(`...every one of which is textured or vertex-coloured (${lit})`,
+        lit.split("  ").every((r) => r.includes("[map]") || r.includes("[vcol]")));
+
+      // THE AUTHORED PALETTE MUST SURVIVE THE RENDER. The board is drawn from
+      // a LIFTED palette (the textures bake their colour in, so the swap
+      // cannot reach them) but `themes.ts` must keep the authored numbers --
+      // lift it in place and the next save commits the lifted value, the
+      // session after lifts that again, and every theme brightens a step each
+      // time anyone opens this tab.
+      const wallSwatch = await page.evaluate(`(() => {
+        const rows = [...document.querySelectorAll("#boardGuiHost .lil-controller")];
+        const row = rows.find((r) => (r.querySelector(".lil-name")?.textContent ?? "").trim() === "wall color");
+        return row?.querySelector("input[type=text]")?.value ?? null;
+      })()`);
+      check(`the Board tab shows the AUTHORED wall colour, not the lifted one (${String(wallSwatch)})`,
+        wallSwatch === "3f8f3a");
+
+      await page.click("#modePropsBtn");
+      await page.waitForTimeout(3000);
+      const props = await census("props");
+      check(`the props stage has a prop (${JSON.stringify(props)})`,
+        (props.Matcap ?? 0) + (props.Toon ?? 0) > 0);
+      check(`...and draws matcap (${JSON.stringify(props)})`,
+        (props.Matcap ?? 0) > 0 && (props.Toon ?? 0) === 0);
+
+      // AND THE AUTHORING PATH STILL SEES THE REAL MATERIALS. This is the one
+      // that matters most: the props part inspector CAPTURES `o.material` in
+      // its colour control's closure, so built against the styled mesh it
+      // would either lose the control (a matcap is not an editable material)
+      // or record the matcap's white as the part's authored colour and codegen
+      // that into props.ts.
+      // A MESH row, not the root GROUP row -- a group owns no material, so
+      // selecting it gives no material folder and the probe reads `null`,
+      // which is indistinguishable from the defect being tested for.
+      const partRows = await page.$$("#propsPartTree .tree-row");
+      check(`the prop has component rows (${partRows.length})`, partRows.length > 1);
+      await partRows[1]?.click();
+      await page.waitForTimeout(800);
+      const matSwatch = await page.evaluate(`(() => {
+        const rows = [...document.querySelectorAll("#propsGuiHost .lil-controller")];
+        const row = rows.find((r) => (r.querySelector(".lil-name")?.textContent ?? "").trim() === "color");
+        return row?.querySelector("input[type=text]")?.value ?? null;
+      })()`);
+      // BOUNDED AT BOTH ENDS. "not white" passes happily on `null`, which is
+      // what a missing control returns -- and a missing control is precisely
+      // the failure this pair exists to catch.
+      const hex = /^#?[0-9a-f]{6}$/i.test(String(matSwatch ?? ""));
+      check(`a prop part still offers a colour control (${String(matSwatch)})`, hex);
+      check(`...and it is NOT the matcap's white (${String(matSwatch)})`,
+        hex && matSwatch !== "ffffff" && matSwatch !== "#ffffff");
+
+      await page.click("#modeCharacterBtn");
+      await page.waitForTimeout(1500);
+    }
+
+    // ---------------------------------------------------------------------
     console.log("\n=== glTF export → reference round-trip ===");
     const [download] = await Promise.all([
       page.waitForEvent("download", { timeout: 20_000 }),

@@ -38,6 +38,7 @@
 // of 2,600 one-pixel grains at a thousand brightnesses is a photograph, and it
 // sat badly next to a beagle made of flat colour fields.
 import * as THREE from "three";
+import { MADBOX_STYLE_ON } from "./madboxFlag";
 import { css, lit, mix, rgbOf, rng, type RGB } from "./paint";
 
 /** Which surface a theme's walls wear. */
@@ -114,17 +115,56 @@ function clump(
  * gaps go on last, because a hedge reads as foliage partly because you can see
  * into it in places.
  */
+/**
+ * THE HEDGE'S TONE TABLE, once per art style.
+ *
+ * Every tone is a MULTIPLIER on the palette's wall colour, so the whole wall
+ * moves when the palette does — which is why lifting `palette.wall` for
+ * [[IDEA-079]] brightened the hedge without touching this file. What it could
+ * not change is the RELATIONSHIPS, and those were tuned against a dark base:
+ * `deep` at 0.54 of a lifted green still lands near 0.30 lightness, darker
+ * than the darkest entry in the new palette. A brighter wall built out of the
+ * old proportions is a brighter wall with the old wall's contrast on it.
+ *
+ * So `madbox` is a COMPRESSED, RAISED range rather than the same range shifted.
+ * Two things stay put and both are load-bearing:
+ *
+ *  * **The gaps stay the darkest thing on the wall.** They are what gives a
+ *    hedge form at all, and the reference's palette rule allows dark as a
+ *    deliberate accent — it just does not allow the BODY to be dark.
+ *  * **The spread stays narrow.** The original note is still true and still
+ *    the binding constraint: a wall face is ~25px at the game camera, and a
+ *    wide tonal spread turns the maze into speckle you cannot trace corridors
+ *    through. Legible beats lush; this is a maze first.
+ */
+export const HEDGE_TONES = {
+  classic: { deep: 0.54, shade: 0.76, light: 1.2, pop: 1.26, gap: 0.54 },
+  // LIFT THE LEAVES, NOT THE BACKGROUND. `deep` is the FILL the clumps are
+  // painted over — the shadow showing between leaves — so raising it is the
+  // one change that flattens the hedge completely. A first pass put the whole
+  // body inside 0.84-1.12 and the wall came back as a plain green surface with
+  // a few dark dots on it: high-key, low-contrast, and no longer foliage.
+  //
+  // What works is the opposite shape: keep a real gap between the fill and the
+  // leaf masses, and move the MASSES up. The body is brighter than classic at
+  // every level while the spacing between tones is wider, not narrower — the
+  // reference's rule is that nothing is dark, not that nothing has contrast.
+  madbox: { deep: 0.62, shade: 0.9, light: 1.14, pop: 1.24, gap: 0.52 },
+} as const;
+
 function drawHedge(ctx: CanvasRenderingContext2D, base: RGB): void {
   // The tonal range is deliberately NARROWER than a real hedge's. Up close
   // more contrast looks better, but a wall face is a couple of dozen pixels at
   // the game camera, and a 0.42-to-1.32 spread turned the maze into a field of
   // high-contrast speckle you could no longer trace corridors through. Legible
   // beats lush: this is a maze first.
-  const deep = lit(base, 0.54);
-  const shade = lit(base, 0.76);
+  const T = MADBOX_STYLE_ON ? HEDGE_TONES.madbox : HEDGE_TONES.classic;
+  const deep = lit(base, T.deep);
+  const shade = lit(base, T.shade);
   const mid = base;
-  const light = lit(base, 1.2);
-  const pop = mix(lit(base, 1.26), [0.85, 0.95, 0.5], 0.14);
+  const light = lit(base, T.light);
+  const pop = mix(lit(base, T.pop), [0.85, 0.95, 0.5], 0.14);
+  const gap = lit(base, T.gap);
   const r = rng(0x5eed1);
 
   ctx.fillStyle = css(deep);
@@ -148,7 +188,7 @@ function drawHedge(ctx: CanvasRenderingContext2D, base: RGB): void {
   }
 
   // The gaps. Few, and the darkest thing on the wall.
-  ctx.fillStyle = css(deep);
+  ctx.fillStyle = css(gap);
   for (let i = 0; i < 6; i++) {
     clump(ctx, r() * SIZE, r() * SIZE, SIZE * (0.028 + r() * 0.03), r);
   }
@@ -261,9 +301,25 @@ function drawHedgeFlower(ctx: CanvasRenderingContext2D, base: RGB): void {
 }
 
 /** Packed sand: broad wind-blown bedding bands and the odd worn pebble. */
+/**
+ * Sand's own tone table, per style — HEDGE_TONES' reasoning on the other
+ * surface.
+ *
+ * The spread here was always narrow (0.86 to 1.12) because sand IS nearly one
+ * value: what makes it read is the bedding lines, not contrast. Under the new
+ * style it narrows a little further and sits higher, because the base it is
+ * handed is now a proper pale sand rather than a muddy tan — at the old
+ * spacing that brighter base started to look like corrugated card.
+ */
+const SAND_TONES = {
+  classic: { trough: 0.86, crest: 1.12 },
+  madbox: { trough: 0.91, crest: 1.07 },
+} as const;
+
 function drawSand(ctx: CanvasRenderingContext2D, base: RGB): void {
-  const trough = lit(base, 0.86);
-  const crest = lit(base, 1.12);
+  const T = MADBOX_STYLE_ON ? SAND_TONES.madbox : SAND_TONES.classic;
+  const trough = lit(base, T.trough);
+  const crest = lit(base, T.crest);
   const r = rng(0x5a4d);
 
   ctx.fillStyle = css(base);
@@ -397,7 +453,11 @@ const cache = new Map<string, THREE.Texture | null>();
  * rule 2 in the header.
  */
 export function wallTextureFor(kind: WallTextureKind, baseHex: number): THREE.Texture | null {
-  const key = kind + "|" + baseHex;
+  // THE STYLE IS PART OF THE KEY. It is read once per session so it cannot
+  // change under a cached entry today — but a cache keyed on less than what
+  // the painter reads is a bug waiting for the day somebody makes it live, and
+  // this one would hand back a hedge painted in the other art direction.
+  const key = kind + "|" + baseHex + "|" + (MADBOX_STYLE_ON ? "m" : "c");
   const hit = cache.get(key);
   if (hit !== undefined) return hit;
 

@@ -320,11 +320,14 @@
          as #mainMenu. -->
     <div class="hidden" id="shop"></div>
 
-    <!-- IDEA-014: the Challenge "garden path" level-select PAGE — same
-         "full-screen dedicated page, deliberately separate from #center/
-         #mainMenu" pattern as #shop above, entirely (re)rendered by
-         src/ui/levelMap.ts. Opened by #journeyBtn (replacing the old
-         auto-continue-at-progress behavior) and closes back to #mainMenu. -->
+    <!-- The JOURNEY map — same "full-screen dedicated page, deliberately
+         separate from #center/#mainMenu" pattern as #shop above, opened by
+         #journeyBtn and closing back to #mainMenu.
+
+         IDEA-079 made it a 3D island chain (src/ui/journeyMap.ts over
+         src/render/journeyScene.ts), replacing the scrolling SVG trail this
+         element used to hold. The id did not change with it: the new map
+         reuses this element, so nothing that referenced it had to move. -->
     <div class="hidden" id="levelMap"></div>
 
     <!-- IDEA-019 accounts. Same "full-screen dedicated page, entirely rendered

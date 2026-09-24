@@ -1333,9 +1333,13 @@ console.log("\n=== journey.ts chapters (IDEA-063) ===");
   check("chapterForLevel(-1) clamps to the first chapter", chapterForLevel(-1).from === 0);
   check("chapterForLevel(999) clamps to the last chapter", chapterForLevel(999).from === last.from);
   check("chapterForLevel(NaN) degrades to the first chapter", chapterForLevel(NaN).from === 0);
+  // The `short` chip label went with IDEA-079's trail — it fed the header jump
+  // chips, which the island map has no equivalent of, and nothing read it
+  // afterwards. The title still has a reader (screen readers, and anything
+  // that prints a chapter), so it keeps its check.
   check(
-    "every chapter has a non-empty title and a short label for its chip",
-    JOURNEY_CHAPTERS.every((c) => c.title.trim().length > 0 && c.short.trim().length > 0),
+    "every chapter has a non-empty title",
+    JOURNEY_CHAPTERS.every((c) => c.title.trim().length > 0),
   );
 }
 

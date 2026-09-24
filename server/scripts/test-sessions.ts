@@ -422,13 +422,18 @@ async function main(): Promise<void> {
     ok("high_score column really rose", afterBetter.high_score === 8000, afterBetter.high_score);
   }
 
-  section("All-runs board");
+  section("The leaderboard folds each player to ONE row");
   {
     const player = await newUser();
 
-    // Three runs of different scores, all accepted. The scores sit inside the
-    // 4200–7000 window those item counts allow (see the floor/ceiling in
-    // plausibility.ts MAX-5), deliberately out of order so the sort is tested.
+    // Three accepted runs of different scores for the same player. The All-runs
+    // board that used to sit beside the leaderboard listed each of them; it was
+    // removed (Nuno: "just the best ones from each user"), so what this section
+    // pins now is the property that replaced it — several runs, one row, and
+    // that row carries the BEST of them.
+    //
+    // Scores sit inside the 4200-7000 window those item counts allow (see the
+    // floor/ceiling in plausibility.ts MAX-5), deliberately out of order.
     for (const score of [4500, 6800, 5200]) {
       const s = await scoreService.startSession(
         (await usersRepo.findById(player.id))!, "classic", null);
@@ -443,24 +448,10 @@ async function main(): Promise<void> {
     }
 
     const fresh = (await usersRepo.findById(player.id))!;
-    const board = await profileService.runBoard(fresh, "200");
-    const mine = board.runs.filter((r) => r.isMe);
-
-    // The whole point of this board: one player, several rows.
-    ok("every attempt gets its own row", mine.length === 3, mine.length);
-    ok("runs are sorted best first",
-      mine.every((r, i) => i === 0 || mine[i - 1].score >= r.score));
-    ok("the player's best run leads their rows", mine[0]?.score === 6800, mine[0]?.score);
-    ok("myBest points at that run", board.myBest?.score === 6800, board.myBest?.score);
-    ok("ranks are contiguous from 1",
-      board.runs.every((r, i) => r.rank === i + 1));
-    ok("total counts every accepted run", board.total >= 3, board.total);
-
-    // The players board must still fold this same player to ONE row — the
-    // difference between the two boards is the feature.
     const players = await profileService.leaderboard(fresh, "100");
-    ok("the players board still shows one row per player",
-      players.top.filter((e) => e.isMe).length === 1);
+    const mine = players.top.filter((e) => e.isMe);
+    ok("three runs, one row", mine.length === 1, mine.length);
+    ok("and it carries the best of them", mine[0]?.highScore === 6800, mine[0]?.highScore);
   }
 
   // --- retention (IDEA-039 P2) ----------------------------------------------

@@ -16,6 +16,35 @@ Newest release sits at the **top** of "Version history" — the top entry is whe
 > lines here roll up into the numbered version below and this section is cleared (hold a line back
 > only if you explicitly choose to).
 
+- **[[IDEA-079]]** (2026-09-23) - **the Journey is a chain of islands, and the whole game
+  has a new look.**
+
+  The Journey map is not a list any more. Every one of the forty levels is its own little
+  island, dressed in that level's own theme - the garden ones have the treehouse and the
+  trees on them, the beach ones have palms and sand - sitting in an ocean you pan along.
+  Tapping one shows you what it is, and you can look at a level you have not reached yet
+  instead of just seeing a padlock. The chapters you have not unlocked are under cloud, and
+  the clouds lift when you get there.
+
+  And the look of that map is now the look of the game. Brighter, cleaner colours, a softer
+  kind of shading on every character, prop and board. Nothing about how the game plays has
+  changed - the enemies still turn blue when you chomp a bone, the coats still have their
+  powers, every score still counts the same. Night City and Arcade Night keep their dark
+  look on purpose; they are night themes and the new one would have undone that.
+
+  **If you prefer the old look it is still there.** Account -> Look has a switch, and the
+  game remembers which one you picked on that device. Both are shipped so we can find out
+  which one people actually want before settling on one.
+
+- **[[IDEA-078]] v3** (2026-09-17) - **the trophy button matches the others, and the
+  leaderboard is one list again.** The Challenges button in the top bar was drawing a
+  little smaller than the bell and the speaker beside it; all three are the same size now.
+
+  And the leaderboard has dropped its "All runs" tab. It is one list: every player once,
+  ranked on their best classic run. The old second tab listed individual attempts, so a
+  good evening from one player could fill the top of the board - which answered a
+  different question from the one you open the board to ask.
+
 - **[[IDEA-078]] v2** (2026-09-17) - **39 more challenges, including power-ups.** Every
   ladder got a couple of harder rungs on top - 50 coins or 50 golden bones in one run,
   500 of them across every run you play, 50 maps in a single go, 200,000 points, and the

@@ -80,6 +80,12 @@ import { getBeagleSkin, DEFAULT_BEAGLE_SKIN_ID } from "../game/cosmetics";
 // the bottom of this file for everything it adds. Imports grouped separately
 // so the character-mode wiring above stays exactly as IDEA-025/v2 left it.
 import { createBoardStage } from "./boardStage";
+import {
+  liftPaletteForMadbox,
+  shouldStyleBoard,
+  boardBounce,
+} from "../render/madboxStyle";
+import { MADBOX_STYLE_ON } from "../render/madboxFlag";
 import { createBoardTreeView, isPlacementRow, type BoardTreeRowId } from "./boardTree";
 import { createBoardInspector, type BoardMaterialHandles } from "./boardInspector";
 import { cloneWorkingTheme, formatThemeEntry, generateFullThemesFile, type WorkingTheme } from "./boardCodegen";
@@ -441,7 +447,13 @@ shadingSelect.addEventListener("change", () => {
   const mode = shadingSelect.value as ShadingMode;
   if (!(SHADING_MODES as readonly string[]).includes(mode)) return;
   viewportExtras.setShading(mode);
+  // EVERY STAGE, not just the character's. The dropdown is one control over
+  // whichever viewport is on screen, and re-applying only `group` left the
+  // board and the props preview on whatever they were last drawn with —
+  // which, before this, was always toon.
   viewportExtras.reapply(group);
+  restyleBoard();
+  restylePropsPreview();
 });
 
 viewCubeBtn.addEventListener("click", () => {
@@ -1902,6 +1914,63 @@ let workingTheme: WorkingTheme = cloneWorkingTheme(getMazeTheme(DEFAULT_MAZE_THE
 let loadedBaseThemeId: string = DEFAULT_MAZE_THEME_ID;
 let boardMaterials: BoardMaterialHandles | null = null;
 
+// ---------------------------------------------------------------------------
+// [[IDEA-079]]: THE OTHER THREE STAGES
+// ---------------------------------------------------------------------------
+//
+// Nuno, opening the editor after the style became the default: *"yes the
+// beagle have the new style but the rest of the editor components don't."*
+// Measured, he was exactly right — Character and Pickups drew 48 and 5 matcap
+// materials, while Board & Themes, World and Props drew 356 and 3 TOON ones.
+// The style was only ever wired to `group`, the character root.
+//
+// The fix routes the OTHER TWO ROOTS through the same `viewportExtras` path
+// rather than adding a second styling call, which matters for one specific
+// reason: that path stashes each mesh's real material and `withRealMaterials`
+// hands it back. Styling these roots directly would leave the props part tree
+// binding its material registry to MATCAPS — the inspector would then edit a
+// material the prop does not own and codegen would emit one the game never
+// builds. That is the trap `withRealMaterials` was written for, and the props
+// stage has the same exposure the character stage does.
+//
+// THE TWO STAGES ASK FOR DIFFERENT MODES, mirroring the shipped game exactly:
+// a prop and a board are SCENERY and get the bake (the palette snap is what
+// makes a place look like one place), while a character is TINTED because its
+// colour is driven at runtime. See StyleOpts.
+
+/** The board's own bounce and its night-theme exemption, read from whatever
+ *  palette the board is wearing right now. Both are the shipped rules —
+ *  `game.ts` asks the same two questions of the equipped theme. */
+function boardStyleOpts(): { tint: boolean; bounce: number; enabled: boolean } {
+  const pal = workingTheme.palette;
+  return {
+    tint: false,
+    bounce: boardBounce(pal),
+    // A NIGHT THEME IS LEFT ALONE, and the editor has to agree. Arcade Night
+    // and Night City are skipped by `shouldStyleBoard` in game, so a styled
+    // preview of one would be the editor showing something that never ships.
+    enabled: MADBOX_STYLE_ON && shouldStyleBoard(pal),
+  };
+}
+
+/** Re-applies the style to the live board. MUST run after anything that
+ *  rebuilds board content — `applyBoardTheme` throws away and rebuilds the
+ *  props and the hedge decor, so a style applied before it reaches meshes
+ *  that no longer exist. This project has shipped that ordering bug three
+ *  times; see the note in `showcaseSurround`. */
+function restyleBoard(): void {
+  viewportExtras.reapply(boardStage.boardRoot, boardStyleOpts());
+}
+
+/** Same, for the Props tab's single previewed prop. */
+function restylePropsPreview(): void {
+  viewportExtras.reapply(propsPreviewRoot, {
+    tint: false,
+    bounce: boardBounce(workingTheme.palette),
+    enabled: MADBOX_STYLE_ON,
+  });
+}
+
 /** Builds (once) or re-themes (every subsequent call) the live board from
  *  `workingTheme` — buildBoard reads whatever theme is currently "equipped"
  *  (an in-memory-only module flag in src/game/themes.ts; mutating it here has
@@ -1935,9 +2004,38 @@ function rebuildBoardFromWorkingTheme(): void {
   // constructing a throwaway object. This is also the ONE live-apply path the
   // Props folder's every control (add/remove/kind/density/scale/color) routes
   // through via `onDecorChange` — see boardInspector.ts's header note.
-  applyBoardTheme(board, boardStage.boardRoot, boardGrid, workingTheme);
-  boardStage.applyPalette(workingTheme.palette);
-  boardStage.setSky(workingTheme.palette.bg, workingTheme.palette.backdropTop);
+  //
+  // [[IDEA-079]]: THE SURFACE LIFT IS APPLIED FOR THE RENDER AND THEN TAKEN
+  // BACK OFF, and that round trip is the whole reason this is not one line.
+  //
+  // The lift is the half of the style a material swap cannot reach: the maze
+  // wall and the floor are TEXTURED, so `wallTexture.ts`/`floorTexture.ts`
+  // bake a palette colour into their canvas and the swap skips them. `main.ts`
+  // lifts every theme once at boot, before anything reads a palette.
+  //
+  // The editor cannot do that, because this palette is not a render input — it
+  // is the AUTHORED DATA that `boardCodegen` writes back into `themes.ts`. Lift
+  // it in place and the next save commits the lifted numbers to source, the
+  // following session lifts those again, and the themes brighten a step every
+  // time anyone touches the Board tab. So the five slots are lifted, the
+  // textures are generated from them, and the authored values are put straight
+  // back — the inspector and every save path only ever see what the author
+  // typed.
+  const lifted = MADBOX_STYLE_ON ? liftPaletteForMadbox(workingTheme.id, workingTheme.palette) : null;
+  try {
+    applyBoardTheme(board, boardStage.boardRoot, boardGrid, workingTheme);
+    boardStage.applyPalette(workingTheme.palette);
+    boardStage.setSky(workingTheme.palette.bg, workingTheme.palette.backdropTop);
+  } finally {
+    // `finally`, so a throw inside applyBoardTheme cannot strand the working
+    // theme holding lifted numbers that a later save would write out.
+    if (lifted) Object.assign(workingTheme.palette, lifted);
+  }
+  // AFTER the theme, never before: applyBoardTheme rebuilds the props and the
+  // hedge decor, so a style applied first would reach meshes that no longer
+  // exist. (The shipped `Game.buildLevel` has this exact ordering bug for a
+  // forced-theme Journey level — fixed alongside this.)
+  restyleBoard();
 }
 
 // IDEA-062: the proxy the transform gizmo drives in board mode. Parented to
@@ -2540,6 +2638,15 @@ function rebuildPropsPreview(): void {
   // without it. Adoption must come AFTER, because snapshot() clears `added`.
   propPartLog.snapshot(propPartNodes, def.parts);
   adoptSavedAddedParts(propPartLog, propPartNodes, def.parts);
+  // [[IDEA-079]]: LAST, AND THE ORDER IS THE WHOLE POINT. A freshly built prop
+  // has never seen the style, but `snapshot()` above reads every part's
+  // material to record its BASELINE — the value a later `mergeIntoSaved`
+  // diffs against and writes into `props.ts`. Styling first would hand it
+  // matcaps: a baked matcap holds its colour at white, so every prop would
+  // baseline as white and the first save would commit that to source. Same
+  // family as the part-edit merge bug [[IDEA-062]] was written for, and
+  // silent in exactly the same way.
+  restylePropsPreview();
 }
 
 /** IDEA-062: re-tag the meshes board.ts's addPropPart rebuilt from a def's
@@ -2684,7 +2791,15 @@ function selectPropPart(node: PartNode | null): void {
   selectedPropPart = node;
   propPartTree.setSelected(node ? [node.path] : []);
   highlighter.set(state.highlight && node ? [node] : []);
-  propsPartInspector.setSelection(node, node ? propPartSelectionContext() : null);
+  // [[IDEA-079]]: BUILT AGAINST THE REAL MATERIALS. The folder's colour and
+  // emissive controls CAPTURE `o.material` in their closures, so whatever is
+  // on the mesh at this moment is what every later edit writes to. Under the
+  // style that would be a baked matcap — colour held at white, no emissive
+  // channel at all — so the control would either vanish or record white as
+  // the part's authored colour and codegen it into `props.ts`.
+  viewportExtras.withRealMaterials(propsPreviewRoot, () => {
+    propsPartInspector.setSelection(node, node ? propPartSelectionContext() : null);
+  });
   syncGizmo(); // IDEA-062: a prop component is a gizmo target like any part
 }
 
@@ -2711,15 +2826,28 @@ function propPartSelectionContext() {
     },
     onMaterialCommitted: (node: PartNode, channel: "color" | "emissive", before: number, after: number) => {
       const apply = (value: number) => (): void => {
-        if (node.object instanceof THREE.Mesh) {
-          const mat = Array.isArray(node.object.material) ? node.object.material[0] : node.object.material;
-          if (isEditableMaterial(mat)) {
-            if (channel === "color") mat.color.setHex(value);
-            else if (hasEmissive(mat)) mat.emissive.setHex(value);
+        // [[IDEA-079]]: through the REAL material, then re-derive the style
+        // from it. Undo/redo reads `node.object.material`, which under the
+        // style is a baked matcap — writing the colour there would land on a
+        // material whose colour is not what is drawn, so the part would keep
+        // the colour being undone AND the log would disagree with the mesh.
+        viewportExtras.withRealMaterials(propsPreviewRoot, () => {
+          if (node.object instanceof THREE.Mesh) {
+            const mat = Array.isArray(node.object.material) ? node.object.material[0] : node.object.material;
+            if (isEditableMaterial(mat)) {
+              if (channel === "color") mat.color.setHex(value);
+              else if (hasEmissive(mat)) mat.emissive.setHex(value);
+            }
           }
-        }
+        });
         propPartLog.touchMaterial(node, channel, value);
         afterPropHistoryApply(node);
+        // ON COMMIT, NOT ON CHANGE. A baked matcap is a generated canvas per
+        // distinct colour, so restyling from `onEdit` would build one per
+        // frame of a colour drag and cache every one of them. The Board tab's
+        // own colour controls already settle on this rule for the same
+        // reason — see buildWallsFolder's onFinishChange.
+        restylePropsPreview();
       };
       propHistory.push({ undo: apply(before), redo: apply(after), coalesceKey: `propmat:${node.path}:${channel}` });
     },
@@ -2786,7 +2914,9 @@ function applyPropChannel(object: THREE.Object3D, channel: PropTransformChannel,
  *  reasoning as character mode's own afterHistoryApply). */
 function afterPropHistoryApply(node: PartNode | null): void {
   if (selectedPropPart && (node === null || node === selectedPropPart)) {
-    propsPartInspector.setSelection(selectedPropPart, propPartSelectionContext());
+    viewportExtras.withRealMaterials(propsPreviewRoot, () => {
+      propsPartInspector.setSelection(selectedPropPart!, propPartSelectionContext());
+    });
   }
 }
 
@@ -2864,6 +2994,11 @@ function addPropPart(kind: PropPrimKind, rawName: string): void {
     // fixed the same way, for the mirror-image case).
     const node = propPartNodeByObject.get(geomMesh);
     if (node) selectPropPart(node);
+    // [[IDEA-079]]: the part was just built with a fresh toon material and has
+    // never seen the style. Safe here (unlike in rebuildPropsPreview) because
+    // `addPart` records this part's baseline from the record it was handed,
+    // not by re-reading the mesh.
+    restylePropsPreview();
   }
   function detach(): void {
     if (selectedPropPart?.object === geomMesh) selectPropPart(null);
@@ -3621,6 +3756,8 @@ declare global {
       bodyColor(): number | null;
       /** A part's material opacity — the eaten "spirit" drops it below 1. */
       partOpacity(name: string): number | null;
+      /** See the implementation: what is DRAWN vs what a reader sees. */
+      partMaterialKinds(name: string): { drawn: string[]; real: string[] } | null;
       animation(): string;
     };
   }
@@ -3636,6 +3773,24 @@ function findPart(name: string): THREE.Object3D | null {
 }
 
 window.__charTestHook = {
+  /**
+   * What a part's material is RIGHT NOW versus what a reader would see.
+   *
+   * The two differ under a shading override — `normals` and [[IDEA-079]]'s
+   * `styled` both swap `mesh.material` — and the whole safety of those modes
+   * is that every reader goes through `withRealMaterials`. This exposes both
+   * so a test can assert the difference instead of trusting it.
+   */
+  partMaterialKinds: (name: string) => {
+    const o = findPart(name);
+    if (!(o instanceof THREE.Mesh)) return null;
+    const drawn = (Array.isArray(o.material) ? o.material : [o.material]).map((m) => m.type);
+    const real = viewportExtras.withRealMaterials(group, () => {
+      const m2 = (o as THREE.Mesh).material;
+      return (Array.isArray(m2) ? m2 : [m2]).map((m) => m.type);
+    });
+    return { drawn, real };
+  },
   partRotation: (name) => {
     const o = findPart(name);
     return o ? { x: o.rotation.x, y: o.rotation.y, z: o.rotation.z } : null;
@@ -3875,3 +4030,94 @@ restorePendingSaveReport();
     );
   }
 }
+
+// TEST-SUPPORT ONLY: same rationale as the hooks above. [[IDEA-079]]'s style
+// swaps materials, and "is this tab drawing what ships?" is a question about
+// material CLASSES across a whole subtree — invisible to the DOM, and a pixel
+// diff would answer it far more brittly than counting the materials does.
+declare global {
+  interface Window {
+    __styleTestHook?: {
+      /** Material type counts under a named root, so a suite (or a probe) can
+       *  assert a tab is styled rather than eyeball a screenshot. */
+      census(root: "character" | "board" | "props"): Record<string, number>;
+      /** A few mesh name/material pairs, for diagnosing what a root holds. */
+      sample(root: "character" | "board" | "props"): string;
+      /** Meshes still on a LIT material after a restyle, with why. */
+      unstyled(root: "character" | "board" | "props"): string;
+      /** Full detail on the meshes a restyle skipped: ancestry, size, colour. */
+      skips(root: "character" | "board" | "props"): string;
+    };
+  }
+}
+
+window.__styleTestHook = {
+  census(which) {
+    const root =
+      which === "character" ? group : which === "board" ? boardStage.boardRoot : propsPreviewRoot;
+    const out: Record<string, number> = {};
+    root?.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh || o.userData.editorOverlay) return;
+      for (const mat of Array.isArray(m.material) ? m.material : [m.material]) {
+        const k = mat.type.replace("Mesh", "").replace("Material", "");
+        out[k] = (out[k] ?? 0) + 1;
+      }
+    });
+    return out;
+  },
+  sample(which) {
+    const root =
+      which === "character" ? group : which === "board" ? boardStage.boardRoot : propsPreviewRoot;
+    const rows: string[] = [];
+    root?.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh || rows.length >= 12) return;
+      const mats = Array.isArray(m.material) ? m.material : [m.material];
+      rows.push(`${o.name || "(unnamed)"}:${mats[0]?.type.replace("Mesh", "").replace("Material", "")}${o.userData.editorOverlay ? "[overlay]" : ""}`);
+    });
+    return rows.join("  ");
+  },
+  unstyled(which) {
+    const root =
+      which === "character" ? group : which === "board" ? boardStage.boardRoot : propsPreviewRoot;
+    const rows: string[] = [];
+    root?.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh || o.userData.editorOverlay) return;
+      for (const mat of Array.isArray(m.material) ? m.material : [m.material]) {
+        if (mat.type === "MeshMatcapMaterial" || mat.type === "MeshBasicMaterial") continue;
+        const lit = mat as THREE.MeshToonMaterial;
+        rows.push(
+          `${o.name || o.type}:${mat.type.replace("Mesh", "").replace("Material", "")}` +
+            `${lit.map ? "[map]" : ""}${lit.vertexColors ? "[vcol]" : ""}`,
+        );
+      }
+    });
+    return rows.join("  ") || "(none)";
+  },
+  skips(which) {
+    const root =
+      which === "character" ? group : which === "board" ? boardStage.boardRoot : propsPreviewRoot;
+    const rows: string[] = [];
+    root?.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh || o.userData.editorOverlay) return;
+      for (const mat of Array.isArray(m.material) ? m.material : [m.material]) {
+        if (mat.type === "MeshMatcapMaterial" || mat.type === "MeshBasicMaterial") continue;
+        const lit = mat as THREE.MeshToonMaterial;
+        const chain: string[] = [];
+        for (let a: THREE.Object3D | null = o; a && a !== root; a = a.parent) chain.unshift(a.name || a.type);
+        const pos = m.geometry.getAttribute("position");
+        const inst = (m as THREE.InstancedMesh).count;
+        rows.push(
+          `${chain.join("/")} | ${mat.type.replace("Mesh", "").replace("Material", "")}` +
+            ` | colour #${lit.color.getHexString()}` +
+            `${lit.map ? " | MAP" : ""}${lit.vertexColors ? " | VCOL" : ""}` +
+            ` | verts ${pos ? pos.count : 0}${inst ? " x" + inst : ""}`,
+        );
+      }
+    });
+    return rows.join(" ;; ") || "(none)";
+  },
+};

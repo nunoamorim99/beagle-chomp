@@ -20,7 +20,7 @@
 // net).
 //
 // Follows the attachX(root, callbacks) => handle pattern established by
-// ui/shop.ts and ui/levelMap.ts. Zero `three` imports; pure DOM.
+// ui/shop.ts and ui/journeyMap.ts. Zero `three` imports; pure DOM.
 
 import { escapeHtml } from "./escape";
 import { ICON, iconHtml } from "./icons";

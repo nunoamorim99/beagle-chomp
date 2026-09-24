@@ -12,6 +12,7 @@
 
 import { escapeHtml } from "./escape";
 import type { Sound } from "./sound";
+import { MADBOX_STYLE_ON, setMadboxStyle } from "../render/madboxFlag";
 import { ICON, iconHtml, plateHtml } from "./icons";
 import { getProfileCache, mutateProfileCache } from "../game/profileCache";
 import { pushSupport, isSubscribed, enable, disable } from "./push";
@@ -65,6 +66,37 @@ export interface ProfileCallbacks {
  *  one line under the row is where a player finds out which one is worth
  *  switching to. Only the chosen option's note is shown — three at once is a
  *  paragraph nobody reads on a settings screen. */
+/**
+ * IDEA-079: the art-style choice, as a table for CONTROL_OPTIONS' reason.
+ *
+ * A DEVICE preference rather than an account one, exactly like the volume
+ * sliders: it is a look, the same player may want it differently on a phone
+ * and at a desk, and an account column would be a migration for something we
+ * expect to delete once the question is settled.
+ */
+const STYLE_OPTIONS: ReadonlyArray<{
+  id: string;
+  on: boolean;
+  glyph: string;
+  label: string;
+  note: string;
+}> = [
+  {
+    id: "styleNew",
+    on: true,
+    glyph: ICON.power,
+    label: "New",
+    note: "Brighter palette and soft-plastic shading. This is the current look.",
+  },
+  {
+    id: "styleClassic",
+    on: false,
+    glyph: ICON.themes,
+    label: "Classic",
+    note: "The cel-shaded look the game shipped with. Reloads the game.",
+  },
+];
+
 const CONTROL_OPTIONS: ReadonlyArray<{
   id: string;
   scheme: ControlScheme;
@@ -191,6 +223,28 @@ export function attachProfile(callbacks: ProfileCallbacks): ProfileHandle {
         </section>
 
         <section class="profile-setting">
+          <h2>Look</h2>
+          <p>
+            The game has a new art style. Classic is still here if you prefer
+            it — tell us which, so we can settle on one.
+          </p>
+          <div class="control-choice" role="group" aria-label="Art style">
+            ${STYLE_OPTIONS.map(
+              (opt) => `
+              <button type="button" id="${opt.id}"
+                      class="control-option${MADBOX_STYLE_ON === opt.on ? " is-active" : ""}"
+                      aria-pressed="${MADBOX_STYLE_ON === opt.on}">
+                <span class="control-icon bc-i" aria-hidden="true">${opt.glyph}</span>
+                <span>${opt.label}</span>
+              </button>`,
+            ).join("")}
+          </div>
+          <p class="control-note">${escapeHtml(
+            STYLE_OPTIONS.find((o) => o.on === MADBOX_STYLE_ON)?.note ?? "",
+          )}</p>
+        </section>
+
+        <section class="profile-setting">
           <h2>Sound</h2>
           <p>
             Game sounds are the chomps, the bones and the buttons. Ambience is
@@ -308,6 +362,15 @@ export function attachProfile(callbacks: ProfileCallbacks): ProfileHandle {
       if (row.preview) {
         el.addEventListener("change", () => row.preview?.(callbacks.sound));
       }
+    }
+
+    for (const opt of STYLE_OPTIONS) {
+      root.querySelector(`#${opt.id}`)?.addEventListener("click", () => {
+        // No optimistic repaint and no local state: this RELOADS, so the only
+        // correct thing to show is whatever the page comes back as.
+        if (MADBOX_STYLE_ON === opt.on) return;
+        setMadboxStyle(opt.on);
+      });
     }
 
     root.querySelector("#replayTutorialBtn")?.addEventListener("click", () => {

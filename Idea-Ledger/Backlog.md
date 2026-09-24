@@ -28,7 +28,7 @@ Living backlog of ideas. Two purposes:
   header now carries the before-table.
 
 ## Backlog (open ideas)
-> New registered ideas go here. Next free ID: IDEA-079
+> New registered ideas go here. Next free ID: IDEA-080
 > (054 went to the crab and 055 to the mosquito — built in parallel by two sessions, which is
 > why the ids were split up front rather than both taking the next free one. 056 and 057 are the
 > sushi pair, registered together because neither is buildable without the other as its
@@ -1652,6 +1652,328 @@ Living backlog of ideas. Two purposes:
 
 ## Delivered ✅
 
+### IDEA-079 — The Journey as an archipelago: islands instead of dots ✅
+- **Priority:** 🟡
+- **Area:** render
+- **Registered:** 2026-09-17
+- **Shipped:** 2026-09-23 — all phases, plus a whole-game restyle the spike provoked.
+- **Built:** started 2026-09-17.
+- **What shipped (the Notes below are the pre-build SCOPING, kept as the record of
+  what was known going in):**
+  - The archipelago, as described: forty themed islands on a swinging chain, HTML pins
+    projected over the canvas, a damped pan/frame camera, a flat-plane sea with a
+    world-space radial gradient and a foam ribbon, and per-chapter cloud banks that lift
+    when a chapter unlocks. `src/ui/levelMap.ts` and its ~65 CSS rules are deleted.
+  - **And then the scope grew, on Nuno's call.** Seeing the islands, he asked for the
+    look across the whole game: *"can we apply that look in all the game?"* So IDEA-079
+    also carries a new ART DIRECTION — `src/render/madboxStyle.ts`, matcap materials over
+    a snapped high-key palette, a surface lift for the textured half, per-theme bounce,
+    a night-theme exemption, and the editor drawing the shipped look on all three of its
+    3D stages. It is the DEFAULT; classic survives as an opt-out on the profile screen so
+    a preference can be collected before one of the two is dropped.
+  - Full reasoning is in CLAUDE.md's IDEA-079 section — ten numbered rules, which is where
+    the load-bearing detail lives rather than here.
+- **Description:** Nuno: *"on the journey menu I was thinking to add something more
+  immersive. The idea is instead of having points with the levels, is having like a real
+  size map where each dot will have details from the theme of the level, like a mini
+  island. Level one will be a mini island, the user swipes until there and presses and sees
+  what it is about — but instead of a point they see the level with some visual effects and
+  components. Example: level one is the garden theme so we put the treehouse and the trees
+  in a mini island. And instead of a screen with scroll we have something much more
+  immersive and interactive. And each stage could be hidden with clouds, and when the user
+  reaches that stage the clouds disappear, like simulating unlocking that area. This will
+  be an expensive change but will have really good details on the game."*
+  Replaces [[IDEA-014]]'s garden-path level select — 964 lines of DOM + SVG stepping stones
+  — with a real three.js scene: forty themed islands you pan across, clouds over the
+  chapters you have not reached, and a tap that lands on a place rather than on a dot.
+- **Notes:** **MOST OF THE DATA AND HALF THE MACHINERY ALREADY EXIST**, which is the single
+  most useful thing found while scoping this — it is expensive, but far less expensive than
+  it sounds:
+  - **Every Journey level already carries its own theme.** [[IDEA-063]] rule 3 forces
+    `themeId` on all forty (`THEME_CYCLE[idx % 6]`), measured today as garden 7, classic 7,
+    forest 7, beach 7, park 6, city 6. So "level one is the garden theme" is not something
+    to invent — it is already true and already rendered on the board when you play it.
+  - **`SHOWCASE_LANDMARKS` in `showcaseSurround.ts` already maps a theme to its signature
+    props**, and the garden's list is literally `treehouse, garden-tree, garden-shrub,
+    flower-sunflower, birdhouse` — exactly the dressing Nuno described, chosen for exactly
+    this kind of job by [[IDEA-072]]. `makePropFromDef` off `PROP_LIBRARY` builds the real
+    props rather than lookalikes, which is the standing reason that table exists.
+  - **The chapters are already the cloud regions.** `JOURNEY_CHAPTERS` is SEVEN: six tour
+    stages of five plus The Twists of ten. That is the natural granularity for "a stage is
+    under cloud until you reach it", and it is derived from `TOUR_LEVEL_COUNT` so a new
+    maze cannot leave an island without a region.
+  - **`propMerge.ts` is what makes forty islands affordable at all.** `mergeBySignature`
+    collapses a whole band to one mesh per distinct material and `collapseByMaterial`
+    flattens a hand-assembled prop — the two that took [[IDEA-066]]'s surround to 13-14
+    draw calls for several hundred props. Without them this is hundreds of calls and a
+    phone-killer; with them it is plausible. **Draw calls are this project's prop budget,
+    not triangles** ([[IDEA-065]] rule 3).
+  - `menuScene.ts` and `shopScene.ts` are the pattern for a standalone scene, so
+    `journeyMapScene.ts` is a third of the same shape rather than new architecture.
+  - **THE REAL RISK IS THE PHONE, AND IT IS MEASURABLE BEFORE IT IS EXPENSIVE.** The garden
+    board already sits near 350 draw calls; forty dressed islands could dwarf that. So
+    phase 0 is a SPIKE — three real islands, measured on a 390x844 viewport for draw calls,
+    triangles and frame time — and the full build is only committed to once that number is
+    known. Measuring before building is this project's own rule and it is never cheaper to
+    apply than here.
+  - **The SVG map is deleted, not kept as a fallback** (proposed, not yet decided): two
+    level-select screens is two things to keep in step, and the one nobody sees is the one
+    that rots. That decision should be taken deliberately rather than by drift.
+  - Open questions carried into planning: the archipelago's LAYOUT (a chain you pan along
+    vs a clustered world), whether the camera pans on rails or is free, and how a locked
+    island reads under cloud — visible-but-shrouded, or absent until the cloud clears.
+  - `levelMap.ts` also owns real behaviour that must survive the rebuild, not just
+    decoration: a LOCKED stone is selectable and fills the panel ([[IDEA-063]]'s v2 note —
+    looking ahead is what the screen is for), the disabled Play says "Clear stone N first",
+    the chapter rail scrolls without selecting, and `--map-header-h` is measured rather
+    than a literal. Re-read that file's header before replacing it.
+- **Decisions (Nuno, 2026-09-17):** a **winding chain** you pan along, not a clustered
+  world or a vertical climb — it is the garden path in 3D and only a slice is ever on
+  screen. Locked stages are **shrouded but visible in silhouette**, so looking ahead still
+  works ([[IDEA-063]] v2 made locked stones selectable for exactly that reason) and the
+  clouds clearing is a reveal rather than a spawn. The SVG map is **deleted** once this
+  ships — two level-select screens is two things to keep in step and the unseen one rots.
+  Spike first.
+- **PHASE 0 RESULT (2026-09-17): AFFORDABLE, and the margin is large.** Measured with the
+  real renderer at 390x844 (`preview-journey/`, `scripts/_scratch-journey-spike.ts`):
+  **92-100 draw calls and ~23k triangles while panning**, against the garden board's ~350
+  and ~250k. Two things buy that and both are already in the codebase:
+  - **Frustum culling, which is free and does most of it.** All forty islands in the scene
+    cost **658** calls uncurled and **~95** culled — a player only ever has a chapter or so
+    in frame, and three.js skips the rest with no work from us. Confirms the chain layout
+    was the right call for cost as well as for feel.
+  - **`mergeBySignature`, which does the rest.** Culled but unmerged is **238-245** calls;
+    merged it is ~95. Per island: 92 meshes -> 32. An island qualifies for the strong merge
+    on every clause of its contract (nothing recoloured, animated, team-tinted or
+    part-edited) — stated in `journeyIsland.ts` rather than assumed, because that contract
+    is what stands between this and one prop silently repainting another.
+  - Zoomed fully out (all forty in one frame) costs **495 calls / 117k triangles**, so a
+    "see the whole journey" gesture is possible but is the EXPENSIVE view, not the cheap
+    one. Worth knowing before anyone designs it as the default.
+  - Forest islands are the triangle hogs at **14.7k each** (the pine) against the garden's
+    4.9k; triangles are nowhere near a limit either way.
+  - **FPS FROM THE HARNESS IS MEANINGLESS AND IS NOT RECORDED HERE.** Headless Chromium
+    software-renders, so its 37 fps says nothing about a phone. Draw calls and triangle
+    counts come from `renderer.info` and ARE real; frame time has to be read on a device.
+- **PHASE 0 ALSO FOUND A DESIGN PROBLEM, and it is not a cost one.** Seven of the forty
+  levels are themed `classic` (Arcade Night), which deliberately has **no props and a
+  near-black floor** — its void is what somebody paid 50 coins for. On a BOARD that is the
+  feature. On a level-select map those seven rendered as **flat black discs**, and next to
+  a treehouse and a log cabin they read as holes where content should be rather than as a
+  style. The one thing the screenshots made obvious and no measurement would have.
+- **RESOLVED (2026-09-21): ARCADE NIGHT GETS LIGHT INSTEAD OF PROPS** (Nuno: *"we can make
+  that suggestion for the arcade night theme"*). **THE BOARD AND THE MAP ARE DIFFERENT
+  BRIEFS** — that is what unlocks it. The board's emptiness is bought and must stay
+  untouched; a map's job is "which level is this", which a black disc does not answer. So
+  the island stays **PROPLESS** (a menu scattering garden props on Arcade Night would be
+  overruling the shop) and takes its identity from what the theme is actually made of:
+  neon on black. Three marks, in rising order of how much each does at map distance:
+  1. **A LIT RIM, and it is the one that matters.** At 40-80px an island is mostly its
+     OUTLINE, and a bright ring is the whole difference between a shape and a hole. It is
+     `MeshBasicMaterial` — UNLIT — this project's documented exception for anything that
+     must genuinely glow (the eye glint, the shield bubble): a toon ramp quantises a
+     highlight into the same three bands as everything else and it stops reading as light.
+     It is also deliberately outside the merge, since welding an unlit material into a lit
+     bucket is exactly what `mergeBySignature`'s contract forbids.
+  2. **A NEON GRID on the deck**, a procedural canvas used as `map` AND `emissiveMap` so
+     the lines carry their own light — generated, never fetched, like every other surface
+     here. Two passes per line (a wide dim one under a narrow bright one) because a single
+     1px hairline aliases into dashes the moment the texture is minified, which at this
+     distance it always is.
+  3. **A DARKER SKIRT.** The palette gives `floor` and `surroundGround` the SAME 0x111120,
+     so Arcade Night is the one theme with no two-tone to inherit — the body was one
+     undifferentiated mass before anything was drawn on it.
+  **COST: +1 draw call and +336 triangles per arcade island** — 7 across the whole map,
+  657 -> 664 for all forty. Nothing to think about.
+  **AND THE HEADLESS SPIKE NEEDED A REAL ANSWER, NOT A PATCH.** `document` does not exist
+  in Node, so the deck texture returns **null** there. That is honest rather than
+  defensive: a canvas texture changes neither draw calls nor triangles — same mesh, same
+  material count — so the headless path measures exactly the right numbers, while the
+  guard is on `document` itself so the browser can never reach it by accident. The
+  fallback also drops the material back to `pal.floor` instead of white, because a
+  textured surface holds its material WHITE (the board's own floor rule) and a white
+  material with no map is a white disc — the worst possible fallback for a theme made of
+  black.
+- **THE ISLANDS WERE LITERALLY FLOATING, AND THE SEA IS NOT ALL BLUE** (2026-09-21,
+  Nuno: *"the islands look they are floating, any idea how to give more the feel of mini
+  islands instead of floating islands? Like a sea or something?"* and *"the ambience will
+  be all blue?"*).
+  1. **IT WAS GEOMETRY, NOT SHADING — worth checking before theorising about light.** An
+     island body runs from y=0 down to **y=-0.9** (`ISLAND_PARAMS.depth` under the top
+     surface, which is the group origin) and the sea plane sat at **y=-1.2**. Every one of
+     the forty hung three tenths of a unit above the water with clear air underneath. No
+     amount of shading fixes that. `WATER_Y` is now **-0.42**, INSIDE the body's own
+     range, so the waterline cuts the skirt and the taper does the rest: the wide part
+     stands proud, the narrow part is swallowed.
+  2. **SHALLOWS ARE THE BEST CONTACT CUE A TOON RENDERER HAS.** A real shadow needs a
+     shadow map and lands as a hard three-band blob anyway; a pale ring of shallow water
+     says "this is standing IN something" far more cheaply and suits the flat look. Built
+     as **ONE merged mesh for all forty** — they share a material, so merged they are a
+     single draw call where forty children would be forty. They live with the SEA, not
+     inside the island group: they are water, which is the same reasoning that keeps the
+     board's surround out of the board.
+  3. **FOG, because distance has to fall away** or the chain reads as a repeating pattern
+     rather than as a horizon.
+  4. **"WILL THE AMBIENCE BE ALL BLUE?" — NO.** The sea is one mesh carrying a
+     **vertex-colour gradient along the chain**, blended toward each island's own theme
+     `bg`, so the water shifts as you travel: cool and dark through the forest stretch,
+     pale beside the beach, violet near Arcade Night. One draw call, no extra geometry.
+     The blend is deliberately shallow (0.42) — it is still the sea, and water that went
+     fully green under the garden would read as a field. Colours go through `THREE.Color`
+     so sRGB is converted to the linear space a vertex attribute is sampled in; writing
+     hex bytes straight into the buffer washes the whole gradient out.
+  **TWO THINGS THE RENDER CAUGHT THAT THE CHANGE ITSELF BROKE**, both the same family this
+  project keeps recording.
+  - **THE FOG BLANKED THE OVERVIEW.** Tuned for the panning rig (26/96), `?all=1` — which
+    pulls the camera back to 150 units to see all forty — fell entirely past the far plane
+    and rendered as a **blank blue screen**. Fog is measured from the CAMERA, so a fixed
+    pair is only ever right for one dolly; it is scaled by `CAM_H / 17` now, exactly as
+    `scene.ts`'s `resize()` scales by `dist / baseDist`.
+  - **NEAREST-ISLAND SNAPPING MADE THE WATER STRIPY.** Assigning each vertex row the
+    colour of its closest island gives every island a zone with a hard edge at the
+    midpoint, and the overview came back as forty bands of flat colour reading as a
+    painted deck. It blends between the two islands a row sits BETWEEN instead, over 260
+    rows rather than 120.
+  **Cost after all of it: 78-94 draw calls while panning** (was 92-100), and the sea plus
+  the forty shallows together are ~2 calls. The overview is unchanged at 501.
+- **THE SEA IS A REAL SEA NOW** (2026-09-21, Nuno: *"it still looks like an empty screen
+  with some islands. Lets draw a sea with the islands, make the waves and add some
+  elements of the sea to look like real islands"*). `src/render/journeySea.ts`.
+  **THE CAUSE WAS THE RENDERER, NOT THE COLOUR, AND IT IS THE REUSABLE PART.** The scene
+  is cel-shaded on a THREE-STEP ramp that quantises by the surface NORMAL. **A flat plane
+  has exactly one normal**, so however it is tinted it resolves to ONE band of flat colour
+  across the whole frame — which is the literal definition of an empty screen. No amount of
+  tinting or texturing a flat plane escapes that.
+  So the fix is [[IDEA-068]]'s hedge lesson one surface along: **the geometry exists to
+  produce BANDING, not to be seen as bumps.** A 0.16-unit swell is invisible as a shape at
+  map distance and completely changes what the ramp does — the water falls into two or
+  three values and starts reading as a surface with light on it. **`computeVertexNormals`
+  after the displacement is the whole point**; displacing the plane and leaving every
+  normal pointing up changes the geometry and nothing on screen.
+  Four more pieces, all in the project's existing cartoon vocabulary:
+  - **A FOAM TEXTURE, DRAWN AS A VALUE RELATIONSHIP.** A `map` MULTIPLIES, so nothing in
+    it can be brighter than the water it sits on — foam cannot be painted white on top.
+    The base sits below 1 and the foam reaches it, so a crest is a lighter band of the
+    water's OWN colour. That is also what a cartoon sea looks like, and it survives the
+    per-theme tint, which a baked-in white would not. Seamless, with every random decision
+    made BEFORE the nine wrapped passes (surroundTexture.ts's trap).
+  - **A SHORELINE IS TWO RINGS, NOT ONE.** A single pale disc is a halo; a wide shallow
+    band under a narrow bright foam line at the rock is the two-value step a cartoon shore
+    is drawn with. Both merged across all forty — they share a material, so merged they
+    are one draw call where forty children would be forty.
+  - **ROCKS BETWEEN THE ISLANDS**, with their own foam collars. They are what makes it
+    read as an ARCHIPELAGO: scattered stone says the islands are the tops of something
+    rather than discs laid on a sheet.
+  - **CALM LAGOONS.** The swell is flattened within ~1.9 island radii, which is both what
+    a sheltered shore looks like and what stops a crest rising through the flat foam ring.
+  **AND THE ROCKS WERE TUNED FROM THE OCEAN INSTEAD OF FROM THE FRAME.** First build
+  scattered them across 0.62 of the half-width — about +-43 units — while the camera sees
+  roughly |x| < 8 at island distance. Twenty-seven rocks were built, merged, drawn and
+  essentially never visible. `rockSpread` is 0.2 now. Second time in this feature that a
+  number was right about the world and wrong about the picture, after the fog.
+  **COST: 81-97 draw calls while panning**, against 78-94 before it. The ENTIRE ocean —
+  water, both shoreline rings across forty islands, the rocks and their collars — is
+  **four draw calls**, and it does not grow with the chain.
+- **THE MADBOX TEARDOWN, AND WHAT OF IT SURVIVES CONTACT WITH THIS STACK**
+  (2026-09-21). Nuno reverse-engineered madbox.io's island hero and wrote it up as a build
+  brief — camera rig, focus points, HTML pins, toon foam, matcaps, baked lighting, a night
+  ramp — with the instruction *"not everything will be the same on our case, we just
+  should use the thing that work and implement on the context we have."* The filtering is
+  the deliverable, because **two of its seven steps are stack changes here** and adopting
+  them by enthusiasm would cost weeks.
+  **ADOPT AS WRITTEN.**
+  1. **The camera rig.** Fixed base Euler, damped channels, clamps, drag normalised by
+     `min(w, h)`, a 10px drag threshold. Pure arithmetic, no dependency, and the document
+     is right that it is the biggest feel win — a grey-box scene with this rig reads like
+     the reference and a beautiful scene on OrbitControls does not.
+  2. **Focus points as a DATA TABLE with landscape AND portrait poses.** We already have
+     `JOURNEY_LEVELS`; the poses are new fields. Portrait from day one rather than
+     retrofitted — this is a phone-first PWA, so the case they treated as the variant is
+     our primary.
+  3. **The HTML pin layer**, and it is the highest-value STRUCTURAL idea for us
+     specifically. [[IDEA-048]] gave this project a full 2D design system — real buttons,
+     focus rings, icon plates, the dim-by-paint rule — so pins in HTML means
+     locked / unlocked / cleared are CSS variants we already own, and `levelMap.ts`'s
+     hard-won behaviour ports intact ([[IDEA-063]] v2: a locked stone is SELECTABLE, and
+     the disabled Play says "Clear stone N first"). Pins in 3D would throw all of that
+     away and re-earn it in shaders.
+  **ADAPT.**
+  4. **The sea.** Theirs is a FLAT plane carrying a radial gradient — all look, no
+     geometry. Ours is displaced because our ramp needs a NORMAL to band on
+     (`journeySea.ts`'s header). Both are right for their own renderer. What is worth
+     stealing outright is their `step()`ped Perlin foam: it ANIMATES and hugs the coast
+     procedurally, where our canvas foam is static. Custom shaders are within precedent
+     here — `scene.ts`, `menuScene.ts`, `shopScene.ts` and `showcaseSurround.ts` all ship
+     hand-written gradient programs — but note [[IDEA-072]]'s finding that those set
+     `gl_FragColor` with no colour-space conversion and render ~40% dark, so a new one
+     must not copy that.
+  5. **Matcaps, in spirit only.** The real idea in `greenOnOrange` is OBJECT COLOUR TINTED
+     BY ITS ENVIRONMENT, and that is a per-island material tint — cheap, and most of the
+     benefit.
+  **SKIP, AND THE REASONS ARE THIS PROJECT'S OWN RULES.**
+  6. **`MeshMatcapMaterial` itself.** CLAUDE.md is explicit that `toon()` + `NoToneMapping`
+     + one shared 3-step ramp are "not a style preference; the three are one system", so
+     matcapped props would look like a DIFFERENT GAME on the map than in the maze. It also
+     wants ~40 hand-painted textures in a project that ships zero and generates everything
+     — the fetched-asset rule the Google Fonts incident exists to enforce. The toon ramp
+     already delivers what the teardown actually praises: matte, no specular, no rim, one
+     soft gradient.
+  7. **Baked lighting.** glTF + DRACO + KTX2 + an offline Blender pipeline + fetched
+     binaries — four things CLAUDE.md excludes by name, and it says to RAISE a stack change
+     rather than slip it in. It also solves a problem we measured and do not have: the
+     whole visible map is ~95 draw calls against the board's ~350. Their bake buys
+     free terrain complexity; ours is free already because it is procedural, and baking 40
+     islands x 6 themes is a content pipeline we would then own forever.
+  8. **The night ramp** is a feature we already have by another route: per-theme palettes
+     plus `applySceneTheme` ([[IDEA-072]]). Worth stealing the DESATURATED LOCKED LEVEL
+     idea from it, done with material colour rather than injected GLSL.
+  **THREE THINGS WE ALREADY HAVE THAT THE BRIEF WOULD HAVE US BUILD.** Levels are already
+  NAMED, not numbered ("Classic Garden", "The Back Garden") — the document calls that
+  "most of why the map feels like a place rather than a menu" and it is sitting in
+  `journey.ts` already. Neighbouring islands already take different dominant hues, free
+  from `THEME_CYCLE`. And the editor-with-codegen it calls "probably the highest-leverage
+  hour in this entire project" exists — a focus-point mode is a new tab on a workbench
+  that already writes TypeScript back to source.
+  **AND ONE THING THE TEARDOWN EXPOSES ABOUT OUR ART, which is not a technique at all.**
+  Its colour rule is "no brown, no grey and no black anywhere except deliberate contrast
+  accents", every hue high-saturation and high-lightness. Our garden island is ALMOST
+  ENTIRELY BROWN, because it inherits `palette.floor`/`surroundGround` from a board tuned
+  to sit under a biscuit trail. That is most of why ours reads muddy beside their candy,
+  and it is a palette conversation rather than a rendering one — an island may want its
+  own brighter tone rather than the board's.
+- **STEP 1 IS BUILT: THE CAMERA RIG** (2026-09-21, `src/render/journeyCamera.ts`). Fixed
+  base pose, damped channels, clamps, tap-vs-drag. Four deliberate deviations from the
+  reference, each with a reason in the module header: **exponential damping** rather than
+  `x += (t - x) * k * dt` (that form is only approximately frame-rate independent and
+  OVERSHOOTS once `k * dt > 1` — precisely what a dropped frame or a backgrounded tab
+  hands you on a phone); **no rotate channel at all** (right-drag and a wheel do not exist
+  on a phone, and the teardown's own advice is to drop it if it does not pay for itself);
+  **pan clamped to the island positions** so a new level extends the map by construction;
+  and **no GSAP**, because `three` is this project's only runtime dependency and a camera
+  ease is not the reason to make it two.
+  Verified in the browser: a 4px press registers as a TAP and a real drag pans and fires
+  no tap — which is the thing that decides whether HTML pins are usable at all on a
+  surface that is also a draggable map.
+  **AND THE RIG IMMEDIATELY EXPOSED TWO THINGS THE OLD CAMERA WAS HIDING.**
+  1. **A SHALLOWER PITCH IS A PERFORMANCE DECISION ON A CORRIDOR.** The preview's old
+     camera pitched down 39 degrees and saw three islands; the reference's 27 degrees saw
+     twenty and cost **361 draw calls against 95** — and every island past the fog's far
+     plane was being drawn FULLY FOGGED OUT. Paid for, invisible. `camera.far` was 400
+     while the fog ended at 96. Setting `far` just past the fog makes the frustum cull
+     them, which is one number rather than a per-island distance test — IDEA-069's
+     cull-to-what-the-frame-can-see, one screen along. It ships at 33 degrees and
+     **136-171 calls**, which buys a much better read (you can see the journey ahead) and
+     still sits well under the board's ~350. **Keep `far` in step with the fog** or islands
+     pop out of existence before they have finished fading.
+  2. **THE ROCKS WERE MANHOLES.** Sat flush at the waterline, a dark top inside a white
+     foam ring reads as a HOLE in the sea rather than as stone. Only the steeper first
+     camera hid it; they are proud of the water now. Third time in this feature that
+     changing the frame revealed something the previous frame was concealing, after the
+     fog and the rock scatter.
+- **Dependencies:** [[IDEA-014]] (delivered — this replaces it), [[IDEA-063]] (delivered —
+  the forty levels and their forced themes), [[IDEA-072]] (delivered — the landmark table
+  and the showcase-scene pattern this borrows)
+
 ### IDEA-077 — Challenge mode becomes the JOURNEY ✅
 - **Priority:** 🟡
 - **Area:** modes
@@ -1934,6 +2256,42 @@ Living backlog of ideas. Two purposes:
     place a typo would be silent — a wrong name returns NULL, becomes 0, and
     every power-up challenge reports "not started" against a player who has).
     Not yet deployed at the time of writing.
+  - **v3** (2026-09-17) — **the chip matches its neighbours, and the leaderboard
+    is one board.** Two notes from Nuno after playing the live build.
+    *"Make the button of the challenges the same size as the button of the sound
+    and the bell."* Measured 44x44 against their 48x48 at every width. A
+    menu-bar button has NO SIZE OF ITS OWN — `.menu-bar .chrome-btn` is
+    `height:auto; aspect-ratio:1`, so it fills whatever its group stretches it
+    to and squares itself off, which is how all three track the wallet pill
+    without anyone hardcoding a number. The wallet group shipped
+    `align-items:center`, so the trophy collapsed to its 44px min-width. Fixed
+    by matching the MECHANISM (`stretch`) rather than writing 48 somewhere.
+    *"On the board let's just have the tab with the best run of each user,
+    forget all the runs, we don't need that."* The All-runs tab is removed end
+    to end — the tab bar, `fetchRunBoard`, `GET /leaderboard/runs`,
+    `profileService.runBoard`, `topRuns`/`acceptedRunCount`, the board cache's
+    `"runs"` half, the `.lb-tab` styles and that class's entry in `sound.ts`'s
+    selection-cue list.
+    **THE RISK WAS A COMMENT, NOT THE CODE.** `gameSessions.ts`'s retention
+    purge justified keeping `accepted` sessions forever with *"these ARE the
+    All-runs leaderboard"*. Remove that board and the stated reason evaporates,
+    leaving a future reader looking at rows that appear disposable — while
+    `run_stats.session_id` references them **ON DELETE CASCADE** and `run_stats`
+    is what every challenge's progress is derived from. Purging them would walk
+    players' challenge progress BACKWARDS and reopen claims already taken. The
+    justification is rewritten in `gameSessions.ts` and `server/README.md` and
+    is stronger than the one it replaced. **When a feature is removed, re-read
+    whatever cited it as a reason** — this project has shipped a stale
+    justification before ([[IDEA-060]]'s `wallDecor`, [[IDEA-068]]'s `flower-`
+    prefix).
+    **AND THE DEPLOY ORDER INVERTS FOR A REMOVAL.** Adding an endpoint means API
+    first; removing one means FRONTEND first, or a client still drawing the tab
+    calls something that has just gone. A precached PWA shell can outlast both,
+    so a stale client's All-runs tab shows its error state until the shell
+    updates — bounded and self-healing.
+    `test-sessions.ts`'s "All-runs board" section was rewritten rather than
+    deleted: the property it was really drawing a contrast against (three runs
+    by one player fold to ONE row, carrying the best) is now the whole contract.
 - **Dependencies:** [[IDEA-077]]
 
 > Already in production. Do NOT delete. Each keeps its version history.
