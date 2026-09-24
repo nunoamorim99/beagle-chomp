@@ -385,20 +385,6 @@ export function makeBeagle(skin: BeagleSkin = getEquippedBeagleSkin()): THREE.Gr
   bridge.position.set(0, 0, -0.014);
   head.add(bridge);
 
-  // Muzzle roots: the corner where the muzzle's sides meet the skull, just
-  // under and inside each eye — filled so muzzle and head read as one face.
-  const muzzleRootL = new THREE.Mesh(latheFromProfile(SPHERE_PROFILE, 14, 0.078, 0.07, 0.09), white);
-  muzzleRootL.name = "muzzleRootL";
-  muzzleRootL.scale.set(0.88, 0.9, 1.66);
-  muzzleRootL.rotation.set(0.164, 0, 0);
-  muzzleRootL.position.set(0.015, -0.035, 0.145);
-  head.add(muzzleRootL);
-  const muzzleRootR = new THREE.Mesh(latheFromProfile(SPHERE_PROFILE, 14, 0.078, 0.07, 0.09), white);
-  muzzleRootR.name = "muzzleRootR";
-  muzzleRootR.scale.set(0.881, 0.901, 1.663);
-  muzzleRootR.rotation.set(0.164, 0, 0);
-  muzzleRootR.position.set(-0.017, -0.033, 0.145);
-  head.add(muzzleRootR);
 
   // the oversized rounded-triangle nose leather sitting on the muzzle front
   const nose = new THREE.Mesh(latheFromProfile(NOSE_PROFILE, 16, 0.075, 0.062, 0.052), noseMat);
