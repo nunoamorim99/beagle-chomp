@@ -1,5 +1,11 @@
 # Prototype notes
 
+> **Historical.** The prototype is a reference artifact now, not a spec to build from —
+> its render loop, HUD and AI have long since shipped and been rewritten several times
+> over. Kept because it is where the tile-stepping model and the enemy AI were first
+> proven. See the [README](../README.md) for the current game.
+
+
 `prototype/beagle-chomp.html` is a complete, working single-file version of the game
 (three.js via CDN). It exists as the **reference implementation** — lift proven code from
 it rather than guessing.

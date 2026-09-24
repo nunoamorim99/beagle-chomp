@@ -5,10 +5,25 @@
 src/game/*   pure logic (NO three.js)  ── unit-testable in Node
 src/render/* three.js scene + meshes   ── reads logic, never mutates it
 src/input/*  keyboard + touch          ── emits queued directions
-src/ui/*     DOM HUD + banners         ── owns the .hud + #center overlay (not the canvas)
+src/ui/*     DOM chrome + audio        ── owns .hud, #center, the screens; not the canvas
+src/net/*    the API client            ── the only place fetch() lives
 src/game/game.ts  integration/loop     ── owns GameState, wires it all together
-src/editor/* dev-only character editor ── reads render + game, NOTHING imports from it
+src/editor/* dev-only workbench        ── reads render + game, NOTHING imports from it
+src/admin/*  the metrics portal        ── its own build, its own Pages project
+server/*     the API                   ── Hono + Postgres; shares src/game's constants
+                                          by GENERATION, never by duplication
 ```
+
+**The one rule everything else rests on:** `src/game/*` may never import `three`.
+That is what makes the headless suites possible — they run the real modules in
+Node, so the thing they validate is the thing that ships.
+
+The frontend/backend boundary has the same shape one level up.
+`server/scripts/sync-game-constants.ts` copies the game's real constants into
+`catalog.generated.ts`, and `npm run test:catalog` fails on drift. A validator
+carrying its own copy of the balance table would diverge on the next rebalance,
+and the symptom would be honest runs rejected in production while every local
+test passed.
 `createHud(root): Hud` (src/ui/hud.ts) is the only writer of the HUD/#center DOM.
 index.html ships the `.hud` stats (`#score`/`#level`/`#lives`) and an empty
 `#center` container; hud.ts injects banners/panels into `#center` at runtime.
@@ -50,6 +65,12 @@ World tab writes. Production never assigns them — the literals in those files
 are the authored values and the editor writes back to them.
 
 ## Cel shading (IDEA-024 v2)
+
+> Since IDEA-079 the shipped look is a matcap restyle applied on top of this — but
+> the source still authors every material here, and must. See **The art direction**
+> below. Every rule in this section is still the rule you write to; it is simply no
+> longer the whole of what a player sees.
+
 Every lit surface in the game is a `MeshToonMaterial` sharing ONE gradient
 texture from `src/render/toon.ts`. One texture matters twice over: it is a
 single GPU upload, and three.js keys shader programs partly on the gradient map,
@@ -113,7 +134,8 @@ does not know about is silently dropped from every saved theme;
 `scripts/test-board-surfaces.ts` fails if any `ThemePalette` key is missing from it.
 
 ## Editor tabs and the two "mesh" modes
-`/editor/` has four tabs. **Character** and **Pickups** are the same code path:
+`/editor/` has six tabs (listed above). **Character** and **Pickups** are the same
+code path:
 one registry of builder defs, each carrying `builderName` + `sourceFile`, driven
 through the shared part tree / inspector / codegen / source view / save. Board
 and Props are different — they generate whole files from their own data models
@@ -134,6 +156,76 @@ three things that must move together, or the tab half-works:
 A builder must be `export`ed and its parts `.name`d — `findFunctionRange` looks
 for `export function <name>(`, and the tree/save address parts by name.
 
+## The art direction (IDEA-079)
+
+The shipped look is a **matcap** over a snapped high-key palette, and the classic
+cel-shaded look is still there behind a switch (`src/render/madboxFlag.ts`; the
+profile screen has the control). Both ship so the preference can be measured before
+one of them is deleted.
+
+**Everything is still AUTHORED in `toon()`, and must be.** The swap happens in
+`madboxStyle.ts` at build-the-scene time, reading the colour a `toon()` call
+declares. A matcap written into a source file is a material the swap cannot read,
+the editor cannot inspect and codegen cannot emit — so nothing constructs one
+outside `madboxStyle.ts` and `journeyClouds.ts`.
+
+Two rules decide everything else:
+
+- **Bake for scenery, tint for anything whose colour means something.** A baked
+  matcap puts the palette colour into the generated texture and holds the material
+  white, which is what makes a board look like one place. A tint matcap shares a
+  neutral texture and keeps the colour on the material. Enemies, the beagle's coat
+  and the pickups are all TINT, because every one of them is recoloured at runtime
+  and a baked colour would make `color.setHex()` silently do nothing.
+- **Restyle AFTER anything that rebuilds scene content**, never once at
+  construction. That ordering bug has shipped four times here — the shop surround,
+  a forced-theme Journey level, and the two showcase scenes.
+
+A night theme is exempt, decided from `palette.bg` rather than by naming Night City
+and Arcade Night: both halves of the style contradict a night board, and a future
+dark theme is then exempt by being dark.
+
+## The world past the maze (IDEA-066 … IDEA-072)
+
+The board's floor is one plane of `COLS+2 × ROWS+2` — the maze plus a single tile —
+and past it there used to be no geometry at all. Measured, **68% of a phone frame
+landed off it.** The camera pitches 59° down with a 23° half-FOV, so the top of frame
+still points 36° *downward*: the horizon is never in shot at any aspect, which is why
+the fix is a bigger ground plus a band of scenery rather than a skybox.
+
+Three concentric layers, each with its own data shape: the **apron** (one hand-authored
+ring), the **verge** (two more rings, hand-authored, its own array on the theme) and
+the **surround** (procedural — a lattice of hedged plots separated by lanes).
+
+Two things make it affordable, and both generalise:
+
+- **Draw calls are the budget, not triangles.** `mergeBySignature` buckets by what a
+  material *looks like* — a key stamped by `toon()` from its own parameters, never
+  computed by enumerating fields — and collapses the whole band to one mesh per
+  distinct material: ~14 draw calls that do not grow with density. It is safe only
+  where nothing is recoloured, animated or part-edited, so it is never used on a
+  character.
+- **It is culled to the frame's own ground footprint.** `resize()` drops the four
+  frustum corners onto y=0 and hands the box to the recipe, which cuts a phone's
+  surround by about 65%. The ground plane itself is never culled — a visible world
+  edge at an untested aspect is catastrophic and the margin costs two triangles.
+
+## The Journey scene (IDEA-079)
+
+`src/render/journeyScene.ts` is a fourth showcase scene: one island per level on a
+swinging chain, in an ocean you pan along, with the level pins as HTML projected over
+the canvas each frame. It replaced a 2D SVG trail outright — `src/ui/levelMap.ts` and
+its ~65 CSS rules are deleted rather than kept as a second map to maintain.
+
+The water is a flat unlit plane with a world-space radial gradient plus one merged
+coastline ribbon; it replaced a displaced, toon-lit, canvas-textured sea, and that A/B
+is settled, so the loser is gone.
+
+**A locked level is still selectable.** Selection used to early-return on a locked
+stone, so for a new player thirty-nine of forty levels were padlocks with nothing
+behind them — on the screen whose whole job is showing what the game contains. Only
+Play refuses, and the disabled button says what it wants: "Clear stone N first".
+
 ## Coordinate system
 Grid tile `(tx, ty)` maps to world:
 ```
@@ -150,11 +242,16 @@ An entity has `{tx,ty, dir, queued, progress, speed, facing}`. `stepEntity` adva
 else keep going, else stop). Renderers call `entityWorld(e)` to get the interpolated
 position. This is why turns feel grid-locked but smooth. **Validated in sim-logic.ts.**
 
-## Ghost AI
-At each tile a ghost picks, among walkable non-reversing neighbours, the one nearest its
+## Enemy AI
+At each tile an enemy picks, among walkable non-reversing neighbours, the one nearest its
 target tile. Targets by state: eaten→pen, scatter→corner, chase→per personality
 (chaser=beagle, ambusher=beagle+4·facing, clyde=beagle if far else corner). Frightened =
-random. If the only move is a reversal (dead-end), it is allowed — so ghosts never stick.
+random. If the only move is a reversal (dead-end), it is allowed — so an enemy never sticks.
+
+The count is **three to five** depending on the classic stage, or whatever the Journey
+level specifies; nothing in the AI assumes three. The eleven shop skins are cosmetic —
+`GhostUserData` names which materials take the team colour and which are fixed, and the
+state machine drives those handles rather than knowing any skin by name.
 
 ## Game loop / state machine
 ```
