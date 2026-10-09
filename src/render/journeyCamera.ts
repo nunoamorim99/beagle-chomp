@@ -381,10 +381,23 @@ export function attachJourneyCamera(
       }
       if (!dragging) return;
 
-      // Dragging DOWN moves the camera back up the chain, the way a map moves
-      // under a finger rather than the camera moving over it.
+      // DRAGGING DOWN TRAVELS FORWARD ALONG THE CHAIN, and the sign here was
+      // the other way round for one release.
+      //
+      // The chain recedes INTO the screen, so a later island is both further
+      // away and HIGHER up the frame. That inverts the thing most people's
+      // hands expect: grab the water and pull it down and the content under
+      // your finger should come down WITH it, which means the camera travels
+      // along -Z and the levels you have not reached yet slide in off the top.
+      // The first version moved the camera +Z on a downward drag — so the whole
+      // map slid UP while the finger went DOWN, which is why playtesters
+      // reported the scroll feeling strange without being able to name it.
+      //
+      // So the delta is SUBTRACTED. This is the page-scroll reading of a
+      // vertical map rather than the fly-the-camera one, and on a chain seen in
+      // perspective they are not the same gesture.
       panTarget = THREE.MathUtils.clamp(
-        panTarget + ((e.clientY - lastY) / norm()) * p.panSpeed,
+        panTarget - ((e.clientY - lastY) / norm()) * p.panSpeed,
         zFar,
         zNear,
       );
