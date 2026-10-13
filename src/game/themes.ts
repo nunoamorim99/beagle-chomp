@@ -468,18 +468,29 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
       rimColor: 0x9ab8a8,
       rimIntensity: 0.35,
       bloomColors: [0xf4efe6, 0x8a9ae0, 0xd8483f],
-      bloomEmissiveIntensity: 0.25,
-      bloomChance: 0.25,
+      bloomEmissiveIntensity: 1,
+      bloomChance: 0.5,
       speckColor: 0x6a9a4a,
       speckEmissive: 0x16300f,
       speckChance: 0.5,
     },
-    placements: [],
-    verge: [],
+    placements: [
+      { propId: "critter-deer", tile: [3, 21], offset: [0, 0], rotationY: 0.72, scale: 1.51 },
+    ],
+    verge: [
+      { propId: "log-cabin", tile: [-3, -3], offset: [0, 0], rotationY: 0.4, scale: 3 },
+      { propId: "log-cabin", tile: [21, -3], offset: [0, 0], rotationY: 5.79, scale: 3 },
+      { propId: "pine", tile: [0, -3], offset: [0, 0], rotationY: 0, scale: 2.42 },
+      { propId: "pine", tile: [2, -2], offset: [0, 0], rotationY: 0, scale: 1.76 },
+    ],
     wallDecor: [
       { propId: "flower-head-sunflower", tile: [0, 20], rotationY: 0, scale: 1 },
     ],
   },
+
+
+
+
 
 
   {

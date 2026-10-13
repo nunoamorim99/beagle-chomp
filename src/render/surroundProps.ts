@@ -34,7 +34,13 @@
 //    house <= 450 tris, tree <= 280, hedge segment <= 80, shrub <= 90.
 import * as THREE from "three";
 import { toon } from "./toon";
-import { lobedFoliageGeometry } from "./foliage";
+import { flaredTrunkProfile, lobedFoliageGeometry, trunkGeometry } from "./foliage";
+// The distant conifer IS the hero pine at a lower resolution (IDEA-065 v4).
+// Importing a sculpt module from here does not breach rule 1: `pineWhorlStack`
+// returns GEOMETRY and makes no materials, so the shared set still owns every
+// colour in the band.
+import { pineWhorlStack } from "./forestProps";
+import { mergeGrouped, splitByGroup } from "./propMerge";
 import { hexOf, lit, mix, rgbOf } from "./paint";
 
 
@@ -620,37 +626,97 @@ export function distantBroadleaf(
   return g;
 }
 
-/** A conifer: one trunk, three stacked skirts. The forest's workhorse.
+/**
+ * A conifer — the forest band's workhorse, and 92% of what is in it.
  *
- *  Tiers rather than one smooth cone, for foliage.ts's own reason: every plant
- *  in this game used to be a primitive, and a cone measures zero outline
- *  roughness. Three is enough at this size — eight is what a hero pine needs. */
+ * IDEA-065 v4, Nuno: *"the deep forest theme the atmosphere are using the old
+ * pines, lets change the pines that are on the space around the maze, not in
+ * the props area, the ones that are illustrative, lets use the same style as
+ * the new pines we have made."* It WAS three stacked `ConeGeometry`s — the
+ * exact shape IDEA-065 rebuilt the apron's pine to get away from — so the
+ * theme showed two different conifers in one frame, a drooping serrated stack
+ * on the apron and a green traffic cone six units behind it.
+ *
+ * It is now the SAME geometry as `makeForestPine`, through
+ * `forestProps.ts`'s `pineWhorlStack`, at the band's own resolution. Three
+ * things make that affordable, and they were all measured first
+ * (`scripts/_scratch-pine-census.ts`) because the hero pine is ~2,600
+ * triangles and the cone stack was 66:
+ *
+ *  1. **THE GROUPS ARE SPLIT INTO ONE GEOMETRY PER MATERIAL.** The hero's
+ *     canopy is one mesh with a material ARRAY, which `mergeBySignature`
+ *     skips by contract — so dropped in as-is, every tree would have survived
+ *     the band's merge whole and cost a draw call per group (IDEA-067 rule 7).
+ *     585 trees, ~1,200 draw calls, against a band that spends 6. Split, it
+ *     welds into the same one-mesh-per-material batch as everything else and
+ *     the forest band stays at SIX calls.
+ *  2. **THE RESOLUTION COMES DOWN, THE WHORL COUNT BARELY.** A band tree is
+ *     ~45px tall, so the azimuth count and the cross-section are nearly free
+ *     to cut — two segments per tooth, four teeth, and a profile of hub, rim
+ *     and one return ring. The WHORL COUNT is the one knob that is not free
+ *     (rule 2: spacing over reach must stay under ~0.45 or the stack reads as
+ *     mushroom caps), so it only goes 8 -> 7, which is 0.345. ~280 triangles.
+ *  3. **THE WOOD IS THINNED TO HOLD ITS COVERAGE** — see `woodlandContent`.
+ *
+ * `detail: 1` is for the SHOWCASE ring, which is a different problem: that
+ * camera sits at 9-33 degrees rather than 59, so the trees are seen nearly
+ * level, from below the crown, and much larger on screen (IDEA-072 found a
+ * detail-0 blob reading as a pale hexagon out there). It buys back the convex
+ * shoulder and a finer rim.
+ */
 export function distantConifer(
   m: SurroundMaterials,
-  o: { height?: number; seed?: number } = {},
+  o: { height?: number; seed?: number; detail?: 0 | 1 } = {},
 ): THREE.Group {
   const g = new THREE.Group();
   const r = seeded(o.seed ?? 4);
   const h = o.height ?? 2.2 + r() * 1.4;
-  const trunkH = h * 0.2;
-  part(g, new THREE.CylinderGeometry(h * 0.035, h * 0.06, trunkH, 6), m.trunk, "trunk", [
-    0,
-    trunkH / 2,
-    0,
-  ]);
-  const tiers = 3;
-  for (let i = 0; i < tiers; i++) {
-    const t = i / (tiers - 1);
-    const y = trunkH + h * (0.12 + t * 0.6);
-    const rad = h * (0.3 - t * 0.14);
-    part(
-      g,
-      new THREE.ConeGeometry(rad, h * 0.42, 7),
-      i % 2 === 0 ? m.foliageLit : m.foliageDark,
-      "tier" + i,
-      [0, y, 0],
-    );
-  }
+  const near = (o.detail ?? 0) === 1;
+  const shape = pineWhorlStack({
+    height: h,
+    // `width === height` is the measured 0.718 aspect, which is 1.2x wider
+    // than the cone stack this replaces at the same height.
+    width: h,
+    whorls: 7,
+    teeth: near ? 6 : 4,
+    segsPerTooth: 2,
+    profileDetail: near ? 1 : 0,
+    spirePoints: 3,
+    rnd: r,
+  });
+
+  // Short, flared, mostly buried: the few pixels of warm brown under the
+  // bottom skirt that stop the tree reading as a cut-out. Two flare steps and
+  // five sides out here, against the hero's five and eight.
+  part(
+    g,
+    trunkGeometry(flaredTrunkProfile(shape.trunkTopRadius, shape.trunkHeight, 2.4, 2), 5),
+    m.trunk,
+    "trunk",
+  );
+
+  // LIT TOP OVER SHADED UNDERSIDE, exactly as the hero pine has it — and NOT
+  // the alternating whole skirts the cone stack used, which was built here,
+  // rendered, and cut.
+  //
+  // The argument for alternating was sound on paper and worth recording: the
+  // band CASTS NO SHADOWS (`ensureSurround` turns `castShadow` off for the
+  // whole batch, because the merged band spans the ground plane and overlaps
+  // the key light's shadow camera), so a band tree cannot borrow the
+  // self-shading that gives the apron's pine its depth, and the old conifer
+  // painted its value structure in instead. Rendered, it is the WORSE read of
+  // the two and the reason is a rhythm rather than an amount: what defines a
+  // tier from above is the hard dark LINE at its rim, which exists because
+  // the order down the tree is lit top, dark underside, lit top. Darken every
+  // other skirt's top and half those rims become dark-under-dark, the line
+  // disappears, and the stack smooths back into a cone with a crinkly edge —
+  // i.e. the alternation costs the tiers in order to add value, which is the
+  // opposite of the trade it looks like.
+  const canopy = mergeGrouped(shape.geos, [m.foliageLit, m.foliageDark], shape.transforms);
+  const [lit, dark] = splitByGroup(canopy);
+  canopy.dispose();
+  if (lit) part(g, lit, m.foliageLit, "canopyLit");
+  if (dark) part(g, dark, m.foliageDark, "canopyDark");
   return g;
 }
 

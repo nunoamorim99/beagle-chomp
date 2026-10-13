@@ -718,7 +718,16 @@ function plotsContent(host: THREE.Group, plot: Plot, m: SurroundMaterials): void
  *  of what the theme is. */
 function woodlandContent(host: THREE.Group, plot: Plot, m: SurroundMaterials): void {
   const south = plot.band === "south";
-  const n = south ? 2 : 4 + Math.floor(hash(plot.px, plot.pz, 4) * 5);
+  // THINNED FROM 4..8 WHEN THE CONIFER BECAME THE REAL PINE (IDEA-065 v4),
+  // AND THE UNIT THAT IS HELD CONSTANT IS CANOPY COVERAGE, NOT TREE COUNT.
+  // The new silhouette is the measured 0.718 aspect against the cone stack's
+  // 0.6, i.e. 1.2x wider at the same height and 1.43x the ground area, so
+  // 0.75x the trees cover the same floor — and measured
+  // (`scripts/_scratch-pine-census.ts`) that is also what keeps the band
+  // inside its 140k triangle ceiling: 585 trees at ~280 triangles is 164k,
+  // where the old 585 at 66 was 39k. A wood that reads as a wood is the
+  // requirement; the number of trunks in it is not.
+  const n = south ? 2 : 3 + Math.floor(hash(plot.px, plot.pz, 4) * 4);
   for (let i = 0; i < n; i++) {
     const tree = distantConifer(m, {
       height: south ? 1.1 + hash(plot.px, plot.pz, 40 + i) * 0.5 : undefined,
@@ -840,7 +849,23 @@ function fringeContent(
   if (kind === "dunes") {
     child = roll < 0.35 ? distantDune(m, { radius: 1.4, seed }) : distantShrubClump(m, { radius: 0.24, seed });
   } else if (kind === "woodland") {
-    child = roll < 0.45 ? distantConifer(m, { height: 1.3, seed }) : roll < 0.8 ? distantShrubClump(m, { seed }) : distantRockOutcrop(m, { seed });
+    // A RANGE, NOT A LITERAL (IDEA-065 v4). Every woodland fringe conifer was
+    // exactly 1.3 units, so the ring of trees nearest the board was a row of
+    // clones at one height — which the cone stack got away with and the new
+    // pine does not, because a stack of seven skirts at 1.3 units is skirts
+    // two pixels apart and reads as a sprig rather than as a tree.
+    //
+    // 1.5..2.1 is the same move IDEA-070 made for the south fringe of every
+    // OTHER theme (1.7..2.3) and which the forest could never reach, because
+    // this `woodland` arm is tested before the south-band one. Still well
+    // under the solved 3.85 occlusion limit for this annulus; crowding is the
+    // constraint out here, not sightlines.
+    child =
+      roll < 0.45
+        ? distantConifer(m, { height: 1.5 + hash(Math.round(f.x), Math.round(f.z), 61) * 0.6, seed })
+        : roll < 0.8
+          ? distantShrubClump(m, { seed })
+          : distantRockOutcrop(m, { seed });
   } else if (kind === "cityblocks") {
     // NOT beds. The city’s bloomColors are its NEON, so a flower bed out here
     // scatters magenta dots across the pavement and reads as litter rather than

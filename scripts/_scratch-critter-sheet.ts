@@ -28,6 +28,11 @@ const MODELS = ["prop-deer", "prop-fox", "prop-rabbit", "prop-raccoon", "prop-sq
 // to point straight down the view axis. `34` is the three-quarter review
 // angle; `play` is the one a player actually has.
 const VIEWS: Record<string, string> = { play: "az=25&el=59", "34": "az=42&el=12" };
+// THE SHEET DREW THE OLD GAME FOR AS LONG AS THE NEW STYLE HAS SHIPPED: it
+// forced `&toon=1`, so every judgement made on it was about a look no player
+// has. `STYLE=classic` is the A/B now and the default is what ships — the
+// same correction /preview-rework/ and /preview-board/ both needed.
+const style = process.env.STYLE === "classic" ? "&toon=1&style=classic" : "";
 
 const out = `.img2threejs/forest-critters/renders/${label}`;
 mkdirSync(out, { recursive: true });
@@ -41,8 +46,8 @@ for (const flat of [false, true]) {
   for (const [vname, vq] of Object.entries(VIEWS)) {
     const shots: string[] = [];
     for (const model of MODELS) {
-      const url = `${base}/preview-rework/?${vq}&model=${model}&grid=0&hud=0&toon=1${flat ? "&flat=1" : ""}`;
-      await page.goto(url, { waitUntil: "load" });
+      const url = `${base}/preview-rework/?${vq}&model=${model}&grid=0&hud=0${style}${flat ? "&flat=1" : ""}`;
+      await page.goto(url, { waitUntil: "load", timeout: 120000 });
       await page.waitForFunction(() => document.title.includes("ready"), null, { timeout: 15000 });
       await page.waitForTimeout(150);
       const b = (await page.screenshot({ type: "png" })).toString("base64");

@@ -64,6 +64,7 @@ function section(title: string): void {
 const FLOOR_HALF_X = (COLS + 2) / 2;
 const FLOOR_HALF_Z = (ROWS + 2) / 2;
 const GARDEN = MAZE_THEMES.find((t) => t.id === "garden")!;
+const FOREST = MAZE_THEMES.find((t) => t.id === "forest")!;
 
 /** Snapshot the dials so a section that edits them cannot leak into the next. */
 const BASE = { ...SURROUND_PARAMS };
@@ -236,6 +237,57 @@ section("Every builder is addressable and stands on the ground");
     ok(`${name}: touches the ground rather than floating`, lowest < 0.05, "lowest y = " + lowest.toFixed(3));
     ok(`${name}: uses only the shared material set`, foreign === 0, `${foreign} foreign material(s)`);
     ok(`${name}: within its triangle budget`, tris <= 600, Math.round(tris) + " tris");
+  }
+  disposeSurroundMaterials(mats);
+}
+
+// ---------------------------------------------------------------------------
+section("The conifer is the hero pine, and it arrives in a shape the band can weld");
+
+{
+  // IDEA-065 v4 swapped `distantConifer`'s three cones for `pineWhorlStack`,
+  // the same geometry `makeForestPine` is built from. Two traps came with it,
+  // both hit for real while writing it, and neither is visible in a render or
+  // catchable by the checks above.
+  const mats = makeSurroundMaterials(FOREST.palette);
+  for (const detail of [0, 1] as const) {
+    const g = distantConifer(mats, { seed: 12, detail });
+    const meshes: THREE.Mesh[] = [];
+    g.traverse((o) => {
+      if ((o as THREE.Mesh).isMesh) meshes.push(o as THREE.Mesh);
+    });
+
+    // TRAP 1: A MATERIAL ARRAY SURVIVES `mergeBySignature` WHOLE AND COSTS A
+    // DRAW CALL PER GROUP (IDEA-067 rule 7). The hero's canopy is one mesh
+    // with two material groups, which is right for a prop and catastrophic
+    // here — 459 trees would arrive as ~1,200 draw calls in a band that
+    // spends six. The "<= 18 draw calls" check below does catch it, but it
+    // catches it as a number nobody can trace back to a cause.
+    ok(
+      `conifer(detail ${detail}): no mesh carries a material ARRAY`,
+      meshes.every((m) => !Array.isArray(m.material)),
+      "mergeBySignature skips these by contract, so each group becomes a draw call",
+    );
+
+    // TRAP 2: THE DARK SIDE CAN VANISH IN SILENCE. `whorlProfile` classifies
+    // strips as lit or shaded by COUNT, and at the reduced profile detents
+    // the hero's point-count happened to classify every strip as LIT — a tree
+    // correctly built, correctly merged, inside budget, using only the shared
+    // set, and painted entirely in one green. Every assertion above passes on
+    // it. What actually defines a tier from above is the dark line under each
+    // rim, so losing the shaded group costs the whole silhouette.
+    const lit = meshes.find((m) => m.name === "canopyLit");
+    const dark = meshes.find((m) => m.name === "canopyDark");
+    ok(`conifer(detail ${detail}): has a lit canopy`, lit !== undefined);
+    ok(`conifer(detail ${detail}): has a SHADED canopy`, dark !== undefined);
+    const triCount = (m?: THREE.Mesh) =>
+      m ? (m.geometry.index ? m.geometry.index.count : m.geometry.attributes.position.count) / 3 : 0;
+    const share = triCount(dark) / Math.max(1, triCount(lit) + triCount(dark));
+    ok(
+      `conifer(detail ${detail}): the shaded side is a real share of the tree`,
+      share > 0.15 && share < 0.6,
+      `${(share * 100).toFixed(1)}% of the canopy`,
+    );
   }
   disposeSurroundMaterials(mats);
 }

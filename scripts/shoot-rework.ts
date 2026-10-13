@@ -33,6 +33,11 @@ const fov = process.env.FOV ? `&fov=${process.env.FOV}` : "";
 // at once, which is what tells a real hole from a segmentation artefact.
 const bg = process.env.BG ? `&bg=${process.env.BG}` : "";
 const shadow = process.env.SHADOW === "0" ? "&shadow=0" : "";
+// STYLE=classic reviews in the AUTHORED cel-shaded look. The page defaults to
+// the SHIPPED matcap one, so an unparameterised shot is a picture of the real
+// game — see the ?style note in preview-rework/index.html.
+const style = process.env.STYLE === "classic" ? "&style=classic" : "";
+const theme = process.env.THEME ? `&theme=${process.env.THEME}` : "";
 // MODEL picks which generated rework factory the viewer builds (beagle|flea).
 // Renders land under that subject's own workspace so two runs never overwrite
 // each other's evidence.
@@ -67,7 +72,7 @@ for (const [name, qs] of Object.entries(VIEWS)) {
   // warm-up); a blank full-page PNG is ~5KB vs ~50KB+ for a real frame, so
   // retry on suspiciously small screenshots.
   for (let attempt = 0; attempt < 3; attempt++) {
-    await page.goto(`${baseUrl}/preview-rework/?${qs}&model=${model}&grid=0&hud=0${toon}${flat}${state}${dist}${elev}${fov}${bg}${shadow}`, {
+    await page.goto(`${baseUrl}/preview-rework/?${qs}&model=${model}&grid=0&hud=0${toon}${flat}${state}${dist}${elev}${fov}${bg}${shadow}${style}${theme}`, {
       // "domcontentloaded", not "networkidle". The Vite dev server holds an
       // open HMR websocket, so the network is never idle and every view after
       // the first times out — which looks like a broken model and is a broken

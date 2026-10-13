@@ -43,7 +43,7 @@ import {
   boardBounce as _bb,
   type MadboxCaches,
 } from "../src/render/madboxStyle.js";
-import { FRUIT_BUILDERS, POWERUP_BUILDERS } from "../src/render/board.js";
+import { FRUIT_BUILDERS, POWERUP_BUILDERS, makePropById } from "../src/render/board.js";
 
 /** What `styleSpawned` does, with the caches passed in so the test can share
  *  one. Kept here rather than exported from the module because the shipped
@@ -840,6 +840,174 @@ console.log("A pickup keeps the colour it was authored with");
   const fn = src.slice(src.indexOf("export function styleSpawned"));
   const call = fn.split("\n").find((l) => l.includes("applyMadboxStyle(obj")) ?? "";
   ok("styleSpawned asks for tint mode", call.includes("tint: true"), call.trim());
+}
+
+
+// ---------------------------------------------------------------------------
+console.log("\nThe log cabin's value ladder survives the snap");
+
+// IDEA-065 v5. The cabin is a building made almost entirely of ONE hue, and
+// the snap is hue-dominant with a standing reward for the higher key — so its
+// nine authored browns collapsed onto four entries and took every
+// relationship the model is built on with them. Wall-versus-roof went to 0.144
+// of luminance apart, two warm browns of one family, which at the play camera
+// is a single undifferentiated mass.
+//
+// NOTHING ERRORS WHEN THIS REGRESSES. The prop builds, every material is
+// valid, the triangle budget is unchanged and the editor shows the authored
+// colours — which are still correct. Only the rendered image is wrong, and
+// only for players on the shipped style. So the ladder is asserted here rather
+// than left to review.
+{
+  const cabin = makePropById("log-cabin", 0.44);
+  const partHex = (name: string): { hex: number; role?: string } => {
+    let found: { hex: number; role?: string } | undefined;
+    cabin.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh || m.name !== name || found) return;
+      const mat = (Array.isArray(m.material) ? m.material[0] : m.material) as THREE.MeshToonMaterial;
+      found = {
+        hex: mat.color.getHex(),
+        role: (mat.userData as { madboxRole?: string }).madboxRole,
+      };
+    });
+    if (!found) throw new Error(`the cabin has no part named "${name}"`);
+    return found;
+  };
+  const rung = (name: string) => {
+    const p = partHex(name);
+    return snapToPalette(p.hex, p.role);
+  };
+  const lum = (hex: number) => {
+    const c = new THREE.Color(hex);
+    return 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+  };
+
+  // The three parts whose darkness is load-bearing DECLARE it. Without the
+  // tag the palette lifts all three into the warm mid-tones and the cabin
+  // loses its roof, its chinking and its footing in one pass — the exact
+  // defect this section exists for, and the tag is the only thing stopping it.
+  for (const name of ["roofL", "body", "foundation"]) {
+    ok(`the cabin's "${name}" declares itself ink`, partHex(name).role === "ink", "no madboxRole");
+  }
+
+  // THE LADDER. Each pair is a relationship the model would stop reading
+  // without; the thresholds are what the collapsed version measured (0.144)
+  // plus room, so a regression to "two browns" fails rather than squeaks by.
+  const LADDER: Array<[string, string, number, string]> = [
+    ["courses", "roofL", 0.25, "at the play camera the cabin IS its roof"],
+    ["courses", "cornerEnds", 0.2, "the cut log ends are identity rank 1"],
+    ["courses", "body", 0.25, "the chinking is what says LOGS rather than siding"],
+    ["roofL", "ridgeCap", 0.3, "the one bright edge on a dark roof"],
+    ["roofL", "shingle0", 0.12, "a roof with no courses is a featureless wedge"],
+    ["courses", "door", 0.1, "an opening has to read as an opening"],
+  ];
+  for (const [a, b, min, why] of LADDER) {
+    const ea = rung(a);
+    const eb = rung(b);
+    const apart = Math.abs(lum(ea.hex) - lum(eb.hex));
+    ok(
+      `${a} stands apart from ${b} — ${why}`,
+      apart >= min,
+      `${ea.id} vs ${eb.id} is ${apart.toFixed(3)}, want >= ${min}`,
+    );
+  }
+
+  // And they must be DIFFERENT ENTRIES, not merely far apart by luminance:
+  // two parts on one palette entry are the same matcap texture and cannot be
+  // told apart at any size, however the numbers add up.
+  const sameEntry = LADDER.filter(([a, b]) => rung(a).id === rung(b).id);
+  ok(
+    "no two parts of the ladder share a palette entry",
+    sameEntry.length === 0,
+    sameEntry.map(([a, b]) => `${a}/${b} both ${rung(a).id}`).join(", "),
+  );
+
+  // The windows were the fifth casualty: #f0c86a landed on `sand`, the same
+  // entry as the frame around them AND as the corner log-ends.
+  ok(
+    "a window pane is not the same entry as its own frame",
+    rung("winFrontL").id !== rung("winFrontLFrame").id,
+    `both ${rung("winFrontL").id}`,
+  );
+}
+
+
+// ---------------------------------------------------------------------------
+console.log("\nEvery critter's eye survives the snap as an EYE");
+
+// IDEA-065 v6, and this one had shipped on all six woodland animals at once.
+// `#27211d` is a near-black, so its saturation is under NEUTRAL_MAX_S and the
+// snap matched it against the NEUTRALS alone — whose darkest member is
+// `slate`, a BLUE-GREY at L 0.203. Every pupil and every nose in the set was
+// a soft mid-blue dot. It is madboxStyle.ts's own worked example of what the
+// ink role is for ("a pupil, a nose") and nothing can infer it from a colour,
+// which is the entire reason the tag exists.
+//
+// The sclera is the other half: at #f8f3e8 its saturation was 0.53, so it was
+// matched against the COLOURS and landed on `sand` — the same entry as the
+// deer's muzzle and belly, so the white of the eye was the same value as the
+// face around it. NEUTRAL_MAX_S is a CLIFF: #f4f3f0 lands on `white` and
+// #f6f4f1, three bytes away, lands on `bark`.
+for (const kind of ["deer", "fox", "rabbit", "raccoon", "squirrel", "squirrelExplorer"]) {
+  const critter = makePropById(
+    kind === "squirrelExplorer" ? "critter-squirrel-explorer" : `critter-${kind}`,
+    0.31,
+  );
+  const matOf = (suffix: string): THREE.MeshToonMaterial | undefined => {
+    let found: THREE.MeshToonMaterial | undefined;
+    critter.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh || found || !m.name.endsWith(suffix)) return;
+      found = (Array.isArray(m.material) ? m.material[0] : m.material) as THREE.MeshToonMaterial;
+    });
+    return found;
+  };
+  const pupil = matOf("Pupil");
+  const sclera = matOf("Sclera");
+  if (!pupil || !sclera) {
+    ok(`${kind} has an eye at all`, false, "no Pupil/Sclera mesh");
+    continue;
+  }
+  const pRole = (pupil.userData as { madboxRole?: string }).madboxRole;
+  ok(`${kind}: the pupil declares itself ink`, pRole === "ink", `role=${String(pRole)}`);
+  const pEntry = snapToPalette(pupil.color.getHex(), pRole);
+  const sEntry = snapToPalette(sclera.color.getHex());
+  ok(
+    `${kind}: the pupil stays DARK`,
+    pEntry.hex === 0x2b2724 || pEntry.hex === 0x4a3222 || pEntry.hex === 0x272b33,
+    `landed on ${pEntry.id}`,
+  );
+  ok(
+    `${kind}: the sclera stays a pale NEUTRAL`,
+    sEntry.id === "white" || sEntry.id === "cream",
+    `landed on ${sEntry.id}`,
+  );
+
+  // IDEA-065 v7 ported the BEAGLE's eye onto these: a flattened lens with the
+  // iris, pupil and catchlights as flush CAPS of the same sphere. The iris is
+  // the step that was missing, and it has a job on both sides — it must not
+  // be the FUR (every warm brown from #a2672e down to #4a2d16 snaps to
+  // `wood`, which is exactly what these animals are painted in, so the
+  // obvious iris colour is the one that disappears) and it must not be the
+  // PUPIL. Three distinct entries or the eye collapses back to a dot.
+  const iris = matOf("Iris");
+  const fur = matOf("body") ?? matOf("skull");
+  if (!iris) {
+    ok(`${kind} has an iris`, false, "no Iris mesh");
+    continue;
+  }
+  const iEntry = snapToPalette(iris.color.getHex());
+  ok(
+    `${kind}: the iris is not the pupil`,
+    iEntry.id !== pEntry.id,
+    `both ${iEntry.id}`,
+  );
+  ok(
+    `${kind}: the iris is not the FUR it sits in`,
+    fur === undefined || iEntry.id !== snapToPalette(fur.color.getHex()).id,
+    `both ${iEntry.id}`,
+  );
 }
 
 console.log("");

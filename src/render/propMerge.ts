@@ -112,6 +112,77 @@ export function mergeGrouped(
 }
 
 /**
+ * The inverse of `mergeGrouped`: one plain, compacted geometry per material
+ * GROUP, indexed by `materialIndex` (so a group nothing landed in is a hole).
+ *
+ * IDEA-065 v4, and it exists for `mergeBySignature`'s contract rather than
+ * for tidiness. A multi-group mesh is the right shape for a hero prop — one
+ * mesh, one upload, the lit-top-over-shaded-underside split intact — and the
+ * WRONG shape for anything heading into the surround: that merge skips a
+ * material array by contract, so the mesh survives whole and **costs a draw
+ * call per group** (IDEA-067 rule 7, measured at 24 calls for two tunnel
+ * arches). Splitting the groups first is what lets the distant conifer share
+ * the hero pine's geometry and still weld into the band's one-mesh-per-
+ * material batch.
+ *
+ * Vertices are REMAPPED rather than shared: each output holds only the
+ * vertices its own group references. Sharing the whole buffer would work and
+ * upload the entire canopy twice. `position` always, plus `normal`, `uv` and
+ * `color` when the input carries them — for the reason recorded in
+ * `collapseBy`: a material with `vertexColors: true` and no colour attribute
+ * renders pure black, and a textured material with no UVs samples texel
+ * (0, 0) for every vertex.
+ *
+ * The input is left alone; the caller disposes it.
+ */
+export function splitByGroup(geo: THREE.BufferGeometry): (THREE.BufferGeometry | undefined)[] {
+  const idx = geo.getIndex();
+  if (!idx) return [geo.clone()];
+  const groups = geo.groups.length
+    ? geo.groups
+    : [{ start: 0, count: idx.count, materialIndex: 0 }];
+  const names = ["position", "normal", "uv", "color"] as const;
+  const attrs = names
+    .map((n) => ({ name: n, src: geo.getAttribute(n) as THREE.BufferAttribute | undefined }))
+    .filter((a) => a.src !== undefined) as Array<{ name: string; src: THREE.BufferAttribute }>;
+  const out: (THREE.BufferGeometry | undefined)[] = [];
+  for (const grp of groups) {
+    const mi = grp.materialIndex ?? 0;
+    if (!grp.count) continue;
+    const remap = new Map<number, number>();
+    const order: number[] = [];
+    const subIdx: number[] = new Array(grp.count);
+    for (let i = 0; i < grp.count; i++) {
+      const v = idx.getX(grp.start + i);
+      let to = remap.get(v);
+      if (to === undefined) {
+        to = order.length;
+        remap.set(v, to);
+        order.push(v);
+      }
+      subIdx[i] = to;
+    }
+    const g = new THREE.BufferGeometry();
+    for (const { name, src } of attrs) {
+      const n = src.itemSize;
+      const buf = new Float32Array(order.length * n);
+      for (let i = 0; i < order.length; i++) {
+        for (let c = 0; c < n; c++) buf[i * n + c] = src.array[order[i] * n + c] as number;
+      }
+      g.setAttribute(name, new THREE.BufferAttribute(buf, n));
+    }
+    g.setIndex(subIdx);
+    // The input's normals are the merged ones, which is what we want here:
+    // recomputing across a group boundary would smooth the rim's hard edge
+    // between a whorl's lit top and its shaded underside, which is the one
+    // place the two groups are supposed to disagree.
+    if (!g.getAttribute("normal")) g.computeVertexNormals();
+    out[mi] = g;
+  }
+  return out;
+}
+
+/**
  * Collapse a finished prop into ONE MESH PER MATERIAL, in place.
  *
  * Walks the group, buckets every mesh's geometry by the material object it

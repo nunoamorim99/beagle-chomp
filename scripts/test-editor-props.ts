@@ -1004,6 +1004,71 @@ async function run(): Promise<void> {
     }
 
     // -------------------------------------------------------------------
+    // IDEA-065 v9: Mirror — author one side, reflect it onto the other.
+    //
+    // Every symmetric prop in the forest library is two independent subtrees,
+    // so tuning a face meant doing each nudge twice and keeping both in step
+    // by hand. Multi-select does not cover it: the gizmo moves a selection by
+    // a shared DELTA, so pushing a pair of eyes +x moves one OUT and the
+    // other IN. This asserts the reflection itself, not just that a button
+    // exists — x must come back NEGATED while y and z are copied, which is
+    // the one thing a "mirror" that was really a copy would get wrong.
+    console.log("\n=== Mirror reflects a part onto its L/R twin ===");
+    {
+      await page.click("#modePropsBtn");
+      await page.waitForTimeout(500);
+      await clickTreeRowByText(page, "Deer");
+      await page.waitForTimeout(700);
+
+      const twin = await page.evaluate(() => window.__propsTestHook?.mirrorTwinOf("eyeL") ?? null);
+      check("eyeL resolves its twin as eyeR", twin === "eyeR");
+      // WRAPPED, because `?? "MISSING"` is exactly what this check is looking
+      // for: `null` is nullish, so the fallback fired on the right answer and
+      // the check failed a working model. A sentinel has to be distinguishable
+      // from the value it guards.
+      const noTwin = await page.evaluate(() => {
+        const h = window.__propsTestHook;
+        return h ? { v: h.mirrorTwinOf("skull") } : null;
+      });
+      check("a part with no side in its name has no twin", noTwin !== null && noTwin.v === null);
+      const nested = await page.evaluate(() => window.__propsTestHook?.mirrorTwinOf("eyeLIris") ?? null);
+      check("the side marker is found mid-name too (eyeLIris -> eyeRIris)", nested === "eyeRIris");
+
+      await clickComponentRowByText(page, "eyeL");
+      await page.waitForTimeout(250);
+      check("Mirror is enabled with a twinned part selected", !(await page.$eval("#mirrorBtn", (b) => (b as HTMLButtonElement).disabled)));
+
+      // Move eyeL somewhere unambiguous on all three axes, then mirror.
+      await setPartTransformAxis(page, "Part: eyeL", "position", "x", -0.31);
+      await setPartTransformAxis(page, "Part: eyeL", "position", "y", 0.17);
+      await setPartTransformAxis(page, "Part: eyeL", "position", "z", 0.26);
+      await page.waitForTimeout(250);
+      await page.keyboard.press("m");
+      await page.waitForTimeout(350);
+
+      const pose = await page.evaluate(() => window.__propsTestHook?.partPose("eyeR") ?? null);
+      check("Mirror NEGATES x", pose !== null && Math.abs(pose.pos[0] - 0.31) < 1e-4);
+      check("...and copies y", pose !== null && Math.abs(pose.pos[1] - 0.17) < 1e-4);
+      check("...and copies z", pose !== null && Math.abs(pose.pos[2] - 0.26) < 1e-4);
+
+      // Undo is one step for the whole gesture, however many channels moved.
+      await page.keyboard.press("Control+z");
+      await page.waitForTimeout(350);
+      const undone = await page.evaluate(() => window.__propsTestHook?.partPose("eyeR") ?? null);
+      check(
+        "one Ctrl+Z takes the whole mirror back",
+        undone !== null && Math.abs(undone.pos[0] - 0.31) > 1e-3,
+      );
+
+      // A part with no twin must not leave the button live — IDEA-041's rule.
+      await clickComponentRowByText(page, "skull");
+      await page.waitForTimeout(250);
+      check(
+        "Mirror is disabled on a part with no side",
+        await page.$eval("#mirrorBtn", (b) => (b as HTMLButtonElement).disabled),
+      );
+    }
+    // -------------------------------------------------------------------
     console.log("\n=== switching to another mode and back is clean ===");
     {
       await page.click("#modeCharacterBtn");

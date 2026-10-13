@@ -1266,7 +1266,9 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v9.
   `flea`/`crab`/`mosquito`/`maki`/`nigiri`/`pizza`/`burger`/`beetle`/`bee`/
   `ladybug`/`ghost` = the REAL shipped builders),
   plus **`?state=frightened|eaten`**, **`?flat=1`**, **`?fov=`**, **`?bg=`**
-  (a hex, or `none` for transparent) and **`?shadow=0`**.
+  (a hex, or `none` for transparent), **`?shadow=0`** and **`?style=`**
+  (IDEA-065 v5 — it DEFAULTS to the shipped matcap look; `classic` is the
+  A/B).
   `scripts/shoot-rework.ts` takes `MODEL=<id>` and writes a non-beagle subject's
   turntable under `.img2threejs/<id>/renders/`; `TOON`, `FLAT`, `STATE`, `FOV`,
   `DIST`, `EL`, `BG` and `SHADOW` set the rest. `scripts/_scratch-enemy-cast.ts`
@@ -1742,7 +1744,7 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v9.
   PROPS. Eleven subjects from references, in `src/render/forestProps.ts` (the
   pine, the log cabin, the nest tree, the perched bird),
   `src/render/forestCritters.ts` (six animals) and `makeGardenFlowerHead` in
-  `gardenProps.ts`. Seven rules are load-bearing.
+  `gardenProps.ts`. Nineteen rules are load-bearing.
   1. **THE PINE IS A REWRITE IN PLACE, AND IT IS THE ONE EXCEPTION TO
      IDEA-060's RULE.** That rule was about `shrub` and `tree`, which the park
      and the forest both use — rewriting one silently re-dresses a theme
@@ -1774,9 +1776,12 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v9.
      garden **220** prop meshes / 22k triangles, park 120 / 16k, city 314 / 5k,
      and the forest's first build **393 / 141k**. A pine was ten meshes and
      there are thirty-five of them. **`src/render/propMerge.ts`** is the answer
-     in two shapes — `mergeGrouped` for parts that already carry material
-     groups (the pine's whorls, lit-top over shaded-underside) and
-     `collapseByMaterial` for a hand-assembled prop (one mesh per material).
+     in three shapes — `mergeGrouped` for parts that already carry material
+     groups (the pine's whorls, lit-top over shaded-underside),
+     `collapseByMaterial` for a hand-assembled prop (one mesh per material),
+     and (v4) `splitByGroup`, the inverse of the first, for anything heading
+     into the SURROUND, where a material array is the one thing
+     `mergeBySignature` cannot weld.
      It now applies to EVERY theme's board, not just the forest's: the garden
      went 220 prop meshes -> **104** and its wall decor 76 -> 52, same pixels.
      **WHERE `collapseByMaterial` IS CALLED IS THE WHOLE DESIGN, AND GETTING
@@ -1836,6 +1841,449 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v9.
      stem and no leaves, as a thin wrapper on `makeGardenFlower` rather than a
      copy, because the five heads are genuinely different constructions and a
      second copy is five chances to retune one and not the other.
+  8. **THE SURROUND'S CONIFER IS THE SAME TREE, AND WHAT DIFFERS IS
+     RESOLUTION** (v4, Nuno: *"the deep forest theme the atmosphere are using
+     the old pines, lets change the pines that are on the space around the
+     maze, not in the props area, the ones that are ilustrative"*). IDEA-066's
+     band was built while this idea was still in flight, so
+     `surroundProps.ts`'s `distantConifer` was three stacked `ConeGeometry`s —
+     literally the shape rule 1 exists to replace — six units behind a
+     drooping serrated stack on the apron. **`pineWhorlStack` in
+     `forestProps.ts` is now the whorl stack for both**, rule 7's reasoning at
+     a bigger scale: six numbers that have to agree (whorl count, spacing
+     exponent, droop, rim multiplier, tooth pitch, spire taper), so a copy is
+     six chances to retune one and not the other. Five things make it fit.
+     - **THE BUDGET IS WHAT DESIGNED THE BAND'S TUNING, AND IT HAD TO BE
+       MEASURED FIRST.** The hero pine is ~2,600 triangles and the cone stack
+       was 66, a 40x multiplier on something nobody had counted.
+       `scripts/_scratch-pine-census.ts`: the forest band is **585 conifers
+       and 92% conifer by triangle** (38.6k of 42.1k). So the question is not
+       how good one can look, it is what survives 585 of it — profile down to
+       hub/rim/one return ring, four teeth at two segments each, a three-point
+       spire, ~276 triangles.
+     - **THE WHORL COUNT IS THE ONE RESOLUTION KNOB THAT IS NOT FREE.** Rule
+       2's spacing-over-reach must stay under ~0.45 or the stack reads as
+       mushroom caps, so it goes 8 to 7 (0.345) and no further. **Two segments
+       per tooth is the other hard floor**: at one, the serration cosine is
+       sampled once per period, every sample lands on the same phase, and the
+       whorl is a REGULAR POLYGON with the serration silently doing nothing.
+     - **A MATERIAL ARRAY WOULD HAVE COST ~1,200 DRAW CALLS IN A BAND THAT
+       SPENDS SIX.** The hero's canopy is one mesh with two material groups,
+       right for a prop and unusable here, because `mergeBySignature` skips a
+       material array by contract and every tree would have survived the merge
+       whole at a draw call per group (IDEA-067 rule 7). `propMerge.ts` gained
+       **`splitByGroup`** — one plain compacted geometry per group — so the
+       band shares the hero's geometry and still welds. Still 6 calls.
+     - **THE WOOD IS THINNED, AND WHAT IS HELD CONSTANT IS CANOPY COVERAGE,
+       NOT TREE COUNT.** The new silhouette is the measured 0.718 aspect
+       against the cone stack's 0.6 — 1.2x wider at the same height, 1.43x the
+       ground area — so 0.75x the trees cover the same floor. A woodland plot
+       goes 4..8 to 3..6, 585 trees to 459, and the band lands at 130k
+       triangles against its 140k ceiling. Unthinned it was 164k and over.
+     - **ALTERNATING WHOLE SKIRTS WAS BUILT, RENDERED AND CUT, and the reason
+       is a rhythm rather than an amount.** The argument was sound: the band
+       CASTS NO SHADOWS (IDEA-066 turns `castShadow` off for the whole batch),
+       so a band tree cannot borrow the self-shading that gives the apron's
+       pine its depth, and the cone stack painted its value in by alternating
+       lit and dark tiers. Rendered it is the WORSE read: what defines a tier
+       from above is the hard dark LINE at its rim, which exists because the
+       order down the tree is lit top, dark underside, lit top. Darken every
+       other top and half those rims become dark-under-dark, the line goes,
+       and the stack smooths back into a cone with a crinkly edge.
+     The **showcase ring** shares it at `detail: 1` — that camera sits at 9-33
+     degrees rather than 59, so the trees are seen nearly level and from below
+     the crown (IDEA-072's pale-hexagon finding); 74k triangles at 5 calls on
+     a static screen. And the **woodland fringe's height was a flat literal
+     1.3**, so the ring nearest the board was clones at one height; it is
+     1.5..2.1 now, the move IDEA-070 made for every other theme's south fringe
+     and which the forest could never reach, because `fringeContent` tests its
+     `woodland` arm before the south-band one.
+     **AND A SHADED SIDE CAN VANISH IN TOTAL SILENCE.** `whorlProfile`
+     classified strips as lit or shaded by POINT count, which is right at the
+     hero's detail and classifies every strip as LIT at the reduced ones — a
+     tree correctly built, correctly merged, inside budget, using only the
+     shared material set, and painted entirely in one green, with every
+     assertion that already existed passing on it. `test-surround.ts` now
+     requires a shaded canopy that is a real share of the tree, and that no
+     surround mesh carries a material array; both verified by re-injection.
+  9. **A PROP BUILT OUT OF ONE HUE HAS NO VALUE LADDER LEFT AFTER THE SNAP**
+     (v5, Nuno: *"now we have a new materials we should rework this to have a
+     better look... lets make one validations and improve the visual of the
+     log cabin"*). The most reusable thing in this entry, and it applies to
+     every prop authored before IDEA-079. Measured with
+     `scripts/_scratch-cabin-snap.ts`, the cabin's **nine authored browns
+     collapsed onto four palette entries**: corner ends, log body, trim and
+     door all became `wood`; the roof and its four shingle joints both became
+     `bark`. **Wall-versus-roof went from 0.178 of luminance apart to 0.144**
+     — two warm browns of one family, which at the play camera is one
+     undifferentiated mass — and the corner log-ends, identity rank 1, ended
+     up the same colour as the wall they stand proud of.
+     The snap is doing exactly what it is designed to do (hue weighted 3.0
+     against lightness 0.1, plus a standing 0.22 reward for the higher key),
+     and the warm family has exactly five rungs: **cream, sand, wood, bark,
+     inkWarm. Author to the rungs.** Two things make that harder than it
+     sounds: **`cream` is in `NEUTRAL_IDS`**, so no warm tan can ever reach it
+     (every pale tan from #ecd2a8 to #faf4ea lands on `sand`, and a trim that
+     must be cream has to be authored as a near-GREY, which on timber reads
+     chalky in classic); and a **warm grey is not a neutral's friend** — the
+     cabin's `#6e6a63` plinth is under `NEUTRAL_MAX_S`, so it matched against
+     the neutrals alone and the palette's one mid neutral is `slate`, a
+     BLUE-grey. The building shipped standing on a purple kerb.
+     **DARK IS A DECLARED ROLE.** The roof, the chinking and the plinth carry
+     `userData.madboxRole = "ink"` — madboxStyle.ts's own mechanism for "a
+     marking that must stay dark", unreachable from an ordinary snap. v1's
+     note that a near-black roof "reads as a hole in the treeline" was
+     measured against the OLD board; the style lifts the forest's floor and
+     wall into the high-key range, so a dark roof now has a bright field
+     behind it and reads as the reference's own dark lid over warm logs.
+     **AND A COMMENT DESCRIBING AN INTENTION IS NOT CODE IMPLEMENTING IT.**
+     The extruded body's comment has said it is "the DARK behind the log
+     courses" since v1 — and it was built in `logMat`, the same material as
+     the courses, so there was no dark behind anything. It read as true for
+     four releases. A matcap quantises the only thing that was separating a
+     round bar from its neighbour, so the wall rendered as a smooth orange
+     slab with faint ripples; one dark material on a mesh that already existed
+     gives every course a hard line beneath it, which is what says LOGS rather
+     than SIDING.
+     **NEW PARTS GO AT THE END OF THE CHILD LIST, OR INSIDE AN EXISTING ONE.**
+     The shipped def carries hand-authored part edits at root paths "11".."16"
+     and "19", so an insert anywhere before the door silently re-points all
+     seven onto different parts — IDEA-062's merge lesson in a new place. The
+     new door frame is a CHILD of the door for that reason twice over: it adds
+     no root index, and it inherits the edit that MOVED the door, where a
+     sibling frame would have stayed at the authored position while the door
+     it frames sat somewhere else, with nothing erroring.
+     `test-madbox-style.ts` asserts the LADDER rather than the colours — six
+     pairs that must stay apart, that no two share a palette ENTRY (two parts
+     on one entry are the same matcap texture and cannot be told apart at any
+     size), that the three dark parts declare their role, and that a pane is
+     not its own frame's entry. **Nothing errors when this regresses**: the
+     prop builds, the materials are valid, the budget is unchanged and the
+     editor shows the authored colours, which are still correct. Verified by
+     re-injecting both causes.
+  10. **A PUPIL AND A NOSE ARE MARKINGS, AND ALL SIX CRITTERS HAD THEM IN
+     BLUE** (v6, found while reworking the deer). `#27211d` is a near-black,
+     so its saturation is under `NEUTRAL_MAX_S` and the snap matched it
+     against the NEUTRALS alone — whose darkest member is `slate`, a BLUE-GREY
+     at L 0.203. Every eye and every nose on every woodland animal was a soft
+     mid-blue dot instead of a black one. The sclera was the other half: at
+     `#f8f3e8` its saturation is 0.53, so it was matched against the COLOURS
+     and landed on `sand`, **the same entry as the deer's own muzzle and
+     belly**, so the white of the eye was the value of the face around it.
+     `kitFor` tags `dark` as ink and pulls the sclera under the neutral
+     threshold; `test-madbox-style.ts` guards all six.
+     **`NEUTRAL_MAX_S` IS A CLIFF, NOT A RAMP, and that is the reusable part**:
+     `#f4f3f0` (s 0.154) lands on `white` and `#f6f4f1` (s 0.26), three bytes
+     away, lands on **`bark`** — opposite ends of the palette. Author
+     comfortably inside a band and check with
+     `scripts/_scratch-snap-probe.ts`; never pick a near-threshold colour by
+     eye.
+     **STILL BROKEN AND DELIBERATELY NOT FIXED HERE** (they are other props):
+     the raccoon's fur `#8d8a86` and its MASK `#2f2c2a` both snap to `slate`,
+     so identity rank 1 is the same colour as the face it is painted on and
+     the ringed tail is one flat grey; and the fox's black socks `#2e2620`
+     snap to `slate`, so it wears blue boots.
+  11. **A DEER IS ITS NECK, AND CUTE IS ITS FACE** (v6, Nuno: *"the deer
+     should have a little of rework to look more like a deer and cute"*).
+     Measured off the reference as fractions of standing height — antlers 26%,
+     head and neck 29%, body 26%, legs 19% — against what shipped: legs 37%,
+     body 20%, head and neck 19%. **The long upright neck is the one
+     silhouette nothing else in this theme has** and it was the part that had
+     been squeezed; it is two segments now, because one straight capsule is a
+     ramp where the reference's leaves the chest steeply and eases forward
+     under the head. Cute is a separate axis and it is almost entirely the
+     face: a big round cranium, a SHORT muzzle, and — the real lever — **the
+     pupil covering most of the eye rather than floating in it**
+     (`eye()`'s new `pupilScale`; 0.74 is IDEA-059 rule 8's doll stare in a
+     different animal, 0.86 is soft).
+     Four tunings failed four different ways and each generalises: a full eye
+     sphere at the skull's surface sits **76% proud** and reads as a GOOGLY
+     EYE, so solve `d + r - R` and land the protrusion near 40%; three
+     overlapping spheres of similar size at equal spacing union into a BALL,
+     and the DEPTH is what must give because a deeper body on shorter legs is
+     a pig whatever its length; a haunch blob is either buried in the barrel
+     or a PADDLE hung off the hip, and half in and half out is the only place
+     a muscle can be; and three tines a side is a TANGLE at review size,
+     where two thick ones pointing UP and FORWARD also give the rack vertical
+     extent at the play camera, which v1's out-and-back twigs did not have.
+     **Seventh buried part**: the cream bib was laid down the neck at a
+     hand-typed z and sat inside it. It interpolates along the neck's own axis
+     and steps out by that segment's radius now; the dapples are solved
+     against the barrel's local half-width for the same reason from the other
+     side. And `quadrupedBody`'s twenty inline `deer ? a : b` ternaries are
+     one named `QUAD` table — **which is what made the proportion defect
+     visible at all**: you cannot see "37% leg" in a ternary and you can see
+     it in two rows side by side.
+  12. **THE CRITTERS' EYE IS THE BEAGLE'S EYE** (v7, Nuno: *"lets make
+     something like the beagle eyes"*). `characters.ts` builds the dog's as
+     one flattened LENS sunk into the skull with the iris, pupil and
+     catchlights as flush CAPS of that same sphere; these six were a sclera
+     BALL with a pupil ball pushed out along z. Three reasons the port is
+     strictly better, and only the first is cosmetic.
+     - **A BALL ON A HEAD IS A GOOGLY EYE** — 70-80% proud however carefully
+       placed. v6 bought that back with arithmetic (`d + r - R`, land near
+       40%), which works and must be redone whenever the skull changes. A
+       lens flattened to half its depth is barely proud BY CONSTRUCTION, and
+       that is what let the eye go back UP in size, which is the cute lever.
+     - **THERE WAS NO IRIS.** White ring / iris / pupil / two catchlights is
+       a four-step ladder and it is most of why the beagle's reads as an eye.
+       The SECOND catchlight, small and on the opposite side, is not
+       decoration: one highlight on a dark iris is a sticker, two at opposing
+       angles are a wet surface.
+     - **A STACK OF BALLS COMES APART AND A CAP CANNOT.** A bigger pupil ball
+       pushed the same distance sinks its equator below the sclera and gets a
+       cream ring bitten out of it. Caps are children of the lens mesh and
+       inherit its non-uniform scale, so they deform with it and stay on it.
+     **THE OBVIOUS IRIS COLOUR IS THE ONE THAT DISAPPEARS.** It must sit
+     between a white sclera and a near-black pupil AND clear the fur it is
+     surrounded by — and **every warm brown from the beagle's own `#a2672e`
+     down to `#4a2d16` snaps to `wood`, which is what all six animals are
+     painted in.** `#6e4a30` lands on `bark`, a rung below the fur and three
+     above the pupil. **AND THE WHITE RING IS BOUNDED AT BOTH ENDS**: at an
+     iris arc of 1.0 rad the eye is a white almond with a bead in it
+     (startled), at 1.26 the ring is gone and the eye's outer boundary
+     becomes brown-on-tan, because `bark` and `wood` are one rung apart. The
+     ring is the OUTLINE this renderer has no ink pass to draw. It ships at
+     1.1, and `test-madbox-style.ts` asserts the iris is neither the pupil's
+     entry nor the fur's.
+  13. **A DEER'S HIND LEG IS A Z, AND THAT IS THE DIFFERENCE BETWEEN A DEER
+     AND A TABLE** (v8, Nuno: *"the legs of the deer, they are literally
+     sticks"*). Four joints, not two: hip, thigh FORWARD and down to the
+     stifle, tibia BACK and down to the **hock**, cannon almost straight to
+     the fetlock. Nothing else in this module has a hock — a dog's is shallow,
+     a rabbit's is folded away underneath — and the fore leg is nearly
+     straight by contrast, so building the two the same way is most of why
+     this animal read as a barrel on four dowels. `jointedLimb` is the crab's
+     construction (IDEA-054): a chain of joints plus the radius AT each one,
+     so a segment is a truncated cone spanning its joints exactly, the taper
+     is continuous across a joint BY CONSTRUCTION, and IDEA-053's
+     capsule-falls-short defect is unrepresentable because no arithmetic
+     relates length to radius. **A knuckle sits at EVERY joint including the
+     first** — the segments are open-ended, so the chain's first rim is a hole,
+     and at the hip that rim showed as a hard crescent on the flank.
+     **AND THE HAUNCH BLOB CAME OUT WITH IT.** v6 added it because a
+     constant-radius capsule had no muscle anywhere; the jointed leg's own
+     0.15 top IS the muscle, and the blob beside it was a second, rounder
+     thigh meeting the real one at a crease. **A part added to compensate for
+     a missing feature has to come out when the feature arrives.**
+     **AND A HOOF IS WIDER THAN THE LEG IT HANGS FROM.** The first pair were
+     small dark ellipsoids: NARROWER than the cannon above them, so the
+     silhouette ran wide, narrow, then a bead — a leg with something stuck to
+     it. A real hoof is the widest part of the lower leg and that flare is the
+     whole reason a hoofed leg does not read as a stick. They were also ROUND,
+     so the animal balanced on four tangent points and, with a contact shadow
+     under it, read as HOVERING; a flat base gives a real edge where foot
+     meets floor, which is IDEA-071's kerb and IDEA-059's ledge at a third
+     scale. `hoofWedge` is built about its own BASE so a foot is placed by
+     where it touches the ground, and is cut to the shank's radius at the top
+     so it caps the segment's open rim by construction. `HOOF_H` is shared
+     with the leg chain's last joint, because typed twice it drifts and the
+     symptom is a dark crescent between fur and horn.
+     The tuning failure worth keeping: with the stifle BELOW the barrel's
+     underside the visible leg starts forward and then sweeps back, which
+     reads as a CROUCH rather than a stance — on a standing deer the stifle is
+     tucked against the belly and the first thing you see is already on its
+     way down and back.
+  **AND TWO PIXELS OF DIFFERENCE IS NOT NOTHING.** After one of those tunings
+  the render looked identical and the obvious conclusion was that the edit had
+  not applied; `scripts/_scratch-imgdiff.mjs` reported **10,478 differing
+  pixels of a million**. Eyeballing two near-identical turntable frames is how
+  a change that did not apply gets accepted as one that was too small to see.
+  Diff them. The sibling trap is in the same family: a check that read WORLD
+  positions reported a correct leg as bending the wrong way, because
+  `makeForestCritter` gives every instance a random yaw — the leg parts are
+  siblings in the body's own group, so LOCAL positions are the only frame in
+  which "behind" means anything. And a third, the same shape as both: the
+  taper check named `legBRSeg2` as the shank and failed a correct model the
+  moment the leg chain grew a fetlock. **An instrument must not pin a COUNT it
+  does not own** — `test-editor-board` learned this about a hardcoded tile and
+  a typed-out list of tree rows.
+  14. **THE PROPS TAB CAN MIRROR A PART ONTO ITS L/R TWIN** (v9, Nuno: *"I
+     edit the eyeL make the eyeR look the same"*). `M` with a part selected,
+     or the Mirror button in the gizmo bar. **Multi-select does not cover
+     this**: the gizmo moves a selection by a shared DELTA, so pushing a pair
+     of eyes +x moves one OUT and the other IN — a mirror is a reflection, not
+     a translation. It is a KEY rather than something that happens on save,
+     because silent mirroring makes an intentionally asymmetric part
+     unrepresentable without renaming it.
+     **THE SIDE MARKER IS NOT ALWAYS THE LAST CHARACTER** — `eyeL` and
+     `legFL`, but also `eyeLSclera`, `earRInner`, `legBLSeg0` — so the match is
+     an `L`/`R` followed by an uppercase letter, a digit or the end, which
+     ignores the lowercase `l` in `antlerL`. Position negates x, rotation
+     negates y and z, **scale is untouched** (negating `scale.x` flips the
+     winding and turns the twin inside out), and the colour goes through
+     `withRealMaterials` or the mirror copies a baked matcap's WHITE and calls
+     it the authored value. It mirrors ABSOLUTE values, which is sound only
+     because every paired part comes out of an `s`-applied-to-x loop and the
+     factory poses already satisfy the reflection.
+     **AMBIGUITY REFUSES, AND THAT FOUND A REAL DEFECT.** A `for (const s of
+     [-1, 1])` loop that names both sides the same leaves two parts sharing a
+     name — the Components tree shows two identical rows and nothing can pick
+     between them. The deer had five such pairs; they carry sides now. **A
+     sweep (`scripts/_scratch-dupe-names.ts`) says seven props still do**:
+     `perched-bird` (6), `log-cabin` (5), `critter-fox`'s `sock` x4,
+     `nest-tree`, `birdhouse` and both squirrels.
+  15. **A LIMB IS ONE COMPONENT, GROUPED AT ITS FIRST JOINT** (v10, Nuno:
+     *"its hard to move all the leg this way"*). `jointedLimb` returns a group
+     and the hoof goes inside it, so a leg is one row in the Components tree
+     instead of eight. **The group sits at the HIP, not at the body's origin**
+     — the gizmo attaches at an object's own position, so a group at the
+     origin would put the handle in the middle of the animal and rotating a
+     leg would swing it round the body's centre. A sibling hoof is worse than
+     four loose parts, because three move with the drag and one does not.
+  16. **A TRUNCATED CONE IS A RULED SURFACE, SO A FAT ONE IS A SLAB** (v11,
+     Nuno: *"lets make the legs more robust"*). Measured at a matched framing
+     the old leg was already at the reference's own leg-to-body ratio (0.19
+     against 0.18), so thickness alone was never the story — what the
+     reference shows is a HAUNCH CONTINUOUS WITH THE RUMP, a swelling of the
+     body that only becomes a tube below the belly. Taking the thigh cone to
+     0.22 gave a flat rectangular slab on the flank, and raising the radial
+     count 8 -> 14 did nothing because **a cone's silhouette is a pair of
+     straight lines whatever its resolution**. The muscle is a rounded BLOB
+     over a slimmer cone — v8's thigh blob brought back for the opposite
+     reason (it was a paddle beside a thin leg; it is a haunch over a thick
+     one). The segment bump stays: **a segment count that passes at one radius
+     does not pass at another.**
+     **WHEN A CROP CANNOT TELL YOU WHICH PART YOU ARE LOOKING AT, CAST A RAY
+     THROUGH THE PIXEL.** `scripts/_scratch-pixel-owner.ts` reproduces
+     /preview-rework/'s camera and names the mesh under a given pixel; three
+     rounds of cropping had sent me to the wrong parts twice.
+     **AND A SAVED PART EDIT MULTIPLIES AN AUTHORED NUMBER.** The slab was on
+     ONE side only: the def carried `scale: [1, 1, 1.336]` on the back-left
+     thigh and nothing on the other three legs — a hand-thickened experiment —
+     so widening the radius in code landed on top of it. Check a def's
+     `parts.edits` before retuning the number they scale.
+  17. **TWO OVERLAPPING SOLIDS MEET AT A CREASE, AND OVERLAP DOES NOT FIX IT**
+     (v12, Nuno: *"on the body lets make the junction of the part be more
+     smooth and not so visible"*). The normal is discontinuous along the curve
+     where one surface cuts the other, so the matcap steps there and the seam
+     reads as a line drawn round the animal — the defect is not a gap, so
+     pushing the blobs further into each other cannot help. The deer's barrel
+     is ONE `taperedSweepGeometry` now, which is what `characters.ts` has used
+     for the dog's torso since IDEA-047 and had never been reached for from
+     `forestCritters.ts`. **The stations are the old union's own silhouette,
+     SAMPLED** (`scripts/_scratch-body-stations.mjs`), so the hand-tuning
+     survives and only the creases are lost. Pull the end stations a half
+     percent in from the true extent: a station at the exact tip has zero
+     radius and a cap fanned from a zero-radius ring is a point, which pinches.
+     The FOX keeps its blobs — it is not under review.
+     **AND THE NECK JUNCTION IS ONLY PARTLY SOLVABLE THIS WAY.** A
+     constant-radius tube entering the top of a barrel meets it at a right
+     angle however deep it is sunk. A withers BLOB bridging it read as a
+     separate hump with two creases of its own; a BELL FLARE at 2.0x came out
+     through the front of the chest as a hard-edged collar, because its rim
+     reached where the barrel had narrowed to a fifth of it. It ships at 1.3x
+     — what the barrel's cross-section at the neck's base allows, solved
+     rather than guessed. **v13 then made the bell ELLIPTICAL and got most of
+     the rest of it**: a round flare is bounded by whichever direction runs
+     out of barrel first, and that is FORE-AFT, but the barrel is 0.49 wide
+     and only tapers along its length — so there is far more room LATERALLY,
+     which is also where the junction is SEEN, since the game and review
+     cameras both look at the flank. Solved per axis: 1.75x across, 1.3x
+     fore-aft, same mesh, nearly twice the blend, still inside the chest.
+     What is left is a soft shading change rather than a line, and **that is
+     as far as a union of solids goes without a real fillet surface**.
+     **AND A NUMBER YOU SOLVE AGAINST HAS TO BE THE NUMBER THAT SHIPS.** The
+     first elliptical bell came out through the shoulder anyway, because the
+     solve used the neck's AUTHORED base while the def's saved `position` and
+     `scale.y` put the shipped one a tenth of a unit higher — where the body
+     is 0.430 wide instead of 0.477. A limb's `position` moves the whole
+     segment and its `scale.y` shortens it about its midpoint;
+     `scripts/_scratch-neck-ends.ts` measures the real endpoints through all
+     three. Third time in two days that a saved edit has silently moved the
+     thing being solved against.
+     `flaredLimb` keeps `limb`'s placement contract exactly (geometry about
+     the midpoint in local +Y, same position and quaternion) **because a def
+     may carry a saved edit against that part** — changing a part's geometry
+     TYPE is otherwise a silent way to make an existing `position` mean
+     something else.
+  18. **THE FOX HAS ITS OWN BUILDER, AND A FOX'S EAR IS A TRIANGLE** (v14,
+     Nuno: *"the fox need a lot of rework this not look like a fox at all"*).
+     It had been sharing the deer's body plan — long barrel, head at body
+     height, thumbnail ears — which reads as a WEASEL, and no amount of orange
+     fixes a silhouette. Measured off the reference: ears 18% of standing
+     height, head 21%, neck 11%, body 24%, legs 26%.
+     **`ear()` BUILDS A FLATTENED BLOB AND CANNOT MAKE A TRIANGLE**, so two
+     tunings of it read as a RABBIT at any size. **A cone is a triangle seen
+     face on**, so a cone flattened along its depth is a triangular fin —
+     three nested ones give the reference's three tones in the order that
+     matters (orange edge, white inner, dark back). **AND A FLAT FIN HAS TO BE
+     TURNED OUTWARD**: an ear in the sagittal plane is edge-on from the side,
+     which is the view a quadruped prop is mostly seen from, so the ears were
+     two black spikes until the pivot took 0.55 rad of yaw. Swapping a rounded
+     part for a flat one is never only a silhouette change.
+     **`accentIsInk` DECLARES A MARKING PER KIND.** The fox's stockings and
+     the raccoon's mask are near-black, so the style matched them against the
+     NEUTRALS and lifted both to `slate` — blue boots, and a raccoon whose
+     mask was the colour of its own face. Colour cannot decide this; the KIND
+     can, because whether a dark patch is a marking or a surface is a fact
+     about the animal.
+  19. **A FOX'S FACE IS A WHITE MASK WITH AN ORANGE CAP** (v15, Nuno: *"our
+     fox still not look at all like a fox"*). Three builds had it inverted —
+     an orange muzzle with a cream chin strip — and that one thing is most of
+     why it read as a generic canid. In the reference the white covers the
+     whole muzzle from under the eyes forward plus both cheeks; the orange is
+     only the brow, the bridge and the top of the head. Measured with it: the
+     **black stocking runs ~55% of the visible leg** (not a bootie on the
+     bottom quarter), the **chest ruff is a mass from chin to forelegs**, the
+     **body is ~0.41 of standing height** (a long back on short legs is a
+     dachshund however good the head is), and the **brush is carried low**.
+     v14 rebuilt the structure and then I tuned by LOOKING; cropping the
+     reference and measuring is what found all five, and it is what this
+     project's own method says to do first.
+     **A JOINTED CHAIN HAS TO DESCEND**: moving a stocking's top means moving
+     the upper chain's last point too, and changing only one left it above the
+     middle point so the thigh folded back and the leg became a thin stick
+     under a stub. **AND DEPTH AND YAW ON A FLAT FIN ARE ONE DECISION** — the
+     yaw that stops a near-planar ear vanishing edge-on from the side turns it
+     square-on at the three-quarter, where it is a flat kite. Deepen the fin
+     and the yaw can come back; tuning either alone overshoots into the other
+     view.
+  **AND WHEN A PART HAS TWO ENDS, CHECK BOTH BEFORE RETUNING THE MIDDLE.** The
+  fox's brush read as a flat sheet with a hard straight edge, and the taper,
+  the sweep and the tip were each retuned on the theory that the shape was
+  wrong. `ringedTail` is OPEN AT BOTH ENDS, and it was the BASE's rim standing
+  clear of the rump — the curve started where the barrel had tapered to 0.07
+  while the tube was 0.30. A crop at four times found in one look what three
+  tunings had not.
+  **AND A STRUCTURAL CHANGE TO A PROP SOMEBODY HAS AUTHORED IS A MIGRATION.**
+  The deer had **23 saved part edits** against the old tree and a part edit
+  addresses by INDEX PATH, so grouping four loose meshes re-points every edit
+  after them — silently, onto a different part (`0/40` became `0/12`, taking
+  the whole head and neck with it). It is recoverable only because part NAMES
+  are stable where paths are not: **old path → NAME → new path**, with
+  `scripts/_scratch-part-paths.ts` dumping either side. Two things make it
+  more than a search-and-replace:
+  - **A REPARENT NEEDS THE VALUE CONVERTED, NOT JUST THE PATH.** A part that
+    moves INTO a group is in a new frame, so a saved `position` has the
+    group's origin subtracted from it. `scale` and `visible` are frame-free.
+  - **A REPARENT IS A CHANGE OF PARENT, NOT A CHANGE OF INDEX.** Comparing
+    parent PATHS says every part under a moved parent was reparented, and
+    re-bases positions that never changed frame. Compare the parent's NAME,
+    and print the migration before applying it — the dry run is what caught
+    this.
+  **Prove it was inert in PIXELS** (`scripts/_scratch-imgdiff.mjs`): zero
+  differing pixels across all five turntable views. A restructure that claims
+  to change nothing should be made to say so.
+  **AND CHECK `props.ts` FOR SAVED EDITS BEFORE RESTRUCTURING ANYTHING** —
+  Nuno authors in the editor between sessions, so a def that had no `parts`
+  last turn can have two dozen this one.
+  **AND THE PROP TURNTABLE WAS DRAWING THE OLD GAME.** `/preview-rework/` is
+  where a prop is judged and it still rendered in `toon()`, the look IDEA-079
+  replaced — so every defect in rule 9 is invisible there and reviewing a prop
+  would have confirmed a model that is broken for every player. It takes
+  **`?style=`** now, defaulting to what SHIPS, with `?style=classic` as the
+  A/B; the palette lift runs before the model is built and the HUD names the
+  look. `shoot-rework.ts` takes `STYLE=classic` and `THEME=`. Fifth
+  instrument mismatch in this project after `?fov=` (IDEA-054), `?bg=none`
+  (IDEA-056), the `?toon=` material array (IDEA-065) and the surround-seam
+  probe (IDEA-066) — and `/preview-board/` needed the identical correction,
+  its own note recording that one of its shots "was read as a defect in the
+  new one". `scripts/_scratch-critter-sheet.ts` was the SIXTH, one day later:
+  it forced `&toon=1`, so every judgement ever made on it — including this
+  idea's own v1 review of all six animals — was about a look no player has
+  had since IDEA-079. **Suspect the harness first**, and when a harness is
+  corrected, go back and re-read what it was used to decide.
   **AND A COLOUR FIELD WITHOUT A SEED PAINTS THE PROP WHITE.** The Props tab
   writes a seed into `def.params` the moment it builds a control for an unset
   field; for a colour that fallback used to be `0xffffff`. IDEA-065 added

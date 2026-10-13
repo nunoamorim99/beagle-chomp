@@ -301,6 +301,10 @@ function syncGizmo(): void {
   exportGlbBtn.hidden = !meshMode;
   refLoadBtn.hidden = !meshMode;
   if (!meshMode) refClearBtn.hidden = true;
+  // Mirror is a PROPS action: it reflects a part onto its L/R twin, and the
+  // character workbench's own parts are authored one at a time in source.
+  mirrorBtn.hidden = mode !== "props";
+  if (mode === "props") syncMirrorBtn();
   if (!target) {
     gizmo.attach([]);
     placementGizmo.detach();
@@ -471,6 +475,7 @@ infoBtn.addEventListener("click", () => {
 // --- glTF export + reference model ---
 const exportGlbBtn = byId<HTMLButtonElement>("exportGlbBtn");
 const refLoadBtn = byId<HTMLButtonElement>("refLoadBtn");
+const mirrorBtn = byId<HTMLButtonElement>("mirrorBtn");
 const refClearBtn = byId<HTMLButtonElement>("refClearBtn");
 const refFileInput = byId<HTMLInputElement>("refFileInput");
 
@@ -1747,6 +1752,12 @@ window.addEventListener(
       return;
     }
 
+    if (!e.ctrlKey && !e.metaKey && !e.altKey && key === "m") {
+      e.preventDefault();
+      mirrorSelectedPropPart();
+      return;
+    }
+
     if (key === "s") scaleKeyHeld = true;
     if (key === "r") rotateKeyHeld = true;
 
@@ -2801,6 +2812,7 @@ function selectPropPart(node: PartNode | null): void {
     propsPartInspector.setSelection(node, node ? propPartSelectionContext() : null);
   });
   syncGizmo(); // IDEA-062: a prop component is a gizmo target like any part
+  syncMirrorBtn();
 }
 
 function propPartSelectionContext() {
@@ -2933,6 +2945,169 @@ function pushPropTransformHistory(
     afterPropHistoryApply(node);
   };
   propHistory.push({ undo: apply(before), redo: apply(after), coalesceKey });
+}
+
+// ===========================================================================
+// MIRROR A PROP PART ONTO ITS L/R TWIN (IDEA-065 v9)
+//
+// Nuno, after the deer's eye landed: *"I want to personalize each eye... so I
+// edit the eyeL make the eyeR look the same."* Every symmetric prop in this
+// library is built as two independent subtrees — `eyeL`/`eyeR`,
+// `earL`/`earR`, `antlerL`/`antlerR`, `legFL`/`legFR` — so authoring one side
+// in the Props tab leaves the other where the factory put it, and tuning a
+// face means doing every nudge twice and keeping them in step by hand.
+//
+// MULTI-SELECT DOES NOT SOLVE THIS, which is why it is a separate action: the
+// gizmo moves a multi-selection by a shared DELTA (IDEA-033's note — dragging
+// two ears moves both rather than collapsing them together), so pushing a
+// pair of eyes +x moves one OUT and the other IN. A mirror is a reflection,
+// not a translation.
+//
+// It is an explicit key rather than something that happens on save, which was
+// the other option on the table. Silent mirroring would make an intentionally
+// asymmetric part — a cocked ear, a chipped antler — unrepresentable without
+// renaming it, and this editor's whole direction since IDEA-062 has been
+// toward edits you can see and take back.
+// ===========================================================================
+
+/** The twin's name, or null when the part does not declare a side.
+ *
+ *  THE SIDE IS NOT ALWAYS THE LAST CHARACTER. The naming convention in
+ *  `forestCritters.ts` puts it at the end (`eyeL`, `antlerR`, `legFL`) and
+ *  also in the MIDDLE, because a part built on top of a side gets suffixed:
+ *  `eyeLSclera`, `earRInner`, `legBLSeg0`, `legBLJoint1`. So the match is an
+ *  `L`/`R` followed by an uppercase letter, a digit, or the end of the name —
+ *  which lands on the side marker in all of those and ignores the lowercase
+ *  `l` in `antlerL` and `pedicleL`.
+ *
+ *  A part with no side marker has no twin, which is correct rather than a
+ *  gap: `body`, `skull`, `tail` and `ridgeCap` are single parts and mirroring
+ *  one is meaningless. */
+function mirrorTwinName(name: string): string | null {
+  const m = /[LR](?=[A-Z0-9]|$)/.exec(name);
+  if (!m) return null;
+  const i = m.index;
+  return name.slice(0, i) + (name[i] === "L" ? "R" : "L") + name.slice(i + 1);
+}
+
+/** The one node that `node`'s edits should be reflected onto, or null.
+ *
+ *  AMBIGUITY REFUSES rather than guessing. Two parts can legitimately share a
+ *  name in these builders (a loop that names both sides the same), and
+ *  mirroring onto whichever `find` happened to reach first would write a
+ *  transform to an arbitrary one of them — silently, and differently on the
+ *  next build. */
+function propMirrorTwin(node: PartNode | null): PartNode | null {
+  if (!node || node.path === "") return null;
+  const twinName = mirrorTwinName(node.varName);
+  if (!twinName) return null;
+  const hits = propPartNodes.filter((n) => n.varName === twinName && n !== node);
+  return hits.length === 1 ? hits[0] : null;
+}
+
+interface PartPose {
+  position: Vec3Tuple;
+  rotation: Vec3Tuple;
+  scale: Vec3Tuple;
+  /** null when the part has no editable colour (a group, or a material array). */
+  color: number | null;
+}
+
+function readPartPose(node: PartNode): PartPose {
+  const o = node.object;
+  let color: number | null = null;
+  // Through the REAL materials: under IDEA-079's style the mesh carries a
+  // baked matcap whose colour is held at white, so reading `o.material.color`
+  // directly would mirror WHITE onto the twin and call it the authored value.
+  // Same trap `selectPropPart` and `onMaterialCommitted` both guard.
+  viewportExtras.withRealMaterials(propsPreviewRoot, () => {
+    if (o instanceof THREE.Mesh) {
+      const mat = Array.isArray(o.material) ? o.material[0] : o.material;
+      if (isEditableMaterial(mat)) color = mat.color.getHex();
+    }
+  });
+  return {
+    position: [o.position.x, o.position.y, o.position.z],
+    rotation: [o.rotation.x, o.rotation.y, o.rotation.z],
+    scale: [o.scale.x, o.scale.y, o.scale.z],
+    color,
+  };
+}
+
+/** `pose` reflected through the YZ plane.
+ *
+ *  Position negates X. Rotation negates Y and Z and keeps X, which is the
+ *  standard reflection of an XYZ Euler about that plane. Scale is untouched:
+ *  a reflection does not change a magnitude, and negating `scale.x` would
+ *  flip the twin's winding and turn it inside out.
+ *
+ *  **IT MIRRORS ABSOLUTE VALUES, NOT A DELTA FROM THE FACTORY POSE, AND THAT
+ *  IS ONLY SOUND BECAUSE THE TWO SIDES ARE BUILT AS MIRROR IMAGES.** Every
+ *  paired part in these builders comes out of a `for (const s of [-1, 1])`
+ *  loop with `s` applied to x, so the factory poses already satisfy this
+ *  reflection — copying absolutes therefore lands the twin exactly where the
+ *  factory would have put it plus the same edit. A part that was NOT built
+ *  that way would be moved to a place it never was, which is why the action
+ *  is scoped to parts whose names declare a side: in this library those are
+ *  exactly the ones the loop produced. */
+function mirrorPose(pose: PartPose): PartPose {
+  return {
+    position: [-pose.position[0], pose.position[1], pose.position[2]],
+    rotation: [pose.rotation[0], -pose.rotation[1], -pose.rotation[2]],
+    scale: [...pose.scale] as Vec3Tuple,
+    color: pose.color,
+  };
+}
+
+function applyPartPose(node: PartNode, pose: PartPose): void {
+  applyPropChannel(node.object, "position", pose.position);
+  applyPropChannel(node.object, "rotation", pose.rotation);
+  applyPropChannel(node.object, "scale", pose.scale);
+  for (const ch of ["position", "rotation", "scale"] as const) propPartLog.touchTransform(node, ch);
+  if (pose.color !== null) {
+    viewportExtras.withRealMaterials(propsPreviewRoot, () => {
+      const o = node.object;
+      if (o instanceof THREE.Mesh) {
+        const mat = Array.isArray(o.material) ? o.material[0] : o.material;
+        if (isEditableMaterial(mat)) mat.color.setHex(pose.color as number);
+      }
+    });
+    propPartLog.touchMaterial(node, "color", pose.color);
+  }
+  afterPropHistoryApply(node);
+  restylePropsPreview();
+}
+
+/** Reflect the selected part's pose and colour onto its twin — ONE history
+ *  entry, because it is one gesture however many channels it touches. */
+function mirrorSelectedPropPart(): void {
+  const node = selectedPropPart;
+  const twin = propMirrorTwin(node);
+  if (!node || !twin) {
+    flash(mirrorBtn, "No twin", false);
+    return;
+  }
+  const before = readPartPose(twin);
+  const after = mirrorPose(readPartPose(node));
+  applyPartPose(twin, after);
+  propHistory.push({
+    undo: () => applyPartPose(twin, before),
+    redo: () => applyPartPose(twin, after),
+    coalesceKey: `propmirror:${twin.path}`,
+  });
+  flash(mirrorBtn, `→ ${twin.varName}`, true);
+}
+
+/** Enabled only when a mirror is actually possible, so the action has no
+ *  failure case to report in the common path and the button itself says which
+ *  part it would write to. IDEA-041's rule: a control wired to nothing is
+ *  worse than no control. */
+function syncMirrorBtn(): void {
+  const twin = propMirrorTwin(selectedPropPart);
+  mirrorBtn.disabled = twin === null;
+  mirrorBtn.title = twin
+    ? `Copy ${selectedPropPart?.varName} onto ${twin.varName}, reflected in X — M`
+    : "Select a part whose name carries a side (eyeL, earR, legFL…) — M";
 }
 
 /** Sanitizes a user-typed "Add part" name into something safe to show as a
@@ -3706,6 +3881,15 @@ declare global {
        *  switch/copy/save has had a chance to flush it onto the working
        *  def. */
       livePartEditCount(): number;
+      /** IDEA-065 v9: a named component's LOCAL pose, so a suite can assert
+       *  that Mirror reflected one part onto its twin. Local rather than
+       *  world because the mirror writes local transforms, and world
+       *  coordinates would fold in the preview's own framing. */
+      partPose(name: string): { pos: [number, number, number]; rot: [number, number, number]; scale: [number, number, number] } | null;
+      /** The twin Mirror would write to, or null — the same resolution the
+       *  button uses, so a suite can check the NAMING rule without driving
+       *  the action. */
+      mirrorTwinOf(name: string): string | null;
     };
   }
 }
@@ -3733,6 +3917,20 @@ window.__propsTestHook = {
     return def?.parts !== undefined;
   },
   livePartEditCount: () => propPartLog.edits.size + propPartLog.added.length,
+  partPose: (name: string) => {
+    const node = propPartNodes.find((n) => n.varName === name);
+    if (!node) return null;
+    const o = node.object;
+    return {
+      pos: [o.position.x, o.position.y, o.position.z] as [number, number, number],
+      rot: [o.rotation.x, o.rotation.y, o.rotation.z] as [number, number, number],
+      scale: [o.scale.x, o.scale.y, o.scale.z] as [number, number, number],
+    };
+  },
+  mirrorTwinOf: (name: string) => {
+    const node = propPartNodes.find((n) => n.varName === name) ?? null;
+    return propMirrorTwin(node)?.varName ?? null;
+  },
 };
 
 // TEST-SUPPORT ONLY: same rationale as __boardTestHook / __propsTestHook

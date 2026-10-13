@@ -602,7 +602,7 @@ export const PROP_LIBRARY: readonly PropDef[] = [
       width: 1,
       segments: 7,
       trunkColor: 0xc2804e,
-      windowColor: 0xf0c86a,
+      windowColor: 0xffc833,
       windowEmissiveIntensity: 0.6,
       roofColor: 0x6b5248,
     },
@@ -628,6 +628,28 @@ export const PROP_LIBRARY: readonly PropDef[] = [
       height: 1,
       width: 1,
       critterKind: "deer",
+      furColor: 0xc97f3e,
+      bellyColor: 0xf2e2c8,
+      accentColor: 0x6b4a2f,
+    },
+    parts: {
+      edits: [
+      { path: "0/10/4", position: [-0.185, 0.094, 0.266], rotation: [0, -0.331, 0], scale: [0.803, 0.775, 1] },
+      { path: "0/10/5", position: [0.185, 0.094, 0.266], rotation: [0, 0.331, 0], scale: [0.803, 0.775, 1] },
+      { path: "0/10/2", position: [0.001, -0.185, 0.359] },
+      { path: "0/8", visible: false },
+      { path: "0/9", position: [0, 2.409, 0.76], scale: [1, 1.766, 1] },
+      { path: "0/10", position: [0, 2.87, 0.712] },
+      { path: "0/10/3", position: [0, -0.045, 0.56] },
+      { path: "0/1", position: [0, 1.29, 0.05], scale: [1, 1.156, 1] },
+      { path: "0/10/4/0/1", scale: [1, 0.938, 1] },
+      { path: "0/10/5/0/1", scale: [1, 0.938, 1] },
+      { path: "0/10/4/0/2", position: [0.01, -0.01, 0] },
+      { path: "0/10/5/0/2", position: [-0.01, -0.01, 0] },
+      { path: "0/10/4/0/3", position: [-0.01, 0.01, 0] },
+      { path: "0/10/5/0/3", position: [0.01, 0.01, 0] },
+    ],
+      added: [],
     },
   },
   {
@@ -826,22 +848,14 @@ export const PROP_LIBRARY: readonly PropDef[] = [
       centerColor: 0xf3e46a,
     },
   },
-  // IDEA-067 — the hedge archway, in three tunings that are deliberately
-  // three different ARCHES rather than three colourways. The reference is one
-  // portal; what makes this prop worth a dozen dials is that the same
-  // construction draws a garden doorway, a clipped topiary gate and a gothic
-  // arbour, so these three are the starting points for the fourth.
   {
     id: "hedge-arch",
     name: "Hedge Arch",
     shape: "archway",
-    // The shipped values. Every ratio here is `shippedRatios` in
-    // .img2threejs/garden-arch/measurements.json, spelled out rather than
-    // left to the factory defaults so the def a player opens in the Props tab
-    // shows every dial already turned to the measured answer.
     params: {
       height: 1,
       width: 1,
+      foliageColors: [0x3f8f3a, 0x367f33, 0x47993f],
       archOpening: 0.458,
       archRise: 1.29,
       archCurve: 2.1,
@@ -853,7 +867,6 @@ export const PROP_LIBRARY: readonly PropDef[] = [
       archBlossoms: 8,
       archThreshold: false,
       archFence: true,
-      foliageColors: [0x3f8f3a, 0x367f33, 0x47993f],
       blossomColor: 0xf4efe6,
       fenceColor: 0xa9743f,
       stoneColor: 0x9c9a90,
@@ -863,12 +876,10 @@ export const PROP_LIBRARY: readonly PropDef[] = [
     id: "hedge-arch-gothic",
     name: "Gothic Arbour",
     shape: "archway",
-    // `archCurve` below 2 points the head and `archRise` above 1 takes it past
-    // a semicircle. Narrower and taller with a thin crown, which is the whole
-    // difference between a doorway and an arbour you walk under.
     params: {
       height: 1.18,
       width: 0.88,
+      foliageColors: [0x367f33, 0x2f7330],
       archOpening: 0.44,
       archRise: 1.75,
       archCurve: 1.45,
@@ -880,7 +891,6 @@ export const PROP_LIBRARY: readonly PropDef[] = [
       archBlossoms: 9,
       archThreshold: false,
       archFence: true,
-      foliageColors: [0x367f33, 0x2f7330],
       blossomColor: 0xe8709a,
       fenceColor: 0x8a5f34,
       stoneColor: 0x9c9a90,
@@ -890,12 +900,10 @@ export const PROP_LIBRARY: readonly PropDef[] = [
     id: "hedge-arch-topiary",
     name: "Topiary Gate",
     shape: "archway",
-    // The other end of the same two dials: `archCurve` at 3.4 flattens the
-    // head almost to a lintel and `archCrest` at 0 leaves the crown a clean
-    // clipped line. Squat, wide and heavy — a gate rather than a portal.
     params: {
       height: 0.82,
       width: 1.2,
+      foliageColors: [0x47993f, 0x3f8f3a],
       archOpening: 0.58,
       archRise: 0.7,
       archCurve: 3.4,
@@ -907,7 +915,6 @@ export const PROP_LIBRARY: readonly PropDef[] = [
       archBlossoms: 0,
       archThreshold: true,
       archFence: true,
-      foliageColors: [0x47993f, 0x3f8f3a],
       blossomColor: 0xf4efe6,
       fenceColor: 0xb78450,
       stoneColor: 0xa8a69c,

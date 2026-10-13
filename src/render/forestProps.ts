@@ -90,41 +90,73 @@ function part(
 //    a skirt you can see the inside of reads as a broken umbrella.
 // ---------------------------------------------------------------------------
 
+/** How much of the cross-section is built. 2 is the hero's: a convex shoulder
+ *  and a sagging lower lip. 1 and 0 drop rings for the distant band, where a
+ *  whorl is seven pixels of skirt and a shoulder is a third of one. */
+export type WhorlDetail = 0 | 1 | 2;
+
 /** Cross-section of one whorl, in the whorl's own local frame: `x` is the
  *  radius out from the trunk, `y` is height relative to the attach point
  *  (so every value here is zero or negative — a whorl hangs). Runs
  *  clockwise from the hub over the TOP to the drooping tip, then back under
  *  to the hub, and closes.
  *
- *  `upperCount` is how many of the returned points belong to the lit upper
- *  run; the rest are the shaded underside. */
+ *  `litStrips` is how many of the revolved STRIPS belong to the lit upper
+ *  surface; the rest are the shaded underside. It is a strip count rather
+ *  than a point count because the rim face — the strip running from the tip
+ *  back under — belongs with the TOP on the hero profile and with the
+ *  UNDERSIDE once the lower run is down to a single ring. Counting points
+ *  and comparing against the strip index happened to agree at detail 2 and
+ *  silently classified every strip as lit at the reduced detents, which is a
+ *  tree with no shaded side at all. */
 function whorlProfile(
   hub: number,
   reach: number,
   droop: number,
   thickness: number,
-): { pts: Array<readonly [number, number]>; upperCount: number } {
+  detail: WhorlDetail = 2,
+): { pts: Array<readonly [number, number]>; litStrips: number } {
   // The upper surface is slightly CONVEX: a branch leaves the trunk close to
   // horizontal and only bends down under its own weight toward the tip. A
   // straight line from hub to tip gives a paper cone and loses the shoulder
   // the light sits on — but only slightly, because a strongly domed top turns
   // every whorl into a mushroom cap and the stack into a pile of them, which
   // is what review round three came back with.
-  const upper: Array<readonly [number, number]> = [
-    [hub, 0],
-    [hub + reach * 0.30, -droop * 0.13],
-    [hub + reach * 0.62, -droop * 0.38],
-    [hub + reach * 0.86, -droop * 0.70],
-    [hub + reach, -droop],
-  ];
+  const upper: Array<readonly [number, number]> =
+    detail === 2
+      ? [
+          [hub, 0],
+          [hub + reach * 0.30, -droop * 0.13],
+          [hub + reach * 0.62, -droop * 0.38],
+          [hub + reach * 0.86, -droop * 0.70],
+          [hub + reach, -droop],
+        ]
+      : detail === 1
+        ? [
+            [hub, 0],
+            [hub + reach * 0.62, -droop * 0.38],
+            [hub + reach, -droop],
+          ]
+        : [
+            [hub, 0],
+            [hub + reach, -droop],
+          ];
   // The underside runs back in BELOW the upper one, converging at the tip so
   // the rim comes to an edge rather than a slab. It sags a little more than
-  // the top, which is what gives the skirt a visible lower lip.
-  const lower: Array<readonly [number, number]> = [
-    [hub + reach * 0.55, -droop * 0.30 - thickness],
-    [hub, -thickness],
-  ];
-  return { pts: [...upper, ...lower], upperCount: upper.length };
+  // the top, which is what gives the skirt a visible lower lip. Reduced, it
+  // is one ring: a plain cone back to the hub, which is all a dark side needs
+  // to be when it is four pixels of it.
+  const lower: Array<readonly [number, number]> =
+    detail === 2
+      ? [
+          [hub + reach * 0.55, -droop * 0.30 - thickness],
+          [hub, -thickness],
+        ]
+      : [[hub, -thickness]];
+  return {
+    pts: [...upper, ...lower],
+    litStrips: detail === 2 ? upper.length : upper.length - 1,
+  };
 }
 
 /**
@@ -144,7 +176,7 @@ function whorlGeometry(
   phase: number,
   closed = true,
 ): THREE.BufferGeometry {
-  const { pts, upperCount } = profile;
+  const { pts, litStrips } = profile;
   const rings = pts.length;
   const hubR = pts[0][0];
   const tipR = Math.max(...pts.map((p) => p[0]));
@@ -200,9 +232,9 @@ function whorlGeometry(
     for (let i = 0; i < strips; i++) {
       const j = (i + 1) % rings;
       const tri = [c0 + i, c1 + i, c1 + j, c0 + i, c1 + j, c0 + j];
-      // Rings [0..upperCount-1] are the lit top; the strip STARTING at the
-      // last upper ring is the rim itself, which belongs with the top.
-      (i < upperCount ? upperStrips : lowerStrips).push(...tri);
+      // `litStrips` strips from the hub are the lit top; the rest are the
+      // shaded underside. See whorlProfile for why this is counted in STRIPS.
+      (i < litStrips ? upperStrips : lowerStrips).push(...tri);
     }
   }
   idx.push(...upperStrips, ...lowerStrips);
@@ -324,35 +356,89 @@ function shift(color: number, k: number): number {
 }
 
 /**
- * pine — a stack of drooping, serrated whorls on a stubby flared trunk.
+ * THE PINE'S SHAPE, AT A BUDGET — shared by the hero prop and the surround.
  *
- *  - `params.foliageColors` (default the measured mid greens) — the base
- *    green; the lit and shaded tones are derived from it, so a theme that
- *    retints the forest keeps the three-tone relationship instead of having
- *    to author three numbers that agree.
- *  - `params.segments` (default 8, clamped 4-11) — the WHORL count.
- *  - `params.height` / `params.width` (default 1) scale the canopy and its
- *    radius independently, so one def can be a spindly sapling and another
- *    a broad old tree.
- *  - `params.trunkColor` (default the measured 0x7a6142).
+ * IDEA-065 v4. Nuno, after the new pine had been on the board for a while:
+ * *"the deep forest theme the atmosphere are using the old pines, lets change
+ * the pines that are on the space around the maze, not in the props area, the
+ * ones that are illustrative, lets use the same style as the new pines we have
+ * made"*. He was right and it was two conifers in one frame — a drooping
+ * serrated stack on the apron and `surroundProps.ts`'s three stacked
+ * `ConeGeometry`s six units behind it, i.e. exactly the green traffic cone
+ * this file's own header was written to replace.
  *
- * `h` is the 0..1 instance hash: it picks the base green, the whorl phases
- * and a small per-tree lean, so a row of twenty is not twenty copies.
+ * It is ONE function rather than a second tree, for the reason rule 7 gave for
+ * the stemless flower heads: the stack is six numbers that have to agree with
+ * each other (whorl count, spacing exponent, droop, rim multiplier, tooth
+ * pitch, spire taper), and a copy is six chances to retune one and not the
+ * other. **What differs between the two call sites is RESOLUTION and nothing
+ * else** — which is what every option here is.
+ *
+ * Returns geometry only, no materials, which is what lets `surroundProps.ts`
+ * use it without breaking its own first rule (a surround builder takes the
+ * shared material set and never makes one).
  */
-export function makeForestPine(params: PropParams, h: number): THREE.Group {
-  const g = new THREE.Group();
-  const rnd = rand(h);
-  const height = params.height ?? 1;
-  const width = params.width ?? 1;
-  const whorls = THREE.MathUtils.clamp(Math.round(params.segments ?? 8), 4, 11);
-  const colors = params.foliageColors ?? PINE_GREENS;
-  const base = colors[Math.floor(h * colors.length) % colors.length];
+export interface PineShapeOpts {
+  /** Canopy top in world units — the tree's own height. Default 1. */
+  height?: number;
+  /** Half-width scale; at `width === height` the tree lands on the measured
+   *  0.718 aspect. Default 1. */
+  width?: number;
+  /** Whorl count, clamped 4..11. Default 8.
+   *
+   *  THIS IS THE ONE RESOLUTION KNOB THAT IS NOT FREE TO TURN DOWN. Rule 2:
+   *  the whorl spacing over a whorl's reach is 0.26 on the reference and 0.30
+   *  at eight; six measures 0.40 and four 0.62, and past about 0.45 a stack of
+   *  drooping skirts stops reading as one textured cone and becomes a pile of
+   *  mushroom caps. Seven (0.345) is the floor the band uses. */
+  whorls?: number;
+  /** Needle tufts round a rim. Default PINE_TEETH. */
+  teeth?: number;
+  /** Their depth as a fraction of the reach. Default PINE_SERRATION. */
+  serration?: number;
+  /** Azimuth segments per tooth at the WIDEST whorl; narrower whorls scale
+   *  down with their own reach to a floor of two.
+   *
+   *  TWO IS THE FLOOR AND IT IS A HARD ONE: at one segment per tooth the
+   *  serration cosine is sampled once per period, every sample lands on the
+   *  same phase, and the whorl comes out a REGULAR POLYGON with the serration
+   *  silently doing nothing at all. Default 3. */
+  segsPerTooth?: number;
+  /** Cross-section detail. Default 2 (the hero's). */
+  profileDetail?: WhorlDetail;
+  /** Points along the leader. Default 5; three is enough at band size. */
+  spirePoints?: number;
+  /** Per-instance randomness — whorl phases and the per-ring tilt. */
+  rnd?: () => number;
+}
 
-  // One material pair for the whole tree. Both are owned by this group and
-  // disposed with it (rule 3) — never a module-level singleton.
-  const litMat = toon({ color: shift(base, PINE_LIT) });
-  const darkMat = toon({ color: shift(base, PINE_SHADE) });
-  const mats = [litMat, darkMat];
+export interface PineShape {
+  /** The whorls TOP DOWN, then the spire. Each carries group 0 = the lit
+   *  upper surface and group 1 = the shaded underside, so a caller can either
+   *  `mergeGrouped` them onto a two-material mesh (the hero) or split the
+   *  groups into one plain geometry per material (the surround, where a
+   *  material ARRAY would cost a draw call per group and defeat the band's
+   *  whole merge — IDEA-067 rule 7). */
+  geos: THREE.BufferGeometry[];
+  /** `transforms[i]` places `geos[i]` in the tree's own frame. */
+  transforms: THREE.Matrix4[];
+  trunkHeight: number;
+  trunkTopRadius: number;
+  /** The canopy's widest half-width. The band needs it: the new silhouette is
+   *  1.2x wider than the cone stack it replaces at the same height, so
+   *  holding a wood's CANOPY COVERAGE constant means fewer trees. */
+  maxHalfWidth: number;
+}
+
+export function pineWhorlStack(o: PineShapeOpts = {}): PineShape {
+  const rnd = o.rnd ?? rand(0.37);
+  const height = o.height ?? 1;
+  const width = o.width ?? 1;
+  const whorls = THREE.MathUtils.clamp(Math.round(o.whorls ?? 8), 4, 11);
+  const teeth = Math.max(3, Math.round(o.teeth ?? PINE_TEETH));
+  const serration = o.serration ?? PINE_SERRATION;
+  const segsPerTooth = THREE.MathUtils.clamp(Math.round(o.segsPerTooth ?? 3), 2, 4);
+  const detail = o.profileDetail ?? 2;
 
   const maxHalf = 0.359 * width; // from the measured 0.718 aspect
   const trunkH = 0.14 * height;
@@ -393,25 +479,11 @@ export function makeForestPine(params: PropParams, h: number): THREE.Group {
   const FOOT = 0.075;
   const canopySpan = (canopyTop - FOOT * height) / (tBottom + droopFrac(whorls - 1));
 
-  // --- 0: trunk. Short, flared, and mostly buried. It is here for the few
-  // pixels of warm brown under the bottom skirt: without it the tree sits on
-  // the soil like a cut-out, which is the one thing a cone at least got right.
-  part(
-    trunkGeometry(flaredTrunkProfile(0.034 * width, trunkH, 2.4, 5), 8),
-    toon({ color: params.trunkColor ?? 0x7a6142 }),
-    "trunk",
-    g,
-  );
-
-  // --- 1: the canopy. Every whorl plus the spire in ONE merged geometry
-  // carrying the same two material groups — see `mergeGrouped` for the
-  // measured reason, which is that thirty-nine pines at a mesh per whorl cost
-  // more draw calls than the whole rest of the board put together.
-  //
-  // They are still built TOP DOWN, because the merge is order-sensitive and a
-  // canopy assembled bottom-up would put the spire's triangles first.
-  const canopyGeos: THREE.BufferGeometry[] = [];
-  const canopyXf: THREE.Matrix4[] = [];
+  // Every whorl plus the spire, built TOP DOWN — `mergeGrouped` is
+  // order-sensitive and a canopy assembled bottom-up would put the spire's
+  // triangles first.
+  const geos: THREE.BufferGeometry[] = [];
+  const transforms: THREE.Matrix4[] = [];
   const e = new THREE.Euler();
   const q = new THREE.Quaternion();
   const one = new THREE.Vector3(1, 1, 1);
@@ -419,25 +491,33 @@ export function makeForestPine(params: PropParams, h: number): THREE.Group {
     const t = tAt(i);
     const reach = maxHalf * coniferRadius(t) * TIER_RIM;
     const y = canopyTop - t * canopySpan;
-    const prof = whorlProfile(0.016 * width, reach, droopFrac(i) * canopySpan, 0.045 * canopySpan);
+    const prof = whorlProfile(
+      0.016 * width,
+      reach,
+      droopFrac(i) * canopySpan,
+      0.045 * canopySpan,
+      detail,
+    );
     // Azimuth resolution follows the whorl's own REACH. The top ring is a
     // third of the bottom one's width and gets a third of the vertices; a
     // flat 32 everywhere spends half the tree's triangle budget on the part
     // of it that is four pixels across. Kept a multiple of the tooth count so
-    // every tooth gets the same number of segments — below three the tooth
-    // stops being a scallop and becomes a zigzag.
-    const segs = PINE_TEETH * THREE.MathUtils.clamp(Math.round((reach / maxHalf) * 3), 2, 3);
+    // every tooth gets the same number of segments — below two the tooth
+    // stops existing at all (see `segsPerTooth`).
+    const segs =
+      teeth *
+      THREE.MathUtils.clamp(Math.round((reach / maxHalf) * segsPerTooth), 2, segsPerTooth);
     // OPEN, not closed. The closing strip runs from the underside's hub back
     // to the top's, which is a cylinder of radius 0.016 buried inside the
     // trunk with the whorl above sitting on it — a seventh of every whorl's
     // triangles spent on something no camera can reach. With thirty-five
     // pines on the board that seventh is ten thousand triangles.
-    canopyGeos.push(whorlGeometry(prof, segs, PINE_TEETH, PINE_SERRATION, rnd() * Math.PI * 2, false));
+    geos.push(whorlGeometry(prof, segs, teeth, serration, rnd() * Math.PI * 2, false));
     // A whorl is not perfectly level. A degree or two of tilt, different per
     // ring, is what stops the stack reading as a lathe of one profile — which
     // is exactly what a wedding cake is.
     e.set((rnd() - 0.5) * 0.11, 0, (rnd() - 0.5) * 0.11);
-    canopyXf.push(new THREE.Matrix4().compose(new THREE.Vector3(0, y, 0), q.setFromEuler(e), one));
+    transforms.push(new THREE.Matrix4().compose(new THREE.Vector3(0, y, 0), q.setFromEuler(e), one));
   }
 
   // --- the spire. The leader shoots above the top whorl, thin and pointed,
@@ -453,25 +533,89 @@ export function makeForestPine(params: PropParams, h: number): THREE.Group {
   // what the measured increments (0.051, 0.062, then 0.109) describe.
   const spireLen = (tTop + 0.04) * canopySpan;
   const spireBaseR = maxHalf * coniferRadius(tTop + 0.04) * TIER_RIM * 0.85;
-  const spirePts: Array<readonly [number, number]> = [0, 1, 2, 3, 4].map((kk) => {
-    const u = kk / 4;
+  const spireSteps = Math.max(2, Math.round(o.spirePoints ?? 5) - 1);
+  const spirePts: Array<readonly [number, number]> = [];
+  for (let k = 0; k <= spireSteps; k++) {
+    const u = k / spireSteps;
     // `u^0.55` forces a real POINT at the tip. Authored with a near-zero
     // radius for its whole top third the first time, the leader rendered as a
     // WIRE; the reference's is a tuft.
-    return [spireBaseR * Math.pow(u, 0.55), -u * spireLen] as const;
-  });
-  canopyGeos.push(
+    spirePts.push([spireBaseR * Math.pow(u, 0.55), -u * spireLen] as const);
+  }
+  geos.push(
     whorlGeometry(
-      { pts: spirePts, upperCount: spirePts.length },
-      PINE_TEETH * 2,
-      PINE_TEETH,
-      PINE_SERRATION * 0.9,
+      { pts: spirePts, litStrips: spirePts.length },
+      teeth * 2,
+      teeth,
+      serration * 0.9,
       rnd() * Math.PI * 2,
       false,
     ),
   );
-  canopyXf.push(new THREE.Matrix4().makeTranslation(0, canopyTop, 0));
-  part(mergeGrouped(canopyGeos, mats, canopyXf), mats, "canopy", g);
+  transforms.push(new THREE.Matrix4().makeTranslation(0, canopyTop, 0));
+
+  return {
+    geos,
+    transforms,
+    trunkHeight: trunkH,
+    trunkTopRadius: 0.034 * width,
+    maxHalfWidth: maxHalf * TIER_RIM * Math.max(...PINE_TREND),
+  };
+}
+
+/**
+ * pine — a stack of drooping, serrated whorls on a stubby flared trunk.
+ *
+ *  - `params.foliageColors` (default the measured mid greens) — the base
+ *    green; the lit and shaded tones are derived from it, so a theme that
+ *    retints the forest keeps the three-tone relationship instead of having
+ *    to author three numbers that agree.
+ *  - `params.segments` (default 8, clamped 4-11) — the WHORL count.
+ *  - `params.height` / `params.width` (default 1) scale the canopy and its
+ *    radius independently, so one def can be a spindly sapling and another
+ *    a broad old tree.
+ *  - `params.trunkColor` (default the measured 0x7a6142).
+ *
+ * `h` is the 0..1 instance hash: it picks the base green, the whorl phases
+ * and a small per-tree lean, so a row of twenty is not twenty copies.
+ *
+ * The SHAPE lives in `pineWhorlStack`, which the surround's distant conifer
+ * shares; everything below is this prop's own colour and assembly.
+ */
+export function makeForestPine(params: PropParams, h: number): THREE.Group {
+  const g = new THREE.Group();
+  const rnd = rand(h);
+  const colors = params.foliageColors ?? PINE_GREENS;
+  const base = colors[Math.floor(h * colors.length) % colors.length];
+
+  // One material pair for the whole tree. Both are owned by this group and
+  // disposed with it (rule 3) — never a module-level singleton.
+  const litMat = toon({ color: shift(base, PINE_LIT) });
+  const darkMat = toon({ color: shift(base, PINE_SHADE) });
+  const mats = [litMat, darkMat];
+
+  const shape = pineWhorlStack({
+    height: params.height ?? 1,
+    width: params.width ?? 1,
+    whorls: params.segments ?? 8,
+    rnd,
+  });
+
+  // --- 0: trunk. Short, flared, and mostly buried. It is here for the few
+  // pixels of warm brown under the bottom skirt: without it the tree sits on
+  // the soil like a cut-out, which is the one thing a cone at least got right.
+  part(
+    trunkGeometry(flaredTrunkProfile(shape.trunkTopRadius, shape.trunkHeight, 2.4, 5), 8),
+    toon({ color: params.trunkColor ?? 0x7a6142 }),
+    "trunk",
+    g,
+  );
+
+  // --- 1: the canopy. Every whorl plus the spire in ONE merged geometry
+  // carrying the same two material groups — see `mergeGrouped` for the
+  // measured reason, which is that thirty-nine pines at a mesh per whorl cost
+  // more draw calls than the whole rest of the board put together.
+  part(mergeGrouped(shape.geos, mats, shape.transforms), mats, "canopy", g);
 
   return g;
 }
@@ -524,7 +668,13 @@ function logBar(
   y: number,
   z: number,
 ): THREE.BufferGeometry {
-  const g = new THREE.CylinderGeometry(radius, radius, len, 7, 1, true);
+  // NINE SIDES, NOT SEVEN (v5). A seven-sided bar has a flat facet almost
+  // exactly where the light hits it, so a wall of them banded into visible
+  // vertical panels rather than reading as a stack of round logs — much more
+  // obvious in a matcap, which takes its whole value from the normal, than in
+  // the three-step ramp this was tuned against. Thirty-odd bars at two
+  // triangles each is ~130 triangles for the thing the prop is named after.
+  const g = new THREE.CylinderGeometry(radius, radius, len, 9, 1, true);
   g.rotateZ(axis === "x" ? Math.PI / 2 : 0);
   if (axis === "z") g.rotateX(Math.PI / 2);
   g.translate(x, y, z);
@@ -544,7 +694,10 @@ function cappedLog(
   z: number,
   capSign: number,
 ): THREE.BufferGeometry {
-  const g = new THREE.CylinderGeometry(radius, radius, len, 7, 1, false);
+  // TEN, because this one is seen END ON: the cut face is identity rank 1 and
+  // a seven-gon reads as a bolt head rather than as a sawn log at the shop
+  // stage. On the board it is three pixels and the count is free either way.
+  const g = new THREE.CylinderGeometry(radius, radius, len, 10, 1, false);
   g.rotateZ(axis === "x" ? Math.PI / 2 : 0);
   if (axis === "z") g.rotateX(Math.PI / 2);
   const off = (len / 2) * Math.sign(capSign || 1);
@@ -584,13 +737,111 @@ function cappedLog(
 //     pine's whorl count makes, for the same reason.
 // ---------------------------------------------------------------------------
 
-const CABIN_LOG = 0xc2804e;
-const CABIN_LOG_END = 0xd6b393;
-// Lighter than the reference's near-black slate, for the shingle courses'
-// reason: at the play camera the roof is most of the prop, and a value that
-// dark reads as a hole in the treeline rather than as a building.
-const CABIN_ROOF = 0x6b5248;
-const CABIN_TRIM = 0xd8b184;
+// ---------------------------------------------------------------------------
+// THE CABIN'S PALETTE IS A VALUE LADDER, AND IT HAS TO SURVIVE THE SNAP
+// (IDEA-065 v5).
+//
+// Nuno: *"now we have a new materials we should rework this to have a better
+// look."* The cabin was authored in `toon()` against the OLD art direction and
+// IDEA-079 now draws it as a matcap over a SNAPPED palette entry, so the
+// number in this file is not the colour on screen. Measured with
+// `scripts/_scratch-cabin-snap.ts`, the snap had collapsed nine authored tones
+// onto four entries and taken every relationship the model depends on with
+// them:
+//
+//   corner ends  #d6b393 -> wood    log body   #c2804e -> wood
+//   trim         #d8b184 -> wood    door       #a2612f -> wood
+//   roof         #6b5248 -> bark    shingles   #3b2c25 -> bark
+//   foundation   #6e6a63 -> slate (a BLUE-grey plinth on a timber building)
+//
+// So four of the pale/mid tones became ONE, the roof's four dark joints became
+// the roof, and wall-versus-roof went from 0.178 of luminance apart to 0.144 —
+// two warm browns of one hue family, which at the play camera is a single
+// undifferentiated mass. The corner log-ends are identity rank 1 and were the
+// same colour as the wall they stand proud of.
+//
+// TWO THINGS ABOUT THE SNAP EXPLAIN ALL OF IT, and they generalise to any prop
+// built out of one hue:
+//
+//  1. **IT IS HUE-DOMINANT WITH A STANDING REWARD FOR THE HIGHER KEY** (x3.0
+//     on hue against 0.1 on lightness, plus 0.22 x (1 - l)). That is correct
+//     and is what keeps the palette high-key — and it means a model whose
+//     whole value ladder lives inside ONE hue has nothing to spread it across.
+//     The warm family has exactly five rungs: cream, sand, wood, bark and
+//     inkWarm. Author to those rungs and the ladder survives; author nine
+//     browns and you get `wood`.
+//  2. **`cream` IS IN `NEUTRAL_IDS`, SO NO WARM TAN CAN EVER REACH IT.** Every
+//     pale tan from #ecd2a8 to #faf4ea lands on `sand`. A trim that must be
+//     cream has to be authored as a near-GREY (s < 0.18), which on a timber
+//     building reads chalky in the classic look — so the trim stays warm and
+//     shares `sand` with the corner ends instead. They are never adjacent.
+//
+// DARK IS A DECLARED ROLE, NOT A COLOUR. `madboxRole = "ink"` is how a
+// material says "this is a marking that must stay dark" (madboxStyle.ts's own
+// rule — colour cannot decide it, which is why there is a tag). The roof, the
+// chinking behind the logs and the plinth are exactly that: without the tag
+// the palette lifts all three into the warm mid-tones and the building loses
+// its roof, its courses and its footing in one pass.
+// ---------------------------------------------------------------------------
+
+/** The logs themselves — the mid rung, and the only one unchanged by v5. */
+const CABIN_LOG = 0xc2804e; // -> wood
+
+/** THE CHINKING, and it used to be `logMat`.
+ *
+ *  The extruded pentagon's own comment has always said it is "the DARK behind
+ *  the log courses" — and it was built in the SAME material as the courses, so
+ *  there was no dark behind anything. A round bar on a body of its own colour
+ *  has only its shading to separate it from its neighbour, which a matcap
+ *  quantises away almost entirely; the wall came back as a smooth orange slab
+ *  with faint ripples. One dark material under the bars gives every course a
+ *  hard line beneath it, which is what says LOGS rather than SIDING at 35px —
+ *  and it costs nothing, because the body mesh already existed. */
+const CABIN_CHINK = 0x5a3a26; // -> inkWarm, by role
+
+/** The cut faces at the corners: identity rank 1, so they get their own rung
+ *  ABOVE the logs. Was #d6b393, which snapped onto the logs themselves. */
+const CABIN_LOG_END = 0xecd2a8; // -> sand
+
+/** Bargeboards, ridge cap, window and door frames: the pale accents whose
+ *  whole job is drawing a bright edge on a dark roof. Was #d8b184 -> wood,
+ *  i.e. the same colour as the wall they were meant to separate it from. */
+const CABIN_TRIM = 0xeed6ae; // -> sand
+
+/** The roof, unchanged in classic and tagged INK so the style keeps it dark.
+ *
+ *  v1 lightened this from the reference's near-black slate on the grounds that
+ *  "a value that dark reads as a hole in the treeline rather than as a
+ *  building" — which was measured against the OLD board. IDEA-079 lifts the
+ *  forest's floor and wall into the high-key range, so the field this sits
+ *  against is far brighter now and a dark roof reads as a roof. It is also the
+ *  only way to get the reference's own relationship back: a dark lid over warm
+ *  logs. */
+const CABIN_ROOF = 0x6b5248; // -> inkWarm, by role
+
+/** The shingle joints, INVERTED by v5 — they are lighter than the roof now.
+ *
+ *  v1's note stands and is the reason this is a careful change: built at 0.2
+ *  of the slope in the pale TRIM colour they covered four fifths of the roof
+ *  and turned it into a pale planked lid with dark lines. What makes this
+ *  different is that they are still THIN (0.055 of the slope) and only one
+ *  rung up — a shingle course catching light on its lower edge, not a plank.
+ *  Dark-on-dark was the only option while the roof was a mid tone; on an ink
+ *  roof it is invisible. */
+const CABIN_SHINGLE = 0x9a7050; // -> bark
+
+/** The plinth and the chimney cap. Was #6e6a63, a warm grey — and a warm grey
+ *  has s < NEUTRAL_MAX_S, so the snap matched it against the NEUTRALS only and
+ *  the only mid neutral in the palette is `slate`, a blue-grey. The building
+ *  shipped standing on a purple kerb. A plinth's job is IDEA-071's greenhouse
+ *  trick — a few pixels of dark under a lighter mass — so it is ink. */
+const CABIN_BASE = 0x45403a; // -> inkWarm, by role
+
+/** The doorstep and the door itself: timber, one rung below the walls so the
+ *  opening reads as an opening. The door was #a2612f -> wood, i.e. invisible
+ *  against its own wall. */
+const CABIN_STEP = 0x9a7050; // -> bark
+const CABIN_DOOR = 0x8a5330; // -> bark
 
 /**
  * logCabin — a gabled log cabin with corner log-ends, a chimney and a step.
@@ -619,8 +870,17 @@ export function makeLogCabin(params: PropParams, h: number): THREE.Group {
   const endMat = toon({ color: CABIN_LOG_END });
   const roofMat = toon({ color: params.roofColor ?? CABIN_ROOF });
   const trimMat = toon({ color: CABIN_TRIM });
-  const stoneMat = toon({ color: 0x6e6a63 });
-  const shingleMat = toon({ color: 0x3b2c25 });
+  const shingleMat = toon({ color: CABIN_SHINGLE });
+  const stepMat = toon({ color: CABIN_STEP });
+  const doorMat = toon({ color: CABIN_DOOR });
+  const chinkMat = toon({ color: CABIN_CHINK });
+  const baseMat = toon({ color: CABIN_BASE });
+  // THE THREE THAT MUST STAY DARK SAY SO. See the palette note above: without
+  // the tag the style lifts all three into the warm mid-tones, and the cabin
+  // loses its roof, its chinking and its footing in one pass. `madboxRole`
+  // lives on the MATERIAL, so it survives `applyPropParts`, the editor's part
+  // tree and `collapseByMaterial` alike — none of which know what a roof is.
+  for (const m of [roofMat, chinkMat, baseMat]) m.userData.madboxRole = "ink";
 
   // The box, in units of the cabin's own height.
   const bodyW = 0.7 * W; // gable-end width (X)
@@ -639,7 +899,7 @@ export function makeLogCabin(params: PropParams, h: number): THREE.Group {
   // --- 0: the foundation. A grey plinth a little wider than the walls.
   // Without it the bottom log sits half-buried in the soil, which is what the
   // reference's own stone course is there to prevent.
-  const found = part(new THREE.BoxGeometry(bodyW * 1.06, footY, bodyL * 1.05), stoneMat, "foundation", g);
+  const found = part(new THREE.BoxGeometry(bodyW * 1.06, footY, bodyL * 1.05), baseMat, "foundation", g);
   found.position.y = footY / 2;
 
   // --- 1: the body. ONE extruded pentagon — rectangle plus gable triangle —
@@ -660,7 +920,7 @@ export function makeLogCabin(params: PropParams, h: number): THREE.Group {
     curveSegments: 1,
   });
   bodyGeo.translate(0, 0, -halfL);
-  part(bodyGeo, logMat, "body", g);
+  part(bodyGeo, chinkMat, "body", g);
 
   // --- 2: the log courses. Every wall's bars in ONE merged mesh — thirty-odd
   // draw calls is not what a prop should cost.
@@ -745,15 +1005,22 @@ export function makeLogCabin(params: PropParams, h: number): THREE.Group {
     //
     // Four stepped courses in a lighter tone, children of the slab so they
     // inherit its pitch rather than needing the angle typed twice.
-    for (let i = 0; i < 4; i++) {
-      const along = -slabLen / 2 + (slabLen * (i + 0.55)) / 4;
+    // FIVE, THINNER AND LOWER THAN v1's FOUR (v5). With the roof on ink the
+    // courses are a whole rung lighter than the field they sit on instead of
+    // a whole rung darker, so the same geometry reads far louder: at the play
+    // camera four wide proud battens made the roof CORRUGATED rather than
+    // shingled. They are children of the slab, so this count is free of the
+    // def's saved part edits, which address root indices only.
+    const SHINGLE_COURSES = 5;
+    for (let i = 0; i < SHINGLE_COURSES; i++) {
+      const along = -slabLen / 2 + (slabLen * (i + 0.55)) / SHINGLE_COURSES;
       // THIN AND DARK — a shadow GAP between courses, not a plank laid on
       // top of one. Built at 0.2 of the slope in the pale trim colour they
       // covered four fifths of the roof and inverted it: the cabin came back
       // with a pale planked lid and dark lines, where the reference is a dark
       // roof with darker joints.
       const course = part(
-        new THREE.BoxGeometry(slabLen * 0.055, slabT * 0.55, roofZ * 1.006),
+        new THREE.BoxGeometry(slabLen * 0.045, slabT * 0.42, roofZ * 1.006),
         shingleMat,
         "shingle" + i,
         slab,
@@ -803,7 +1070,7 @@ export function makeLogCabin(params: PropParams, h: number): THREE.Group {
     g,
   );
   chim.position.set(chimX, (chimTop + chimBase) / 2, -halfL * 0.3);
-  const cap = part(new THREE.BoxGeometry(chimW * 1.3, 0.035 * H, chimW * 1.3), stoneMat, "chimneyCap", g);
+  const cap = part(new THREE.BoxGeometry(chimW * 1.3, 0.035 * H, chimW * 1.3), baseMat, "chimneyCap", g);
   cap.position.set(chimX, chimTop, -halfL * 0.3);
 
   // --- 8..: the openings. Three pixels each on the board; they are here for
@@ -824,7 +1091,6 @@ export function makeLogCabin(params: PropParams, h: number): THREE.Group {
     emissive: params.windowColor ?? 0x8fc4e0,
     emissiveIntensity: params.windowEmissiveIntensity ?? 0.35,
   });
-  const doorMat = toon({ color: 0xa2612f });
   const winW = 0.13 * W;
   const winH = 0.11 * H;
   const addWindow = (x: number, y: number, z: number, faceZ: boolean, name: string) => {
@@ -854,8 +1120,49 @@ export function makeLogCabin(params: PropParams, h: number): THREE.Group {
   // reads as a painted panel.
   const door = part(new THREE.BoxGeometry(0.11 * W, 0.2 * H, 0.024 * W), doorMat, "door", g);
   door.position.set(0, footY + 0.1 * H, halfL + proud);
-  const step = part(new THREE.BoxGeometry(0.17 * W, 0.035 * H, 0.07 * W), stoneMat, "step", g);
+  // ITS FRAME IS A CHILD OF THE DOOR, NOT A SIBLING — and that is a data
+  // constraint, not a style. Every window here has its frame as a separate
+  // root child, which was fine until someone used them: the shipped def
+  // carries hand-authored part edits at paths "11".."16" and "19", so the
+  // door has been MOVED from where this code puts it. A sibling frame would
+  // have stayed behind at the authored position while the door it frames sat
+  // somewhere else — and nothing would have errored. As a child it inherits
+  // the edit for free, and it adds no root-level index, which matters just as
+  // much: an insert anywhere before "19" silently re-points all seven of
+  // those saved edits onto different parts. **New parts go at the END of the
+  // child list, or inside an existing one.**
+  const doorFrame = part(
+    new THREE.BoxGeometry(0.11 * W * 1.3, 0.2 * H * 1.09, 0.018 * W),
+    trimMat,
+    "doorFrame",
+    door,
+  );
+  doorFrame.position.set(0, 0.2 * H * 0.03, -0.004 * W);
+  const step = part(new THREE.BoxGeometry(0.17 * W, 0.035 * H, 0.07 * W), stepMat, "step", g);
   step.position.set(0, footY + 0.0175 * H, halfL + proud + 0.038 * W);
+
+  // --- 9: the REAR gable's bargeboards, appended last for the reason above.
+  //
+  // The front pair has been here since v1 and the back of the building had a
+  // raw roof edge, which the turntable is exactly the instrument for: a prop
+  // that only works from one side. It matters here rather than being tidiness,
+  // because a placement sets `rotationY` freely — the gable the player sees is
+  // whichever one the author turned toward the camera — and the showcase
+  // stands landmarks at a yaw aimed at the viewer. Two meshes.
+  for (const s of [-1, 1]) {
+    const bb = part(
+      new THREE.BoxGeometry(slabLen, slabT * 0.85, 0.03 * W),
+      trimMat,
+      s < 0 ? "bargeRearL" : "bargeRearR",
+      g,
+    );
+    bb.rotation.z = -s * Math.atan(slope);
+    bb.position.set(
+      (s * run) / 2,
+      (ridge + (wallTop - eaveOut * slope)) / 2 + slabT * 0.1,
+      -(halfL + 0.077 * W),
+    );
+  }
 
   // A degree of settle, so two cabins in one theme are not stamped.
   g.rotation.y = (rnd() - 0.5) * 0.06;

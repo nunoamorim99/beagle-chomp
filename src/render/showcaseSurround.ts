@@ -397,7 +397,7 @@ export function buildShowcaseBand(
       } else if (kind === "woodland") {
         child =
           roll < 0.82
-            ? distantConifer(m, { height: 3.2 + hash(i, s) * 2.2, seed: s })
+            ? distantConifer(m, { height: 3.2 + hash(i, s) * 2.2, seed: s, detail: 1 })
             : roll < 0.94
               ? distantBroadleaf(m, { height: 2.4 + hash(i, s + 1) * 1.0, seed: s })
               : distantShrubClump(m, { radius: 0.7, seed: s });

@@ -25,6 +25,8 @@
       //   ?view=34|front|right|rear|left|top|face   named presets (az wins if both given)
       //   ?el=<deg>      elevation above the horizon (default 12; matched to the ref for 34)
       //   ?toon=1        swap every lit material for the game's cel-shaded toon() look
+      //   ?style=classic reviews in the AUTHORED cel-shaded look instead of the
+      //                  shipped matcap one. The default is what ships.
       //   ?grid=0 ?hud=0
       import * as THREE from "three";
       import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
@@ -40,6 +42,13 @@
       // class the off-axis gate exists for.
       import { makePropById } from "/src/render/board.ts";
       import { toon } from "/src/render/toon.ts";
+      import {
+        applyMadboxStyle,
+        boardBounce,
+        liftPaletteForMadbox,
+        makeMadboxCaches,
+      } from "/src/render/madboxStyle.ts";
+      import { MAZE_THEMES, getEquippedMazeTheme, setEquippedMazeThemeId } from "/src/game/themes.ts";
 
       const q = new URLSearchParams(location.search);
       const VIEW_AZ = { front: 0, right: 90, rear: 180, back: 180, left: 270, "34": 42 };
@@ -47,6 +56,18 @@
       const az = q.get("az") !== null ? Number(q.get("az")) : (VIEW_AZ[view] ?? 42);
       const el = q.get("el") !== null ? Number(q.get("el")) : (view === "top" ? 80 : 12);
       const showHud = q.get("hud") !== "0";
+
+      // THE SHIPPED STYLE IS THE DEFAULT, and its palette lift has to happen
+      // HERE — before any model is built — because the lift edits authored
+      // data that a generated texture bakes in at construction time. See the
+      // `?style` note further down for why reviewing in the other look is a
+      // harness mismatch rather than a preference.
+      const MADBOX = q.get("style") !== "classic";
+      const PREVIEW_THEME = q.get("theme") ?? "forest";
+      if (MADBOX) {
+        if (MAZE_THEMES.some((t) => t.id === PREVIEW_THEME)) setEquippedMazeThemeId(PREVIEW_THEME);
+        liftPaletteForMadbox(PREVIEW_THEME, getEquippedMazeTheme().palette);
+      }
 
       const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, alpha: true });
       renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -212,6 +233,42 @@
         });
       }
 
+      // ?style — AND THE DEFAULT IS WHAT SHIPS.
+      //
+      // IDEA-079 made the matcap look the game's normal state while every
+      // source file still AUTHORS in `toon()`, so this page was drawing a prop
+      // in an art direction no player has seen since. That is not a cosmetic
+      // gap: the whole point of a review render is to answer "does this read",
+      // and a matcap answers it differently from a cel ramp — it has no
+      // emissive channel, its value structure comes from the sphere-lit
+      // texture rather than from a 3-step quantisation, and the palette SNAP
+      // moves authored colours onto the high-key library before anything is
+      // drawn. A detail tuned to read in toon can disappear in matcap and the
+      // other way round.
+      //
+      // This is the same correction `/preview-board/` already needed (its own
+      // note: defaulting to classic "made every unparameterised shot of this
+      // harness a picture of the old game — and one of them was read as a
+      // defect in the new one"), and the fifth instrument mismatch in this
+      // project after ?fov=, ?bg=none, the ?toon= material array and the
+      // surround-seam probe. Suspect the harness first.
+      //
+      // The PALETTE LIFT runs for the same reason the board's does: a prop
+      // that takes a colour off the theme (the cabin's roof is independent,
+      // but a hedge-coloured prop is not) must see the lifted number, and the
+      // lift is applied to authored data before anything reads it.
+      //
+      // An ENEMY is skipped by applyMadboxStyle itself (its userData says its
+      // colour is driven from outside), so ?model=flea still draws in toon —
+      // correctly, because that is what a flea looks like in the shipped game.
+      //
+      // The theme and the palette LIFT are set at the top of this file, before
+      // the model is built: the lift edits authored data that a texture would
+      // bake in, so running it afterwards is a number nothing reads again.
+      if (MADBOX) {
+        applyMadboxStyle(model, boardBounce(getEquippedMazeTheme().palette), makeMadboxCaches());
+      }
+
       const box = new THREE.Box3().setFromObject(model);
       const size = box.getSize(new THREE.Vector3());
       const centre = box.getCenter(new THREE.Vector3());
@@ -262,7 +319,7 @@
         tris += g.index ? g.index.count / 3 : g.attributes.position.count / 3;
       });
       hud.textContent =
-        `${modelName}  az ${az} el ${el}${q.get("toon") === "1" ? " toon" : ""}\n` +
+        `${modelName}  az ${az} el ${el}  ${MADBOX ? "madbox" : "classic"}${q.get("toon") === "1" ? " toon" : ""}\n` +
         `size    ${size.x.toFixed(2)} w x ${size.y.toFixed(2)} h x ${size.z.toFixed(2)} l\n` +
         `floor   ${box.min.y.toFixed(3)}\n` +
         `meshes  ${meshes}\n` +

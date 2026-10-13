@@ -29,7 +29,7 @@ import { MAZES } from "../src/game/mazes";
 import { MAZE_THEMES } from "../src/game/themes";
 import { PROP_LIBRARY, PROP_SHAPE_FIELDS, WALL_TOP_SHAPES, getPropDef, type PropParams } from "../src/game/props";
 import { seedColorFor } from "../src/editor/propsSeedColors";
-import { buildProps } from "../src/render/board";
+import { buildProps, makePropById } from "../src/render/board";
 import { buildFence, fencePanelCount, FENCE_H } from "../src/render/fence";
 import { buildGroundDetail, GROUND_DETAIL_PARAMS } from "../src/render/groundDetail";
 import { lobedRoughness } from "../src/render/foliage";
@@ -583,17 +583,165 @@ ok(
   seedColorFor("petalColor", { flowerKind: "sunflower" }) !== seedColorFor("petalColor", { flowerKind: "daisy" }),
 );
 
-// The six critter defs must NOT carry colour overrides at all: their palettes
-// live per-kind in forestCritters.ts, and an override is exactly what the
-// white-seed bug left behind.
+// A critter def may not DISAGREE with its kind's own palette.
+//
+// This asked for no override AT ALL until IDEA-065 v10, and that was the
+// wrong shape of rule — it went red on a harmless editor action. The Props
+// tab writes a seed into `def.params` the moment it builds a colour control
+// (the whole subject of propsSeedColors.ts), so merely OPENING the deer's
+// colours pinned three values into the def. Since v3 those seeds are the
+// kind's own colours, so the pin is redundant rather than wrong, and a suite
+// that fails on it teaches people to ignore it.
+//
+// What has to stay true is that the def never says something DIFFERENT from
+// `CRITTER_COLORS`. That still catches the white-seed bug — white is not any
+// kind's fur — and it catches the other half the strict rule was protecting:
+// retune a kind's palette and a stale pin stops matching, which is exactly
+// when someone needs to be told.
 for (const d of PROP_LIBRARY.filter((x) => x.shape === "critter")) {
+  const kind = String(d.params.critterKind ?? "");
+  const disagrees = (["furColor", "bellyColor", "accentColor"] as const).filter((key) => {
+    const pinned = d.params[key];
+    if (pinned === undefined) return false;
+    const map = { furColor: "furColor", bellyColor: "bellyColor", accentColor: "accentColor" } as const;
+    return pinned !== seedColorFor(map[key], { critterKind: kind } as PropParams);
+  });
   ok(
-    `${d.id} leaves its colours to the kind's own palette`,
-    d.params.furColor === undefined &&
-      d.params.bellyColor === undefined &&
-      d.params.accentColor === undefined,
-    "a def-level override here makes CRITTER_COLORS unreachable",
+    `${d.id} never disagrees with its kind's own palette`,
+    disagrees.length === 0,
+    disagrees
+      .map((k) => `${k}=#${Number(d.params[k]).toString(16)} vs the ${kind}'s own`)
+      .join(", "),
   );
+}
+
+
+// ---------------------------------------------------------------------------
+section("The deer's hind leg is a Z, which is what makes it not a table");
+
+{
+  // IDEA-065 v8. Nuno: *"the legs of the deer, they are literally sticks."*
+  // They were four constant-radius capsules running hip to floor, and the two
+  // things that fixes are both SHAPE invariants rather than tuning numbers —
+  // which is the only reason they are asserted here. A deer's hind leg bends
+  // backwards at the HOCK and its legs taper from a haunch to a shank; undo
+  // either and the animal goes back to a barrel on four dowels, with nothing
+  // to error and nothing in any other check to notice.
+  const deer = makePropById("critter-deer", 0.17);
+  deer.updateMatrixWorld(true);
+  // LOCAL positions, not world ones. `makeForestCritter` gives the whole
+  // animal a random yaw per instance (so a row of them is a group rather than
+  // a rank), which rotates x and z — the first version of this check read
+  // world coordinates and reported a correct leg as bending the wrong way.
+  // Every leg part is a sibling in the body's own group, so their local
+  // positions are already in the one frame where "behind" means anything.
+  const at = (name: string): THREE.Vector3 | undefined => {
+    let v: THREE.Vector3 | undefined;
+    deer.traverse((o) => {
+      if (o.name === name && !v) v = o.position.clone();
+    });
+    return v;
+  };
+
+  // `jointedLimb` names a ball per joint, so the chain is readable back off
+  // the finished prop without knowing any of its numbers.
+  const hip = at("legBRJoint0");
+  const stifle = at("legBRJoint1");
+  const hock = at("legBRJoint2");
+  // The FETLOCK has no knuckle by design — it is the chain's last point and
+  // the hoof caps it — so the foot is read off the hoof. The first version of
+  // this check asked for `legBRJoint3` and failed a correct model, which is
+  // this project's standing rule about suspecting the instrument.
+  const fetlock = at("hoofBR");
+  ok(
+    "the hind leg has its three bending joints plus a hoof",
+    [hip, stifle, hock, fetlock].every(Boolean),
+    "jointedLimb names one ball per bend",
+  );
+  if (hip && stifle && hock && fetlock) {
+    // The hock is the REARMOST point of the leg, behind both the joint above
+    // it and the foot below it. A straight leg has no such point.
+    ok(
+      "the hock sits behind the stifle above it",
+      hock.z < stifle.z - 0.02,
+      `hock z ${hock.z.toFixed(3)} vs stifle ${stifle.z.toFixed(3)}`,
+    );
+    ok(
+      "...and behind the fetlock below it",
+      hock.z < fetlock.z - 0.01,
+      `hock z ${hock.z.toFixed(3)} vs fetlock ${fetlock.z.toFixed(3)}`,
+    );
+    // And the joints descend, or the chain has folded back on itself.
+    ok(
+      "the chain runs downward from hip to hoof",
+      hip.y > stifle.y && stifle.y > hock.y && hock.y > fetlock.y,
+      [hip.y, stifle.y, hock.y, fetlock.y].map((n) => n.toFixed(2)).join(" > "),
+    );
+  }
+
+  // THE TAPER, read off the cylinders' own parameters rather than measured:
+  // a truncated cone knows its two radii, so this cannot drift from what was
+  // built.
+  const radiusOf = (name: string, end: "top" | "bottom"): number | undefined => {
+    let r: number | undefined;
+    deer.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (m.name !== name || r !== undefined) return;
+      const p = (m.geometry as THREE.CylinderGeometry).parameters as
+        | { radiusTop: number; radiusBottom: number }
+        | undefined;
+      if (p) r = end === "top" ? p.radiusTop : p.radiusBottom;
+    });
+    return r;
+  };
+  // The LAST segment, found rather than typed. The first version named
+  // `legBRSeg2` and failed a correct model the moment the chain grew a
+  // fetlock — an instrument pinned to a count it does not own.
+  let lastSeg = -1;
+  deer.traverse((o) => {
+    const m = /^legBRSeg(\d+)$/.exec(o.name);
+    if (m) lastSeg = Math.max(lastSeg, Number(m[1]));
+  });
+  const haunch = radiusOf("legBRSeg0", "bottom");
+  const shank = radiusOf(`legBRSeg${lastSeg}`, "top");
+  // TWO AND A HALF, NOT THREE, BECAUSE THE SUBJECT CHANGED (v11). The cone
+  // used to BE the muscle, so its own taper was the whole story and three to
+  // one described the shipped value. A deer's thigh is a rounded mass and a
+  // truncated cone is a RULED surface — fattened to carry a haunch it reads
+  // as a flat slab, which is what v11's first tuning shipped — so the muscle
+  // is a blob over the cone now and the cone is slimmer. The threshold has to
+  // follow the thing it measures, and what it still refuses is a DOWEL. The
+  // haunch check below is where the muscle is asserted.
+  ok(
+    "the hind leg still tapers from hip to fetlock",
+    haunch !== undefined && shank !== undefined && haunch / shank >= 2.5,
+    `${haunch?.toFixed(3)} at the hip against ${shank?.toFixed(3)} at the fetlock`,
+  );
+  // And the HAUNCH is the widest thing on the leg — the reference's own
+  // reading, where the limb is a swelling of the body that only becomes a
+  // tube below the belly.
+  let haunchR = 0;
+  deer.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (!m.isMesh || !/^haunch/.test(m.name)) return;
+    const g = m.geometry.getAttribute("position");
+    let w = 0;
+    for (let i = 0; i < g.count; i++) w = Math.max(w, Math.abs(g.getX(i) * m.scale.x));
+    haunchR = Math.max(haunchR, w);
+  });
+  ok(
+    "the haunch is a real mass, several times the shank",
+    shank !== undefined && haunchR / shank >= 3,
+    `haunch ${haunchR.toFixed(3)} against shank ${shank?.toFixed(3)}`,
+  );
+
+  // The hooves are the one place `k.dark` reaches the ground, and they are
+  // what stops a tapering leg reading as one that was cut off.
+  let hooves = 0;
+  deer.traverse((o) => {
+    if ((o as THREE.Mesh).isMesh && /^hoof/.test(o.name)) hooves++;
+  });
+  ok("all four feet have a hoof", hooves === 4, `${hooves} found`);
 }
 
 console.log("\n" + "-".repeat(60));
