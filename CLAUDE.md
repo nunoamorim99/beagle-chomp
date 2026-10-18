@@ -1744,7 +1744,7 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v9.
   PROPS. Eleven subjects from references, in `src/render/forestProps.ts` (the
   pine, the log cabin, the nest tree, the perched bird),
   `src/render/forestCritters.ts` (six animals) and `makeGardenFlowerHead` in
-  `gardenProps.ts`. Nineteen rules are load-bearing.
+  `gardenProps.ts`. Thirty rules are load-bearing.
   1. **THE PINE IS A REWRITE IN PLACE, AND IT IS THE ONE EXCEPTION TO
      IDEA-060's RULE.** That rule was about `shrub` and `tree`, which the park
      and the forest both use — rewriting one silently re-dresses a theme
@@ -2239,6 +2239,513 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v9.
      square-on at the three-quarter, where it is a flat kite. Deepen the fin
      and the yaw can come back; tuning either alone overshoots into the other
      view.
+  20. **"THE TAIL IS TRANSPARENT" WAS A WINDING BUG, AND IT IS THE SECOND TIME
+     THIS PROJECT HAS SHIPPED ONE** (v16, Nuno: *"the tail is transparent...
+     the tail should be pointing up and should have other form, this dont look
+     like a tail, and should be pointed on the edge"*). `ringedTail` wound its
+     walls `(a, c, d) / (a, d, b)` — the OPPOSITE orientation to
+     `taperedSweepGeometry`'s `(a, b, c) / (b, d, c)` — so every wall normal
+     pointed INWARD. Measured: **518 of the fox's 528 tail faces, 372 of the
+     raccoon's, 356 of the squirrel's.** A back-facing wall is CULLED, so the
+     near side of the tube is never drawn and what reaches the screen is the
+     INSIDE of the far wall: the body visible through the tail, lit from the
+     wrong side. `taperedSweepGeometry`'s own header has recorded this exact
+     defect since IDEA-047 ("the dog rendered hollow").
+     **AN INVERTED TUBE HAS THE SAME SILHOUETTE AS A CORRECT ONE**, which is
+     why no render caught it across three models and several review passes —
+     it reads as odd shading, not as a hole. So the guard is on FACE WINDING
+     (`test-garden-props.ts`, 7 checks, verified by re-injecting the original
+     order and watching all three fail). **Every tuning done on these tails
+     before v16 was done against geometry that was not being drawn.**
+     **AND CAPPING THE ENDS RETIRED A WHOLE CLASS OF WORKAROUND.** An open
+     tube has two visible rims, and the fox's comments carried a separate fix
+     for each: bury the base inside the rump, and make the white tip a BLOB
+     wider than the final ring. That second one is why the brush could only
+     ever end BLUNT — the thing hiding the rim was exactly IDEA-065 v1's
+     "cream snowball stuck on the end". With the ends capped the rim does not
+     exist, the radius profile can run to 0.02, and the white tip is a BAND on
+     the brush's own last quarter (`tipFrom`, a single boundary, beside
+     `bands`, the raccoon's alternating one). The tip blob is deleted.
+     **LENGTH OVER WIDTH IS THE NUMBER FOR A BRUSH, AND IT IS ABOUT 3.** The
+     first raised build measured 1.47 long against 0.70 across — 2.1, which is
+     not a fat tail but a BLADE: at that ratio the curve's whole bend happens
+     inside one diameter and the thing reads as a comma. It ships at 1.73 over
+     0.55. The profile is narrow at the rump, widest at a third and a point,
+     which no pair of end radii can describe — a steady taper from a fat base
+     is a CARROT and parallel sides are a bolster — so `ringedTail` takes a
+     control-point `profile`, sampled through a **Catmull-Rom**: linear
+     interpolation leaves a normal discontinuity at every control ring and the
+     brush comes out banded by rings nobody authored. Clamp it at zero, since
+     a Catmull-Rom overshoots on the way into a sharp tip and a negative
+     radius turns the last rings inside out.
+     The raised pose is Nuno's call and it earns its keep at the apron: the
+     brush is then the only part of this animal with vertical extent apart
+     from the ears, and it stops short of them on purpose — the ears are rank
+     1 and must stay the top of the outline.
+  21. **A HEAD IS ONE SWEPT WEDGE, AND A COLOUR REGION ON IT IS A MATERIAL
+     GROUP** (v17, Nuno: *"the ears and the head shape are not quite there.
+     Then the snout, are to weird, lets make this looke more like a fox
+     snout"*). The fox's head was a BALL with a TUBE and a second smaller TUBE
+     stuck on the front — three solids, therefore two creases, and a crease
+     across a muzzle reads as a STEP, so the snout looked bolted on. It is
+     rule 17's lesson, which the deer's barrel acted on and the fox's head
+     never did. Measured off the reference a fox's head is a single continuous
+     narrowing whose muzzle ends at about a quarter of the brow's width, and
+     one `taperedSweepGeometry` says exactly that and cannot say anything
+     else.
+     **TWO SEPARATE DEFECTS LIVED IN THE "CONE" IT FIRST BECAME.** A steady
+     taper from crown to nose is a FENNEC — the brow has to hold its full
+     width well past the eyes and then stop ABRUPTLY, and the muzzle has to
+     end BLUNT rather than run on to a needle. And the eyes are what set where
+     that stop goes: `eye()` aims its whole stack along `normalize(x, 0, z)`,
+     so a forward gaze needs the eye well forward — while an eye placed
+     forward on a head that has already begun narrowing stands proud of the
+     silhouette as a BUMP ON THE MUZZLE. The two constraints meet only if the
+     dome is still broad at the eye, which is what fixed both.
+     **THE WHITE MASK IS A GROUP ON THE SKULL, NOT A SURFACE ON IT**
+     (`sweepBanded`). It was first a SECOND sweep of the muzzle's own stations
+     at 1.04, which is the obvious move and wrong twice: two sweeps
+     parallel-transport their frames from their own first tangents, so their
+     rings do not line up and the 4% offset is not uniform — it tore through
+     the skull in a ragged line under the eye. And even built perfectly it is
+     a second surface where the model wants a second COLOUR. Grouping the one
+     mesh also lets the boundary run ALONG the form as well as around it,
+     which is what a muzzle needs: cream sides and underside, orange bridge on
+     top. The ear's dark rear is the same fix for the same reason — as a solid
+     behind the shell it has to stand proud somewhere to be seen at all, and
+     on an outward-yawed ear that somewhere is the OUTER SILHOUETTE, i.e. a
+     hard black rim. **That rim is what Nuno had hidden in `props.ts`, and he
+     was right to.**
+     **AN EAR'S PROPORTION IS RANK 1 AND IT WAS OUT BY THREE TIMES.** Measured
+     on the reference an ear is about **1.9 long for 1 wide** and about as
+     long as the head is tall; the shipped pair were 0.45 tall on a 0.67 base,
+     i.e. WIDER THAN TALL. (An older note here recorded that a narrower fin
+     "read as HORNS" — judged at 1.13, still nowhere near the reference, and
+     the horn read came from the fin being a flat sliver rather than from its
+     width.) **It is also a LEAF, not a cone**: a cone's silhouette is two
+     straight lines from a base that is its widest point, and the reference's
+     ear curves in to the point from a broad base — so it is the brush's
+     construction again, swept stations with a profile, which gives it real
+     depth instead of a primitive scaled flat.
+     **AND APPARENT WIDTH IS NOT WIDTH.** The rebuilt ear measured 2.68
+     tall-for-wide on the review render against a correct 1.85 in three
+     dimensions: at a yaw of 0.26 its plane sits 49 degrees off face-on from
+     that camera, which compresses it to 0.66. **Check which of the two a
+     measurement is before acting on it** — the correction here is split
+     between the table and the yaw precisely because a prop takes a random yaw
+     on the board and so is seen from every azimuth.
+     `test-garden-props.ts` guards it (11 checks): no separate snout solid, the
+     mask and the ear's rear are material groups, and the ear's aspect and
+     base width. **The guard itself was wrong twice and the second one is the
+     instructive one** — "the widest point is in the lower third" sounds like
+     the shape and is not, because the fox profile and the rabbit profile both
+     put their maximum at 32% of the height, so it PASSED on the re-injected
+     defect. What separates them is how broad the ear is where it LEAVES THE
+     HEAD. Suspect the instrument first, and re-inject every defect.
+  22. **EDITABILITY IS A REQUIREMENT, AND THE FOX'S HEAD IS NOW THE BEAGLE'S**
+     (v18-v19). Rule 21 merged the fox's head into one sweep to kill a crease,
+     and Nuno rejected the trade: *"the snout be only one piece can be
+     difficult to edit now"*, then *"lets take the beagle head and make
+     something like that, the same parts, then I edit the parts on the fox to
+     look more like a fox. The only thing we can reuse is the ears."* A part
+     inside another mesh has NO TRANSFORM OF ITS OWN — the Props tab cannot
+     move, scale or recolour it, and the whole face collapses to one row in
+     the Components tree. **Weigh that before merging anything somebody
+     authors against.**
+     So the fox's head is the beagle's head literally: the same parts, in the
+     same order, from the same primitives at the same relative positions,
+     scaled by `HS` — skull (a `SPHERE_PROFILE` lathe), muzzle, **bridge**,
+     nose, jaw, brow swells. The bridge is the piece that matters and its own
+     comment in `characters.ts` says why: it "is what joins muzzle and skull
+     into one face". **Covering a junction works as well as removing it**, so
+     the narrower statement of rules 17 and 21 is: two overlapping solids DO
+     meet at a crease, and you may either remove the junction or COVER it —
+     editability decides which.
+     **THE PROFILES ARE COPIED, NOT IMPORTED.** The muzzle, nose and bridge
+     tables are the fox's own copies of the beagle's numbers, because they
+     exist to be tuned AWAY from the dog and sharing them would mean a fox
+     edit repainting the beagle every player is looking at. Two tables meant
+     to diverge are not duplication. `SPHERE_PROFILE` is imported — it is a
+     sphere with nothing fox-specific to become. One colour deviates on
+     purpose: the beagle's bridge is white because its whole muzzle is, and
+     the fox's is FUR, since a pale muzzle under an orange bridge is the most
+     recognisable thing about a fox's face. And port the beagle's **LENS**
+     with its eye (0.66 across, not this module's 0.95) or it stands 57% of
+     its radius proud and the far one is a white arc off the side of the head.
+     **A SEPARATE PART MUST STILL AGREE WITH WHAT IT GROWS OUT OF** (v18's
+     finding, still true): a slim tube pushed into a ball is under half the
+     skull's width where it emerges, so the junction is a hard ledge and it
+     looks exactly as bolted on as three solids did.
+     **AND THE GUARD WAS REWRITTEN THREE TIMES IN TWO DAYS, WHICH IS THE
+     REUSABLE PART.** v17's asserted "there is no separate muzzle"; v18's
+     asserted the opposite plus a tangency ratio. Both pinned a SOLUTION, and
+     the solution was replaced twice by the person who has to live with it.
+     **A test must not pin numbers on a part somebody is actively authoring**
+     — every shape ratio would fail on his next editor save and read as a
+     broken build. `test-garden-props.ts` now asserts only what is stable:
+     that each piece is a separate named part the editor can reach, that
+     **nothing is buried inside the skull** (the defect this project has
+     shipped six times — verified by shrinking the bridge to 0.4 and watching
+     it fail), and the ear invariants Nuno has signed off.
+     **THE PALE LOWER FACE WAS TRIED AS PATCHES THREE WAYS FIRST** — a cheek
+     blob, a second sweep, a pair of tufts — and every one read as a MARK on
+     an orange ball, because **a marking that does not reach the form's own
+     edges is a mark**. On the beagle's head the muzzle part carries it. When
+     a round form does need a colour region, `sweepBanded`'s sibling
+     `latheBanded` cuts it on `LatheGeometry`'s own (azimuth, profile) grid
+     rather than on a triangle's mean — IDEA-055 rule 3 for the third time in
+     this file. (An earlier version of this note said that helper could be
+     recovered from git after v19 deleted it. **It could not** — it had only
+     ever lived in the working tree, so there was nothing to recover; v23
+     rewrote it, generalised to N bands. Check that something was committed
+     before telling a future reader to go and get it.)
+     **THE CHEEK FUR IS POINTS, NOT THE MASS.** Nuno asked for the fur on the
+     sides of the face by name; sized to carry the colour it is two fins on
+     the jaw, which three tunings of it were. **Aim it with a frame, never
+     Euler angles** (IDEA-060 rule 5, now twice in this file): three.js
+     applies an XYZ Euler as Rx*Ry*Rz, so the `rotation.z` that swings a tuft
+     outward is itself rotated by the `rotation.y` beside it — the first pair
+     pointed INWARD and the whole feature rendered as nothing.
+  23. **THE FOX'S LEGS ARE THE BEAGLE'S LEGS, AND THE RISK WAS THE MIGRATION**
+     (v20, Nuno: *"lets improve a little bit the legs and the paws, lets make
+     something like the beagle legs on the fox too"*). Rule 22's construction
+     one part along: a PIVOT per leg, one swept tapered mesh inside it, a
+     LATHE paw bulb. Twelve top-level parts become four — each leg used to be
+     two `jointedLimb` chains plus a paw blob, two chains because a material
+     boundary mid-limb is the one thing a jointed chain cannot express and the
+     fox's stocking is exactly that. `sweepBanded` says it on one mesh
+     instead, so there is no joint to misalign and no pair of radii to keep in
+     step. **A PAW IS WIDER THAN ITS SHAFT** (the beagle's is ~1.5x) or the
+     leg reads as CUT OFF — v8's hoof lesson on another foot — and it must not
+     overhang far forward either, because a bulb seen from the side is judged
+     on its PROJECTION past the leg rather than on its own size. The beagle's
+     `Rest` group is deliberately not ported: it exists so the trot cannot
+     erase a rest angle, and nothing animates a prop's legs.
+     **A STRUCTURAL CHANGE ANYWHERE SHIFTS EVERY INDEX AFTER IT, AND NUNO
+     AUTHORS BETWEEN TURNS.** He had just saved **13 part edits** on the head;
+     dropping eight leg children moved `head` from index 11 to 7, which would
+     have re-pointed all thirteen onto legs in silence. Resolve old path ->
+     NAME -> new path with a **dry run printed first**, even when the shift
+     looks uniform — "obviously uniform" is the assumption that does the
+     damage. **Re-read `props.ts` at the start of every turn**, not from
+     memory: a def that had no edits last turn can have a dozen this one.
+     **AND A CHECK THAT CANNOT FAIL IS WORSE THAN NO CHECK.** The paws-on-the
+     -floor guard was wrong twice. First with an absolute world threshold,
+     which is a different threshold on every animal because a critter is
+     scaled to its kind's height — it passed on a foot re-injected 0.13 model
+     units off the ground. Rewritten against the model's own height it passed
+     again, and the reason is the reusable one: **`fitToHeight` re-seats the
+     group on its own lowest vertex**, so "the whole animal floats" is
+     UNREPRESENTABLE and nothing can detect it. The real defect is ONE foot
+     hanging while the others carry the floor, and that is what it asserts —
+     verified by lifting the front-left pivot alone. **Re-inject every defect;
+     a guard that has never been seen to fail has not been tested.**
+  24. **A BLOB CANNOT COME TO A POINT, AND "THE TIP IS NARROW" DOES NOT PROVE
+     IT DOES** (v21, Nuno on the raccoon: *"lets make the ears more point and
+     not so rounded"*). `ear()` builds a flattened sphere; no tuning of it is
+     pointed, which v17 found on the fox and v21 found again. `pointedEar` is
+     that swept LEAF lifted into a shared helper and it returns the same
+     `<name>` / `<name>Shell` / `<name>Inner` subtree, so a def's saved edits
+     survive the swap. One number separates the animals — `broad`, the
+     profile's width against its length: a fox's ear is ~1.8 tall-for-wide, a
+     raccoon's ~1.2, and the same leaf at 1.0 is a floppy FLAP while at 0.76
+     it is a cat's spike.
+     **THE MEASURABLE DIFFERENCE IS THE WIDTH PART WAY UP, NOT AT THE TIP.** A
+     sphere comes to a point at its pole, so a tip check passes on the very
+     shape it is meant to reject — at 85% of its height a sphere is still
+     **71%** of its maximum width where a tapering leaf is under a quarter.
+     Verified by putting the raccoon back on `ear()` and watching the guard
+     fail at exactly 71%.
+     **AN EAR INNER MUST CLEAR ITS SHELL, AND THE ARITHMETIC IS NOT OBVIOUS.**
+     The shell's half-depth at its widest is 0.205 of the ear's length and the
+     inner's is 0.66 of that, so the inner has to step forward by their
+     DIFFERENCE before any of it is outside — short of that the ear renders as
+     a solid flap with a speck on it. Seventh buried part in this file.
+     `test-garden-props.ts` asserts it for every eared critter in **pivot-local
+     z**: the pivot carries the ear's tilt, splay and yaw, so world space turns
+     a clean comparison into noise.
+     **AND A MOUTH IS THE ONE PLACE THE CREASE IS THE FEATURE.** Rules 17, 21
+     and 22 are all about two overlapping solids meeting at a normal
+     discontinuity and how to remove or cover it; a snout of an upper and a
+     lower jaw is the case where the eye is MEANT to read that line. Tuck the
+     lower one under and back so the upper overhangs — level, they are a beak.
+     **THE WHITE AROUND A DARK MARKING IS WHAT GIVES IT AN EDGE.** The
+     raccoon's mask reads outward in three steps — black patch, bright band,
+     grey fur — and without the middle one a dark patch on a grey head has
+     only its own value to define it, which is the argument the bib was built
+     on. Set the band slightly larger and a little BEHIND the patch so the
+     dark still stands proud, and offset it UPWARD: a concentric ring reads as
+     a target, while the reference's band is thickest over the brow.
+     **AND THIS WHOLE ENTRY COST NO MIGRATION**, which is rule 23 paying for
+     itself: every new part went at the END of the head's children, so the
+     eight saved raccoon edits at indices 0-9 kept pointing at the same parts
+     and there was nothing to get wrong.
+  25. **A TAIL SWEEPING DOWN AND BACK IS THE ONE THAT FORESHORTENS, NOT THE
+     ONE CARRIED UP** (v22, Nuno: *"lets make one tail with the same shape of
+     the fox but with the stripes pattern of the raccoon"*). The raccoon's
+     tail carried a note saying a vertically-held tail smudges its bands at
+     the play camera, and therefore swept down and back. The arithmetic
+     inverts it: the camera looks **down AND forward** — view direction about
+     `(0, -0.857, -0.515)` at 59 degrees of elevation — so a tail sweeping
+     down and back runs very nearly ALONG it. The old axis measured **27
+     degrees** off the view direction, i.e. the rings were seen at **45%** of
+     their spacing; the fox's angle puts it at **94 degrees**, or **99.8%**.
+     A vertical tail would indeed be bad; pointing it downward was never the
+     fix. **Compute the angle to the view direction before deciding a feature
+     needs to be aimed away from the camera.**
+     It needed no new machinery: `ringedTail` has held both halves since v16 —
+     a control-point `profile` for the FORM and `bands` for an alternating
+     COLOUR — so the fox takes the first with `tipFrom` and the raccoon takes
+     the first with `bands`. Make the ring count a MULTIPLE of the band count
+     (28 against 7) so no boundary lands part-way along a taper.
+     **AND RULE 4 IS NOW PINNED FROM BOTH SIDES.** The squirrel's plume
+     arcing up and OVER its back is the one tail in the set that rises above
+     the head, and with three of these animals the same tan it is most of what
+     tells a squirrel from a raccoon. Raising the raccoon's is exactly the
+     change that could collapse the pair, so `test-garden-props.ts` asserts
+     the raccoon's tail stays BELOW its skull **and** the squirrel's clears
+     it — an assertion on one alone passes just as well on a squirrel whose
+     plume has been flattened, and the separation is gone either way.
+     **A SWEPT FORM HAS NO CONVENIENT AXIS, AND PICKING ONE IS HOW AN
+     INSTRUMENT MEASURES SOMETHING ELSE WITH CONFIDENCE.** The tip check
+     parameterised the tail along Z and failed a correct model at 0.188
+     against 0.324, because the tail sweeps UP — its z-extent is not its
+     length, so "the last 6% of z" scooped up fat rings from two thirds along.
+     `ringedTail` closes the far end with a fan around a single apex vertex
+     pushed LAST, so the apex's own triangle-neighbours ARE the final ring: by
+     construction, whatever the sweep does in between and whatever the ring
+     and radial counts are retuned to.
+  26. **A MARKING ON A ROUNDED FORM IS A MATERIAL GROUP, NOT A PATCH ON IT**
+     (v23, Nuno: *"the skull is too rounded and if you check the reference it
+     is not rounded, it actually has a form a little different from the
+     normal — and the mask and the browWhite should not be components, they
+     should be a colour pattern on the skull"*). Two asks with one answer,
+     because a LATHE can be given a silhouette AND cut into groups on its own
+     (azimuth, profile) grid.
+     **WHY A PATCH CANNOT WIN.** A marking built as its own solid has to stand
+     PROUD to be seen, so it has a silhouette of its own — and at any angle
+     where that silhouette shows, it reads as an OBJECT on the head rather
+     than as colour on it. That is what put the raccoon in sunglasses twice,
+     and why v21's white ring had to be sized and turned to chase the black
+     patch it was ringing. As groups neither can come adrift from the surface,
+     and the ring is free.
+     **AND `blob()` CANNOT MAKE A HEAD THAT IS NOT A SPHERE.** It is a scaled
+     sphere, so it can say "wider than deep" and it cannot say "widest at the
+     JOWLS, below the eye, then flattening toward the crown", which is what a
+     raccoon's skull does. A lathe profile says both.
+     **THE REAL COST IS NOT RESOLUTION, AND v23 GOT THAT WRONG BEFORE v24 GOT
+     IT RIGHT.** Assigning whole QUADS to a band follows edges that already
+     exist, so the boundary is exact — and *exact on a grid is a STAIRCASE*.
+     At 11 profile points and 30 segments the mask came out a literal
+     CHEQUERBOARD; throwing resolution at it is a QUADRATIC bill that never
+     quite arrives (34 x 64 cost ~4k triangles for one skull and was still
+     visibly stepped). **`splitCoatGroups` SPLITS a triangle that straddles a
+     region's boundary along the region's true curve** — the machinery the
+     beagle's tricolor coat has used since IDEA-047, whose own header calls
+     the alternative "the spiky markings of the first pass". The seam is then
+     smooth at ANY mesh resolution, so the lathe drops back to 44 x 18 and the
+     skull gets **cheaper**: 8,182 triangles to 5,916. **When a boundary looks
+     coarse, ask whether it can be CUT before asking for more polygons.**
+     Regions are `blob`s centred on the eye's own constant, and declaration
+     order is paint order — white first, black over it.
+     **AND A BAND NEEDS ITS GROUPS CHECKED FOR BEING NON-EMPTY.** A predicate
+     or region that never claims anything leaves a group with no triangles,
+     which is not an error anywhere: the mesh builds, the materials are valid,
+     and the marking is simply absent. `test-garden-props.ts` asserts each of
+     the three covers a real share, and separately that the edge was CUT —
+     its signature is where vertices can be, since a grid cut never creates
+     one and so cannot put a vertex between two profile rings.
+     **THIS GUARD HAS NOW PINNED A SOLUTION THREE TIMES ON ONE ANIMAL** — v21
+     asserted the white WAS its own part, which was true then and is exactly
+     what v23 was asked to remove. The requirement is that the mask reads in
+     three steps, black / white / fur; how it is built is not the requirement.
+     See rule 23's note on tests over parts somebody is authoring.
+  27. **A THIN ROD CANNOT BE DARK UNDER A MATCAP** (v25, Nuno: *"lets focus on
+     the paws, the arms and the feet, lets improve this to look like a really
+     cute paw instead a pill"*). The raccoon's first fingers were slender and
+     rendered nearly WHITE against a palm of the same material that rendered
+     black. A matcap is sampled by the view-space NORMAL: a thin cylinder seen
+     side-on has almost every normal perpendicular to the view, which lands in
+     the matcap's OUTER DISK — the bounce colour, not the base — while a
+     sphere shows mostly its centre and reads as its own colour. **"Thin and
+     dark" is not representable under this shading model at all.** Make the
+     part thick enough for its normals to reach the middle of the matcap, and
+     round its tip rather than bringing it to a point, which goes thin again
+     by definition. (IDEA-079 rule 8's bounce note from the other side: the
+     bounce is not just a rim, it is what every grazing surface returns.)
+     **AND A FAN ONLY READS ACROSS THE LINE OF SIGHT** — aimed at the camera,
+     four fingers foreshorten to a speck each.
+     **AIM A TWO-AXIS PART WITH A WHOLE BASIS, NOT A SHORTEST-ARC PLUS A
+     SPIN.** A hand needs where the fingers point AND which way the palm
+     faces, because the fan lies in its local X. `setFromUnitVectors` fixes
+     one axis and leaves the rest to a shortest-arc accident, so the roll has
+     to be found by eye — and the constant that suits one side reads worse on
+     the other. `Matrix4.makeBasis(right, up, fwd)` from the aim and the
+     facing picks it by construction. This is IDEA-060 rule 5 taken one level
+     further: a frame, not an angle — and a WHOLE frame, not one axis of one.
+     **A MIRRORED PAIR'S DIGITS ARE NUMBERED THE OTHER WAY ROUND.** The local
+     X is `up x face` and a cross product is a PSEUDOVECTOR, so mirroring the
+     aim yields a `right` that is the NEGATIVE of the mirrored one. The frames
+     are proper mirror images; the fan order reverses. Any check pairing them
+     must compare L[i] with R[n-1-i].
+     **AND A MARKING OR A LIMB THAT MUST TOUCH ANOTHER PART IS SOLVED IN THAT
+     PART'S OWN FRAME, FROM ITS MATRIX** (v26, Nuno: *"make this looks like
+     they are touching the bib"*). The bib carries a saved position, rotation
+     AND scale; only its matrix knows all three, and working the contact out
+     by hand against the authored ellipsoid produced three arithmetic slips in
+     a row. Measure the prop AS IT SHIPS with `props.ts`'s edits applied —
+     v13's rule, *a number you solve against has to be the number that ships*
+     — and have the probe report a normalised distance (1.0 is the surface)
+     rather than raw coordinates you then have to reason about.
+     **THE SHAPE OF THE THING BEING TOUCHED DECIDES THE APPROACH.** An
+     ellipsoid bulges furthest forward at its own mid-height and falls away
+     above, so fingers aimed UP climb out of reach of the surface they are
+     meant to rest on. Reaching INWARD at the height where it is widest meets
+     it; dragging the whole hand BACK also meets it and tucks the hand behind
+     the forearm, losing the palm and exposing the arm's end cap. **Aim, do
+     not translate**, when the part has somewhere else to be.
+     **AND THAT GUARD WAS WRONG TWICE BEFORE IT HAD TEETH.** It first compared
+     finger POSITIONS — but every finger sits at its hand's origin and splays
+     by ROTATION alone, so it compared the same point four times and passed on
+     everything. Measuring a point along the finger's own +Y then failed the
+     CORRECT model, and **failing the broken one by a similar amount was the
+     tell that the instrument was wrong rather than the model**. Prove a
+     symmetry check has teeth by breaking the symmetry ON PURPOSE — rolling
+     ONE side — not only by re-injecting the original defect, which may never
+     have broken that symmetry in the first place.
+  28. **A CHILD PART MUST NOT CANCEL ITS PARENT'S ROTATION** (v27, Nuno,
+     having posed the raccoon into a wave: *"I already put the arm on the
+     position, just help me fix the fingers"*). The raccoon's hand was aimed
+     in BODY space and then had the arm's own rotation removed from it —
+     `Qarm^-1 * Qdesired` — so the fingers pointed the same way whatever the
+     arm did. Wrong anatomically, since a hand is carried by its forearm. And
+     worse than wrong in this editor: **the cancellation uses the AUTHORED
+     parent quaternion while `props.ts` REPLACES it**, so posing the parent
+     leaves the child at `Qsaved * Qauthored^-1 * Qdesired` — nowhere anybody
+     asked for, and silently. Give a child a plain local orientation and let
+     it ride; posing the parent then aims it, and ROLLING the parent turns it
+     about its own axis, which is the control a wrist wants and costs nothing
+     visually when the parent is a circular taper.
+     **SOLVE A ROLL, DO NOT GUESS IT, AND SOLVE IT IN THE BODY'S FRAME.**
+     `scripts/_scratch-raccoon-roll.ts` sweeps the value and reports which one
+     turns the palm toward the animal's front. Its first answer was wrong
+     because it measured in WORLD space, and `makeForestCritter` gives every
+     instance a random yaw — the same trap the deer's leg check hit in v8.
+     **WHEN A BUG IS FIXED, THE EDITS SOMEBODY MADE TO WORK AROUND IT ARE NOW
+     THE DEFECT.** Five saved finger edits had been authored against the
+     broken base; on a correct one they scattered the fingers worse than no
+     edits at all. Render both ways before removing someone's work, then say
+     plainly that it went and why.
+  29. **A SYMMETRIC WAVE MAKES CREASES; A TUFT IS CONVEX** (v28/v29, Nuno:
+     *"lets start by the tail, in the reference the tails are more volume and
+     more fluffy"*). The squirrel's plume was a tube of near-constant
+     cross-section with a cream ball on the end. Four findings, and three of
+     them generalise to anything furry this project builds.
+     - **MEASURE BEFORE TUNING, AND THE MEASUREMENT CHANGED THE JOB.** On a
+       labelled grid both references put the plume at **0.71 of the body's
+       width and 0.82 of standing height**, crest level with the EAR TIPS —
+       and the shipped tube was already 0.88 and 0.78. **The volume was never
+       the deficit.** What the reference has is a MASS DISTRIBUTION (narrow
+       at the rump, broad for most of the climb, blunt at the crest — a
+       squirrel's plume ends in fur, not in a point) and an outline made of
+       CLUMPS. `ringedTail`'s `fluff` is the second: lobes AROUND the ring to
+       break the circular silhouette, scallops ALONG it so those lobes do not
+       read as flutes.
+     - **FUR STICKS OUT OF A MASS; IT DOES NOT DENT IT.** The first fluff was
+       a plain cosine on the radius, so every bump bought an equally deep
+       VALLEY — and a valley cut across a curved surface is a FOLD. At review
+       size the plume came back a **crumpled sheet**, a cabbage leaf rather
+       than a tail: right volume, right silhouette width, every assertion
+       passing, made entirely of creases. `tuft()` is that cosine mapped to
+       0..1 and raised to a power — convex peaks over a broad shallow floor,
+       with its own mean subtracted so the perturbation averages to nothing
+       and `profile` keeps meaning the radius it says. **The exponent is
+       bounded at BOTH ends and the upper bound is a SAMPLING limit**: at 1 it
+       is the symmetric wave; at 1.9 the peak spans 37% of its period, which
+       at five columns per lobe is two across a bump, and the tufts came back
+       FACETED — the crumpled sheet again in a smaller font. It ships at 1.5
+       (42%) with `radial` at 36 against 6 lobes. Sharpen it and `radial` goes
+       up with it, the floor the surround's conifer serration ran into.
+     - **AND THE TUFTS MUST SPIRAL.** A ridge at the same azimuth on every
+       ring is a FLUTE, not a tuft — and no silhouette check can see it,
+       because the outline is identical either way. **ITS GUARD PASSED ON
+       THE DEFECT IT EXISTS FOR**, which is this project's standing rule
+       arriving on schedule: the first version took each ring's widest
+       COLUMN, and with `lobes` dividing `radial` the peaks land on exact
+       columns, so the maximum is a six-way TIE broken by float noise — a
+       different winner per ring, reading as a large random drift on a tail
+       with no spiral at all. Measure the PHASE OF THE LOBE HARMONIC
+       instead: it is defined whatever the sampling does, it is zero-safe
+       (an unfluffed tube gives a constant phase and fails too), and it is
+       accumulated ring to ring because a crest angle is only unambiguous
+       within one lobe's width.
+     - **DO NOT INVENT A MARKING THE REFERENCE DOES NOT SHOW.** v28 replaced
+       the cream tip blob with a cream BAND along the outer edge of the curl,
+       reasoning from the fox's pale brush tip. **Neither squirrel reference
+       has a pale marking on the tail at all** — it is the body's own orange
+       root to crest. Worse, the curl arcs OVER the back, so its outer side is
+       exactly the face this camera looks down on: the band covered the whole
+       visible plume and read as a blanket thrown over the animal. IDEA-059's
+       rule has a second half — measuring the reference correctly is necessary
+       AND you may not add what it does not carry.
+     **TWO MECHANISMS FELL OUT OF IT.** `outer` (cut a colour along a curl's
+     EDGE rather than around it) ships unused, and it **cannot be done with
+     the ring's own angle**: `computeFrenetFrames` picks an ARBITRARY initial
+     normal and parallel-transports it, so `N` is not the curvature normal and
+     `cos(a)` has no fixed relationship to which side of a curl a vertex is
+     on — two sign choices put the band on the hidden inner side and then on
+     the camera-facing face. Measured against the curve's own CENTROID it is a
+     geometric fact needing no frame. And **a group whose material does not
+     exist draws nothing, in silence**: the far cap is generated at t = 1
+     exactly, where `floor(t * bands) % 2` is **1** even when `bands` is 1, so
+     a tail asking for no banding put its apex fan in a band with no material
+     and left a hole in its own tip.
+     **THE GEOMETRY STAMPS ITS RING LAYOUT** (`userData.tail`) for the test
+     rather than the renderer — a swept form has no convenient axis, and a
+     test re-deriving `(rings, radial)` from a vertex count would be pinning a
+     number it does not own. `scripts/_scratch-squirrel-shot.ts` is the
+     iteration instrument: ONE prop at four framings, against the critter
+     sheet's 24 navigations, which under this bind mount runs long enough that
+     it timed out before writing anything.
+  30. **AN S IS A CHANGE OF SIGN, NOT A LONGER ARC** (v30, Nuno on the
+     squirrel's plume: *"lets bring back the idea of the fox and the raccoon,
+     but lets make the form an S like the reference"*). The first attempt
+     swept back, up and then forward over the head — six control points, a
+     quarter-turn more than the version it replaced, and still a COMMA,
+     because the heading rotated one way the whole length. **Measure it**:
+     `scripts/_scratch-tail-bend.ts` walks a swept form's ring centroids and
+     prints the heading in the plane of the bend. The comma fell from 202
+     degrees to -41 without once turning back; the shipped S falls 148 to 42
+     up the back sweep and then climbs to 117 as the tip flicks away — **two
+     reversals and a NET turn of 20 degrees**, the two bends cancelling.
+     A comma reports zero reversals and 240.
+     - **TEXTURE CANNOT CARRY A SILHOUETTE.** The other half of the same
+       instruction. v29's `fluff` at 0.52 was most of what the eye saw, so the
+       sweep underneath could not be read at all — and the fox's brush and the
+       raccoon's tail, which Nuno was pointing at, are clean tapered tubes
+       with a profile and nothing else. Fluff breaks an EDGE; it does not make
+       a shape. It ships at 0.36, bounded below by the guard's own arithmetic
+       (a ring's max/min must clear 1.2, which puts the floor near 0.33).
+     - **THE HOOK IS BOUNDED BY WHAT IT WOULD CURL INTO, AND THAT IS
+       MEASURED.** `scripts/_scratch-squirrel-space.ts` prints every part in
+       the body's own frame. The skull's back face sits at z -0.41 and the
+       ears' at -0.13 over y 1.52..3.12, so the upper limb stops at -0.48 and
+       the THIN tip is what tops the animal out, at about the ear tufts'
+       height — which is the reference's own relationship.
+     **AND A GUARD FAILED A SOUND MODEL FOR THE SECOND TIME IN TWO VERSIONS,
+     WHICH IS THE PART TO REMEMBER.** The convexity check read a FIXED mid
+     ring and reported 1.16 against a bound of 1.25 on a model whose true
+     ratio is 1.356. The tufts spiral, so where a crest sits relative to a
+     vertex column changes down the tail, and at six columns per lobe a crest
+     landing midway between two is sampled at 0.90 of its height. One fixed
+     ring reported max/min anywhere from 1.21 to 1.36 on the same model. Read
+     the **widest-spread** ring: it is stable, and it costs nothing, because a
+     symmetric wave sampled at an even number of columns per period is exactly
+     as far above its mean as below it at every phase — so the defect still
+     reads 1.000 wherever you measure it. **Three separate "a check that
+     samples a periodic thing at one phase is a coin flip" findings now** —
+     `test-editor-board`'s pulsing marker, v29's argmax spiral check, and
+     this.
   **AND WHEN A PART HAS TWO ENDS, CHECK BOTH BEFORE RETUNING THE MIDDLE.** The
   fox's brush read as a flat sheet with a hard straight edge, and the taper,
   the sweep and the tip were each retuned on the theory that the shape was

@@ -1,17 +1,13 @@
-// SCRATCH (IDEA-065 v4): how much of a surround band is conifer?
+// SCRATCH (IDEA-065 v4): how much of the forest's surround is conifer?
 //
-// The budget question before putting the new pine silhouette out there: the
-// hero pine is a stack of serrated whorls at ~2,600 triangles and the
-// surround's conifer is three cones at ~90, so the multiplier matters a great
-// deal more than how good it looks in isolation.
+// The question this answers is a budget one: the hero pine is a stack of
+// serrated whorls at ~1,800 triangles, and the surround's conifer is three
+// cones at ~90. Before putting the new silhouette out there I need to know
+// how many of them there are, in the band and in the showcase ring.
 import * as THREE from "three";
 import { MAZE_THEMES } from "../src/game/themes";
 import { buildSurroundContent, ensureSurround, disposeSurround } from "../src/render/surroundRecipe";
-import {
-  makeSurroundMaterials,
-  disposeSurroundMaterials,
-  distantConifer,
-} from "../src/render/surroundProps";
+import { makeSurroundMaterials, distantConifer } from "../src/render/surroundProps";
 
 function count(o: THREE.Object3D): { meshes: number; tris: number } {
   let meshes = 0;
@@ -26,52 +22,34 @@ function count(o: THREE.Object3D): { meshes: number; tris: number } {
   return { meshes, tris };
 }
 
-const CONIFER_PART = /^(tier\d+|trunk|canopyLit|canopyDark)$/;
-
 for (const t of MAZE_THEMES) {
   if (t.palette.surround === "none") continue;
-  const mats = makeSurroundMaterials(t.palette);
-  const raw = buildSurroundContent(t.palette.surround, mats);
+  const raw = buildSurroundContent(t.palette.surround, makeSurroundMaterials(t.palette));
   const all = count(raw);
+  // Conifers are the groups whose children are all named tier*/trunk.
   let conifers = 0;
   let coniferTris = 0;
   raw.traverse((n) => {
+    if (!(n instanceof THREE.Group)) return;
     const kids = n.children.filter((c) => (c as THREE.Mesh).isMesh);
-    if (kids.length < 2) return;
-    if (!kids.every((c) => CONIFER_PART.test(c.name))) return;
-    if (!kids.some((c) => c.name !== "trunk")) return;
-    conifers++;
-    coniferTris += count(n).tris;
+    if (!kids.length) return;
+    if (kids.every((c) => /^(tier\d+|trunk|whorl\d+|canopyLit|canopyDark|spire)$/.test(c.name))) {
+      if (kids.some((c) => /^(tier\d+|whorl\d+|canopyLit)$/.test(c.name))) {
+        conifers++;
+        coniferTris += count(n).tris;
+      }
+    }
   });
   const merged = ensureSurround(new THREE.Group(), t.palette.surround, t.palette);
   const m = merged ? count(merged) : { meshes: 0, tris: 0 };
   disposeSurround();
-  disposeSurroundMaterials(mats);
   console.log(
-    `${t.id.padEnd(10)} raw ${String(all.meshes).padStart(5)} meshes/${String(Math.round(all.tris)).padStart(7)} tris` +
-      ` | conifers ${String(conifers).padStart(4)} = ${String(Math.round(coniferTris)).padStart(6)}` +
-      ` | merged ${String(m.meshes).padStart(3)} calls/${String(Math.round(m.tris)).padStart(7)} tris`,
+    `${t.id.padEnd(10)} unmerged ${String(all.meshes).padStart(5)} meshes / ${String(Math.round(all.tris)).padStart(7)} tris` +
+      ` | conifers ${String(conifers).padStart(4)} = ${String(Math.round(coniferTris)).padStart(6)} tris` +
+      ` | merged ${String(m.meshes).padStart(3)} calls / ${String(Math.round(m.tris)).padStart(7)} tris`,
   );
 }
 
 const mats = makeSurroundMaterials(MAZE_THEMES.find((t) => t.id === "forest")!.palette);
-console.log("\none surround conifer:", JSON.stringify(count(distantConifer(mats, { seed: 6 }))));
-
-// The SHOWCASE ring too — it shares `distantConifer` (at `detail: 1`, because
-// that camera sits at 9-33 degrees rather than the board's 59) and has no
-// triangle ceiling of its own, so the number only exists if something prints
-// it.
-const { buildShowcaseBand } = await import("../src/render/showcaseSurround");
-const { mergeBySignature } = await import("../src/render/propMerge");
-console.log("");
-for (const t of MAZE_THEMES) {
-  if (t.palette.surround === "none") continue;
-  const sm = makeSurroundMaterials(t.palette);
-  const band = buildShowcaseBand(t.palette.surround, sm, 7, 1);
-  mergeBySignature(band, { castShadow: false });
-  const c = count(band);
-  disposeSurroundMaterials(sm);
-  console.log(
-    `${t.id.padEnd(10)} showcase ring ${String(c.meshes).padStart(3)} calls / ${String(Math.round(c.tris)).padStart(7)} tris`,
-  );
-}
+const one = distantConifer(mats, { seed: 6 });
+console.log("\none surround conifer:", JSON.stringify(count(one)));

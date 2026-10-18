@@ -41,7 +41,14 @@
 import * as THREE from "three";
 import type { PropParams } from "../game/props";
 import { toon } from "./toon";
-import { taperedSweepGeometry, type SweepStation } from "./beagleSculpt";
+import {
+  SPHERE_PROFILE,
+  latheFromProfile,
+  splitCoatGroups,
+  taperedSweepGeometry,
+  type CoatRegion,
+  type SweepStation,
+} from "./beagleSculpt";
 
 /** Which of the six a `critter` prop is. */
 export type ForestCritterKind =
@@ -443,14 +450,227 @@ function ear(
 }
 
 /**
- * A RINGED tail — the raccoon's identity, and the one thing on any of these
- * six that a colour swap alone could not produce.
+ * `taperedSweepGeometry` with its surface split into TWO material groups by a
+ * per-QUAD predicate — segment index along the path, and j around the ring.
  *
- * Built as a tapered tube swept along a curve, with the bands assigned as
- * per-triangle MATERIAL GROUPS by RING INDEX. Classifying by a triangle's own
- * height instead puts the two halves of every quad on opposite sides of a
- * boundary and the band edge zigzags around the circumference — IDEA-055
- * rule 3, and the same defect as IDEA-047's "spiky markings".
+ * **A COLOUR REGION ON A SWEPT FORM BELONGS TO THAT FORM, NOT ON TOP OF IT.**
+ * The fox's white mask was first built as a SECOND sweep of the muzzle's own
+ * stations at 1.04, which is the obvious move and is wrong twice. The two
+ * sweeps parallel-transport their frames from their own first tangents, so
+ * their rings do not line up and the 4% offset is not uniform — the mask tore
+ * through the skull in a ragged line under the eye. And even built perfectly
+ * it is a second surface where the model wants a second COLOUR, which is a
+ * z-fight waiting for the next retune.
+ *
+ * Grouping the one mesh cannot do either. It also lets the boundary run ALONG
+ * the form rather than only around it, which is what a muzzle needs: white
+ * sides and underside, orange bridge on top, one continuous surface.
+ *
+ * The triangle layout is `taperedSweepGeometry`'s own and is relied on here —
+ * two per quad in (segment, j) order, then the start cap's fan, then the end
+ * cap's. Reordering the index does not touch the vertices, so the normals it
+ * already computed stay correct.
+ */
+function sweepBanded(
+  stations: SweepStation[],
+  radial: number,
+  pick: (segment: number, j: number) => number,
+): THREE.BufferGeometry {
+  const geo = taperedSweepGeometry(stations, radial);
+  const idx = geo.getIndex();
+  if (!idx) return geo;
+  const n = stations.length;
+  const buckets: number[][] = [[], []];
+  let t = 0;
+  const take = (b: number): void => {
+    buckets[b].push(idx.getX(t * 3), idx.getX(t * 3 + 1), idx.getX(t * 3 + 2));
+    t++;
+  };
+  for (let i = 0; i < n - 1; i++) {
+    for (let j = 0; j < radial; j++) {
+      const b = pick(i, j);
+      take(b);
+      take(b);
+    }
+  }
+  // Each cap belongs to the band of the ring it closes.
+  for (let j = 0; j < radial; j++) take(pick(0, j));
+  for (let j = 0; j < radial; j++) take(pick(n - 2, j));
+  geo.setIndex([...buckets[0], ...buckets[1]]);
+  geo.clearGroups();
+  if (buckets[0].length) geo.addGroup(0, buckets[0].length, 0);
+  if (buckets[1].length) geo.addGroup(buckets[0].length, buckets[1].length, 1);
+  return geo;
+}
+
+/** `profile` sampled at `t` in 0..1 along a Catmull-Rom through its points.
+ *
+ *  LINEAR interpolation between a handful of control radii is the obvious
+ *  thing and it leaves a visible CREASE at every control ring: the wall's
+ *  slope changes discontinuously there, `computeVertexNormals` averages
+ *  across it, and the brush comes out banded by rings nobody authored.
+ *  Clamped at zero because a Catmull-Rom OVERSHOOTS on the way into a sharp
+ *  tip, and a negative radius turns the last rings inside out. */
+function smoothSample(p: readonly number[], t: number): number {
+  const n = p.length;
+  if (n < 2) return p[0] ?? 0;
+  const x = THREE.MathUtils.clamp(t, 0, 1) * (n - 1);
+  const i = Math.min(n - 2, Math.floor(x));
+  const f = x - i;
+  const at = (k: number): number => p[THREE.MathUtils.clamp(k, 0, n - 1)];
+  const a = at(i - 1), b = at(i), c = at(i + 1), d = at(i + 2);
+  return Math.max(
+    0,
+    0.5 *
+      (2 * b + (-a + c) * f + (2 * a - 5 * b + 4 * c - d) * f * f + (-a + 3 * b - 3 * c + d) * f * f * f),
+  );
+}
+
+/** A lathe profile resampled to `n` points along a Catmull-Rom through it.
+ *
+ *  **A MATERIAL BAND CAN ONLY BE AS SMOOTH AS THE GRID IT IS CUT ON.** Cutting
+ *  on the lathe's own (azimuth, profile) quads is what makes the boundary
+ *  exact rather than zigzagged — and "exact" on a coarse grid is a STAIRCASE.
+ *  The raccoon's mask on an 11-point profile at 30 segments came out as a
+ *  chequerboard: every quad was correctly classified and each one was 12
+ *  degrees of arc wide. The fix is resolution, and only where it is needed —
+ *  this is the one lathe in the file that carries a band.
+ */
+function densifyProfile(
+  points: readonly (readonly [number, number])[],
+  n: number,
+): (readonly [number, number])[] {
+  const xs = points.map((q) => q[0]);
+  const ys = points.map((q) => q[1]);
+  return Array.from({ length: n }, (_, i) => {
+    const t = i / (n - 1);
+    return [smoothSample(xs, t), ys[0] + (ys[ys.length - 1] - ys[0]) * smoothT(ys, t)] as const;
+  });
+}
+
+/** `smoothSample` for a monotone axis, normalised 0..1 — the profile's heights
+ *  run bottom to top, so interpolating them directly would need the clamp at
+ *  zero that `smoothSample` applies to radii. */
+function smoothT(ys: readonly number[], t: number): number {
+  const lo = ys[0];
+  const hi = ys[ys.length - 1];
+  const norm = ys.map((y) => (y - lo) / (hi - lo));
+  return Math.min(1, smoothSample(norm, t));
+}
+
+/**
+ * A POINTED ear — a swept LEAF rather than `ear()`'s flattened blob, which
+ * cannot come to a point however it is tuned (IDEA-065 v17 found that on the
+ * fox, where two tunings of `ear()` read as a RABBIT at any size).
+ *
+ * Returns the same shape of subtree `ear()` does — a pivot named `<name>` with
+ * `<name>Shell` and `<name>Inner` inside it — so a def's saved edits against
+ * either survive the swap. `broad` scales the profile's width against its
+ * length: a fox's is near 0.55 and a raccoon's near 1.0, and that one number
+ * is most of what separates the two at a glance.
+ */
+function pointedEar(
+  parent: THREE.Object3D,
+  side: number,
+  at: readonly [number, number, number],
+  tilt: number,
+  mat: THREE.Material,
+  innerMat: THREE.Material,
+  name: string,
+  len = 0.46,
+  broad = 1,
+): THREE.Group {
+  const pivot = new THREE.Group();
+  pivot.name = name;
+  pivot.position.set(side * at[0], at[1], at[2]);
+  pivot.rotation.z = -side * tilt;
+  pivot.rotation.x = -0.08;
+  pivot.rotation.y = side * 0.2;
+  parent.add(pivot);
+  // Widest LOW and curving in to the point from both sides — a cone is widest
+  // at its base and its silhouette is two straight lines, which reads as a
+  // horn rather than as an ear.
+  const PROFILE: readonly (readonly [number, number, number])[] = [
+    [0, 0.43, 0.185],
+    [0.08, 0.465, 0.205],
+    [0.2, 0.435, 0.2],
+    [0.33, 0.345, 0.16],
+    [0.45, 0.215, 0.1],
+    [0.55, 0.11, 0.055],
+    [0.62, 0.028, 0.024],
+  ];
+  const leaf = (scale: number, dz: number, m: THREE.Material, n: string, hs = 1): THREE.Mesh => {
+    const st: SweepStation[] = PROFILE.map(([t, w, d]) => ({
+      pos: [0, t * len * hs, dz] as [number, number, number],
+      rx: w * len * broad * scale,
+      rz: d * len * scale,
+    }));
+    const mesh = part(taperedSweepGeometry(st, 14), m, n, pivot);
+    mesh.castShadow = true;
+    return mesh;
+  };
+  leaf(1, 0, mat, name + "Shell");
+  // **THE INNER HAS TO CLEAR THE SHELL, AND AT 0.055 IT DID NOT.** The shell's
+  // half-depth at its widest is 0.205 * len and the inner's is 0.66 of that,
+  // so the inner needs to step forward by their DIFFERENCE before any of it
+  // is outside — at 0.055 its front face sat 0.007 * len inside and the ear
+  // rendered as a solid flap with a speck on it. Buried, correctly built and
+  // correctly coloured, for the seventh time in this file.
+  leaf(0.66, len * 0.115, innerMat, name + "Inner", 0.88);
+  return pivot;
+}
+
+/** How far round the tufts travel between the root and the tip, in radians
+ *  of the angular phase. Straight ridges read as a fluted column. */
+const TUFT_SPIRAL = 6.0;
+/** `tuft`'s own mean over a period, subtracted so the fluff averages to
+ *  nothing and `profile` still means the radius it says. */
+const TUFT_MEAN = 0.4244;
+/** A cosine mapped to 0..1 and sharpened: convex peaks over a broad shallow
+ *  floor. **THE EXPONENT IS BOUNDED AT BOTH ENDS AND THE UPPER BOUND IS A
+ *  SAMPLING LIMIT.** At 1 it is the symmetric wave this replaced, creases and
+ *  all. At 1.5 the peak spans 42% of its period, so `radial / lobes` of six
+ *  puts two and a half columns across it and the tuft is a round bump; at 1.9
+ *  it is 37% and two columns, and the bumps came back FACETED — hard
+ *  polygonal creases where neighbouring tufts meet, which is the crumpled
+ *  sheet again in a smaller font. Sharpen this and `radial` must go up with
+ *  it. */
+function tuft(x: number): number {
+  return Math.pow((Math.cos(x) + 1) * 0.5, 1.5);
+}
+
+/**
+ * A tail swept along a curve — the raccoon's RINGS, the squirrel's plume and
+ * the fox's brush — with the colour bands assigned as per-triangle MATERIAL
+ * GROUPS by RING INDEX. Classifying by a triangle's own height instead puts
+ * the two halves of every quad on opposite sides of a boundary and the band
+ * edge zigzags around the circumference — IDEA-055 rule 3, and the same
+ * defect as IDEA-047's "spiky markings".
+ *
+ * **THE WALLS FACE OUTWARD AND THE ENDS ARE CAPPED, AND NEITHER WAS TRUE
+ * UNTIL v16** (Nuno: *"the tail is transparent"*). It was wound
+ * `(a, c, d) / (a, d, b)`, which is the OPPOSITE orientation to
+ * `taperedSweepGeometry`'s `(a, b, c) / (b, d, c)` — so every wall normal
+ * pointed INWARD. Measured on the shipped model: 518 of the fox's 528 tail
+ * faces, 372 of the raccoon's and 356 of the squirrel's. A back-facing wall
+ * is CULLED, so the near side of the tube is not drawn at all and what
+ * reaches the screen is the INSIDE of the far wall — a tail you can see the
+ * body through, lit from the wrong side. `taperedSweepGeometry`'s own header
+ * records this exact defect on the beagle ("the dog rendered hollow"), which
+ * is the second time this project has shipped it.
+ *
+ * Capping the ends is the other half and it retires a whole class of fix: an
+ * OPEN tube has two visible rims, and the fox's comments carried two separate
+ * workarounds for them (bury the base inside the rump, make the tip blob
+ * wider than the final ring). A capped tube needs neither, which is what lets
+ * the brush come to a POINT instead of a cream ball.
+ *
+ * `profile` replaces the r0..r1 lerp when a tail is not a simple taper: a
+ * fox's brush is narrow where it leaves the rump, widest at about its middle
+ * and finishes in a point, which no pair of end radii can describe.
+ * `tipFrom` is a SINGLE colour boundary (the brush going white) where `bands`
+ * is an alternating one (the raccoon's rings) — two different questions, so
+ * two different dials rather than one overloaded count.
  */
 function ringedTail(
   curve: THREE.Curve<THREE.Vector3>,
@@ -459,37 +679,149 @@ function ringedTail(
   rings: number,
   radial: number,
   bands: number,
+  opts: {
+    profile?: readonly number[];
+    tipFrom?: number;
+    /** Lobed, scalloped fur. See the note in the body. */
+    fluff?: { lobes: number; along: number; amount: number };
+    /**
+     * Band 1 covers the OUTER side of the curl: every vertex whose offset
+     * from the curve points away from the curl's own centre by at least this
+     * much (a cosine, so 0 is the half facing outward and 0.7 a narrow rim).
+     *
+     * A squirrel's plume is pale along the whole outer EDGE of its curl, not
+     * across its tip: `tipFrom` cuts a clean ring, which on a tail reads as a
+     * sock or a bandage. This cuts along the length instead.
+     *
+     * **IT CANNOT BE DONE WITH THE RING'S ANGLE.** `computeFrenetFrames`
+     * picks an ARBITRARY initial normal — the smallest component of the first
+     * tangent — and parallel-transports it, so `N` is not the curvature
+     * normal and `cos(a)` has no fixed relationship to which side of a curl a
+     * vertex is on. Two sign choices put the band on the hidden inner side
+     * and then on the camera-facing face before that was the obvious
+     * explanation. Measured against the curve's own CENTROID it is a
+     * geometric fact and needs no frame at all.
+     */
+    outer?: number;
+  } = {},
 ): THREE.BufferGeometry {
   const pos: number[] = [];
   const idx: number[] = [];
   const frames = curve.computeFrenetFrames(rings, false);
+  // The curl's own centre, for `outer`. A C-shaped plume has its centroid
+  // inside the C, so "away from the centroid" is the convex side.
+  const hub = new THREE.Vector3();
+  for (let i = 0; i <= rings; i++) hub.add(curve.getPointAt(i / rings));
+  hub.divideScalar(rings + 1);
+  /** Is the vertex at (t, a) on the outward-facing side of the curl? */
+  const isOuter = (t: number, a: number): number => {
+    if (opts.outer === undefined) return 0;
+    const p = curve.getPointAt(Math.min(1, Math.max(0, t)));
+    const i = Math.round(Math.min(1, Math.max(0, t)) * rings);
+    const off = frames.normals[i]
+      .clone()
+      .multiplyScalar(Math.cos(a))
+      .add(frames.binormals[i].clone().multiplyScalar(Math.sin(a)))
+      .normalize();
+    return off.dot(p.clone().sub(hub).normalize()) > opts.outer ? 1 : 0;
+  };
+  const radiusAt = (t: number): number => {
+    if (opts.profile) return smoothSample(opts.profile, t);
+    // A tail is fat at the base, fatter still at the shoulder of the brush,
+    // and comes to a tip. A straight taper reads as a carrot.
+    const bulge = Math.sin(Math.PI * Math.min(1, t * 1.15)) * 0.28 + 1;
+    return THREE.MathUtils.lerp(r0, r1, t) * bulge;
+  };
+  // Which band a ring belongs to. Decided once for the whole ring, so the
+  // boundary is a clean circle.
+  const bandAt = (t: number, outerBand = 0): number => {
+    if (opts.outer !== undefined) return outerBand;
+    if (opts.tipFrom !== undefined) return t >= opts.tipFrom ? 1 : 0;
+    // ONE BAND MEANS ONE BAND, and the guard is not cosmetic: the far cap is
+    // generated at t = 1 exactly, where `floor(1 * 1) % 2` is **1** — so a
+    // single-material tail put its apex in a band whose material does not
+    // exist and three.js drew nothing there. A hole in the tip of the
+    // squirrel's plume, from a tail asking for no banding at all.
+    if (bands <= 1) return 0;
+    return Math.floor(t * bands) % 2;
+  };
   for (let i = 0; i <= rings; i++) {
     const t = i / rings;
     const p = curve.getPointAt(t);
     const N = frames.normals[i];
     const B = frames.binormals[i];
-    // A tail is fat at the base, fatter still at the shoulder of the brush,
-    // and comes to a tip. A straight taper reads as a carrot.
-    const bulge = Math.sin(Math.PI * Math.min(1, t * 1.15)) * 0.28 + 1;
-    const r = THREE.MathUtils.lerp(r0, r1, t) * bulge;
+    const r = radiusAt(t);
     for (let j = 0; j < radial; j++) {
       const a = (j / radial) * Math.PI * 2;
-      const v = N.clone().multiplyScalar(Math.cos(a) * r).add(B.clone().multiplyScalar(Math.sin(a) * r)).add(p);
+      // **FLUFF IS A WANDERING RADIUS, AND IT HAS TO WANDER OUTWARD.** A tube
+      // of constant cross-section is a sausage however well its profile is
+      // tuned — the squirrel's plume read as a croissant. Lobes AROUND the
+      // ring break the circular silhouette; scallops ALONG it stop those
+      // lobes reading as straight ridges running the whole length. The lobe
+      // count must be a whole number or the seam at a = 0 does not meet, and
+      // `radial` has to be four or five times it or the lobes are sampled too
+      // coarsely to exist at all — the same floor the surround's conifer
+      // serration ran into (IDEA-065 rule 8).
+      //
+      // **A SYMMETRIC WAVE MAKES CREASES, AND A TUFT IS CONVEX.** The first
+      // build perturbed the radius with a plain cosine, so every bump bought
+      // itself an equally deep VALLEY — and a valley cut across a curved
+      // surface is a FOLD. At review size the plume came back as a crumpled
+      // sheet, a cabbage leaf rather than a tail: correct volume, correct
+      // silhouette width, and made of creases. `tuft` is the same cosine
+      // mapped to 0..1 and raised to a power, so it has narrow convex peaks
+      // over broad shallow floors; the mean is subtracted so the perturbation
+      // still averages to nothing and the profile keeps meaning what it says.
+      // Fur sticks OUT of a mass. It does not dent it.
+      //
+      // The angular phase drifts with t so the tufts SPIRAL — dead-straight
+      // ridges read as a fluted column, which is the other half of the same
+      // defect. And what carries any of this at 35 pixels is not the bumps,
+      // it is the matcap banding on a normal that now changes across the
+      // form — IDEA-068's lesson, which is why a few big tufts beat fine
+      // noise.
+      let r2 = r;
+      if (opts.fluff) {
+        const f = opts.fluff;
+        r2 *=
+          1 +
+          f.amount *
+            (0.62 * tuft(f.lobes * a + t * TUFT_SPIRAL) +
+              0.38 * tuft(f.along * Math.PI * 2 * t) -
+              TUFT_MEAN);
+      }
+      const v = N.clone().multiplyScalar(Math.cos(a) * r2).add(B.clone().multiplyScalar(Math.sin(a) * r2)).add(p);
       pos.push(v.x, v.y, v.z);
     }
   }
   const groups: number[][] = [[], []];
   for (let i = 0; i < rings; i++) {
-    // Which band this RING belongs to. Decided once for the whole ring, so
-    // the boundary is a clean circle.
-    const band = Math.floor((i / rings) * bands) % 2;
     for (let j = 0; j < radial; j++) {
+      // The quad's MID angle, so an angular boundary lands between columns
+      // rather than on one.
+      const mid = ((j + 0.5) / radial) * Math.PI * 2;
+      const band = bandAt(i / rings, isOuter(i / rings, mid));
       const a = i * radial + j;
       const b = i * radial + ((j + 1) % radial);
       const c = (i + 1) * radial + j;
       const d = (i + 1) * radial + ((j + 1) % radial);
-      groups[band].push(a, c, d, a, d, b);
+      // (a, b, c) / (b, d, c) — `taperedSweepGeometry`'s order, which is what
+      // puts the wall normals OUTWARD. See the header.
+      groups[band].push(a, b, c, b, d, c);
     }
+  }
+  // END CAPS, each in its own end's band, wound to face out of the tube.
+  const base = pos.length / 3;
+  const p0 = curve.getPointAt(0);
+  pos.push(p0.x, p0.y, p0.z);
+  for (let j = 0; j < radial; j++) {
+    groups[bandAt(0, isOuter(0, ((j + 0.5) / radial) * Math.PI * 2))].push(base, ((j + 1) % radial), j);
+  }
+  const apex = pos.length / 3;
+  const p1 = curve.getPointAt(1);
+  pos.push(p1.x, p1.y, p1.z);
+  for (let j = 0; j < radial; j++) {
+    groups[bandAt(1, isOuter(1, ((j + 0.5) / radial) * Math.PI * 2))].push(apex, rings * radial + j, rings * radial + ((j + 1) % radial));
   }
   idx.push(...groups[0], ...groups[1]);
   const geo = new THREE.BufferGeometry();
@@ -498,8 +830,44 @@ function ringedTail(
   if (groups[0].length) geo.addGroup(0, groups[0].length, 0);
   if (groups[1].length) geo.addGroup(groups[0].length, groups[1].length, 1);
   geo.computeVertexNormals();
+  // THE RING LAYOUT IS STAMPED ON THE GEOMETRY, for the test rather than for
+  // the renderer. A tail is a swept form with no convenient axis — picking
+  // one is how the raccoon's tip check came to measure "the last 6% of z" and
+  // scoop up fat rings from two thirds of the way along — and re-deriving
+  // (rings, radial) from a vertex count in a test is this project's own
+  // "an instrument must not pin a COUNT it does not own". The vertices are
+  // ring-major: ring i, column j is at `i * radial + j`, then the two apexes.
+  geo.userData.tail = { rings, radial, fluff: opts.fluff ?? null };
   return geo;
 }
+
+/** Where the raccoon's eye sits on its skull — and therefore where the painted
+ *  mask is centred, since the two must not drift apart. These are the numbers
+ *  Nuno authored in the Props tab; the mask band reads them rather than
+ *  carrying a second copy. */
+const RACCOON_EYE: readonly [number, number, number] = [0.236, 0.1, 0.385];
+
+/** The raccoon's skull in profile — radius against height, both normalised,
+ *  scaled to size by `latheFromProfile`.
+ *
+ *  **WIDEST LOW AND FLATTER ON TOP.** A sphere's widest point is its equator
+ *  and a raccoon's is its JOWLS, well below the eye; the crown then falls away
+ *  much faster than a sphere's does. `blob()` is a scaled sphere, so it can
+ *  make the head wider than it is deep and it cannot make it this shape at
+ *  all. */
+const RACCOON_SKULL_PROFILE = [
+  [0.001, -0.5],
+  [0.23, -0.455],
+  [0.4, -0.355],
+  [0.475, -0.23],
+  [0.5, -0.09],
+  [0.493, 0.05],
+  [0.455, 0.19],
+  [0.39, 0.31],
+  [0.3, 0.405],
+  [0.17, 0.47],
+  [0.001, 0.5],
+] as const;
 
 /** Every critter's palette in one table, so "what colour is a fox" is a
  *  lookup rather than six numbers scattered through six builders. Sampled off
@@ -671,56 +1039,279 @@ function uprightBody(kind: ForestCritterKind, k: Kit, rnd: () => number): THREE.
   head.name = "head";
   head.position.set(0, 2.0, 0.06);
   g.add(head);
-  part(blob(0.5, 0.48, 0.48), k.fur, "skull", head);
-  const muzzle = part(blob(0.28, 0.22, 0.26), k.belly, "muzzle", head);
-  muzzle.position.set(0, -0.14, 0.36);
-  const nose = part(blob(0.09, 0.07, 0.07), k.accent, "nose", head);
-  nose.position.set(0, -0.06, 0.56);
-
-  // The raccoon's MASK is identity rank 1 alongside its tail, and it is
-  // GEOMETRY — dark patches standing proud of the skull — for the bib's
-  // reason. Painted flush it would be a grey shape on a grey head.
-  //
-  // TWO PATCHES AND A BRIDGE, NOT A BAR, and this is the one thing about the
-  // raccoon that had to be rebuilt. A single dark bar across the eyes is what
-  // the reference LOOKS like and it is not what the reference IS: built that
-  // way the bar's own depth swallowed both eyeballs whole, and the pale
-  // forehead band that is supposed to sit above it read as the PEAK OF A CAP.
-  // The result was a raccoon in sunglasses and a baseball cap — every part
-  // correct, correctly coloured, and assembled into a different animal.
-  //
-  // A patch per eye, sunk back so the eye stands PROUD of it, plus a thin
-  // bridge over the nose, gives the same read and leaves the eyes where they
-  // can be seen. The forehead band is gone: the mask reads on its own.
-  const eyeR = 0.13;
-  // THE RACCOON'S EYE SITS IN FRONT OF ITS MASK, not level with it. Two
-  // patches was the right construction and it was still not enough: at the
-  // same z as the eyeballs, a patch whose radius is 0.21 against an eye's
-  // 0.13 simply engulfs it, and the sheet came back with the animal still in
-  // sunglasses. The patch is now a SHALLOW disc pressed to the skull and the
-  // eye stands a full radius proud of it.
-  const eyeZ = kind === "raccoon" ? 0.44 : 0.38;
   if (kind === "raccoon") {
-    for (const s of [-1, 1]) {
-      const patch = part(blob(0.2, 0.16, 0.07), k.accent, s < 0 ? "maskL" : "maskR", head);
-      patch.position.set(s * 0.21, 0.09, 0.36);
-    }
-    const bridge = part(blob(0.09, 0.08, 0.07), k.accent, "maskBridge", head);
-    bridge.position.set(0, 0.03, 0.4);
+    // **THE SKULL IS A SHAPED LATHE AND ITS MASK IS PAINTED ON IT** (v23,
+    // Nuno: *"the skull is too rounded... and the mask and the browWhite
+    // should not be components, they should be a colour pattern on the
+    // skull"*).
+    //
+    // **WHY THE MASK HAD TO STOP BEING SOLIDS.** A patch stuck on has to
+    // stand PROUD to be seen, so it has a silhouette of its own — and at any
+    // angle where that silhouette shows, the marking reads as an OBJECT on
+    // the head rather than as colour on it. That is what put this animal in
+    // sunglasses twice.
+    //
+    // **AND IT IS CUT WITH `splitCoatGroups`, NOT ON THE LATHE'S GRID** (v24,
+    // Nuno: *"behind the eyes the white and black pattern are pixelized, lets
+    // make that smooth"*). Assigning whole QUADS to a band is exact in the
+    // sense that it follows edges that already exist — and exact on a grid is
+    // a STAIRCASE, which at 11 profile points and 30 segments came out a
+    // literal chequerboard. Throwing resolution at it is a QUADRATIC bill
+    // (34 x 64 was ~4k triangles for one skull and still visibly stepped
+    // above apron size).
+    //
+    // `splitCoatGroups` SPLITS a triangle that straddles a region's boundary
+    // along the region's true curve, which is the same machinery the beagle's
+    // tricolor coat has used since IDEA-047 and for exactly this reason — its
+    // own header calls the alternative "the spiky markings of the first
+    // pass". The seam is then smooth at ANY mesh resolution, so the lathe
+    // goes back down to 44 x 18 and the skull costs a third of what the
+    // banded one did.
+    //
+    // **WHY IT IS NOT A SPHERE.** A raccoon's head is widest LOW, at the
+    // jowls, and flattens toward the crown — and it is wider than it is deep.
+    // `blob()` is a scaled sphere and can say the second but not the first.
+    const SK_W = 1.08;
+    const SK_H = 0.94;
+    const SK_D = 0.86;
+    // The mask is centred on the EYE and takes its centre from the same
+    // constant the eye is placed with, so the two cannot drift apart. That
+    // point already sits on the skull's surface, which is what makes a blob
+    // centred there carve a round patch ON it.
+    const [ex, ey, ez] = RACCOON_EYE;
+    // Sized from the patches as Nuno had authored them: half-width 0.236
+    // against a skull half-width of 0.54 is about 26 degrees of arc, and 0.16
+    // of height. The white is the same shape, larger — it exists to give the
+    // black an EDGE, which on a grey head nothing else does.
+    const eye = (r: number, ry: number, mat: number): CoatRegion[] => [
+      { kind: "blob", center: [-ex, ey, ez], radii: [r, ry, r], mat },
+      { kind: "blob", center: [ex, ey, ez], radii: [r, ry, r], mat },
+    ];
+    part(
+      splitCoatGroups(
+        latheFromProfile(densifyProfile(RACCOON_SKULL_PROFILE, 18), 44, SK_W, SK_H, SK_D),
+        0,
+        // Declaration order is paint order — the LAST region to claim a
+        // triangle wins — so the white goes down first and the black over it.
+        [...eye(0.33, 0.25, 2), ...eye(0.26, 0.19, 1)],
+      ),
+      [k.fur, k.accent, k.belly],
+      "skull",
+      head,
+    );
+  } else {
+    part(blob(0.5, 0.48, 0.48), k.fur, "skull", head);
   }
+  // THE RACCOON'S SNOUT IS TWO JAWS (v21, Nuno: *"the snout should be a snout
+  // like with two part upper and lower jaw"*). This part is the UPPER one, so
+  // for the raccoon it is shallower and carried higher — the lower jaw is
+  // appended after the ears, where a new part has to go so the saved edits on
+  // everything above it keep pointing at the same thing.
+  //
+  // **HERE THE CREASE IS THE FEATURE.** Everywhere else in this file two
+  // overlapping solids meeting at a normal discontinuity is the defect being
+  // designed out; a mouth is the one place the eye is meant to read that line,
+  // so the two jaws are deliberately two masses and not one form.
+  const rac = kind === "raccoon";
+  const muzzle = part(
+    rac ? blob(0.285, 0.165, 0.26) : blob(0.28, 0.22, 0.26),
+    k.belly,
+    "muzzle",
+    head,
+  );
+  muzzle.position.set(0, rac ? -0.1 : -0.14, rac ? 0.37 : 0.36);
+  const nose = part(blob(0.09, 0.07, 0.07), k.accent, "nose", head);
+  nose.position.set(0, rac ? -0.04 : -0.06, rac ? 0.57 : 0.56);
+
+  // THE EYE SITS IN FRONT OF THE MASK, and the mask is now paint on the
+  // skull rather than a disc pressed to it — see the skull above. The eye's
+  // own placement is the mask's centre, which is why it is a named constant.
+  const eyeR = 0.13;
+  const eyeZ = kind === "raccoon" ? RACCOON_EYE[2] : 0.38;
   for (const s of [-1, 1]) {
-    eye(head, s, [0.21, 0.1, eyeZ], k, s < 0 ? "eyeL" : "eyeR", { r: eyeR });
+    eye(head, s, [kind === "raccoon" ? RACCOON_EYE[0] : 0.21, kind === "raccoon" ? RACCOON_EYE[1] : 0.1, eyeZ], k, s < 0 ? "eyeL" : "eyeR", { r: eyeR });
   }
 
   // --- 4/5: the arms, held in front. Aimed by endpoints (see `limb`).
+  //
+  // **THE RACCOON GETS HANDS** (v25, Nuno: *"lets focus on the paws, the arms
+  // and the feet, lets improve this to look like a really cute paw instead a
+  // pill"*). A raccoon's hands are its signature — long slender dark fingers
+  // on a small palm, which is the one thing in the reference that no other
+  // animal in this set has. A capsule says none of it.
+  //
+  // **ONLY THE RACCOON**, deliberately: `uprightBody` builds the rabbit and
+  // both squirrels too, and IDEA-060's rule is that rewriting a shared part
+  // silently re-dresses animals nobody is reviewing. A rabbit's forepaw is a
+  // stub and should stay one.
+  const racPaw = kind === "raccoon";
+  //
+  // **CHUNKY, BECAUSE A THIN ROD CANNOT BE DARK UNDER A MATCAP.** The first
+  // pair were slender and rendered BRIGHT — nearly white — against a palm of
+  // the same material that rendered black. A matcap is sampled by the
+  // view-space NORMAL, and a thin cylinder seen side-on has almost every
+  // normal perpendicular to the view, which lands in the matcap's outer disk:
+  // the BOUNCE colour, not the base. A sphere shows mostly its centre and so
+  // reads as its own colour. So "thin and dark" is not representable here at
+  // all, and the finger has to be thick enough for its normals to reach the
+  // middle of the matcap. That is also what a cute paw wants, which is the
+  // happier half of the constraint.
+  const FINGER: SweepStation[] = [
+    { pos: [0, 0, 0], rx: 0.062, rz: 0.064 },
+    { pos: [0, 0.075, 0.005], rx: 0.058, rz: 0.06 },
+    { pos: [0, 0.15, 0.008], rx: 0.047, rz: 0.048 },
+    { pos: [0, 0.215, 0.005], rx: 0.031, rz: 0.031 },
+    // Rounded off rather than brought to a point: a needle tip is thin by
+    // definition and goes bright again.
+    { pos: [0, 0.245, 0], rx: 0.014, rz: 0.014 },
+  ];
+  /** Four fingers fanned about the group's own +Y, longest in the middle. */
+  const digits = (host: THREE.Object3D, name: string, len: number, spread: number, baseY = 0): void => {
+    for (let i = 0; i < 4; i++) {
+      const a = (i - 1.5) * spread;
+      // The middle pair are longer, as a hand's are — four of one length is a
+      // RAKE, and that is most of what makes a fan of rods read as fingers.
+      const grow = 1 - Math.abs(i - 1.5) * 0.11;
+      const d = part(
+        taperedSweepGeometry(
+          FINGER.map((st) => ({
+            pos: [st.pos[0], st.pos[1] * len * grow, st.pos[2]] as [number, number, number],
+            rx: st.rx,
+            rz: st.rz,
+          })),
+          8,
+        ),
+        k.accent,
+        `${name}${i}`,
+        host,
+      );
+      // **THE FAN SPRINGS FROM THE PALM'S FAR EDGE, NOT ITS CENTRE.** At the
+      // host's origin the outer fingers leave through the SIDE of the palm,
+      // which reads as a ball with fingers stuck on it rather than as a hand.
+      d.position.set(0, baseY, 0);
+      d.quaternion.setFromUnitVectors(
+        new THREE.Vector3(0, 1, 0),
+        new THREE.Vector3(Math.sin(a), Math.cos(a), 0.22).normalize(),
+      );
+      d.castShadow = true;
+    }
+  };
   for (const s of [-1, 1]) {
-    limb([s * 0.44, 1.5, 0.18], [s * 0.26, 1.06, 0.46], 0.14, k.fur, s < 0 ? "armL" : "armR", g);
+    const from: [number, number, number] = [s * 0.44, 1.5, 0.18];
+    const to: [number, number, number] = [s * 0.26, 1.06, 0.46];
+    const name = s < 0 ? "armL" : "armR";
+    if (!racPaw) {
+      limb(from, to, 0.14, k.fur, name, g);
+      continue;
+    }
+    // TAPERED, shoulder to wrist. `flaredLimb` keeps `limb`'s placement
+    // contract exactly — geometry about the midpoint in local +Y, same
+    // position and quaternion — which matters because props.ts carries a
+    // hand-authored position against this very part.
+    const arm = flaredLimb(
+      from,
+      to,
+      // ROUNDED AT THE SHOULDER, not cut off. The authored arm starts inside
+      // the chest, where a flat end cap is invisible — but props.ts carries a
+      // hand-authored position that brings the arm FORWARD, out of the chest,
+      // and the cap then shows as a flat disc on the shoulder. A first
+      // station near zero closes it to a dome, which costs nothing and is
+      // right wherever the arm is moved to.
+      [
+        [0.055, 0.055],
+        [0.15, 0.15],
+        [0.138, 0.138],
+        [0.112, 0.112],
+        [0.072, 0.072],
+      ],
+      k.fur,
+      name,
+      g,
+    );
+    // THE HAND HANGS INSIDE THE ARM, so it follows wherever the arm is moved
+    // — including by a saved edit. The arm's local +Y runs toward the wrist.
+    const len = new THREE.Vector3(...to).sub(new THREE.Vector3(...from)).length();
+    // **A HEEL CLOSES THE WRIST.** Bringing the hand back onto the chest
+    // leaves it 0.125 short of where the arm ends, and the sweep's own end
+    // cap then shows as a dark hole in the forearm. This sits at the arm's
+    // end — in the ARM's frame, where that end is simply local +Y — and is
+    // wide enough to meet the palm, so wrist and hand read as one dark mass
+    // however far the hand is set back.
+    const heel = part(blob(0.088, 0.085, 0.088), k.accent, s < 0 ? "heelL" : "heelR", arm);
+    heel.position.set(0, len / 2 - 0.035, 0);
+    const hand = new THREE.Group();
+    hand.name = s < 0 ? "handL" : "handR";
+    hand.position.set(0, len / 2 - 0.02, 0);
+    // **THE HAND FOLLOWS THE FOREARM, AND THAT IS THE WHOLE FIX** (v27,
+    // Nuno: *"I already put the arm on the position, just help me fix the
+    // fingers"*).
+    //
+    // Every earlier version aimed the hand in BODY space and then cancelled
+    // the arm's own rotation out of it — `Qarm^-1 * Qdesired` — so that the
+    // fingers pointed the same way whatever the arm did. That is wrong twice
+    // over. It is wrong anatomically, because a hand is carried by its
+    // forearm and turning the arm turns the hand. And it is wrong in THIS
+    // editor, because the cancellation uses the AUTHORED arm quaternion while
+    // props.ts replaces it: pose the arm in the Props tab and the hand ends
+    // up at `Qsaved * Qauthored^-1 * Qdesired`, which is nowhere anybody
+    // asked for. That is exactly what left the raised hand's fingers splayed
+    // at random after the arms were posed into a wave.
+    //
+    // A plain local orientation is the answer. The hand continues along the
+    // arm's own +Y, so posing the arm aims the fingers — and ROLLING the arm
+    // turns the fan, which is what rolling a real forearm does to a palm.
+    // Both controls end up where someone posing an arm would look for them,
+    // and nothing in here has to know what the arm was authored as.
+    // **AND THE ROLL IS SOLVED, NOT GUESSED.** `rotation.y` here turns the fan
+    // about the arm's own axis without changing where the fingers point — the
+    // one control a wrist needs once it follows the forearm. Which way the
+    // fan ends up facing is a consequence of the ARM's roll, and props.ts
+    // sets each arm's rotation outright, so it is Nuno's pose that decides
+    // it: at 0 the fingers were edge-on to the viewer and the whole hand read
+    // as a dark spike. `scripts/_scratch-raccoon-roll.ts` sweeps the value
+    // and reports which one turns the palm toward the animal's FRONT —
+    // solved in the BODY's frame, because `makeForestCritter` gives every
+    // instance a random yaw and a world-space answer is contaminated by
+    // whichever seed the probe happened to use.
+    //
+    // These two are therefore tuned against the arm pose saved in props.ts.
+    // Re-pose an arm and re-run that script; or roll the ARM instead, which
+    // costs nothing visually because a forearm is a circular taper.
+    hand.rotation.set(-0.22, s < 0 ? -1.64 : 1.75, 0);
+    arm.add(hand);
+    // A PAD, not a ball: wide across the fan (local x), short along the
+    // fingers (y), thin through the palm (z). A sphere has no edge for the
+    // fingers to leave from.
+    const palm = part(blob(0.165, 0.085, 0.082), k.accent, s < 0 ? "palmL" : "palmR", hand);
+    palm.position.set(0, -0.012, 0);
+    digits(hand, s < 0 ? "fingerL" : "fingerR", 1, 0.3, 0.055);
   }
   // --- 6/7: the feet, peeping out at the front. Without them the pear sits
   // on the soil like a dropped egg.
   for (const s of [-1, 1]) {
-    const f = part(blob(0.2, 0.13, 0.31), k.fur, s < 0 ? "footL" : "footR", g);
-    f.position.set(s * 0.34, 0.13, 0.42);
+    const name = s < 0 ? "footL" : "footR";
+    if (!racPaw) {
+      const f = part(blob(0.2, 0.13, 0.31), k.fur, name, g);
+      f.position.set(s * 0.34, 0.13, 0.42);
+      continue;
+    }
+    // A SOLE AND FOUR TOES, and DARK like the hands — the reference's feet
+    // are the same near-black as its fingers, where this one had grey pills.
+    const foot = new THREE.Group();
+    foot.name = name;
+    foot.position.set(s * 0.34, 0.12, 0.38);
+    g.add(foot);
+    const sole = part(blob(0.2, 0.11, 0.21), k.accent, s < 0 ? "soleL" : "soleR", foot);
+    sole.castShadow = true;
+    const toes = new THREE.Group();
+    toes.name = s < 0 ? "toesL" : "toesR";
+    toes.position.set(0, -0.015, 0.165);
+    // Toes run FORWARD, not up: the fan is the same helper, turned onto the
+    // floor. Shorter and blunter than the fingers, which is the difference
+    // between a hand and a foot.
+    toes.rotation.x = Math.PI / 2;
+    foot.add(toes);
+    digits(toes, s < 0 ? "toeL" : "toeR", 0.72, 0.4);
   }
 
   // --- 8/9: the ears. Identity separator #1 between four animals that are
@@ -734,14 +1325,22 @@ function uprightBody(kind: ForestCritterKind, k: Kit, rnd: () => number): THREE.
       ear(head, s, [0.17, 0.36, -0.04], 0.62, 0.15, 0.11, 0.17, -0.1, earMat, k.accent, s < 0 ? "earL" : "earR", 0.66);
     }
   } else if (kind === "raccoon") {
-    // Small and ROUND, set wide. A raccoon's ear is a semicircle on the
-    // corner of its skull, and setting it upright like a squirrel's is most
-    // of what made the first pass read as a grey squirrel.
+    // POINTED, not round (v21, Nuno: *"lets make the ears more point and not
+    // so rounded"*). `ear()` builds a flattened BLOB and a blob cannot come to
+    // a point — the same thing the fox's ears ran into, and the reason that
+    // one is a swept LEAF. The raccoon's is the fox's construction at the
+    // raccoon's own proportion: BROADER and shorter, because a tall narrow
+    // one is a fox's and these two already share a silhouette class.
+    //
+    // Still LOW and barely splayed: at tilt 0.5 and set high they stood off
+    // the skull as two loose balls, which is the "blob assembly" read this
+    // project has been moving away from since IDEA-047.
     for (const s of [-1, 1]) {
-      // LOW and only just splayed. At tilt 0.5 and set high they stood off
-      // the skull as two loose balls, which is the "blob assembly" read this
-      // project has been moving away from since IDEA-047.
-      ear(head, s, [0.33, 0.22, -0.03], 0.19, 0.21, 0.1, 0.28, -0.05, earMat, k.belly, s < 0 ? "earL" : "earR", 0.62);
+      // BROAD, but not as broad as it is long. At `broad` 1 the leaf was as
+      // wide as it was tall and, leaning out, read as a floppy FLAP; at 0.76
+      // it was a cat's spike. The reference's is about 1.2 tall-for-wide —
+      // a rounded triangle, not a horn — and carried upright.
+      pointedEar(head, s, [0.32, 0.22, -0.03], 0.2, earMat, k.belly, s < 0 ? "earL" : "earR", 0.5, 0.88);
     }
   } else {
     // Squirrel: upright, TUFTED. The tuft is the give-away and it is one
@@ -754,6 +1353,65 @@ function uprightBody(kind: ForestCritterKind, k: Kit, rnd: () => number): THREE.
     }
   }
 
+  // --- THE RACCOON'S FACE FURNITURE (v21). Everything here is APPENDED after
+  // the ears rather than written beside the part it belongs with, and that is
+  // deliberate: `props.ts` carries eight hand-authored edits against this
+  // animal addressed by INDEX PATH, so a part inserted earlier in the head
+  // would silently re-point every one of them onto something else. New parts
+  // go at the END of the child list — IDEA-065 rule 23.
+  if (kind === "raccoon") {
+    // **THE LOWER JAW.** The muzzle above is the upper one; this is the chin
+    // and lower lip, tucked UNDER and BACK so the upper overhangs it. A lower
+    // jaw level with the upper is a beak.
+    const jaw = part(blob(0.2, 0.1, 0.185), k.belly, "jaw", head);
+    jaw.position.set(0, -0.265, 0.325);
+    jaw.rotation.x = 0.18;
+
+    // **THE WHISKERS — THREE A SIDE, FROM BESIDE THE NOSE** (Nuno: *"the nose
+    // should have a few fur like 3 lines from each side of the nose"*).
+    //
+    // **AIMED WITH A FRAME, NOT EULER ANGLES** (IDEA-060 rule 5, which this
+    // file has now hit three times): three.js applies an XYZ Euler as
+    // Rx*Ry*Rz, so a `rotation.z` that swings a whisker outward is itself
+    // rotated by any `rotation.y` written beside it, and the first cheek
+    // tufts built that way pointed INWARD into the head and rendered as
+    // nothing at all. A direction vector says what is meant.
+    //
+    // They taper to a POINT and are built from the same swept stations as
+    // everything else here, because a constant-radius rod reads as a pin.
+    // Cheap on purpose — 5 radial segments, 3 stations — since at the apron
+    // this animal is about 35 pixels tall and these are for the shop stage
+    // and any closer angle.
+    const WHISKER: SweepStation[] = [
+      { pos: [0, 0, 0], rx: 0.016, rz: 0.016 },
+      { pos: [0, 0.12, 0], rx: 0.011, rz: 0.011 },
+      { pos: [0, 0.26, 0], rx: 0.004, rz: 0.004 },
+    ];
+    // Out, and fanned up/level/down. The middle one runs nearly flat; the
+    // outer two open away from it, which is what makes three lines read as a
+    // fan rather than as a fork.
+    const WHISKER_AIM: readonly [number, number, number][] = [
+      [0.9, 0.3, 0.32],
+      [0.96, -0.05, 0.28],
+      [0.88, -0.4, 0.26],
+    ];
+    for (const s of [-1, 1]) {
+      for (const [i, aim] of WHISKER_AIM.entries()) {
+        const w = part(
+          taperedSweepGeometry(WHISKER, 5),
+          k.belly,
+          (s < 0 ? "whiskerL" : "whiskerR") + String(i),
+          head,
+        );
+        w.position.set(s * 0.1, -0.075, 0.53);
+        w.quaternion.setFromUnitVectors(
+          new THREE.Vector3(0, 1, 0),
+          new THREE.Vector3(s * aim[0], aim[1], aim[2]).normalize(),
+        );
+      }
+    }
+  }
+
   // --- last: the tail. Identity separator #2, and it is the part that
   // changes the silhouette most.
   if (kind === "rabbit") {
@@ -762,36 +1420,111 @@ function uprightBody(kind: ForestCritterKind, k: Kit, rnd: () => number): THREE.
     const t = part(blob(0.26, 0.26, 0.24), k.belly, "tail", g);
     t.position.set(0, 0.62, -0.72);
   } else if (kind === "raccoon") {
-    // RINGED, and swept down and back so the bands are seen across their
-    // width rather than end-on. The rings are the identity; a raccoon tail
-    // carried vertically foreshortens them into a smudge at the play camera's
-    // 59 degrees of elevation.
+    // RINGED, and now the FOX'S BRUSH carrying those rings (v22, Nuno: *"lets
+    // make one tail with the same shape of the fox but with the stripes
+    // pattern of the raccoon"*). `ringedTail` already held both halves: a
+    // control-point `profile` for the form and `bands` for an alternating
+    // colour. The fox uses the first with `tipFrom`; the raccoon uses the
+    // first with `bands`.
+    //
+    // **AND RAISING IT MAKES THE RINGS READ BETTER, WHICH INVERTS THE NOTE
+    // THAT USED TO BE HERE.** That note said a tail carried vertically
+    // foreshortens its bands into a smudge at the play camera, so this one
+    // swept down and back — and the arithmetic says the old sweep was the
+    // foreshortened one. The camera looks DOWN and FORWARD (view direction
+    // about (0, -0.857, -0.515) at 59 degrees of elevation), and a tail
+    // sweeping down and back runs very nearly ALONG that: the old axis
+    // measured 27 degrees off the view direction, i.e. the rings were seen at
+    // **45%** of their spacing. The fox's angle puts the axis at 94 degrees
+    // to it — **99.8%**, as close to side-on as it gets. A vertical tail
+    // would indeed be bad; the fix was never to point it downward.
+    //
+    // **IT STOPS WELL BELOW THE HEAD, AND THAT IS NOT A STYLE CHOICE.** The
+    // squirrel's plume arcing up and OVER its back is the one tail in this
+    // set that rises above the head, and it is what separates a squirrel from
+    // a raccoon at any size and in any colour (rule 4). The head sits at
+    // y 2.0; this tops out at 1.45.
     const curve = new THREE.CatmullRomCurve3([
-      new THREE.Vector3(0, 0.75, -0.5),
-      new THREE.Vector3(0, 0.6, -1.05),
-      new THREE.Vector3(0, 0.3, -1.45),
-      new THREE.Vector3(0, 0.06, -1.6),
+      new THREE.Vector3(0, 0.7, -0.3),
+      new THREE.Vector3(0.02, 0.82, -0.95),
+      new THREE.Vector3(0.05, 1.12, -1.35),
+      new THREE.Vector3(0.08, 1.45, -1.45),
     ]);
-    const geo = ringedTail(curve, 0.2, 0.13, 24, 8, 7);
+    // 28 rings against 7 bands, so every band is exactly four rings and no
+    // boundary lands part-way along a taper. The far cap falls in the dark
+    // band, which is right: a raccoon's tail ends black.
+    // THICKER AT THE ROOT THAN THE FOX'S, because of what it comes out of: a
+    // fox's barrel has already tapered to nothing at the rump, where a
+    // raccoon's haunch is a full round pear. The fox's 0.10 base against that
+    // reads as a stick pushed into a ball.
+    const geo = ringedTail(curve, 0, 0, 28, 11, 7, {
+      profile: [0.16, 0.27, 0.315, 0.32, 0.29, 0.235, 0.15, 0.018],
+    });
     part(geo, [k.fur, k.accent], "tail", g);
   } else {
-    // The squirrel's PLUME, arcing up and OVER its own back — the one tail in
-    // the set that rises above the head, which is what separates it from the
-    // rabbit at any size and in any colour.
+    // The squirrel's PLUME — the one tail in the set that rises above the
+    // head, which is what separates it from the rabbit at any size and in
+    // any colour.
+    //
+    // **THE FORM IS AN S, AND IT IS THE WHOLE SILHOUETTE** (v30, Nuno:
+    // *"lets bring back the idea of the fox and the raccoon, but lets make
+    // the form an S like the reference"*). v28/v29 swept a single C — out of
+    // the rump, up, forward — which is a comma, and a comma is what a fox's
+    // brush already is. Both squirrel references draw a double bend: the
+    // lower limb curls BACK away from the body, the upper limb curls FORWARD
+    // over it, and the tip hooks down. There is exactly one inflection and it
+    // sits around two thirds of the way up.
+    //
+    // **AN S IS A CHANGE OF SIGN, AND A LONGER ARC IS NOT ONE.** The first
+    // attempt at this swept back, up and then forward over the head — six
+    // control points, a quarter-turn more than v29, and still a COMMA,
+    // because the heading rotated one way the whole length (measured: 202
+    // degrees down to -41 without once turning back). What makes a letter S
+    // is an inflection: the lower limb convex one way, the upper limb convex
+    // the OTHER. Here the heading falls 146 -> 107 -> 70 -> 45 up the back
+    // sweep and then climbs 45 -> 94 -> 163 as the tip flicks up and away.
+    // That reversal is the whole shape; everything else is where it sits.
+    //
+    // **AND IT IS BOUNDED BY THE HEAD, MEASURED RATHER THAN GUESSED.**
+    // `scripts/_scratch-squirrel-space.ts` reads every part in the body's own
+    // frame: the skull's back face is at z -0.41 and the ears' and their
+    // tufts' at -0.13, over y 1.52..3.12. The upper limb's furthest-forward
+    // surface lands at -0.48, so it clears the skull — and the tip, being the
+    // THIN end, is what tops the animal out at about the ear tufts' own
+    // height, which is the reference's relationship (the plume reaches the
+    // ear tips, and narrows as it gets there).
     const curve = new THREE.CatmullRomCurve3([
-      new THREE.Vector3(0, 0.6, -0.6),
-      new THREE.Vector3(0, 1.35, -1.15),
-      new THREE.Vector3(0, 2.25, -0.95),
-      new THREE.Vector3(0, 2.72, -0.2),
+      new THREE.Vector3(0, 0.5, -0.35),
+      new THREE.Vector3(0, 1.0, -1.1),
+      new THREE.Vector3(0, 1.7, -1.32),
+      new THREE.Vector3(0, 2.3, -1.1),
+      new THREE.Vector3(0, 2.62, -0.78),
+      new THREE.Vector3(0, 2.95, -0.8),
+      new THREE.Vector3(0, 3.05, -1.12),
     ]);
-    // Wide, and it must be: the reference's plume is the biggest single mass
-    // in the drawing after the body. At 0.22 it swept over the back as a
-    // SAUSAGE — the right path and the wrong volume, which reads as a
-    // question mark rather than as fur.
-    const geo = ringedTail(curve, 0.3, 0.46, 22, 9, 1);
+    // **AND THE MASS IS THE FOX'S AND THE RACCOON'S, NOT A FIELD OF TUFTS.**
+    // Same instruction's other half. `fluff` at v29's 0.52 was most of what
+    // the eye saw, so the underlying sweep was buried and the tail read as a
+    // crumpled mass rather than as a shape — it is TEXTURE, and texture
+    // cannot carry a silhouette. At 0.36 the profile is what reads and the
+    // tufts break its edge, which is the job they were added for. **The
+    // floor is not free**: `test-garden-props.ts` wants a ring's max/min over
+    // 1.2, which this arithmetic puts at an `amount` of about 0.33, so there
+    // is roughly a tenth of headroom under the shipped value and no more.
+    //
+    // Measured off the explorer reference on a labelled grid, the plume is
+    // 0.71 of the body's width and 0.82 of standing height. The profile is
+    // narrow where it leaves the rump, broad through the middle and upper
+    // bend, and tapers HARD into the hook — a hook as thick as the mass is a
+    // club, and the taper is what lets the second bend read at all.
+    //
+    // 32 rings against 28 before, because a curve with an inflection needs
+    // more stations through two bends than one arc did through one.
+    const geo = ringedTail(curve, 0, 0, 32, 30, 1, {
+      profile: [0.17, 0.3, 0.44, 0.53, 0.56, 0.52, 0.38, 0.14],
+      fluff: { lobes: 5, along: 5, amount: 0.36 },
+    });
     part(geo, [k.fur], "tail", g);
-    const plumeTip = part(blob(0.34, 0.3, 0.3), k.belly, "tailTip", g);
-    plumeTip.position.set(0, 2.7, -0.16);
   }
 
   // A little turn of the head, per instance. Two of these standing side by
@@ -817,6 +1550,72 @@ function uprightBody(kind: ForestCritterKind, k: Kit, rnd: () => number): THREE.
 // A fox and a deer in the same orange at the same size differ by exactly
 // those, so they are what the builder varies.
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// THE FOX'S HEAD PROFILES — the beagle's own numbers, COPIED (IDEA-065 v19).
+//
+// Nuno asked for the fox's head to be the beagle's head, as the same parts, so
+// that he can edit each one toward a fox in the Props tab. These three tables
+// are therefore seeded from `characters.ts` and kept SEPARATE from it on
+// purpose: they exist to be tuned away from the dog, and sharing them would
+// mean a fox edit repainting the beagle every player is looking at.
+// `SPHERE_PROFILE` is the exception and is imported — it is a sphere, and there
+// is nothing fox-specific for it to become.
+// ---------------------------------------------------------------------------
+
+/** Paw: an egg bulb, wider than the leg shaft it hangs from. The beagle's own
+ *  profile, copied for the reason the head's three are (IDEA-065 v19) — it is
+ *  here to be tuned toward a fox, and a shared table would repaint the dog. */
+const FOX_PAW_PROFILE = [
+  [0.001, -0.5],
+  [0.3, -0.44],
+  [0.45, -0.25],
+  [0.5, 0.0],
+  [0.42, 0.28],
+  [0.25, 0.43],
+  [0.001, 0.5],
+] as const;
+
+/** Muzzle: fuller at the flews/chin band, slightly squared front. */
+const FOX_MUZZLE_PROFILE = [
+  [0.001, -0.5],
+  [0.3, -0.46],
+  [0.44, -0.34],
+  [0.5, -0.12],
+  [0.5, 0.1],
+  [0.44, 0.28],
+  [0.3, 0.42],
+  [0.001, 0.5],
+] as const;
+
+/** Nose: a rounded-triangle read — wide base tapering up. */
+const FOX_NOSE_PROFILE = [
+  [0.001, -0.5],
+  [0.36, -0.42],
+  [0.5, -0.15],
+  [0.46, 0.12],
+  [0.32, 0.34],
+  [0.001, 0.5],
+] as const;
+
+/**
+ * Bridge ("stop"): the ramp from the muzzle top up between the eyes into the
+ * forehead — wide and thin, sections lying flat, only its top surface cresting
+ * above muzzle and skull. Sampled from ONE quadratic curve with near-constant
+ * thickness through the middle, so the top surface is a parallel of that arc
+ * and cannot kink where hand-placed stations meet.
+ */
+const FOX_BRIDGE_STATIONS: SweepStation[] = [
+  { pos: [0, -0.04, 0.224], rx: 0.024, rz: 0.01 },
+  { pos: [0, -0.0382, 0.201], rx: 0.04, rz: 0.022 },
+  { pos: [0, -0.0329, 0.1799], rx: 0.05, rz: 0.03 },
+  { pos: [0, -0.024, 0.1607], rx: 0.052, rz: 0.032 },
+  { pos: [0, -0.0115, 0.1435], rx: 0.05, rz: 0.032 },
+  { pos: [0, 0.0045, 0.1282], rx: 0.046, rz: 0.03 },
+  { pos: [0, 0.0241, 0.1149], rx: 0.04, rz: 0.026 },
+  { pos: [0, 0.0473, 0.1035], rx: 0.03, rz: 0.018 },
+  { pos: [0, 0.074, 0.094], rx: 0.018, rz: 0.01 },
+];
 
 // ---------------------------------------------------------------------------
 // THE FOX — .img2threejs/reference/props/fox/image.png
@@ -890,78 +1689,92 @@ function foxBody(k: Kit, rnd: () => number): THREE.Group {
   const under = part(blob(0.3, 0.2, bodyLen * 0.34), k.belly, "underside", g);
   under.position.set(0, bodyY - 0.26, bodyLen * 0.06);
 
-  // --- legs. Jointed and tapering (IDEA-065 v8), but far straighter than the
-  // deer's: a fox's hock is shallow and its foreleg is almost a post. The
-  // STOCKING is the lower two segments in the accent, which is why each leg
-  // is built in two calls rather than one — a material boundary mid-limb is
-  // the one thing `jointedLimb` cannot express, and a stocking is exactly
-  // that boundary.
-  // A JOINTED CHAIN HAS TO DESCEND, AND RAISING ONE POINT IS NOT RAISING THE
-  // JOIN. Moving the stocking's top from legLen*0.3 to *0.62 meant moving the
-  // UPPER chain's last point — which left it ABOVE the middle one, so the
-  // thigh folded back on itself and the leg rendered as a thin black stick
-  // under a short orange stub. Both points move together or the limb reverses.
+  // --- THE LEGS ARE THE BEAGLE'S LEGS (v20, Nuno: *"lets work on the legs
+  // now, lets improve a little bit the legs and the paws, lets make something
+  // like the beagle legs on the fox too"*). Same construction as the head:
+  // one PIVOT per leg, a single swept tapered mesh inside it, and a LATHE paw
+  // bulb that is wider than the shaft it hangs from.
   //
-  // THE STOCKING IS MORE THAN HALF THE LEG. Measured off the reference, the
+  // **FOUR TOP-LEVEL PARTS INSTEAD OF TWELVE.** Each leg used to be two
+  // `jointedLimb` chains plus a paw blob — the chains because a material
+  // boundary mid-limb is the one thing `jointedLimb` cannot express, and the
+  // fox's stocking is exactly that boundary. One sweep with a BAND says it
+  // instead (`sweepBanded`, the ear's own mechanism), so the stocking is a
+  // material group on the leg rather than a second solid butted onto it:
+  // no joint to misalign, no pair of radii to keep in step, and the leg is
+  // one row in the Components tree.
+  //
+  // **THE PAW IS A BULB, AND BEING WIDER THAN THE SHAFT IS THE POINT** — the
+  // beagle's is 1.5x its leg. A paw that is narrower than the leg above it
+  // reads as the leg having been cut off, which is IDEA-065 v8's hoof lesson
+  // on a different foot.
+  //
+  // The beagle's `Rest` group is deliberately NOT ported: it exists because
+  // the trot writes the pivot's rotation every frame, so a rest angle there
+  // could never survive. Nothing animates a prop's legs, so the pivot itself
+  // is the editable frame and an extra empty group would only deepen the tree.
+  const LEG_FRONT: SweepStation[] = [
+    { pos: [0, 0.04, 0], rx: 0.12, rz: 0.13 },
+    { pos: [0, -0.06, 0.012], rx: 0.175, rz: 0.185 },
+    { pos: [0, -0.3, 0.02], rx: 0.145, rz: 0.15 },
+    { pos: [0, -0.56, 0.024], rx: 0.115, rz: 0.118 },
+    // A station exactly ON the stocking line, so the colour cut is a clean
+    // ring rather than a boundary part-way along a taper.
+    { pos: [0, -0.68, 0.027], rx: 0.102, rz: 0.104 },
+    { pos: [0, -0.92, 0.03], rx: 0.089, rz: 0.091 },
+    { pos: [0, -1.14, 0.032], rx: 0.081, rz: 0.083 },
+  ];
+  const LEG_HIND: SweepStation[] = [
+    { pos: [0, 0.05, -0.03], rx: 0.13, rz: 0.15 },
+    // The haunch: a fox carries real muscle at the top of the hind leg and
+    // almost none at the shoulder, which is most of what tells the two pairs
+    // apart at a glance.
+    { pos: [0, -0.05, -0.018], rx: 0.2, rz: 0.225 },
+    { pos: [0, -0.3, 0.004], rx: 0.155, rz: 0.17 },
+    { pos: [0, -0.55, 0.03], rx: 0.116, rz: 0.121 },
+    { pos: [0, -0.68, 0.034], rx: 0.102, rz: 0.104 },
+    { pos: [0, -0.92, 0.038], rx: 0.089, rz: 0.091 },
+    { pos: [0, -1.14, 0.04], rx: 0.081, rz: 0.083 },
+  ];
+  // THE STOCKING IS MORE THAN HALF THE LEG. Measured off the reference the
   // black runs from the paw up past the knee — about 55% of the leg a viewer
-  // can see — where the first build put a short bootie on the bottom quarter.
+  // can see — where an early build put a short bootie on the bottom quarter.
   // On an animal that is otherwise one flat orange, black legs are the
-  // strongest mark it has, and a bootie throws most of that away.
-  const LEG_UPPER = [0.175, 0.142, 0.118] as const;
-  const LEG_LOWER = [0.118, 0.1, 0.086] as const;
+  // strongest mark it has.
+  const STOCKING_SEG = 4;
+  const legOf = (
+    name: string,
+    stations: SweepStation[],
+    at: readonly [number, number, number],
+  ): THREE.Group => {
+    const pivot = new THREE.Group();
+    pivot.name = name;
+    pivot.position.set(at[0], at[1], at[2]);
+    g.add(pivot);
+    const mesh = part(
+      sweepBanded(stations, 14, (seg) => (seg >= STOCKING_SEG ? 1 : 0)),
+      [k.fur, k.accent],
+      `${name}Mesh`,
+      pivot,
+    );
+    mesh.castShadow = true;
+    const paw = part(
+      latheFromProfile(FOX_PAW_PROFILE, 16, 0.24, 0.185, 0.26),
+      k.accent,
+      name.replace("leg", "paw"),
+      pivot,
+    );
+    // The TOE projects a little over one shaft-radius past the front of the
+    // leg, which is the beagle's own proportion. Pushed further it stops
+    // being a paw and becomes a ski boot — which is what 0.3 deep at z 0.055
+    // read as, because a bulb seen from the side is judged on how far it
+    // overhangs rather than on its own size.
+    paw.position.set(0, -1.15, 0.038);
+    return pivot;
+  };
   for (const s of [-1, 1]) {
-    // front
-    const fx = s * 0.235;
-    jointedLimb(
-      [
-        [fx, bodyY + 0.02, bodyLen * 0.3],
-        [fx * 1.04, legLen * 0.82, bodyLen * 0.32],
-        [fx * 1.06, legLen * 0.62, bodyLen * 0.335],
-      ],
-      LEG_UPPER,
-      k.fur,
-      s < 0 ? "legFL" : "legFR",
-      g,
-    );
-    const sockF = jointedLimb(
-      [
-        [fx * 1.06, legLen * 0.62, bodyLen * 0.335],
-        [fx * 1.07, legLen * 0.26, bodyLen * 0.35],
-        [fx * 1.07, 0.035, bodyLen * 0.36],
-      ],
-      LEG_LOWER,
-      k.accent,
-      s < 0 ? "stockingFL" : "stockingFR",
-      g,
-    );
-    const pawF = part(blob(0.1, 0.055, 0.125), k.accent, s < 0 ? "pawFL" : "pawFR", sockF);
-    pawF.position.set(0, -legLen * 0.18, bodyLen * 0.025);
-    // back — a shallow hock, enough to say quadruped and not enough to say deer
-    const bx = s * 0.245;
-    jointedLimb(
-      [
-        [bx, bodyY + 0.02, -bodyLen * 0.3],
-        [bx * 1.02, legLen * 0.86, -bodyLen * 0.21],
-        [bx * 1.04, legLen * 0.6, -bodyLen * 0.33],
-      ],
-      LEG_UPPER,
-      k.fur,
-      s < 0 ? "legBL" : "legBR",
-      g,
-    );
-    const sockB = jointedLimb(
-      [
-        [bx * 1.04, legLen * 0.6, -bodyLen * 0.33],
-        [bx * 1.05, legLen * 0.26, -bodyLen * 0.3],
-        [bx * 1.05, 0.035, -bodyLen * 0.29],
-      ],
-      LEG_LOWER,
-      k.accent,
-      s < 0 ? "stockingBL" : "stockingBR",
-      g,
-    );
-    const pawB = part(blob(0.1, 0.055, 0.125), k.accent, s < 0 ? "pawBL" : "pawBR", sockB);
-    pawB.position.set(0, -legLen * 0.18, bodyLen * 0.015);
+    legOf(s < 0 ? "legFL" : "legFR", LEG_FRONT, [s * 0.235, bodyY + 0.02, bodyLen * 0.3]);
+    legOf(s < 0 ? "legBL" : "legBR", LEG_HIND, [s * 0.245, bodyY + 0.02, -bodyLen * 0.3]);
   }
 
   // --- the neck, bell-flared into the chest for the reason the deer's is
@@ -986,162 +1799,315 @@ function foxBody(k: Kit, rnd: () => number): THREE.Group {
     g,
   );
 
-  // --- the head, carried high and pointed forward-and-down a little.
+  // --- THE HEAD IS THE BEAGLE'S HEAD (v19, Nuno: *"the fox snout still not
+  // there, so lets take the beagle head and make something like that, the same
+  // parts, then I edit the parts on the fox to look more like a fox. The only
+  // thing we can reuse is the ears of the fox that are ok"*).
+  //
+  // v18 built something LIKE the beagle's arrangement and kept re-deriving its
+  // numbers; three rounds of that still did not land the snout. So this is the
+  // beagle's head literally — the same parts, in the same order, built from the
+  // same primitives at the same relative positions, scaled up by `HS` to the
+  // fox's own head size. **It is a STARTING POINT to be edited in the Props
+  // tab, not a finished fox**, which is exactly what was asked for: every piece
+  // is a named top-level mesh with its own transform, so skull, muzzle, bridge,
+  // nose, jaw and both brow swells can each be moved, scaled and recoloured
+  // without touching the others.
+  //
+  // **THE PROFILES ARE COPIED, NOT IMPORTED, AND THAT IS DELIBERATE.**
+  // `SPHERE_PROFILE` is shared (it is already exported, and it is a sphere —
+  // there is nothing fox-specific to diverge). The muzzle, nose and bridge
+  // tables are the fox's OWN copies of the beagle's numbers, because the whole
+  // point of this hand-off is that they get tuned away from the dog — and a
+  // shared table would mean tuning the fox changes the beagle every player is
+  // looking at. Two tables that are meant to diverge are not duplication.
+  const HS = 2.1;
   const head = new THREE.Group();
   head.name = "head";
   head.position.set(0, bodyY + 0.86, bodyLen * 0.54);
   g.add(head);
-  part(blob(0.375, 0.345, 0.36), k.fur, "skull", head);
 
-  // THE MUZZLE IS A WEDGE, not the deer's stub and not the old build's long
-  // snout. A fox's face narrows to a point from a wide brow, which is most of
-  // what the eye uses to tell it from a dog.
-  const snout = part(blob(0.15, 0.135, 0.23), k.fur, "snout", head);
-  snout.position.set(0, -0.08, 0.31);
-  const snoutTip = part(blob(0.098, 0.09, 0.12), k.fur, "snoutTip", head);
-  snoutTip.position.set(0, -0.1, 0.45);
-  const nose = part(blob(0.062, 0.055, 0.055), k.dark, "nose", head);
-  nose.position.set(0, -0.085, 0.545);
+  const skull = part(
+    latheFromProfile(SPHERE_PROFILE, 24, 0.285 * HS, 0.27 * HS, 0.27 * HS),
+    k.fur,
+    "skull",
+    head,
+  );
+  skull.castShadow = true;
 
-  // THE WHITE RUFF: cheeks flaring out and back under each ear, and a pale
-  // chin running down the muzzle. This is the fox's value pattern and it is
-  // the half of the identity that colour CAN carry — the silhouette does the
-  // rest.
+  const muzzle = part(
+    latheFromProfile(FOX_MUZZLE_PROFILE, 20, 0.175 * HS, 0.135 * HS, 0.175 * HS),
+    k.belly,
+    "muzzle",
+    head,
+  );
+  muzzle.scale.set(1.012, 0.774, 1.163);
+  muzzle.position.set(0, -0.08 * HS, 0.14 * HS);
+
+  // The bridge ("stop") — the ridge from the muzzle top up between the eyes
+  // into the forehead, and the part whose job is to make muzzle and skull read
+  // as ONE face. **The one colour that differs from the beagle's**: its bridge
+  // is white because its whole muzzle is, while a fox's muzzle is pale with an
+  // ORANGE bridge over it. That is the single most recognisable thing about a
+  // fox's face and it costs nothing to say here.
+  const bridge = part(
+    taperedSweepGeometry(
+      FOX_BRIDGE_STATIONS.map((s) => ({
+        pos: [s.pos[0] * HS, s.pos[1] * HS, s.pos[2] * HS] as [number, number, number],
+        rx: s.rx * HS,
+        rz: s.rz * HS,
+      })),
+      14,
+    ),
+    k.fur,
+    "bridge",
+    head,
+  );
+  bridge.scale.set(0.9, 1, 1);
+  bridge.position.set(0, 0, -0.014 * HS);
+
+  const nose = part(
+    latheFromProfile(FOX_NOSE_PROFILE, 16, 0.075 * HS, 0.062 * HS, 0.052 * HS),
+    k.dark,
+    "nose",
+    head,
+  );
+  nose.position.set(0, -0.055 * HS, 0.23 * HS);
+
+  // The jaw. The beagle's is a pivot its chomp animation swings; nothing
+  // animates a prop's face, so it is kept as the shape it also is — the pale
+  // underside of the muzzle — on its own group so the editor sees one part.
+  const jaw = new THREE.Group();
+  jaw.name = "jaw";
+  jaw.position.set(0, -0.115 * HS, 0.095 * HS);
+  const jawMesh = part(new THREE.SphereGeometry(0.07 * HS, 14, 10), k.belly, "jawMesh", jaw);
+  jawMesh.rotation.set(0.192, 0, 0);
+  jawMesh.scale.set(0.75, 0.443, 1.313);
+  jawMesh.position.set(0, -0.008 * HS, 0.026 * HS);
+  head.add(jaw);
+
   for (const s of [-1, 1]) {
-    // A FLARE ALONG THE JAW, swept back — a round pale blob on the cheek
-    // reads as BLUSHER, which two tunings of it duly did. The reference
-    // draws the ruff as fur running back and down from under the ear, so
-    // it is long in z, thin in x, and tilted.
-    // LOW AND FORWARD, under the jaw rather than on the cheek. Sat out on
-    // the side of the face it is a pale OVAL on an orange head — which is
-    // what the side view showed, twice. The reference's white runs under
-    // the muzzle and down the throat; the cheek only catches its edge.
-    const ruff = part(blob(0.075, 0.1, 0.2), k.belly, s < 0 ? "ruffL" : "ruffR", head);
-    ruff.position.set(s * 0.21, -0.195, 0.12);
-    ruff.rotation.set(0.2, 0, -s * 0.45);
-  }
-  // THE LOWER FACE IS WHITE, which is the single biggest thing the first
-  // three builds got wrong: they painted an orange muzzle with a cream chin
-  // strip. In the reference the white covers the whole muzzle from under the
-  // eyes forward, plus both cheeks — the orange is only the brow, the bridge
-  // and the top of the head. That inversion is why it kept reading as a
-  // generic canid: a fox's face is a white mask with an orange cap.
-  const mask = part(blob(0.185, 0.14, 0.26), k.belly, "faceMask", head);
-  mask.position.set(0, -0.145, 0.34);
-  const chin = part(blob(0.12, 0.08, 0.17), k.belly, "chin", head);
-  chin.position.set(0, -0.195, 0.28);
-
-  for (const s of [-1, 1]) {
-    eye(head, s, [0.175, 0.075, 0.235], k, s < 0 ? "eyeL" : "eyeR", {
-      r: 0.125,
-      lens: [0.95, 1.0, 0.52],
+    eye(head, s, [0.075 * HS, 0.005 * HS, 0.1 * HS], k, s < 0 ? "eyeL" : "eyeR", {
+      r: 0.054 * HS,
+      // THE BEAGLE'S OWN LENS, which is much flatter than this module's
+      // default (0.66 across against 0.95). Kept at 0.95 the eye stood 57% of
+      // its radius proud of a skull that is narrow at that z, and the far one
+      // rendered as a white arc hanging off the side of the head.
+      lens: [0.66, 0.78, 0.41],
       iris: 1.05,
       pupil: 0.6,
     });
   }
 
-  // --- THE EARS, which are the whole animal. Big, upright, broad at the base
-  // and pointed, with a dark back and a pale inner — the reference's own
-  // three-tone ear. `ear` owns its inner by construction (IDEA-065's
-  // unrepresentable-defect fix), so the dark BACK is a third blob behind the
-  // shell rather than a fourth argument.
+  // Brow swells, sunk mostly into the skull — the beagle's note applies here
+  // too: a flat ridge hangs over the eye and its shaded underside quantises
+  // into a dark band that reads as a frown.
+  const browSwellL = part(
+    latheFromProfile(SPHERE_PROFILE, 12, 0.07 * HS, 0.036 * HS, 0.04 * HS),
+    k.fur,
+    "browSwellL",
+    head,
+  );
+  browSwellL.position.set(0.08 * HS, 0.078 * HS, 0.09 * HS);
+  const browSwellR = part(
+    latheFromProfile(SPHERE_PROFILE, 12, 0.07 * HS, 0.036 * HS, 0.04 * HS),
+    k.fur,
+    "browSwellR",
+    head,
+  );
+  browSwellR.position.set(-0.08 * HS, 0.078 * HS, 0.09 * HS);
+
+  // --- THE CHEEK FUR, which Nuno asked for by name one round earlier and
+  // which the beagle has no equivalent of. Kept as four separate top-level
+  // parts so they are his to tune or hide; the beagle's own head is otherwise
+  // reproduced part for part.
+  //
+  // **FUR READS ON HAVING A POINT**, and it reads as an AREA. A pale lozenge
+  // on the side of the face is BLUSHER — three tunings of it were — so these
+  // are swept leaves ending in points, two per side at different angles,
+  // because one tuft is a fin and two overlapping ones are a mass of hair.
+  const CHEEK: SweepStation[] = [
+    { pos: [0, 0, 0], rx: 0.04, rz: 0.022 },
+    { pos: [0, 0.05, 0.004], rx: 0.056, rz: 0.028 },
+    { pos: [0, 0.105, 0.005], rx: 0.052, rz: 0.026 },
+    { pos: [0, 0.155, 0.002], rx: 0.038, rz: 0.019 },
+    { pos: [0, 0.195, -0.002], rx: 0.02, rz: 0.011 },
+    { pos: [0, 0.22, -0.005], rx: 0.006, rz: 0.004 },
+  ];
+  // SWEPT BACK, not out, and **AIMED WITH A FRAME RATHER THAN EULER ANGLES**
+  // (IDEA-060 rule 5, now twice in this file): three.js applies an XYZ Euler
+  // as Rx*Ry*Rz, so a `rotation.z` that swings a tuft outward is itself
+  // rotated by the `rotation.y` written beside it — the first pair pointed
+  // INWARD, into the head, and rendered as nothing at all.
+  const CHEEK_AIM: readonly [number, number, number][] = [
+    [0.4, -0.12, -0.91],
+    [0.38, -0.4, -0.83],
+  ];
   for (const s of [-1, 1]) {
-    // A FOX'S EAR IS A TRIANGLE, AND `ear()` CANNOT MAKE ONE.
-    //
-    // That helper builds a flattened BLOB, which is a rounded lozenge — right
-    // for a deer, a rabbit and a squirrel, and the reason two tunings of it
-    // here came back reading as a RABBIT however big or small they were. The
-    // reference's ear is broad at the base with straight sides running to a
-    // point, and that outline is most of what separates a fox from every
-    // other orange animal in this module at a glance.
-    //
-    // A CONE IS A TRIANGLE SEEN FACE ON, so a cone flattened along its own
-    // depth is a triangular fin — the shape, for free, from a primitive. Three
-    // of them nested give the reference's own three tones in the order that
-    // makes it a fox's ear rather than a fennec's: an orange edge, a white
-    // inner, a dark back. Built here rather than in `ear()` because adding a
-    // shape mode to a helper four other kinds depend on is how you change
-    // four animals to fix one.
-    // BROADER THAN TALL AT THE BASE. At 0.23 wide on 0.52 the fins read
-    // as HORNS; the reference's ear is nearly as wide as it is tall.
-    const EAR_H = 0.45;
-    const EAR_W = 0.335;
-    const earPivot = new THREE.Group();
-    earPivot.name = s < 0 ? "earL" : "earR";
-    earPivot.position.set(s * 0.165, 0.185, -0.05);
-    earPivot.rotation.z = -s * 0.38;
-    earPivot.rotation.x = -0.12;
-    // DEPTH AND YAW ARE ONE DECISION, AND TUNING EITHER ALONE OVERSHOOTS.
-    // At 0.34 of depth the fin is nearly a plane, so the yaw that stops it
-    // vanishing edge-on from the SIDE (0.55) turns it square-on at the
-    // three-quarter — where it reads as a flat orange KITE, which is the same
-    // defect from the opposite direction. A deeper fin (0.52) is legible from
-    // both, so the yaw can come back to 0.4 and the ear is a solid shape at
-    // every angle rather than a plate at one and an edge at another.
-    //
-    // TURNED OUTWARD, and this is what a flat fin needs that a blob does
-    // not. An ear in the sagittal plane is seen EDGE ON from the side —
-    // the one view a quadruped prop is mostly seen from — and 0.34 of
-    // depth is a sliver, so the ears came back as two black spikes. A
-    // real ear is a cup aimed out and forward; at 0.55 rad the fin keeps
-    // most of its width from the flank and still reads from the front.
-    earPivot.rotation.y = s * 0.4;
-    head.add(earPivot);
-    const fin = (
-      w: number,
-      h: number,
-      depth: number,
-      mat: THREE.Material,
-      name: string,
-      z: number,
-    ): void => {
-      const geo = new THREE.ConeGeometry(w, h, 12, 1, false);
-      geo.scale(1, 1, depth);
-      const m = part(geo, mat, name, earPivot);
-      m.position.set(0, h / 2, z);
-      m.castShadow = true;
-    };
-    fin(EAR_W, EAR_H, 0.52, k.fur, s < 0 ? "earLShell" : "earRShell", 0);
-    fin(EAR_W * 0.6, EAR_H * 0.76, 0.42, k.belly, s < 0 ? "earLInner" : "earRInner", EAR_W * 0.2);
-    fin(EAR_W * 0.97, EAR_H * 0.98, 0.4, k.accent, s < 0 ? "earLBack" : "earRBack", -EAR_W * 0.18);
+    for (const [i, aim] of CHEEK_AIM.entries()) {
+      const tuft = part(
+        taperedSweepGeometry(CHEEK, 10),
+        k.belly,
+        (s < 0 ? "cheekL" : "cheekR") + String(i),
+        head,
+      );
+      tuft.position.set(s * 0.175, -0.14, 0.13);
+      tuft.quaternion.setFromUnitVectors(
+        new THREE.Vector3(0, 1, 0),
+        new THREE.Vector3(s * aim[0], aim[1], aim[2]).normalize(),
+      );
+    }
   }
 
-  // --- THE BRUSH. As thick as the fox's own body on purpose: the reference's
-  // tail is the single biggest mass in the drawing after the torso, and a fox
-  // drawn with a thin tail is a cat. It sweeps BACK AND UP — held low and
-  // straight it is a rat's tail — and ends in a broad white tip.
+  // --- THE EARS, which are the whole animal, and they were the wrong SHAPE
+  // and the wrong PROPORTION at once.
+  //
+  // **MEASURED ON THE REFERENCE AN EAR IS ABOUT 1.9 LONG FOR 1 WIDE.** The
+  // shipped pair were 0.45 tall on a 0.67 base — i.e. WIDER THAN THEY WERE
+  // TALL, almost three times too broad. (An older note here says a narrower
+  // fin "read as HORNS"; that was judged at 1.13, still nowhere near the
+  // reference, and the horn read came from the fin being a flat sliver rather
+  // than from its width.) An ear is also about as long as the head is tall,
+  // which is why this is rank 1 of the whole animal.
+  //
+  // **AND IT IS A LEAF, NOT A CONE.** A cone's silhouette is two STRAIGHT
+  // lines from a base that is its widest point; the reference's ear is widest
+  // about a third of the way up and curves in to the point from both sides.
+  // So it is the brush's construction again — swept stations with a profile —
+  // which also gives it real DEPTH rather than a scaled-flat primitive, and
+  // depth is what v15 found the yaw cannot substitute for.
+  // **WIDEST NEAR THE BASE, WHICH IS WHAT MAKES IT A FOX'S AND NOT A
+  // RABBIT'S.** The first leaf was widest a third of the way UP, narrowing to
+  // a thin root — and that is precisely a rabbit's ear, which is why the
+  // first render of it read as one despite being the right length and the
+  // right ratio. A fox's is a TRIANGLE with a broad base; the curve is in how
+  // it comes off that base and in to the point, not in where its maximum is.
+  const EAR: SweepStation[] = [
+    { pos: [0, 0, 0], rx: 0.176, rz: 0.068 },
+    { pos: [0, 0.085, 0.006], rx: 0.191, rz: 0.079 },
+    { pos: [0.004, 0.2, 0.009], rx: 0.179, rz: 0.079 },
+    { pos: [0.008, 0.33, 0.006], rx: 0.145, rz: 0.068 },
+    { pos: [0.012, 0.45, -0.001], rx: 0.104, rz: 0.05 },
+    { pos: [0.016, 0.55, -0.007], rx: 0.056, rz: 0.03 },
+    { pos: [0.02, 0.62, -0.011], rx: 0.013, rz: 0.011 },
+  ];
+  const EAR_RADIAL = 14;
+  const earStations = (scale: number, dz: number, hScale: number): SweepStation[] =>
+    EAR.map((s) => ({
+      pos: [s.pos[0] * scale, s.pos[1] * hScale, s.pos[2] * scale + dz] as [number, number, number],
+      rx: s.rx * scale,
+      rz: s.rz * scale,
+    }));
+  const earLeaf = (
+    scale: number,
+    dz: number,
+    mat: THREE.Material,
+    name: string,
+    parent: THREE.Object3D,
+    hScale = 1,
+  ): void => {
+    const m = part(taperedSweepGeometry(earStations(scale, dz, hScale), EAR_RADIAL), mat, name, parent);
+    m.castShadow = true;
+  };
+  for (const s of [-1, 1]) {
+    const earPivot = new THREE.Group();
+    earPivot.name = s < 0 ? "earL" : "earR";
+    // SET WIDE AND HIGH, on the corners of the skull rather than on top of
+    // it: ears meeting in the middle are a cat's.
+    earPivot.position.set(s * 0.185, 0.2, -0.13);
+    earPivot.rotation.z = -s * 0.34;
+    earPivot.rotation.x = -0.1;
+    // A real leaf carries its own depth, so the yaw is back to what the
+    // reference shows rather than to whatever stopped a flat fin vanishing
+    // edge-on. v15's rule stands: depth and yaw are ONE decision, and this is
+    // the end of it where the depth does the work.
+    // **MEASURED, NOT CHOSEN.** At 0.26 the ear's own plane sits 49 degrees
+    // off face-on from the review camera, which compresses its apparent width
+    // to 0.66 of the real one — the pair measured 2.68 tall-for-wide against
+    // the reference's 1.82 and read as a kangaroo's. The ear is not narrow in
+    // three dimensions; it was being LOOKED at edge-on. Half the correction
+    // belongs here and half in the table above, because a prop takes a random
+    // yaw on the board and so is seen from every azimuth.
+    earPivot.rotation.y = s * 0.18;
+    head.add(earPivot);
+    // THE DARK BACK IS THE SHELL'S OWN REAR HALF, NOT A SOLID BEHIND IT.
+    // Built as a separate leaf it could only ever be a RIM: it has to stand
+    // proud of the shell somewhere to be seen at all, and on an ear that is
+    // yawed outward "somewhere" turns out to be the OUTER SILHOUETTE — a hard
+    // black line down the edge of each ear. That is the version Nuno hid, and
+    // he was right to. As a material group on the one surface the dark is on
+    // the rear face BY CONSTRUCTION and cannot escape to the outline.
+    //
+    // The ear's path runs along +Y, so `taperedSweepGeometry` frames it as
+    // right = +X and up = -Z: a point's z is `-sin(a) * rz`, which makes
+    // `sin(a) > 0` the REAR. Slightly past zero, so a sliver of orange rim
+    // survives at the edges from the front.
+    const shell = part(
+      sweepBanded(earStations(1, 0, 1), EAR_RADIAL, (_seg, j) => {
+        const a = ((j + 0.5) / EAR_RADIAL) * Math.PI * 2;
+        return Math.sin(a) > 0.15 ? 1 : 0;
+      }),
+      [k.fur, k.accent],
+      s < 0 ? "earLShell" : "earRShell",
+      earPivot,
+    );
+    shell.castShadow = true;
+    earLeaf(0.68, 0.036, k.belly, s < 0 ? "earLInner" : "earRInner", earPivot, 0.9);
+  }
+
+  // --- THE BRUSH, RAISED (v16, Nuno: *"the tail should be pointing up and
+  // should have other form, this dont look like a tail, and should be pointed
+  // on the edge"*). Three separate things, and only the first was a shape
+  // problem at all:
+  //
+  //  * **IT WAS TRANSPARENT BECAUSE IT WAS INSIDE-OUT.** See `ringedTail`'s
+  //    header — the walls were wound inward, so the near side was culled away
+  //    and the body showed through the tail. Every tuning before this was
+  //    done against a tail that was not being drawn.
+  //  * **IT POINTS UP.** It used to run back and DOWN (bodyY to bodyY-0.22),
+  //    which is a fox at rest and, at the apron, a horizontal bar behind a
+  //    horizontal body — the one direction that adds nothing to a silhouette
+  //    already long in z. Raised, the brush is the only part of this animal
+  //    with real vertical extent apart from the ears, and it stops short of
+  //    them on purpose: the ears are rank 1 and must stay the top of the
+  //    outline.
+  //  * **IT COMES TO A POINT, WHICH IS WHAT A CAP BOUGHT.** The white tip was
+  //    a BLOB, carried because an open tube's final rim had to be hidden
+  //    behind something wider than itself — so the brush could only ever end
+  //    blunt, and the thing hiding the rim was exactly IDEA-065 v1's "cream
+  //    snowball stuck on the end". With the ends capped the rim does not
+  //    exist, the profile can run to 0.02, and the white is a BAND on the
+  //    brush's own last fifth rather than an object on the end of it.
   const curve = new THREE.CatmullRomCurve3([
-    // THE BASE STARTS WHERE THE BODY IS STILL WIDE ENOUGH TO SWALLOW IT.
-    // `ringedTail` is open at BOTH ends, and at -0.5 the barrel has already
-    // tapered to 0.07 while the brush is 0.30 — so the base's open rim stood
-    // clear of the rump as a hard vertical CUT with the body visible past it.
-    // That is what read as a flat sheet, and it took a crop at four times to
-    // see that the defect was at the END I had not been looking at: the taper,
-    // the sweep and the tip were all retuned first on the other theory.
-    new THREE.Vector3(0, bodyY, -bodyLen * 0.26),
-    new THREE.Vector3(0.05, bodyY - 0.08, -bodyLen * 0.82),
-    new THREE.Vector3(0.09, bodyY - 0.22, -bodyLen * 1.1),
-    new THREE.Vector3(0.12, bodyY - 0.12, -bodyLen * 1.36),
+    // The base still starts inside the rump — not to hide a rim any more, but
+    // because a tail that begins at the body's surface reads as attached TO
+    // it rather than as growing out of it.
+    new THREE.Vector3(0, bodyY - 0.04, -bodyLen * 0.26),
+    new THREE.Vector3(0.03, bodyY + 0.1, -bodyLen * 0.86),
+    new THREE.Vector3(0.07, bodyY + 0.56, -bodyLen * 1.16),
+    // The tip leans FORWARD over the back. A brush that goes straight up is a
+    // mast; the curl is what makes the raised pose read as fur with weight.
+    new THREE.Vector3(0.1, bodyY + 1.02, -bodyLen * 1.06),
   ]);
-  // THICK FOR MOST OF ITS LENGTH. A brush that tapers steadily from base
-  // to tip is a tapering TUBE, and swept upward a tapering tube reads as a
-  // flat FIN — which is what the side view showed. A real brush is nearly
-  // parallel-sided until it rounds off, so the far radius is most of the
-  // near one and the curve is carried BACK rather than up.
-  part(ringedTail(curve, 0.3, 0.22, 24, 11, 1), [k.fur], "tail", g);
-  // THE TIP IS AN EXTENSION OF THE BRUSH, NOT A BALL ON IT. IDEA-065 v1
-  // already learned this on the old tail — "a cream snowball stuck on the
-  // end" — and a round blob put it straight back. Stretched along the
-  // tail's own direction and tapered, it reads as the brush going white.
-  // THE TIP HAS TO BE WIDER THAN THE TUBE IT CAPS. `ringedTail` is OPEN at
-  // both ends — the base is buried in the rump and the far end is not — so a
-  // tip blob narrower than the final ring leaves the rim showing, and an open
-  // rim seen from the side is a straight hard edge across the brush. That is
-  // what read as a flat SHEET, and it was neither the taper nor the sweep,
-  // both of which were retuned first on that theory.
-  const tip = part(blob(0.26, 0.25, 0.3), k.belly, "tailTip", g);
-  tip.position.set(0.12, bodyY - 0.12, -bodyLen * 1.36);
-  tip.rotation.x = -0.2;
+  // NARROW AT THE RUMP, WIDEST AT A THIRD, AND A POINT — which is a brush,
+  // and which no pair of end radii can describe. A steady taper from a fat
+  // base is a CARROT; parallel sides are a bolster.
+  //
+  // **LENGTH OVER WIDTH IS THE NUMBER, AND IT IS ABOUT 3.** The first raised
+  // build ran 1.47 long against 0.70 across — 2.1, which is not a fat tail,
+  // it is a BLADE: at that ratio the curve's own bend happens inside a single
+  // diameter and the whole thing reads as a comma, or as a fin. Lengthened to
+  // 1.73 and narrowed to 0.55 it is 3.1, and the point at the end has room to
+  // be a point rather than a facet on a lump.
+  part(
+    ringedTail(curve, 0, 0, 34, 12, 1, {
+      profile: [0.1, 0.22, 0.27, 0.275, 0.25, 0.2, 0.12, 0.015],
+      tipFrom: 0.74,
+    }),
+    [k.fur, k.belly],
+    "tail",
+    g,
+  );
 
   // THE BIB, down the front of the neck and chest — appended last, which is
   // this file's rule for anything added after a def may have saved edits.

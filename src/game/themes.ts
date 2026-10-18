@@ -469,24 +469,33 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
       rimIntensity: 0.35,
       bloomColors: [0xf4efe6, 0x8a9ae0, 0xd8483f],
       bloomEmissiveIntensity: 1,
-      bloomChance: 0.5,
+      bloomChance: 0,
       speckColor: 0x6a9a4a,
       speckEmissive: 0x16300f,
       speckChance: 0.5,
     },
     placements: [
       { propId: "critter-deer", tile: [3, 21], offset: [0, 0], rotationY: 0.72, scale: 1.51 },
+      { propId: "critter-fox", tile: [9, 21], offset: [0, 0.18], rotationY: 0, scale: 1.43 },
+      { propId: "critter-raccoon", tile: [12, 21], offset: [0, 0], rotationY: 0, scale: 1.33 },
     ],
     verge: [
-      { propId: "log-cabin", tile: [-3, -3], offset: [0, 0], rotationY: 0.4, scale: 3 },
-      { propId: "log-cabin", tile: [21, -3], offset: [0, 0], rotationY: 5.79, scale: 3 },
-      { propId: "pine", tile: [0, -3], offset: [0, 0], rotationY: 0, scale: 2.42 },
-      { propId: "pine", tile: [2, -2], offset: [0, 0], rotationY: 0, scale: 1.76 },
+      { propId: "log-cabin", tile: [-1, -3], offset: [0, 0], rotationY: 0.36, scale: 3 },
+      { propId: "log-cabin", tile: [19, -3], offset: [0, 0], rotationY: 5.92, scale: 3 },
+      { propId: "pine", tile: [2, -3], offset: [0, 0], rotationY: 0, scale: 2.52 },
+      { propId: "pine", tile: [4, -3], offset: [0, 0], rotationY: 0, scale: 1.94 },
+      { propId: "pine", tile: [3, -2], offset: [0, 0], rotationY: 0, scale: 1.74 },
+      { propId: "critter-deer", tile: [6, -3], offset: [0, 0], rotationY: 0, scale: 1.74 },
+      { propId: "pine", tile: [-3, -1], offset: [0, 0], rotationY: 0, scale: 2.37 },
+      { propId: "critter-fox", tile: [-2, 1], offset: [0, 0], rotationY: 0.54, scale: 1.43 },
+      { propId: "critter-raccoon", tile: [15, -3], offset: [0, 0], rotationY: 0, scale: 1.56 },
+      { propId: "pine", tile: [21, 0], offset: [0, 0], rotationY: 0, scale: 2.75 },
     ],
     wallDecor: [
       { propId: "flower-head-sunflower", tile: [0, 20], rotationY: 0, scale: 1 },
     ],
   },
+
 
 
 

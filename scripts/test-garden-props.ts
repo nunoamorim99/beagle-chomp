@@ -744,6 +744,1008 @@ section("The deer's hind leg is a Z, which is what makes it not a table");
   ok("all four feet have a hoof", hooves === 4, `${hooves} found`);
 }
 
+
+// ---------------------------------------------------------------------------
+section("Every critter tail is a SOLID, not a tube you can see through");
+
+{
+  // IDEA-065 v16. Nuno: *"the tail is transparent."* He was describing a real
+  // and measurable defect rather than a material problem: `ringedTail` wound
+  // its walls `(a, c, d) / (a, d, b)`, the OPPOSITE orientation to
+  // `taperedSweepGeometry`'s, so every wall normal pointed INWARD. A
+  // back-facing wall is culled, so the near side of the tail was never drawn
+  // and what reached the screen was the inside of the far wall — the body
+  // visible straight through the tail, lit from the wrong side.
+  //
+  // IT IS ASSERTED ON FACE WINDING AND NOT ON A RENDER, because a render is
+  // exactly what failed to catch it: an inside-out tube has the same
+  // SILHOUETTE as a correct one, so it reads as a slightly oddly shaded tail
+  // and nothing more. Three models shipped that way. It is also the SECOND
+  // time this project has shipped this winding — `taperedSweepGeometry`
+  // carries the first in its own header ("the dog rendered hollow").
+  //
+  // The test is a centroid proxy, so it asserts a MAJORITY rather than
+  // unanimity: the squirrel's plume arcs back over itself far enough that the
+  // mesh's own centroid sits outside the tube near the ends. Inverted, the
+  // fox measured 518 of 528 faces the wrong way, so this is not a close call.
+  for (const id of ["critter-fox", "critter-raccoon", "critter-squirrel"]) {
+    const m = makePropById(id, 0.31);
+    let found = false;
+    m.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh || mesh.name !== "tail") return;
+      const idx = mesh.geometry.getIndex();
+      if (!idx) return;
+      found = true;
+      const pos = mesh.geometry.getAttribute("position");
+      const c = new THREE.Vector3();
+      for (let i = 0; i < pos.count; i++) c.add(new THREE.Vector3().fromBufferAttribute(pos, i));
+      c.divideScalar(pos.count);
+      let out = 0;
+      let inn = 0;
+      const a = new THREE.Vector3();
+      const b = new THREE.Vector3();
+      const d = new THREE.Vector3();
+      for (let t = 0; t < idx.count; t += 3) {
+        a.fromBufferAttribute(pos, idx.getX(t));
+        b.fromBufferAttribute(pos, idx.getX(t + 1));
+        d.fromBufferAttribute(pos, idx.getX(t + 2));
+        const n = new THREE.Vector3().subVectors(b, a).cross(new THREE.Vector3().subVectors(d, a));
+        const mid = a.clone().add(b).add(d).divideScalar(3).sub(c);
+        if (n.dot(mid) > 0) out++;
+        else inn++;
+      }
+      ok(`${id}'s tail faces outward`, out > inn * 4 && out > 50, `outward ${out}, inward ${inn}`);
+    });
+    ok(`${id} has a tail to check`, found);
+  }
+
+  // AND THE FOX'S IS CLOSED. An open tube has two visible rims, and hiding
+  // them is what forced its white tip to be a BLOB wider than the final ring
+  // — i.e. the one thing that stopped the brush ever coming to a point. A
+  // closed surface has every edge shared by exactly two triangles.
+  const fox = makePropById("critter-fox", 0.31);
+  fox.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    if (!mesh.isMesh || mesh.name !== "tail") return;
+    const idx = mesh.geometry.getIndex();
+    if (!idx) return;
+    const seen = new Map<string, number>();
+    for (let t = 0; t < idx.count; t += 3) {
+      const v = [idx.getX(t), idx.getX(t + 1), idx.getX(t + 2)];
+      for (let e = 0; e < 3; e++) {
+        const pair = [v[e], v[(e + 1) % 3]].sort((p1, p2) => p1 - p2);
+        const key = `${pair[0]}:${pair[1]}`;
+        seen.set(key, (seen.get(key) ?? 0) + 1);
+      }
+    }
+    let open = 0;
+    for (const n of seen.values()) if (n !== 2) open++;
+    ok("the fox's brush is a closed solid (both ends capped)", open === 0, `${open} unshared edges`);
+  });
+}
+
+
+// ---------------------------------------------------------------------------
+section("The fox's head is the beagle's parts, each one editable and visible");
+
+{
+  // IDEA-065 v17, v18, then v19 — and this guard has been rewritten with each
+  // of them, which is the useful thing about it. v17 asserted "there is no
+  // separate muzzle" (the head was one sweep). v18 asserted the opposite plus
+  // a tangency ratio between muzzle and skull. Both were pinning a SOLUTION,
+  // and Nuno has now replaced the solution twice:
+  //   *"the snout be only one piece can be difficult to edit now"*
+  //   *"lets take the beagle head and make something like that, the same
+  //    parts, then I edit the parts on the fox to look more like a fox"*
+  //
+  // **A TEST MUST NOT PIN NUMBERS ON A PART SOMEBODY IS ACTIVELY AUTHORING.**
+  // The head is explicitly a starting point to be tuned in the Props tab, so
+  // every shape ratio asserted here would fail on his next save and would be
+  // read as a broken build. What is stable is the two things he actually
+  // asked for, and one defect this project keeps shipping.
+  const fox = makePropById("critter-fox", 0.31);
+  fox.updateMatrixWorld(true);
+  const named = (n: string): THREE.Object3D | undefined => {
+    let hit: THREE.Object3D | undefined;
+    fox.traverse((o) => {
+      if (o.name === n && !hit) hit = o;
+    });
+    return hit;
+  };
+
+  // 1. THE PIECES ARE SEPARATE, NAMED AND MOVABLE. This is the requirement —
+  // a part inside another mesh has no transform of its own and the editor
+  // cannot reach it.
+  for (const want of [
+    "skull",
+    "muzzle",
+    "bridge",
+    "nose",
+    "jawMesh",
+    "browSwellL",
+    "browSwellR",
+    "eyeL",
+    "eyeR",
+    "earL",
+    "earR",
+  ]) {
+    ok(`'${want}' is its own part`, named(want) !== undefined);
+  }
+
+  // 2. NOTHING IS ENTIRELY BURIED IN THE SKULL. This project has shipped a
+  // part that was built right, coloured right, placed right and behind
+  // another surface SIX times (IDEA-057's nori belt, IDEA-058's mouth floor,
+  // IDEA-059's flipped band normal, IDEA-060's birdhouse recess, IDEA-065's
+  // five-in-one-session, and this idea's own first bridge, which sat 0.13
+  // below the skull's crown). It survives any amount of editing, and no
+  // render says it.
+  const skull = named("skull") as THREE.Mesh | undefined;
+  const head = named("head");
+  if (skull && head) {
+    skull.geometry.computeBoundingBox();
+    const bb = skull.geometry.boundingBox!;
+    const rx = (bb.max.x - bb.min.x) / 2;
+    const ry = (bb.max.y - bb.min.y) / 2;
+    const rz = (bb.max.z - bb.min.z) / 2;
+    const c = new THREE.Vector3(
+      (bb.max.x + bb.min.x) / 2,
+      (bb.max.y + bb.min.y) / 2,
+      (bb.max.z + bb.min.z) / 2,
+    ).add(skull.position);
+    const v = new THREE.Vector3();
+    for (const want of ["muzzle", "bridge", "nose", "jawMesh", "browSwellL", "cheekL0"]) {
+      const m = named(want) as THREE.Mesh | undefined;
+      if (!m) continue;
+      const pos = m.geometry.getAttribute("position");
+      let outside = 0;
+      for (let i = 0; i < pos.count; i++) {
+        v.fromBufferAttribute(pos, i);
+        m.localToWorld(v);
+        head.worldToLocal(v);
+        const d = ((v.x - c.x) / rx) ** 2 + ((v.y - c.y) / ry) ** 2 + ((v.z - c.z) / rz) ** 2;
+        if (d > 1) outside++;
+      }
+      ok(
+        `'${want}' is not buried inside the skull`,
+        outside > pos.count * 0.03,
+        `${outside} of ${pos.count} vertices outside`,
+      );
+    }
+  }
+
+  // 3. THE EAR, which Nuno has signed off (*"the only thing we can reuse is
+  // the ears of the fox that are ok"*) and which is rank 1 of the animal.
+  const shell = named("earLShell") as THREE.Mesh | undefined;
+  ok("the ear has a shell to measure", shell !== undefined);
+  if (shell) {
+    shell.geometry.computeBoundingBox();
+    const bb = shell.geometry.boundingBox!;
+    const tall = bb.max.y - bb.min.y;
+    const wide = bb.max.x - bb.min.x;
+    ok(
+      "the ear is a tall triangle, not a horn and not a blade",
+      tall / wide > 1.4 && tall / wide < 2.4,
+      `${(tall / wide).toFixed(2)} tall-for-wide`,
+    );
+    // THE INVARIANT IS A BROAD BASE, AND IT TOOK TWO WRONG CHECKS TO SAY SO.
+    // First as a ratio between two sampled bands, whose threshold landed
+    // exactly on the shipped value and failed a correct ear. Then as WHERE the
+    // maximum sits — which sounds like the shape and is not, because the fox
+    // profile and the rabbit profile both peak at 32% of the height, so that
+    // one PASSED on the re-injected defect.
+    const pos = shell.geometry.getAttribute("position");
+    let widest = 0;
+    let atBase = 0;
+    for (let i = 0; i < pos.count; i++) {
+      const x = Math.abs(pos.getX(i));
+      widest = Math.max(widest, x);
+      if (pos.getY(i) - bb.min.y < tall * 0.06) atBase = Math.max(atBase, x);
+    }
+    ok(
+      "the ear leaves the head BROAD (a fox's triangle), not on a narrow root (a rabbit's)",
+      atBase > widest * 0.7,
+      `base ${atBase.toFixed(3)} of a maximum ${widest.toFixed(3)}`,
+    );
+    ok(
+      "the ear's dark back is a material group, not a separate solid",
+      shell.geometry.groups.length === 2 && named("earLBack") === undefined,
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+section("The fox's legs are the beagle's legs, and its feet are on the floor");
+
+{
+  // IDEA-065 v20. Nuno: *"lets work on the legs now, lets improve a little bit
+  // the legs and the paws, lets make something like the beagle legs on the fox
+  // too."* Each leg used to be two `jointedLimb` chains plus a paw blob —
+  // twelve top-level parts — because a material boundary mid-limb is the one
+  // thing a jointed chain cannot express and the fox's stocking is exactly
+  // that boundary. One swept mesh with a BAND says it instead.
+  //
+  // These are the invariants, not the numbers: the head's guard above records
+  // why a test on a part somebody is authoring must not pin shape ratios.
+  const fox = makePropById("critter-fox", 0.31);
+  fox.updateMatrixWorld(true);
+  const named = (n: string): THREE.Object3D | undefined => {
+    let hit: THREE.Object3D | undefined;
+    fox.traverse((o) => {
+      if (o.name === n && !hit) hit = o;
+    });
+    return hit;
+  };
+
+  for (const leg of ["legFL", "legFR", "legBL", "legBR"]) {
+    const pivot = named(leg);
+    ok(`'${leg}' is one editable pivot`, pivot !== undefined && pivot.children.length === 2);
+    const mesh = named(`${leg}Mesh`) as THREE.Mesh | undefined;
+    ok(
+      `'${leg}' carries its stocking as a material group`,
+      mesh !== undefined &&
+        mesh.geometry.groups.length === 2 &&
+        Array.isArray(mesh.material) &&
+        mesh.material.length === 2,
+    );
+  }
+
+  // **A PAW IS WIDER THAN THE SHAFT IT HANGS FROM.** A bulb narrower than the
+  // leg above it reads as a leg that was CUT OFF — IDEA-065 v8 learned this on
+  // the deer's hooves, where the first pair ran wide, narrow, then a bead. The
+  // beagle's paw is about 1.5x its shaft and the fox's is held to the same.
+  for (const side of ["FL", "FR", "BL", "BR"]) {
+    const paw = named(`paw${side}`) as THREE.Mesh | undefined;
+    const mesh = named(`leg${side}Mesh`) as THREE.Mesh | undefined;
+    if (!paw || !mesh) {
+      ok(`paw${side} and its leg exist`, false);
+      continue;
+    }
+    paw.geometry.computeBoundingBox();
+    const pw = (paw.geometry.boundingBox!.max.x - paw.geometry.boundingBox!.min.x) / 2;
+    // The shaft at the ankle: the widest |x| among the mesh's lowest vertices.
+    const pos = mesh.geometry.getAttribute("position");
+    let yMin = Infinity;
+    for (let i = 0; i < pos.count; i++) yMin = Math.min(yMin, pos.getY(i));
+    let shaft = 0;
+    for (let i = 0; i < pos.count; i++) {
+      if (pos.getY(i) < yMin + 0.05) shaft = Math.max(shaft, Math.abs(pos.getX(i)));
+    }
+    ok(
+      `paw${side} is wider than the leg it hangs from`,
+      pw > shaft * 1.2 && pw < shaft * 2.2,
+      `paw ${pw.toFixed(3)} against shaft ${shaft.toFixed(3)} (${(pw / shaft).toFixed(2)}x)`,
+    );
+  }
+
+  // **AND ALL FOUR FEET ARE ON THE FLOOR.** A rest pose is not a floor and
+  // only VERTICES say so (IDEA-060 rule 6): the tulip's strap leaf shipped
+  // 0.14 units underground and the treehouse's tyre swing 0.023, and no render
+  // showed either — a turntable has no floor there. Bounded at BOTH ends,
+  // because "not underground" passes happily on a prop hovering in mid-air.
+  //
+  // MEASURED AGAINST THE MODEL'S OWN HEIGHT, not in world units. A critter is
+  // scaled to its kind's standing height, so an absolute threshold is a
+  // different threshold on every animal — the first version of this check
+  // allowed 0.06 world units and PASSED on a foot re-injected 0.13 model units
+  // off the ground, because the scale shrank the error under the bound. Third
+  // instrument in this feature to report a pass on a defect it was written
+  // for; suspect the instrument first.
+  const v = new THREE.Vector3();
+  let modelLow = Infinity;
+  let modelHigh = -Infinity;
+  fox.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (!m.isMesh) return;
+    const pos = m.geometry.getAttribute("position");
+    for (let i = 0; i < pos.count; i++) {
+      v.fromBufferAttribute(pos, i);
+      m.localToWorld(v);
+      modelLow = Math.min(modelLow, v.y);
+      modelHigh = Math.max(modelHigh, v.y);
+    }
+  });
+  const height = modelHigh - modelLow;
+  // **AND THE ABSOLUTE VERSION OF THIS CHECK IS TAUTOLOGICAL HERE, WHICH IS
+  // WORTH KNOWING BEFORE SOMEBODY WRITES IT AGAIN.** `fitToHeight` measures
+  // the group's own lowest vertex and re-seats it at y = 0, so "the animal
+  // floats" is UNREPRESENTABLE for a critter — lifting all four paws just
+  // moves the model down with them. A check for it can never fail, and a test
+  // that cannot fail is worse than no test because it reads as coverage. What
+  // is left, and what is real, is ONE foot hanging while the others carry the
+  // floor.
+  for (const side of ["FL", "FR", "BL", "BR"]) {
+    const paw = named(`paw${side}`) as THREE.Mesh | undefined;
+    if (!paw) continue;
+    const pos = paw.geometry.getAttribute("position");
+    let low = Infinity;
+    for (let i = 0; i < pos.count; i++) {
+      v.fromBufferAttribute(pos, i);
+      paw.localToWorld(v);
+      low = Math.min(low, v.y);
+    }
+    ok(
+      `paw${side} rests on the same floor as the rest of the model`,
+      low - modelLow < height * 0.03,
+      `${(((low - modelLow) / height) * 100).toFixed(1)}% of the model's height above its lowest point`,
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+section("Every eared critter's ear inner clears its shell");
+
+{
+  // IDEA-065 v21. The raccoon's new pointed ear shipped for one render with
+  // its inner leaf BURIED: the shell's half-depth at its widest is 0.205 of
+  // the ear's length and the inner's is 0.66 of that, so stepping the inner
+  // forward by less than their difference leaves its front face inside the
+  // shell — and the ear renders as a solid flap with a speck on it. Built
+  // right, coloured right, placed right, and behind another surface, which is
+  // the defect this project has now shipped SEVEN times.
+  //
+  // Both parts are children of the same ear pivot, so pivot-local z is the one
+  // frame in which "in front of" means anything — the pivot carries the ear's
+  // whole tilt, splay and yaw, and in world space those turn a clean
+  // comparison into noise.
+  const front = (m: THREE.Mesh): number => {
+    m.geometry.computeBoundingBox();
+    return m.geometry.boundingBox!.max.z + m.position.z;
+  };
+  for (const id of ["critter-rabbit", "critter-raccoon", "critter-squirrel", "critter-fox"]) {
+    const prop = makePropById(id, 0.29);
+    let shell: THREE.Mesh | undefined;
+    let inner: THREE.Mesh | undefined;
+    prop.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh) return;
+      if (m.name === "earLShell") shell = m;
+      if (m.name === "earLInner") inner = m;
+    });
+    if (!shell || !inner) {
+      ok(`${id} has an ear shell and inner`, false);
+      continue;
+    }
+    const sf = front(shell);
+    const inf = front(inner);
+    ok(
+      `${id}'s ear inner stands clear of its shell`,
+      inf > sf,
+      `inner front ${inf.toFixed(4)} against shell front ${sf.toFixed(4)}`,
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+section("The raccoon's face carries what the reference does");
+
+{
+  // IDEA-065 v21. Nuno, with the reference: pointed ears, the WHITE around the
+  // black mask, a snout of two jaws, and three whisker lines a side.
+  //
+  // Every one of these is a part that can be hidden or deleted in the Props
+  // tab, so this asserts PRESENCE and SHAPE, never position — the whole head
+  // is his to author and rule 23 records what happens to a test that pins
+  // numbers on a part somebody is editing.
+  const rac = makePropById("critter-raccoon", 0.29);
+  const named = (n: string): THREE.Object3D | undefined => {
+    let hit: THREE.Object3D | undefined;
+    rac.traverse((o) => {
+      if (o.name === n && !hit) hit = o;
+    });
+    return hit;
+  };
+
+  // **THE MASK IS PAINT ON THE SKULL, NOT PARTS ON IT** (v23, Nuno: *"the
+  // mask and the browWhite should not be components and be colour pattern on
+  // the skull"*). v21 asserted the opposite — that the white was its own part
+  // — which was true of the build at the time and is now exactly the thing he
+  // asked to be removed. Third guard in this animal's history to have pinned
+  // a SOLUTION rather than the requirement; the requirement is that the mask
+  // reads in three steps, black / white / fur, and a material group says that
+  // without a patch that can come adrift from the surface it sits on.
+  for (const gone of ["browWhiteL", "browWhiteR", "maskL", "maskR", "maskBridge"]) {
+    ok(`'${gone}' is no longer a separate solid`, named(gone) === undefined);
+  }
+  const skull = named("skull") as THREE.Mesh | undefined;
+  ok(
+    "the skull carries fur, mask and white as three material groups",
+    skull !== undefined &&
+      skull.geometry.groups.length === 3 &&
+      Array.isArray(skull.material) &&
+      skull.material.length === 3,
+    skull ? `${skull.geometry.groups.length} groups` : "no skull",
+  );
+  // ...and all three are actually USED. A band whose predicate never returns
+  // its index leaves an empty group, which is not an error anywhere: the mesh
+  // builds, the materials are valid, and the marking is simply absent.
+  if (skull) {
+    for (const [i, what] of ["fur", "the black mask", "the white surround"].entries()) {
+      const grp = skull.geometry.groups.find((g) => g.materialIndex === i);
+      ok(`${what} covers a real share of the skull`, grp !== undefined && grp.count > 60, `${grp?.count ?? 0} indices`);
+    }
+  }
+  // **AND THE MASK'S EDGE IS CUT ALONG ITS OWN CURVE, NOT ALONG THE MESH'S
+  // GRID** (v24, Nuno: *"behind the eyes the white and black pattern are
+  // pixelized, lets make that smooth"*). Assigning whole quads to a band
+  // follows edges that already exist, which is exact and is a STAIRCASE;
+  // `splitCoatGroups` splits a straddling triangle along the region's true
+  // boundary instead, the way the beagle's coat has since IDEA-047.
+  //
+  // The signature is where the vertices CAN be. A grid cut never creates a
+  // vertex — every one of the black group's sits at one of the profile's own
+  // heights, so there can be at most as many distinct Y values as the profile
+  // has points (18). Splitting makes new vertices wherever the boundary
+  // crosses an edge, at arbitrary heights, so there are many more. This also
+  // fails if someone swaps back to a per-quad band, whatever resolution they
+  // throw at it — which is the point, since resolution is a QUADRATIC bill
+  // that never quite gets there.
+  if (skull) {
+    const pos = skull.geometry.getAttribute("position");
+    const black = skull.geometry.groups.find((g) => g.materialIndex === 1);
+    const ys = new Set<string>();
+    if (black && !skull.geometry.getIndex()) {
+      for (let i = black.start; i < black.start + black.count; i++) {
+        ys.add(pos.getY(i).toFixed(4));
+      }
+    }
+    ok(
+      "the mask's edge is cut along its own curve, not along the mesh grid",
+      ys.size > 30,
+      `${ys.size} distinct vertex heights in the mask (a grid cut allows at most one per profile point)`,
+    );
+  }
+
+  // **AND THE SKULL IS NOT A SPHERE.** A raccoon's head is widest at the
+  // JOWLS, below the eye, where a sphere's widest point is its equator — and
+  // it is wider than it is deep. `blob()` is a scaled sphere and can say the
+  // second but not the first.
+  if (skull) {
+    const pos = skull.geometry.getAttribute("position");
+    skull.geometry.computeBoundingBox();
+    const bb = skull.geometry.boundingBox!;
+    const midY = (bb.max.y + bb.min.y) / 2;
+    const tall = bb.max.y - bb.min.y;
+    let widestY = 0;
+    let widest = 0;
+    for (let i = 0; i < pos.count; i++) {
+      const r = Math.hypot(pos.getX(i), pos.getZ(i));
+      if (r > widest) {
+        widest = r;
+        widestY = pos.getY(i);
+      }
+    }
+    ok(
+      "the skull is widest BELOW its middle, at the jowls",
+      widestY < midY - tall * 0.02,
+      `widest at ${(((widestY - midY) / tall) * 100).toFixed(1)}% of its height from centre`,
+    );
+    ok(
+      "the skull is wider than it is deep",
+      bb.max.x - bb.min.x > (bb.max.z - bb.min.z) * 1.1,
+      `${(bb.max.x - bb.min.x).toFixed(3)} wide against ${(bb.max.z - bb.min.z).toFixed(3)} deep`,
+    );
+  }
+  // Two jaws, not one muzzle: here the crease between two solids is the
+  // FEATURE, which is the one place in this file that is true.
+  ok("the snout has an upper muzzle and a lower jaw", named("muzzle") !== undefined && named("jaw") !== undefined);
+  // Three whiskers a side.
+  for (const side of ["L", "R"]) {
+    let n = 0;
+    rac.traverse((o) => {
+      if (o.name.startsWith(`whisker${side}`)) n++;
+    });
+    ok(`three whiskers on the ${side === "L" ? "left" : "right"}`, n === 3, `${n} found`);
+  }
+
+  // **POINTED, AND ASSERTED SO A BLOB CANNOT PASS.** `ear()` builds a
+  // flattened sphere, which does come to a point at its pole in pure geometry
+  // — so "the tip is narrow" is true of a blob too and separates nothing. What
+  // does separate them is the width PART WAY UP: at 85% of its height a sphere
+  // is still 71% of its maximum width, where a leaf tapering to a point is
+  // under a quarter.
+  const shell = named("earLShell") as THREE.Mesh | undefined;
+  ok("the raccoon has an ear shell to measure", shell !== undefined);
+  if (shell) {
+    shell.geometry.computeBoundingBox();
+    const bb = shell.geometry.boundingBox!;
+    const tall = bb.max.y - bb.min.y;
+    const pos = shell.geometry.getAttribute("position");
+    let widest = 0;
+    let high = 0;
+    for (let i = 0; i < pos.count; i++) {
+      const x = Math.abs(pos.getX(i));
+      widest = Math.max(widest, x);
+      const t = (pos.getY(i) - bb.min.y) / tall;
+      if (t > 0.82 && t < 0.88) high = Math.max(high, x);
+    }
+    ok(
+      "the raccoon's ear tapers to a POINT, not a dome",
+      high < widest * 0.35,
+      `${((high / widest) * 100).toFixed(0)}% of its width still at 85% of its height`,
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+section("The raccoon's tail is the fox's brush wearing the raccoon's rings");
+
+{
+  // IDEA-065 v22. Nuno: *"lets make one tail with the same shape of the fox
+  // but with the stripes pattern of the raccoon."* `ringedTail` already held
+  // both halves — a control-point `profile` for the FORM and `bands` for an
+  // alternating COLOUR — so the fox takes the first with `tipFrom` and the
+  // raccoon takes the first with `bands`.
+  const rac = makePropById("critter-raccoon", 0.29);
+  let tail: THREE.Mesh | undefined;
+  rac.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (m.isMesh && m.name === "tail") tail = m;
+  });
+  ok("the raccoon has a tail", tail !== undefined);
+  if (tail) {
+    // The rings: two material groups alternating down the tail.
+    ok(
+      "the tail carries its rings as two material groups",
+      tail.geometry.groups.length === 2 &&
+        Array.isArray(tail.material) &&
+        tail.material.length === 2,
+      `${tail.geometry.groups.length} groups`,
+    );
+    // Capped, like the fox's. An open tube has two visible rims, and hiding
+    // the far one is what used to force a blob onto the end of a brush.
+    const idx = tail.geometry.getIndex();
+    if (idx) {
+      const seen = new Map<string, number>();
+      for (let t = 0; t < idx.count; t += 3) {
+        const v = [idx.getX(t), idx.getX(t + 1), idx.getX(t + 2)];
+        for (let e = 0; e < 3; e++) {
+          const pair = [v[e], v[(e + 1) % 3]].sort((a, b) => a - b);
+          seen.set(`${pair[0]}:${pair[1]}`, (seen.get(`${pair[0]}:${pair[1]}`) ?? 0) + 1);
+        }
+      }
+      let open = 0;
+      for (const n of seen.values()) if (n !== 2) open++;
+      ok("the raccoon's tail is a closed solid (both ends capped)", open === 0, `${open} unshared edges`);
+    }
+    // THE BRUSH TAPERS TO A POINT, measured on the TIP CAP'S OWN FAN.
+    //
+    // The first version of this parameterised the tail along Z and failed a
+    // correct model at 0.188 against 0.324 — because the tail SWEEPS UP, so
+    // its z-extent is not its length and "the last 6% of z" scooped up fat
+    // rings from two thirds of the way along. A swept form has no convenient
+    // axis, and picking one is how an instrument ends up measuring something
+    // else with confidence.
+    //
+    // `ringedTail` closes the far end with a fan around a single apex vertex,
+    // which it pushes LAST — so the apex's own triangle-neighbours are
+    // exactly the final ring, whatever the sweep does in between and whatever
+    // the ring and radial counts are retuned to. That is the tip, by
+    // construction rather than by a threshold.
+    const pos = tail.geometry.getAttribute("position");
+    const apex = pos.count - 1;
+    const a = new THREE.Vector3().fromBufferAttribute(pos, apex);
+    const b = new THREE.Vector3();
+    let tip = 0;
+    if (idx) {
+      for (let t = 0; t < idx.count; t += 3) {
+        const v = [idx.getX(t), idx.getX(t + 1), idx.getX(t + 2)];
+        if (!v.includes(apex)) continue;
+        for (const n of v) {
+          if (n === apex) continue;
+          tip = Math.max(tip, b.fromBufferAttribute(pos, n).distanceTo(a));
+        }
+      }
+    }
+    let fat = 0;
+    for (let i = 0; i < pos.count; i++) fat = Math.max(fat, Math.abs(pos.getX(i)));
+    ok(
+      "the tail comes to a point rather than a stump",
+      tip > 0 && tip < fat * 0.25,
+      `tip ring ${tip.toFixed(3)} against a widest half-section of ${fat.toFixed(3)}`,
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+section("The squirrel is the only critter whose tail clears its head");
+
+{
+  // IDEA-065 rule 4: these six are separated by SILHOUETTE, not colour, and
+  // the squirrel's plume arcing up and OVER its back is the one tail in the
+  // set that rises above the head. Three of them are the same tan, so that
+  // one fact is most of what tells a squirrel from a raccoon at any size.
+  //
+  // v22 raised the raccoon's tail into the fox's brush shape, which is
+  // exactly the change that could have collapsed the pair — so the rule is
+  // pinned from BOTH sides here. An assertion that only said "the raccoon's
+  // tail is low" would pass just as well on a squirrel whose plume had been
+  // flattened, and the separation would be gone either way.
+  const topOf = (prop: THREE.Object3D, name: string): number | undefined => {
+    let top: number | undefined;
+    prop.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh || m.name !== name) return;
+      m.geometry.computeBoundingBox();
+      const v = new THREE.Vector3(0, m.geometry.boundingBox!.max.y, 0);
+      m.localToWorld(v);
+      top = top === undefined ? v.y : Math.max(top, v.y);
+    });
+    return top;
+  };
+  const headTop = (prop: THREE.Object3D): number | undefined => topOf(prop, "skull");
+
+  for (const [id, above] of [
+    ["critter-raccoon", false],
+    ["critter-squirrel", true],
+  ] as const) {
+    const prop = makePropById(id, 0.29);
+    prop.updateMatrixWorld(true);
+    const t = topOf(prop, "tail");
+    const h = headTop(prop);
+    if (t === undefined || h === undefined) {
+      ok(`${id} has a tail and a skull to compare`, false);
+      continue;
+    }
+    ok(
+      above ? `${id}'s tail rises ABOVE its head` : `${id}'s tail stays BELOW its head`,
+      above ? t > h : t < h,
+      `tail top ${t.toFixed(3)} against skull top ${h.toFixed(3)}`,
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+section("The squirrel's plume has volume, clumps and ONE colour");
+
+{
+  // IDEA-065 v29. Nuno: *"lets start by the tail, in the reference the tails
+  // are more volume and more fluffy."*
+  //
+  // **THE COLOUR CHECK IS THE ONE THAT MATTERS AND IT IS THE LEAST OBVIOUS.**
+  // v28's first pass gave the plume a cream band along the outer edge of its
+  // curl, reasoning from the cream tip blob it replaced. Neither reference has
+  // a pale marking on the tail at all - and because the curl arcs over the
+  // back, its outer side is exactly the face the play camera looks down on, so
+  // the marking covered the whole visible plume and read as a blanket. Nothing
+  // errors: two materials, two groups, a perfectly valid mesh.
+  //
+  // Asserting "one material" alone would pass on a plume painted entirely in
+  // the BELLY cream, which is the same defect with the band widened to 360
+  // degrees - so it is pinned against the haunch's own material object.
+  const sq = makePropById("critter-squirrel", 0.29);
+  sq.updateMatrixWorld(true);
+  const findSq = (n: string): THREE.Mesh | undefined => {
+    let hit: THREE.Mesh | undefined;
+    sq.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (m.isMesh && m.name === n && !hit) hit = m;
+    });
+    return hit;
+  };
+  const plume = findSq("tail");
+  const haunch = findSq("haunch");
+  const bib = findSq("bib");
+  if (!plume || !haunch || !bib) {
+    ok("the squirrel has a tail, a haunch and a bib to compare", false);
+  } else {
+    const mats = Array.isArray(plume.material) ? plume.material : [plume.material];
+    ok(
+      "the squirrel's plume is ONE colour",
+      new Set(mats).size === 1 && plume.geometry.groups.length <= 1,
+      `${new Set(mats).size} material(s), ${plume.geometry.groups.length} group(s)`,
+    );
+    ok(
+      "and that colour is the body's fur, not the belly cream",
+      mats[0] === haunch.material && mats[0] !== bib.material,
+    );
+    // EVERY GROUP MUST HAVE A MATERIAL. `ringedTail`'s far cap is generated at
+    // t = 1 exactly, where the default band rule `floor(t * bands) % 2` is 1
+    // even when `bands` is 1 - so a tail asking for no banding at all put its
+    // apex fan in a band whose material does not exist, and three.js drew
+    // nothing there. A hole in the tip, in silence.
+    const orphan = plume.geometry.groups.filter((gr) => (gr.materialIndex ?? 0) >= mats.length);
+    ok(
+      "no group of the plume points at a material that does not exist",
+      orphan.length === 0,
+      `${orphan.reduce((n, gr) => n + gr.count / 3, 0)} undrawn triangles`,
+    );
+
+    // --- the shape, read off the ring layout the geometry stamps -----------
+    //
+    // A swept form has no convenient axis, so this reads the RINGS rather than
+    // slicing by a coordinate - the trap the raccoon's tip check fell into
+    // when it parameterised a tail that sweeps UP along z. `ringedTail` writes
+    // (rings, radial) onto the geometry for exactly this; a test that
+    // re-derived them from a vertex count would be pinning a number it does
+    // not own.
+    const info = plume.geometry.userData.tail as
+      | { rings: number; radial: number; fluff: { lobes: number } | null }
+      | undefined;
+    if (!info) {
+      ok("the plume's geometry carries its ring layout", false);
+    } else {
+      const { rings, radial } = info;
+      const pos = plume.geometry.getAttribute("position");
+      ok(
+        "the ring layout accounts for every vertex (the two apexes aside)",
+        pos.count === (rings + 1) * radial + 2,
+        `${pos.count} against ${(rings + 1) * radial + 2}`,
+      );
+      /** One ring's radii about its own centroid. */
+      const ringAt = (i: number): number[] => {
+        const c = new THREE.Vector3();
+        const v: THREE.Vector3[] = [];
+        for (let j = 0; j < radial; j++) {
+          const q = new THREE.Vector3().fromBufferAttribute(pos, i * radial + j);
+          v.push(q);
+          c.add(q);
+        }
+        c.divideScalar(radial);
+        return v.map((q) => q.distanceTo(c));
+      };
+      const mean = (a: number[]): number => a.reduce((x, y) => x + y, 0) / a.length;
+
+      // 1. A BULGE, NOT A TAPER. A straight cone reads as a carrot and a
+      //    constant tube as a sausage; the reference's plume is narrow where
+      //    it leaves the rump and broad for most of the climb. Bounded at both
+      //    ends - a bulge at the very tip is a club.
+      let fatIdx = 0;
+      let fat = 0;
+      for (let i = 0; i <= rings; i++) {
+        const r = mean(ringAt(i));
+        if (r > fat) {
+          fat = r;
+          fatIdx = i;
+        }
+      }
+      const tFat = fatIdx / rings;
+      ok(
+        "the plume is widest well inside its own length",
+        tFat > 0.25 && tFat < 0.75,
+        `widest at t=${tFat.toFixed(2)}`,
+      );
+      ok(
+        "and it is a real bulge over the root",
+        fat > mean(ringAt(0)) * 1.8,
+        `${fat.toFixed(3)} against a root of ${mean(ringAt(0)).toFixed(3)}`,
+      );
+
+      // 2. IT IS FLUFFED, AND THE CLUMP COUNT IS PINNED. A ring's radius
+      //    wanders around its own mean, and how MANY times it crosses that
+      //    mean is twice the lobe count - which pins the fluff AND that
+      //    `radial` samples it finely enough for the lobes to exist at all.
+      //    The surround's conifer serration is the precedent: at one segment
+      //    per tooth the cosine is sampled once per period, every sample lands
+      //    on the same phase, and the whole feature silently does nothing.
+      //
+      //    **READ THE RING WITH THE WIDEST SPREAD, NEVER A FIXED ONE.** The
+      //    tufts SPIRAL, so where a crest sits relative to a vertex column
+      //    changes down the tail - and at six columns per lobe a crest landing
+      //    midway between two is sampled at 0.90 of its true height while the
+      //    trough between them is sampled at 0.017 above its floor. Measured,
+      //    one fixed mid ring reported max/min anywhere from 1.21 to 1.36 and
+      //    the convexity ratio from 1.16 to 1.36 on the SAME model, purely by
+      //    which ring it picked: a guard that fails on the phase of a sine, in
+      //    a project that has already recorded that exact trap once
+      //    (`test-editor-board`'s pulsing marker). The best-phase ring is
+      //    stable, and it costs the check nothing - a symmetric wave sampled
+      //    at an even number of columns per period is exactly as far above its
+      //    mean as below it at EVERY phase, so the defect still reads 1.000
+      //    wherever it is measured.
+      let mid = ringAt(0);
+      let spread = 0;
+      for (let i = 1; i < rings; i++) {
+        const r = ringAt(i);
+        const sp = Math.max(...r) / Math.min(...r);
+        if (sp > spread) {
+          spread = sp;
+          mid = r;
+        }
+      }
+      const midMean = mean(mid);
+      ok(
+        "the plume's cross-section is lobed, not circular",
+        spread > 1.2 && spread < 2.2,
+        `max/min ${spread.toFixed(3)}`,
+      );
+      let crossings = 0;
+      for (let j = 0; j < radial; j++) {
+        if (mid[j] >= midMean !== mid[(j + 1) % radial] >= midMean) crossings++;
+      }
+      ok(
+        "and it has the lobe count it asked for",
+        info.fluff !== null && crossings === info.fluff.lobes * 2,
+        `${crossings} crossings against ${(info.fluff?.lobes ?? 0) * 2} expected`,
+      );
+
+      // 3. THE CLUMPS RUN ALONG IT TOO. Lobes alone are straight ridges, which
+      //    is a fluted column. The scallops along the length are what break
+      //    them into the handful of fur clumps the reference's outline is made
+      //    of, so the mean ring radius must itself wander rather than climb
+      //    and fall once.
+      const means: number[] = [];
+      for (let i = 0; i <= rings; i++) means.push(mean(ringAt(i)));
+      let turns = 0;
+      for (let i = 1; i < means.length - 1; i++) {
+        if (means[i] - means[i - 1] >= 0 !== means[i + 1] - means[i] >= 0) turns++;
+      }
+      ok(
+        "the plume's profile scallops along its length",
+        turns >= 3 && turns <= 12,
+        `${turns} turning points`,
+      );
+
+      // 4. THE TUFTS ARE CONVEX, NOT CREASES. The first build perturbed the
+      //    radius with a plain cosine, so every bump bought an equally deep
+      //    valley — and a valley cut across a curved surface is a FOLD. The
+      //    plume came back a crumpled sheet: right volume, right width, made
+      //    of creases, and nothing in the geometry was invalid. A tuft sticks
+      //    OUT of a mass, so a ring must rise further above its own mean than
+      //    it falls below it.
+      //
+      //    THE RATIO IS THE EXPONENT, so the threshold is a real bound on it:
+      //    `up / down` is `(1 - m) / m` for `tuft`'s own mean m, which runs
+      //    1.000 at exponent 1 (the symmetric wave), 1.220 at 1.3, 1.356 at
+      //    the shipped 1.5 and 1.607 at 1.9. At 1.25 this passes anything
+      //    meaningfully convex and fails the wave it replaced. Read off the
+      //    widest-spread ring, for the sampling reason above.
+      const up = Math.max(...mid) - midMean;
+      const down = midMean - Math.min(...mid);
+      ok(
+        "the plume's fluff bulges outward rather than denting inward",
+        up > down * 1.25,
+        `+${up.toFixed(3)} against -${down.toFixed(3)}`,
+      );
+
+      // 5. AND THEY SPIRAL. Tufts that sit at the same azimuth on every ring
+      //    are not tufts, they are FLUTES running the whole length — the
+      //    other half of the crumpled-sheet defect, and the one a silhouette
+      //    check cannot see because the outline is identical either way.
+      //
+      //    **MEASURED AS THE PHASE OF THE LOBE HARMONIC, NOT AS THE ARGMAX.**
+      //    The first version took the widest COLUMN of each ring, and it
+      //    PASSED the defect it exists for. With `lobes` dividing `radial` the
+      //    six peaks land on exact columns, so the maximum is a six-way TIE
+      //    and which one wins is decided by float noise — a different one per
+      //    ring, which reads as a large random drift on a tail with no spiral
+      //    at all. The first Fourier harmonic has a phase whatever the
+      //    sampling does, and it is zero-amplitude-safe: an unfluffed tube
+      //    gives a constant phase and fails this too.
+      //
+      //    Accumulated ring to ring rather than measured end to end, because
+      //    a crest angle is only unambiguous within one lobe's width — over
+      //    the whole tail the true drift is larger than that and an end-to-end
+      //    reading wraps.
+      const lobes = info.fluff?.lobes ?? 6;
+      const crestPhase = (i: number): number => {
+        const r = ringAt(i);
+        let sx = 0;
+        let sy = 0;
+        for (let j = 0; j < radial; j++) {
+          const a = ((j / radial) * Math.PI * 2) * lobes;
+          sx += r[j] * Math.cos(a);
+          sy += r[j] * Math.sin(a);
+        }
+        return Math.atan2(sy, sx);
+      };
+      let drift = 0;
+      for (let i = 1; i < rings; i++) {
+        let step = crestPhase(i + 1) - crestPhase(i);
+        while (step > Math.PI) step -= Math.PI * 2;
+        while (step < -Math.PI) step += Math.PI * 2;
+        drift += step;
+      }
+      ok(
+        "the plume's tufts spiral rather than running as straight flutes",
+        Math.abs(drift) > 1 && Math.abs(drift) < Math.PI * 4,
+        `the lobe phase travels ${drift.toFixed(2)} rad between root and tip`,
+      );
+    }
+
+    // 4. VOLUME, AGAINST THE BODY RATHER THAN IN ABSOLUTE UNITS - a prop is
+    //    placed at any scale, so a threshold in world units is a test of the
+    //    placement. Measured on a labelled grid, the explorer reference's
+    //    plume is 0.71 of the body's width. Bounded at both ends: a tail wider
+    //    than the animal is a problem of its own.
+    const spanOf = (m: THREE.Mesh, axis: "x" | "y"): number => {
+      m.geometry.computeBoundingBox();
+      const b = m.geometry.boundingBox!;
+      const sc = axis === "x" ? m.scale.x : m.scale.y;
+      return (b.max[axis] - b.min[axis]) * sc;
+    };
+    const ratio = spanOf(plume, "x") / spanOf(haunch, "x");
+    ok(
+      "the plume is a mass on the scale of the body, not a rope",
+      ratio > 0.6 && ratio < 1.15,
+      `tail/haunch width ${ratio.toFixed(3)} (reference 0.71)`,
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+section("The raccoon has hands and feet, and they are mirror images");
+
+{
+  // IDEA-065 v25. Nuno: *"lets focus on the paws, the arms and the feet, lets
+  // improve this to look like a really cute paw instead a pill."* A raccoon's
+  // hands are its signature — long dark fingers on a small palm — and a
+  // capsule says none of it.
+  const rac = makePropById("critter-raccoon", 0.29);
+  rac.updateMatrixWorld(true);
+  const named = (n: string): THREE.Object3D | undefined => {
+    let hit: THREE.Object3D | undefined;
+    rac.traverse((o) => {
+      if (o.name === n && !hit) hit = o;
+    });
+    return hit;
+  };
+
+  for (const n of ["handL", "handR", "palmL", "palmR", "soleL", "soleR"]) {
+    ok(`'${n}' exists`, named(n) !== undefined);
+  }
+  // Matched on the full `<stem><side><index>` name, not a prefix: the toes
+  // hang in a group called `toesL`/`toesR`, which `startsWith("toe")` counts
+  // as two more toes. The instrument reported 10 on a correct model.
+  for (const [stem, want] of [["finger", 8], ["toe", 8]] as const) {
+    let n = 0;
+    rac.traverse((o) => {
+      const tail = o.name.slice(stem.length);
+      if (o.name.startsWith(stem) && tail.length === 2 && (tail[0] === "L" || tail[0] === "R") && tail[1] >= "0" && tail[1] <= "9") n++;
+    });
+    ok(`${want} ${stem}s in total`, n === want, `${n} found`);
+  }
+
+  // **THE HAND HANGS INSIDE THE ARM.** props.ts carries a hand-authored
+  // position against `armL`/`armR`, so a hand built as a sibling would stay
+  // behind wherever the arm is moved to — and nothing would error.
+  for (const side of ["L", "R"]) {
+    const hand = named(`hand${side}`);
+    ok(
+      `hand${side} is a child of arm${side}, so it follows a saved arm edit`,
+      hand?.parent?.name === `arm${side}`,
+      `parent is '${hand?.parent?.name ?? "none"}'`,
+    );
+  }
+
+  // **WHAT IS NOT ASSERTED HERE, AND WHY** (v27). Two checks lived here and
+  // are gone: that the hands are MIRROR IMAGES, and that their fingertips
+  // REST ON THE BIB. Both were true of the pose v26 built and both are now
+  // wrong requirements — Nuno posed the arms into a WAVE, so one hand is
+  // raised and the other crosses the chest, and neither fact survives that.
+  //
+  // That is the third time a guard on this one animal has pinned a SOLUTION
+  // rather than a requirement (v21 asserted the white mask was its own part;
+  // v18 asserted the fox's muzzle was not). The pattern is the same every
+  // time: the thing asserted was a property of the arrangement that happened
+  // to be current, on a prop somebody is actively authoring. Rule 23. What is
+  // left below is what the CODE owes regardless of pose.
+
+  // **A FINGER MUST BE THICK ENOUGH TO READ DARK.** A matcap is sampled by
+  // the view-space normal, so a thin rod seen side-on has almost every normal
+  // in the matcap's outer disk — the BOUNCE colour — and renders nearly WHITE
+  // however dark its material is (v25). The fingers shipped that way once.
+  // Thickness against LENGTH is the thing that fixes it, so that is the
+  // ratio pinned; it is a property of the geometry and survives any pose.
+  for (const n of ["fingerL0", "toeL0"]) {
+    const f = named(n) as THREE.Mesh | undefined;
+    if (!f) {
+      ok(`${n} exists`, false);
+      continue;
+    }
+    f.geometry.computeBoundingBox();
+    const bb = f.geometry.boundingBox!;
+    const len = bb.max.y - bb.min.y;
+    const wide = Math.max(bb.max.x - bb.min.x, bb.max.z - bb.min.z);
+    ok(
+      `${n} is thick enough to read dark under a matcap`,
+      wide / len > 0.4,
+      `${(wide / len).toFixed(2)} wide-over-long`,
+    );
+  }
+
+}
+
 console.log("\n" + "-".repeat(60));
 console.log(`GARDEN PROPS: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);
