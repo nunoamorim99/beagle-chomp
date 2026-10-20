@@ -42,7 +42,7 @@ import * as THREE from "three";
 import { Grid, COLS, ROWS, TILE, worldX, worldZ } from "../src/game/grid";
 import { MAZES } from "../src/game/mazes";
 import { MAZE_THEMES } from "../src/game/themes";
-import { liftSurfaceColor } from "../src/render/madboxStyle";
+import { liftSurfaceColor, snapToPalette } from "../src/render/madboxStyle";
 import { hexOf, lit, rgbOf } from "../src/render/paint";
 import { PROP_SHAPE_FIELDS, getPropDef, type PropParams } from "../src/game/props";
 import {
@@ -487,6 +487,384 @@ section("A brightened colour SATURATES; it never wraps");
   for (const [name, hex] of [["Gothic Arbour", gothic], ["Topiary Gate", topiary]] as const) {
     const gap = typeof hex === "number" ? channelGap(liftSurfaceColor(hex), liftedPalette) : 255;
     ok(`the ${name}'s footing meets the maze fence invisibly`, gap <= 8, `${gap} channel units`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+section("The forest arch is two trees and a branch from each");
+
+// IDEA-067 v3. Nuno: *"lets work in a arch to the deep forest, its the only
+// thing that is missing. The tunnel arch on the deep forest we can make like
+// a tunnel with like two trees one in each side and one branch from each tree
+// making the arch."*
+{
+  const forest = MAZE_THEMES.find((t) => t.id === "forest");
+  ok("the forest names a tunnel arch at last", typeof forest?.tunnelArch === "string");
+  const def = getPropDef(forest?.tunnelArch ?? "");
+  ok("…and it is a real prop of the archway shape", def.shape === "archway");
+  const fp = def.params as PropParams;
+  ok("…and it is the TREE kind, not a recoloured hedge", fp.archKind === "trees");
+
+  // The forest's palette has `fence: "none"` and its floor is leaf litter, so
+  // an arch standing there must not bring the garden's picket footing or its
+  // cut stone sill with it. Both are honoured by the factory; this is the def
+  // actually saying so.
+  ok("it brings no picket fence into a theme that has none", fp.archFence === false);
+  ok("and no cut stone sill onto leaf litter", fp.archThreshold === false);
+
+  const tree = makeArchway(fp, 0.37);
+  const tb = vertexBounds(tree);
+
+  // --- the rule the whole shape is built around ----------------------------
+  // IDEA-067 rule 6, on this arch's OWN springing height. The hedge arch is
+  // pinned by the same inequality a few sections up; running it here is what
+  // makes the two comparable, and the springing is the right quantity for
+  // both because it is the height below which the mass flanking the corridor
+  // stops being solid.
+  {
+    const H = ARCH_DEFAULTS.baseHeight * (fp.height ?? 1);
+    const openW = H * (fp.archOpening ?? ARCH_DEFAULTS.opening) * (fp.width ?? 1);
+    const rise = (openW / 2) * (fp.archRise ?? ARCH_DEFAULTS.rise);
+    const bandT = H * (fp.archCrown ?? ARCH_DEFAULTS.crown);
+    const springH = H - rise - bandT;
+    ok(
+      "the branches spring low enough that the corridor shows between the trees",
+      springH / Math.tan((59 * Math.PI) / 180) < 0.86 * openW,
+      `hides ${(springH * 0.6).toFixed(2)} of ${(0.86 * openW).toFixed(2)}`,
+    );
+    ok(
+      "…and high enough that the beagle walks under them",
+      springH > 1.2,
+      `${springH.toFixed(2)}`,
+    );
+
+    // THE CROWNS ARE WHAT WOULD CLOSE THE APERTURE, and holding them clear is
+    // the whole reason these trees are tall and slender rather than broad.
+    // Worked out in the arch's own plane, a mass between heights yb and yt
+    // whose outer edge is at xo shadows the floor inward from `xo - 0.6 yb`;
+    // a canopy of the usual width sitting just above the springing therefore
+    // puts the far half of the corridor in its own shade, which is the green
+    // slab IDEA-067 already paid a complete build for. Measured on the parts
+    // rather than asserted: no crown vertex may hang below the crown of the
+    // arch itself.
+    const crownY = springH + rise;
+    let lowestCrown = Infinity;
+    let innermostCrown = Infinity;
+    tree.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh || !/^crown[LR]/.test(m.name)) return;
+      m.updateWorldMatrix(true, false);
+      const a = m.geometry.getAttribute("position");
+      const v = new THREE.Vector3();
+      for (let i = 0; i < a.count; i++) {
+        v.fromBufferAttribute(a, i).applyMatrix4(m.matrixWorld);
+        lowestCrown = Math.min(lowestCrown, v.y);
+        innermostCrown = Math.min(innermostCrown, Math.abs(v.x));
+      }
+    });
+    // ABOVE THE SPRINGING, not above the apex — and the first version of this
+    // check asserted the apex, which is a SOLUTION rather than the
+    // requirement and failed a sound model by 0.4 of a unit. What the rule
+    // actually needs is that the wide mass stops being solid below the
+    // springing, because that is the height the inequality above assumes;
+    // a crown hanging beside the trunk at two thirds of the rise is outboard
+    // of the opening entirely and occludes nothing the arch is for.
+    ok(
+      "the crowns are carried clear of the walk-through, well above the springing",
+      lowestCrown > springH + rise * 0.4,
+      `lowest crown vertex ${lowestCrown.toFixed(2)} against a springing of ${springH.toFixed(2)} (crown line ${crownY.toFixed(2)})`,
+    );
+    ok(
+      "…and none of them overhangs the middle of the corridor",
+      innermostCrown > openW * 0.18,
+      `nearest crown vertex ${innermostCrown.toFixed(2)} from the centre line`,
+    );
+  }
+
+  // --- two trees, not one bent one -----------------------------------------
+  // Nuno, with a sketch drawn over the render: *"instead of having the trees
+  // making the arch and look a little bit off, we can just make two branches
+  // touching like the sketch."* Two measurable facts carry that read, and
+  // both were wrong in a build that passed every other check here.
+  {
+    const H = ARCH_DEFAULTS.baseHeight * (fp.height ?? 1);
+    const openW = H * (fp.archOpening ?? ARCH_DEFAULTS.opening) * (fp.width ?? 1);
+    const rise = (openW / 2) * (fp.archRise ?? ARCH_DEFAULTS.rise);
+    const bandT = H * (fp.archCrown ?? ARCH_DEFAULTS.crown);
+    const springH = H - rise - bandT;
+    const touchY = springH + rise;
+
+    /** The half-width THROUGH the portal in a band of height around `y`.
+     *  Both trunk and limb are swept about z = 0, so this is the radius there
+     *  — and it is the one measurement that compares them like for like.
+     *
+     *  **THE BAND HAS TO BE WIDER THAN THE STATION SPACING.** A swept solid
+     *  has vertices only AT its stations, and the trunk's eight sit 0.39
+     *  apart — so a 0.05 band around the fork fell cleanly between two rings
+     *  and this check reported a trunk half-width of 0.000 on a model that is
+     *  correct, which reads as the limb being infinitely fat. 0.25 catches
+     *  exactly one ring of each. */
+    const halfWidthAt = (re: RegExp, y: number): number => {
+      let w = 0;
+      tree.traverse((o) => {
+        const m = o as THREE.Mesh;
+        if (!m.isMesh || !re.test(m.name)) return;
+        m.updateWorldMatrix(true, false);
+        const a = m.geometry.getAttribute("position");
+        const v = new THREE.Vector3();
+        for (let i = 0; i < a.count; i++) {
+          v.fromBufferAttribute(a, i).applyMatrix4(m.matrixWorld);
+          if (Math.abs(v.y - y) < 0.25) w = Math.max(w, Math.abs(v.z));
+        }
+      });
+      return w;
+    };
+    const limbW = halfWidthAt(/^branch[LR]$/, springH);
+    const trunkW = halfWidthAt(/^trunk[LR]$/, springH);
+    ok(
+      "the limbs are thinner than the trunks they grow out of",
+      limbW > 0 && trunkW > 0 && limbW < trunkW * 0.8,
+      `limb ${limbW.toFixed(3)} against trunk ${trunkW.toFixed(3)} at the fork`,
+    );
+
+    let trunkTop = -Infinity;
+    tree.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh || !/^trunk[LR]$/.test(m.name)) return;
+      m.updateWorldMatrix(true, false);
+      const a = m.geometry.getAttribute("position");
+      const v = new THREE.Vector3();
+      for (let i = 0; i < a.count; i++) {
+        trunkTop = Math.max(trunkTop, v.fromBufferAttribute(a, i).applyMatrix4(m.matrixWorld).y);
+      }
+    });
+    // A TREE CARRIES ITS CROWN ABOVE THE BRANCH IT FORKS AT. The first builds
+    // put the touch at `H - bandT`, which is the hedge arch's own rule (there
+    // the crown of the arch IS the top of the prop) — so the limb rose higher
+    // than its own bole, the trunk's head hid behind the foliage, and the eye
+    // joined trunk to limb into ONE bending form. Nothing errors; it is just
+    // a different object from the one the brief asks for.
+    ok(
+      "each trunk carries on ABOVE the touch, so the pair reads as two trees",
+      trunkTop > touchY,
+      `trunk top ${trunkTop.toFixed(2)} against a touch at ${touchY.toFixed(2)}`,
+    );
+    ok(
+      "the two limbs really do touch at the centre line",
+      (() => {
+        let joint = false;
+        tree.traverse((o) => {
+          if ((o as THREE.Mesh).isMesh && o.name === "branchJoint") joint = true;
+        });
+        return joint;
+      })(),
+      "no knuckle over the joint",
+    );
+  }
+
+  // --- the envelope, from VERTICES -----------------------------------------
+  ok("the forest arch stands ON the ground", tb.lo.y > -0.005, `lo.y = ${tb.lo.y.toFixed(4)}`);
+  ok(
+    "its span straddles the corridor without swallowing its neighbours",
+    tb.hi.x - tb.lo.x > 1.5 && tb.hi.x - tb.lo.x < 3 * TILE,
+    `${(tb.hi.x - tb.lo.x).toFixed(3)}`,
+  );
+  ok(
+    "it is shallower than a tile, so it reads as a portal and not a covered way",
+    tb.hi.z - tb.lo.z < 1.0,
+    `${(tb.hi.z - tb.lo.z).toFixed(3)}`,
+  );
+  ok(
+    "it is the TALLEST arch — a tree is a landmark, which is the point of one",
+    tb.hi.y > 2.6,
+    `${tb.hi.y.toFixed(3)}`,
+  );
+  ok(
+    "and it is cheap — this is a fixture on every board of every level",
+    tb.tris < 3000,
+    `${tb.tris} tris`,
+  );
+
+  // --- the parts the editor has to be able to reach ------------------------
+  // IDEA-065 rule 3's lesson from the other side: a prop whose pieces have no
+  // names is a prop nobody can author. Two trunks and two branches, because
+  // "one branch from each tree" is the brief in so many words.
+  const named = new Set<string>();
+  tree.traverse((o) => {
+    if ((o as THREE.Mesh).isMesh) named.add(o.name);
+  });
+  for (const n of ["trunkL", "trunkR", "branchL", "branchR"]) {
+    ok(`"${n}" is a part the Props tab can select`, named.has(n));
+  }
+
+  // --- the value ladder (IDEA-065 rule 9, IDEA-079's snap) -----------------
+  // NOTHING ERRORS WHEN THIS REGRESSES. The prop builds, the materials are
+  // valid and the editor shows the authored colours, which are still correct
+  // — and under the shipped style two parts on one palette entry are the same
+  // generated matcap texture and cannot be told apart at any size. That is
+  // exactly what the crest used to be: `brighten` scales all three channels,
+  // so a foliage green and the same green at 1.5x snap to ONE entry, and the
+  // lighter growth this arch's only internal contrast comes from was gone.
+  {
+    const entryOf = new Map<string, string>();
+    tree.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh || Array.isArray(m.material)) return;
+      const col = (m.material as THREE.MeshToonMaterial).color.getHex();
+      const group = /^trunk|^branch/.test(m.name)
+        ? "bark"
+        : /^crown/.test(m.name)
+          ? "foliage"
+          : /^leaf/.test(m.name)
+            ? "growth"
+            : "";
+      if (group) entryOf.set(group, snapToPalette(col).id);
+    });
+    ok("the trunks, the crowns and the new growth are all three present", entryOf.size === 3);
+    const ids = [...entryOf.values()];
+    ok(
+      "…and no two of them share a palette entry",
+      new Set(ids).size === ids.length,
+      [...entryOf.entries()].map(([k, v]) => `${k}=${v}`).join(" "),
+    );
+  }
+
+  // The dropdown's FIRST option is what the Props tab writes into a def that
+  // has not set the field, so it has to be the factory's own default — the
+  // same class of defect as IDEA-060's sunflower repainted in daisy colours,
+  // and here it would turn every unset arch into trees.
+  {
+    const m = /archKind:\s*\[([^\]]*)\]/.exec(inspectorSrc);
+    ok(
+      "the Props tab seeds an unset \"archKind\" with \"hedge\", the factory's default",
+      m !== null && m[1].trim().startsWith('"hedge"'),
+      m ? m[1].trim() : "not offered at all",
+    );
+  }
+  ok(
+    "the Props tab offers \"archKind\" at all",
+    (PROP_SHAPE_FIELDS.archway as readonly string[]).includes("archKind"),
+  );
+}
+
+// ---------------------------------------------------------------------------
+section("The beach arch is a sea arch, with corals, algae and crabs");
+
+// IDEA-080. Nuno: *"for the arch on the beach I was thinking in something like
+// a rock arch with corals and beach flora, like algae, and some small crabs on
+// the rocks."*
+{
+  const beach = MAZE_THEMES.find((t) => t.id === "beach");
+  ok("the beach names a tunnel arch", typeof beach?.tunnelArch === "string");
+  const def = getPropDef(beach?.tunnelArch ?? "");
+  ok("…and it is a real prop of the archway shape", def.shape === "archway");
+  const sp = def.params as PropParams;
+  ok("…and it is the ROCK kind", sp.archKind === "rocks");
+  ok("no picket fence on the sand", sp.archFence === false);
+  ok("and no cut stone sill", sp.archThreshold === false);
+
+  const sea = makeArchway(sp, 0.37);
+  const sb = vertexBounds(sea);
+  const H = ARCH_DEFAULTS.baseHeight * (sp.height ?? 1);
+  const openW = H * (sp.archOpening ?? ARCH_DEFAULTS.opening) * (sp.width ?? 1);
+  const rise = (openW / 2) * (sp.archRise ?? ARCH_DEFAULTS.rise);
+  const bandT = H * (sp.archCrown ?? ARCH_DEFAULTS.crown);
+  const springH = H - rise - bandT;
+
+  // Rule 6 is about MASS, not material: solid stone legs are exactly the case
+  // the inequality was derived for.
+  ok(
+    "the legs spring low enough that the corridor shows between them",
+    springH / Math.tan((59 * Math.PI) / 180) < 0.86 * openW,
+    `hides ${(springH * 0.6).toFixed(2)} of ${(0.86 * openW).toFixed(2)}`,
+  );
+  ok("…and high enough that the beagle walks under them", springH > 1.0, `${springH.toFixed(2)}`);
+
+  // NOTHING ALIVE IN THE DOORWAY. Below the springing, every coral, weed,
+  // blade of grass and crab vertex must sit outboard of the opening — the
+  // beagle walks through this tile, and a coral in it reads as something in
+  // the way. (The crown crab sits ON TOP of the arch, above the springing,
+  // which is where it is meant to be seen.)
+  {
+    let intruders = 0;
+    const v = new THREE.Vector3();
+    for (const groupName of ["algae", "corals", "crabs", "rock"]) {
+      const grp = sea.getObjectByName(groupName);
+      grp?.traverse((o) => {
+        const m = o as THREE.Mesh;
+        if (!m.isMesh) return;
+        m.updateWorldMatrix(true, false);
+        const a = m.geometry.getAttribute("position");
+        for (let i = 0; i < a.count; i++) {
+          v.fromBufferAttribute(a, i).applyMatrix4(m.matrixWorld);
+          if (v.y < springH * 0.9 && Math.abs(v.x) < openW / 2 - 0.02) intruders++;
+        }
+      });
+    }
+    ok("nothing stands in the opening below the springing", intruders === 0, `${intruders} vertices in the doorway`);
+  }
+
+  // --- the parts the brief names --------------------------------------------
+  const crabCount = sea.getObjectByName("crabs")?.children.length ?? 0;
+  ok("there are crabs on the rocks", crabCount >= 2, `${crabCount} crabs`);
+  ok("there are corals", (sea.getObjectByName("corals")?.children.length ?? 0) >= 4);
+  ok("there is algae", (sea.getObjectByName("algae")?.children.length ?? 0) >= 6);
+  {
+    // The crown crab sits on top of the stone, not inside it — at the chain's
+    // own crown line it was buried under the cap stones and invisible.
+    const crown = sea.getObjectByName("crabCrown");
+    crown?.updateWorldMatrix(true, false);
+    ok(
+      "the crown crab sits on top of the arch",
+      !!crown && crown.position.y > springH + rise + bandT * 0.5,
+      crown ? `crab at ${crown.position.y.toFixed(2)}` : "no crown crab",
+    );
+  }
+
+  // --- the envelope, from VERTICES ------------------------------------------
+  ok("it stands ON the ground", sb.lo.y > -0.005, `lo.y = ${sb.lo.y.toFixed(4)}`);
+  ok(
+    "its span straddles the corridor without swallowing its neighbours",
+    sb.hi.x - sb.lo.x > 1.5 && sb.hi.x - sb.lo.x < 3.3 * TILE,
+    `${(sb.hi.x - sb.lo.x).toFixed(3)}`,
+  );
+  ok("it is shallower than a tile and a half", sb.hi.z - sb.lo.z < 1.5, `${(sb.hi.z - sb.lo.z).toFixed(3)}`);
+  ok("and it is cheap enough for every board", sb.tris < 12000, `${sb.tris} tris`);
+
+  // --- the value ladder under the shipped style ------------------------------
+  // Five roles, five palette entries, and none of them the beach WALL's — or
+  // the arch melts into the maze it stands at the end of. The cap is the one
+  // that broke: an HSL lift in three's linear working space did not move it a
+  // rung, so it shipped for one render the same brown as the rock under it.
+  {
+    const entryOf = new Map<string, string>();
+    const roleOf = (n: string, parent: string): string =>
+      parent === "rock" ? "rock" : parent === "caps" ? "cap" : parent === "corals"
+        ? (n === "brain" ? "coralB" : "coral")
+        : parent === "crabs" ? (/^shell|^claw|^leg/.test(n) ? "crab" : "")
+        : parent === "algae" ? (/^weed/.test(n) ? "algae" : "") : "";
+    for (const top of sea.children) {
+      top.traverse((o) => {
+        const m = o as THREE.Mesh;
+        if (!m.isMesh || Array.isArray(m.material)) return;
+        const role = roleOf(m.name, top.name);
+        if (role) entryOf.set(role, snapToPalette((m.material as THREE.MeshToonMaterial).color.getHex()).id);
+      });
+    }
+    ok("all six roles are present", entryOf.size === 6, [...entryOf.keys()].join(" "));
+    const ids = [...entryOf.values()];
+    ok(
+      "…and no two of them share a palette entry",
+      new Set(ids).size === ids.length,
+      [...entryOf.entries()].map(([k, v]) => `${k}=${v}`).join(" "),
+    );
+    const wallEntry = snapToPalette(beach!.palette.wall).id;
+    ok("…and none of them is the beach wall's own entry", !ids.includes(wallEntry), `wall=${wallEntry}`);
+  }
+
+  {
+    const m = /archKind:\s*\[([^\]]*)\]/.exec(inspectorSrc);
+    ok("the Props tab offers the rock kind", !!m && m[1].includes('"rocks"'), m ? m[1] : "");
   }
 }
 

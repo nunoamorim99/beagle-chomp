@@ -3278,6 +3278,116 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v9.
      end is a continuity error, not variety. It also halves the merge: two
      identical arches weld to one mesh per material, two differently-tinted ones
      weld to none.
+  **THE DEEP FOREST HAS ONE NOW, AND IT IS TWO TREES** (v3, Nuno: *"lets work
+  in a arch to the deep forest, its the only thing that is missing. The tunnel
+  arch on the deep forest we can make like a tunnel with like two trees one in
+  each side and one branch from each tree making the arch."*). `archKind:
+  "trees"` on the same `archway` shape, and five things are load-bearing.
+  - **A `kind`, NOT A SECOND `PropBaseShape`**, following `flowerKind` and
+    `critterKind`. The two share a brief and almost every dial — `archOpening`
+    is the gap the beagle walks through either way and `archRise`/`archCurve`
+    draw the same superellipse — while three are REINTERPRETED (`archPier` is
+    the trunk's girth, `archDepth` the pair's spread through the portal,
+    `archCrest` the leaf clusters on the branches). It also keeps the Board
+    tab working for free: the Tunnel arch slot lists every library def whose
+    SHAPE is `archway`, so a new shape would have been invisible there until
+    somebody widened that filter too.
+  - **THE CROWNS ARE SMALL AND HIGH, AND THAT IS FORCED RATHER THAN CHOSEN.**
+    The obvious tree arch is two broad canopies over two trunks, and it is
+    v1's green slab again. Worked out in the arch's own plane — the camera
+    descends at 59 degrees, so a mass between heights `yb` and `yt` whose
+    outer edge is at `xo` shadows the floor inward from `xo - 0.6 yb` — a
+    canopy of the usual width sitting just above the branch springing puts the
+    whole far half of the corridor in its own shade. The fix is not a narrower
+    opening, it is a different TREE: tall and slender, crown carried clear of
+    the walk-through, so the BRANCHES become the arch. Which is also what the
+    brief says in so many words — one branch from each tree, not two canopies
+    meeting.
+  - **`brighten` CANNOT CHANGE A PALETTE ENTRY, AND THE SHIPPED HEDGE ARCH HAD
+    BEEN LOSING ITS CREST TO THAT SINCE IDEA-079.** Scaling all three channels
+    leaves the HUE where it was, and the snap weights hue at 3.0 against
+    lightness at 0.1 — so a foliage green and its own 1.5x land on ONE entry
+    (`leaf`), become the same generated matcap texture, and the lighter growth
+    that is an all-green arch's only internal contrast is gone. Nothing errors:
+    the prop builds, the materials are valid, and the editor shows the authored
+    colours, which are still correct. `youngGrowth` rotates the hue toward
+    yellow-green instead, landing on `grass` or `lime` — a real rung up — and
+    in CLASSIC it still reads as this year's growth catching the sun. One
+    change that is right in both looks, applied to BOTH arches. IDEA-065 rule
+    9 in a second place, and the general form is: **under this style a value
+    step has to be a HUE step.**
+  - **FACETING IS A FUNCTION OF ON-SCREEN SIZE, NOT OF TRIANGLE COUNT.** The
+    first crowns were three small `detail: 1` blobs per tree and came back as
+    a cluster of cut EMERALDS at any angle closer than the board's own. Two
+    big `detail: 2` blobs cost about the same and read as a crown. Third time
+    after IDEA-071's flowering border and IDEA-072's pale hexagons.
+  - **A BRANCH THINNER THAN ITS OWN TRUNK IS THE WHOLE DIFFERENCE BETWEEN TWO
+    TREES AND ONE BENT ONE** (Nuno, with a sketch over the render: *"instead
+    of having the trees making the arch and look a little bit off, we can just
+    make two branches touching like the sketch"*). The first build sized the
+    limb off `archCrown` — the hedge arch's BAND thickness, a structural
+    member carrying a hedge — and it came out **0.33 against a trunk of
+    0.16**, twice the bole it grew from, while the trunks leaned a full
+    trunk-radius outward. Both read as ONE form: two trunks bending into each
+    other. Nothing about it is wrong as an arch; it simply is not two trees.
+    The limb is a fraction of the TRUNK now (0.58 at the bole, 0.34 at the
+    touch) so the relationship cannot drift when the trunk is retuned, the
+    lean is down to 0.15 of a radius, and the two limbs **meet at the centre
+    line with a knuckle over the joint** rather than running past each other:
+    crossing solids read as one continuous arc, which is the thing being
+    fixed, while butting ones leave an open wedge across the fold that no
+    overlap along their own axes closes — `jointedLimb`'s answer in
+    forestCritters.ts, for the same reason.
+  - **AND A TREE CARRIES ITS CROWN ABOVE THE BRANCH IT FORKS AT.** Even with
+    thin limbs the pair still read as one bent form, because the touch sat at
+    `H - bandT` — the hedge arch's own rule, where the crown of the ARCH is
+    the top of the prop. So the limb rose higher than its own bole and each
+    trunk's head hid behind the foliage. The trunk is carried past the touch
+    now and the crowns go on top of THAT; it is two numbers, and it is the
+    whole difference between a gate and a croquet hoop. **`test-archway.ts`
+    pins both** — the limb's half-width at the fork against the trunk's, and
+    the trunk's top against the touch — because neither errors and both read
+    as a plausible arch.
+  - **GREEN DOWN THE TREE, NOT ONLY ON TOP OF IT**, and the bound on it is
+    solved rather than eyeballed. Nuno: *"lets just add more green to the
+    trees to have more volume and not just on the top."* The bare stretch was
+    the bole between the fork and the crown, so three tufts per tree hang
+    there — but anything below the springing has to leave the walk-through
+    alone, which is rule 6's whole subject. A tuft of radius `rad` centred at
+    `trunkX + rad * 0.55` has its inner edge at `trunkX - rad * 0.75` (a lobed
+    blob reaches about 1.3x its nominal radius once the amplitude and the x
+    scale are in), so keeping that outside the opening's half-width caps the
+    radius at `(trunkX - hw) / 0.75`. Sized past it they close the gap the two
+    trees exist to frame.
+  - **A SWEPT TRUNK'S BASE CAP IS NOT FLAT.** The cap lies in the plane
+    perpendicular to the first TANGENT, and the lean tilts that off vertical —
+    measured, the foot dipped 0.013 below the lawn on a model correct in every
+    other respect, and no render says so. Clamped rather than lifted, for the
+    hedge arch's own reason: lifting leaves the tree on tiptoe with daylight
+    under it. Its TOP runs past where the crown sits for the matching reason —
+    a square cut across the top of a tree is the one thing on it that says
+    "mesh".
+  **AND TWO INSTRUMENTS WERE WRONG BEFORE THE MODEL WAS.** A corridor-floor
+  sightline probe, written to generalise rule 1 by RAYCASTING rather than
+  re-deriving its inequality, reported **0% visible for the shipped, approved
+  hedge arch** — because any arch's own BAND necessarily crosses that
+  sightline. **The recorded rule is about the PIERS eclipsing the APERTURE,
+  not about lighting the floor between them**, and the probe was measuring
+  something else with confidence; it was deleted rather than kept, since a
+  confidently wrong instrument is worse than no instrument. The assertion
+  written from the same misreading ("the crowns clear the arch's apex") then
+  failed a sound model by 0.4 of a unit, and a third — comparing the limb's
+  girth with the trunk's — sampled a 0.05 band at the fork and reported the
+  trunk at **0.000**, because a swept solid has vertices only AT its stations
+  and the trunk's eight sit 0.39 apart. **Sample a swept form on a band wider
+  than its station spacing** — it pins what the rule actually needs
+  now, that the wide mass stops being solid above the SPRINGING.
+  **AND `shoot-board.ts` NEVER GOT THE NAVIGATION-TIMEOUT FIX** this file has
+  carried since IDEA-064. A cold load of `/preview-board/` pulls the board,
+  every prop factory and the surround across a Windows bind mount and times
+  out at Playwright's 30s default on a server that is working perfectly —
+  which reads exactly like the feature being broken. Every other browser
+  harness here already had it; the board shooter was the one that did not.
   **AND THE THREE TUNINGS WERE UNREACHABLE** (v2, Nuno: *"I see you made 3 but
   I can't change them on the board"*). `tunnelArch` was a `MazeTheme` field
   with no control anywhere, so the only way to try the Gothic Arbour was to

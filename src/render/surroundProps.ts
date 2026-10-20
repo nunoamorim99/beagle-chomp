@@ -997,6 +997,277 @@ export function distantDune(
   return g;
 }
 
+// ---------------------------------------------------------------------------
+// IDEA-080: THE BEACH'S PEOPLE. Nuno: *"on the left we will add some beach
+// towels and umbrella, on the right we will add some tents."*
+//
+// ALL OF IT IS PAINTED IN THE THREE BLOOM ROLES, and that is the budget and
+// the art direction at once. The beach's `bloomColors` are shell white,
+// seafoam and coral — which is exactly the palette of a striped umbrella, a
+// towel and a tent — so these cost NO new material and no draw call, and they
+// are the only saturated things on an otherwise sand-and-sea board, which is
+// what makes them read as PEOPLE'S things from 30 units away. A beach is the
+// one theme where the colourful objects are the neighbourhood.
+//
+// AT THE PLAY CAMERA A BEACH SPOT IS ITS UMBRELLA FROM ABOVE. The camera looks
+// down 59 degrees, so the canopy is seen nearly in plan — a striped disc — and
+// a towel is a flat rectangle seen face-on, which is the best case this camera
+// has. Both identities are therefore carried by STRIPES IN PLAN, never by
+// anything vertical; the pole is there to cast the canopy up off the sand, not
+// to be seen.
+
+/**
+ * A cone split into alternating wedges, one geometry per parity.
+ *
+ * Returns the two halves as separate geometries so each lands on its own
+ * shared material — a material ARRAY would survive `mergeBySignature` as a
+ * draw call per group (IDEA-067 rule 7). Includes the underside, flat at the
+ * rim, because from 59 degrees the canopy's near edge is seen from below.
+ */
+function stripedConeGeometries(
+  radius: number,
+  height: number,
+  segments: number,
+): [THREE.BufferGeometry, THREE.BufferGeometry] {
+  const halves: number[][] = [[], []];
+  for (let i = 0; i < segments; i++) {
+    const a0 = (i / segments) * Math.PI * 2;
+    const a1 = ((i + 1) / segments) * Math.PI * 2;
+    const p0: [number, number, number] = [Math.cos(a0) * radius, 0, -Math.sin(a0) * radius];
+    const p1: [number, number, number] = [Math.cos(a1) * radius, 0, -Math.sin(a1) * radius];
+    const apex: [number, number, number] = [0, height, 0];
+    const under: [number, number, number] = [0, height * 0.35, 0];
+    // Anticlockwise seen from above, so the top faces up and out.
+    halves[i % 2].push(...p0, ...p1, ...apex);
+    // The underside: a shallow cone up into the canopy, wound the other way.
+    halves[i % 2].push(...p1, ...p0, ...under);
+  }
+  return halves.map((pos) => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(pos), 3));
+    g.computeVertexNormals();
+    return g;
+  }) as [THREE.BufferGeometry, THREE.BufferGeometry];
+}
+
+/**
+ * A striped beach umbrella over one or two towels, sometimes with a ball.
+ *
+ * ONE SPOT, NOT THREE PROPS, because the composition is the identity: an
+ * umbrella alone on sand is a parasol, a towel alone is a rug, and together
+ * they say somebody is lying there. Built as one group so the recipe places a
+ * spot, never a scatter of parts that could drift apart.
+ *
+ * Sizes are above the CARTOON floor at 15-25 px a tile: the canopy is ~1.5
+ * across (25-35 px), a towel 0.5 x 1.0, and each stripe on it ~0.16 wide —
+ * the narrowest mark here, at about three pixels.
+ */
+export function distantBeachSpot(
+  m: SurroundMaterials,
+  o: { seed?: number } = {},
+): THREE.Group {
+  const r = seeded(o.seed ?? 3);
+  const g = new THREE.Group();
+  g.name = "beach-spot";
+
+  // --- the umbrella ---------------------------------------------------------
+  const canopyR = 0.68 + r() * 0.14;
+  const poleH = 1.05 + r() * 0.15;
+  // Stripe pairs: coral/white or seafoam/white. Both read as "beach" and
+  // alternating them across spots is the variety a row of umbrellas needs.
+  const stripe = r() < 0.5 ? m.bloomB : m.bloomC;
+  const umbrella = new THREE.Group();
+  umbrella.name = "umbrella";
+  // Leaning a little, as a planted umbrella does — and toward the towels, so
+  // it shades them.
+  umbrella.rotation.z = 0.12 + r() * 0.1;
+  g.add(umbrella);
+  part(umbrella, new THREE.CylinderGeometry(0.035, 0.04, poleH, 5), m.roofTrim, "pole", [0, poleH / 2, 0]);
+  const [ga, gb] = stripedConeGeometries(canopyR, 0.26, 8);
+  part(umbrella, ga, stripe, "canopyA", [0, poleH - 0.12, 0]);
+  part(umbrella, gb, m.bloomA, "canopyB", [0, poleH - 0.12, 0]);
+
+  // --- the towels -----------------------------------------------------------
+  // Laid in the umbrella's shade on the side it leans toward (-X), side by
+  // side, slightly splayed: two people, not a carpet.
+  const towels = 1 + (r() < 0.55 ? 1 : 0);
+  for (let i = 0; i < towels; i++) {
+    const t = new THREE.Group();
+    t.name = "towel" + i;
+    const base = i === 0 ? (r() < 0.5 ? m.bloomB : m.bloomC) : r() < 0.5 ? m.bloomC : m.bloomB;
+    const tw = 0.5;
+    const tl = 1.0;
+    // The towel body, then two pale stripes LYING ON it — a hair proud, never
+    // flush, or they z-fight (and flush-inside is this project's oldest
+    // defect).
+    part(t, new THREE.BoxGeometry(tw, 0.03, tl), base, "cloth", [0, 0.015, 0]);
+    for (const s of [-1, 1]) {
+      part(t, new THREE.BoxGeometry(tw * 1.001, 0.012, 0.15), m.bloomA, "band", [0, 0.034, s * tl * 0.27]);
+    }
+    t.position.set(-0.55 - i * 0.62, 0, (r() - 0.5) * 0.3);
+    t.rotation.y = (r() - 0.5) * 0.35;
+    g.add(t);
+  }
+
+  // --- the ball -------------------------------------------------------------
+  // Sometimes. Two hemispheres in two colours is the whole mark, and it is the
+  // one round thing on a beach of flat rectangles and discs.
+  if (r() < 0.35) {
+    const br = 0.15;
+    const ball = new THREE.Group();
+    ball.name = "ball";
+    part(ball, new THREE.SphereGeometry(br, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2), m.bloomB, "top");
+    const bottom = part(
+      ball,
+      new THREE.SphereGeometry(br, 8, 4, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2),
+      m.bloomA,
+      "bottom",
+    );
+    bottom.rotation.y = Math.PI / 8;
+    ball.position.set(0.7 + r() * 0.3, br, 0.4 + r() * 0.3);
+    ball.rotation.set(0.6, r() * Math.PI, 0.3);
+    g.add(ball);
+  }
+  return g;
+}
+
+export type TentKind = "ridge" | "dome";
+
+/**
+ * A tent. Two kinds, because a campsite of one shape is a car park.
+ *
+ * THE RIDGE TENT IS A STEEP GABLE, and steep is not a style choice. IDEA-071
+ * solved where the toon ramp splits a roof: a slope is in the top band
+ * whenever `dot(N, L) > 2/3`, which this key light reaches below about 25
+ * degrees of pitch — so a shallow tent is painted one flat value and reads as
+ * a coloured card on the sand. A tent is ~50 degrees, well past the split, so
+ * its two sides fall into different bands and the ridge reads for free.
+ *
+ * THE DOOR IS A DARK TRIANGLE PROUD OF THE FRONT, in `glass` — the same
+ * material that makes a house's window read as an opening, for the same
+ * reason: an opening is the darkest thing on a building. It sits proud of the
+ * face rather than flush, because flush is inside.
+ *
+ * The DOME is a flattened hemisphere with a dark door patch and a
+ * contrasting fly band round its base: round where everything else in the
+ * band is a box, which is what separates it from the ridge tents at 20 px.
+ */
+export function distantTent(
+  m: SurroundMaterials,
+  o: { kind?: TentKind; seed?: number } = {},
+): THREE.Group {
+  const r = seeded(o.seed ?? 4);
+  const kind = o.kind ?? (r() < 0.55 ? "ridge" : "dome");
+  const g = new THREE.Group();
+  g.name = `tent-${kind}`;
+  // Seafoam and coral bodies, never white: a white tent on pale sand is the
+  // greenhouse-as-white-card defect (IDEA-071) on a beach.
+  const body = r() < 0.5 ? m.bloomC : m.bloomB;
+  const accent = body === m.bloomC ? m.bloomB : m.bloomC;
+
+  // THE GROUNDSHEET IS THE CONTACT SHADOW. The surround casts no shadows (the
+  // merged band overlaps the key light's shadow camera), and the first build
+  // had nothing where a tent met the sand — every tent read as a box hovering
+  // over the beach. A dark sheet a little larger than the footprint is the
+  // greenhouse plinth's trick (IDEA-066 phase 4): a value step under a mass is
+  // what seats it.
+  if (kind === "ridge") {
+    // NEARLY AS TALL AS IT IS WIDE, AND SHORT. The first build was a long,
+    // low ridge (1.4 deep, 0.7 tall) and every one read as a BOOK lying open
+    // on the sand: from 59 degrees a long pitch is a big flat parallelogram
+    // and the triangle at its end is a sliver. A pup tent's triangle is its
+    // identity, so the end gets the proportion.
+    //
+    // AND NO STEEPER THAN ABOUT 47 DEGREES, which is the other half of the same
+    // read. At 60 degrees the far pitch is a BACK FACE from this camera — a
+    // tent 25 units east of the board is seen from the west and from above,
+    // and its east pitch's normal points away — so the two-tone fly below
+    // showed one colour and the tent was a tile again. Measured on the render,
+    // not on the model: the geometry was right the whole time.
+    const w = 1.08 + r() * 0.14;
+    const h = 0.56 + r() * 0.06;
+    const d = 1.0 + r() * 0.15;
+    part(g, new THREE.BoxGeometry(w * 1.2, 0.012, d * 1.14), m.soil, "sheet", [0, 0.006, 0]);
+    // THE SLOPES AND THE ENDS ARE TWO MATERIALS, and that is the whole read.
+    // Built as one gable in one colour the tent was a parallelogram of flat
+    // paint, and at 20 px a parallelogram is a box. Nothing here is WHITE: the
+    // beach's shell white snaps to the palette's `sand` under the shipped
+    // style — the same entry as the beach itself — so white ends vanished into
+    // the ground and took the triangle with them.
+    const x = w / 2;
+    const z = d / 2;
+    // A TWO-TONE FLY, ONE PITCH IN EACH COLOUR. From 59 degrees up the two
+    // pitches are most of what a tent IS on screen, and in one colour they
+    // merged into a single flat diamond — a coloured tile on the sand. Split
+    // by colour along the ridge, the ridge is the first thing the eye finds,
+    // and a ridge is what says tent rather than box.
+    const pitch = (sx: number): THREE.BufferGeometry => {
+      const pos =
+        sx > 0
+          ? [x, 0, z, x, 0, -z, 0, h, -z, x, 0, z, 0, h, -z, 0, h, z]
+          : [-x, 0, -z, -x, 0, z, 0, h, z, -x, 0, -z, 0, h, z, 0, h, -z];
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(pos), 3));
+      geo.computeVertexNormals();
+      return geo;
+    };
+    part(g, pitch(1), accent, "flyR", [0, 0.012, 0]);
+    part(g, pitch(-1), body, "flyL", [0, 0.012, 0]);
+    const ends = new Float32Array([-x, 0, z, x, 0, z, 0, h, z, x, 0, -z, -x, 0, -z, 0, h, -z]);
+    const eg = new THREE.BufferGeometry();
+    eg.setAttribute("position", new THREE.BufferAttribute(ends, 3));
+    eg.computeVertexNormals();
+    part(g, eg, body, "ends", [0, 0.012, 0]);
+    // The door, on +Z: a smaller dark triangle a hair in front of the end.
+    const dw = w * 0.24;
+    const dh = h * 0.7;
+    const door = new THREE.BufferGeometry();
+    door.setAttribute(
+      "position",
+      new THREE.BufferAttribute(new Float32Array([-dw, 0, 0, dw, 0, 0, 0, dh, 0]), 3),
+    );
+    door.computeVertexNormals();
+    part(g, door, m.glass, "door", [0, 0.014, z + 0.012]);
+    // A pale ridge line between the two pitches, so the split reads as a
+    // RIDGE rather than as a colour boundary painted across a flat tile.
+    part(g, new THREE.BoxGeometry(0.07, 0.07, d * 1.1), m.roofTrim, "ridge", [0, h + 0.012, 0]);
+  } else {
+    const rad = 0.62 + r() * 0.12;
+    // LOW. A hemisphere at 0.78 of its radius tall read as a BALL on the sand
+    // — the beach already has beach balls, which is exactly the collision. A
+    // dome tent is a squat dome, and what tells it from a ball is the POLES.
+    const squash = 0.56;
+    part(g, new THREE.CircleGeometry(rad * 1.16, 12), m.soil, "sheet").rotation.x = -Math.PI / 2;
+    g.getObjectByName("sheet")!.position.y = 0.006;
+    const shell = new THREE.Group();
+    shell.name = "shell";
+    shell.scale.set(1, squash, 1);
+    shell.position.y = 0.012;
+    g.add(shell);
+    part(shell, new THREE.SphereGeometry(rad, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), body, "dome");
+    // THE POLES: two arcs crossing over the top, in the accent colour, sitting
+    // proud of the shell. A pole is the dome tent's whole identity at this
+    // size, and it is thick on purpose — under the matcap a thin rod returns
+    // the bounce colour rather than its own (IDEA-065 rule 27).
+    for (const yaw of [Math.PI / 4, -Math.PI / 4]) {
+      const pole = part(shell, new THREE.TorusGeometry(rad * 1.01, 0.045, 4, 16, Math.PI), accent, "pole");
+      pole.rotation.y = yaw;
+    }
+    // The door: a PATCH OF THE DOME'S OWN SPHERE, 1.5% proud. A flat disc laid
+    // on a curved dome floats off it at every edge by the sagitta (~0.05
+    // here), which reads as a sticker; a patch cut from the same surface
+    // cannot. Front is +Z, i.e. phi = pi/2 in SphereGeometry's own
+    // parametrisation.
+    part(
+      shell,
+      new THREE.SphereGeometry(rad * 1.015, 5, 4, Math.PI / 2 - 0.42, 0.84, Math.PI / 2 - 0.95, 0.95),
+      m.glass,
+      "door",
+    );
+  }
+  return g;
+}
+
 /** A rock outcrop — the forest's and the park's punctuation. */
 export function distantRockOutcrop(
   m: SurroundMaterials,

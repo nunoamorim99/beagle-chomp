@@ -76,6 +76,10 @@ const ENUM_FIELDS: Partial<Record<keyof PropParams, readonly string[]>> = {
   // IDEA-065. Same trap as flowerKind: without an entry here the inspector
   // renders a NUMBER slider for a string field, which is silently wrong.
   critterKind: ["deer", "fox", "rabbit", "raccoon", "squirrel", "squirrelExplorer"],
+  // IDEA-067 v3. WHICH plant the tunnel arch is made of -- a hedge portal or
+  // two trees with a branch from each. Same trap a third time.
+  // IDEA-080 added the beach's sea arch.
+  archKind: ["hedge", "trees", "rocks"],
 };
 
 /** Slider range/step per numeric field, per the task brief's exact numbers.
@@ -166,6 +170,7 @@ const FIELD_LABEL: Partial<Record<keyof PropParams, string>> = {
   showBird: "perched bird",
   birdColor: "bird color",
   // IDEA-067.
+  archKind: "made of",
   archOpening: "opening width",
   archRise: "arch rise",
   archCurve: "arch curve (1 gothic - 4 flat)",

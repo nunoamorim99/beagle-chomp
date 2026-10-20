@@ -45,6 +45,7 @@ import { Grid } from "../src/game/grid";
 import { MAZES } from "../src/game/mazes";
 import { WORLD_GROUPS } from "../src/editor/worldFields";
 import { readConfigNumber } from "../src/editor/configRewrite";
+import { SEASIDE_PARAMS, inSea, shoreZ } from "../src/render/seaside";
 
 let passed = 0;
 let failed = 0;
@@ -633,6 +634,117 @@ section("No building stands inside another one");
     const mesh = o as THREE.Mesh;
     if (mesh.isMesh) mesh.geometry.dispose();
   });
+}
+
+// ---------------------------------------------------------------------------
+section("The beach has a sea to the north, sunbathers west and a campsite east");
+
+// IDEA-080. Nuno: *"lets add instead a sea on the top on the north part of the
+// maze and on the left we will add some beach towels and umbrella, on the
+// right we will add some tents."*
+{
+  restoreParams();
+  const BEACH = MAZE_THEMES.find((t) => t.id === "beach")!;
+  ok("the beach still grows the coast kind", BEACH.palette.surround === "dunes");
+
+  // --- the coast's own geometry, sampled across the whole ground -----------
+  let nearest = -Infinity;
+  for (let x = -SURROUND_PARAMS.halfWidth; x <= SURROUND_PARAMS.halfWidth; x += 0.25) {
+    nearest = Math.max(nearest, shoreZ(x));
+  }
+  // The WATER at its highest run up the sand must stay out of the verge —
+  // that ring is for hand-placed props, and a palm in the surf is a defect
+  // nobody would ever have placed on purpose.
+  const vergeEdge = -(FLOOR_HALF_Z + VERGE_RINGS);
+  ok(
+    "the swash never runs into the verge",
+    nearest + SEASIDE_PARAMS.swashReach < vergeEdge - 0.3,
+    `water reaches z ${(nearest + SEASIDE_PARAMS.swashReach).toFixed(2)} against the verge at ${vergeEdge}`,
+  );
+  // The wet band is paint on the ground and may cross the verge, but never the
+  // board's own floor — a dark stripe across the maze's apron would read as a
+  // shadow the board does not have.
+  ok(
+    "the wet sand stops short of the board's floor",
+    nearest + SEASIDE_PARAMS.swashReach + SEASIDE_PARAMS.wetWidth < -FLOOR_HALF_Z - 0.5,
+    `wet sand reaches z ${(nearest + SEASIDE_PARAMS.swashReach + SEASIDE_PARAMS.wetWidth).toFixed(2)}`,
+  );
+  // BOUNDED AT BOTH ENDS: a coast pushed far enough out to pass the two checks
+  // above for free is one a 16:9 desktop never sees (its frame ends at
+  // z = -21.2, measured by _scratch-surround-coverage.ts).
+  let farthest = Infinity;
+  for (let x = -32; x <= 32; x += 0.25) farthest = Math.min(farthest, shoreZ(x));
+  ok("…and the sea is in shot on a desktop", farthest > -19.5, `farthest coast z ${farthest.toFixed(2)}`);
+
+  // --- what stands on the beach --------------------------------------------
+  const mats = makeSurroundMaterials(BEACH.palette);
+  const host = buildSurroundContent("dunes", mats);
+  let spots = 0;
+  let tents = 0;
+  let wrongSide = 0;
+  let wet = 0;
+  let dunes = 0;
+  for (const child of host.children) {
+    const isSpot = child.name === "beach-spot";
+    const isTent = child.name.startsWith("tent-");
+    if (child.getObjectByName("dune")) dunes++;
+    if (!isSpot && !isTent) continue;
+    if (isSpot) spots++;
+    else tents++;
+    const x = child.position.x;
+    const z = child.position.z;
+    if ((isSpot && x > 0) || (isTent && x < 0)) wrongSide++;
+    // Dry means above the swash's highest reach AND its wet band.
+    if (inSea(x, z, SEASIDE_PARAMS.swashReach + SEASIDE_PARAMS.wetWidth)) wet++;
+  }
+  ok("there are sunbathers", spots > 6, `${spots} beach spots`);
+  ok("there is a campsite", tents > 6, `${tents} tents`);
+  ok("umbrellas and towels on the WEST, tents on the EAST", wrongSide === 0, `${wrongSide} on the wrong side`);
+  ok("nothing is pitched in the water or on the wet sand", wet === 0, `${wet} in the surf`);
+  ok("the dunes are gone", dunes === 0, `${dunes} dunes`);
+  host.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    if (mesh.isMesh) mesh.geometry.dispose();
+  });
+  disposeSurroundMaterials(mats);
+
+  // --- the sea itself -------------------------------------------------------
+  const scene = new THREE.Group();
+  const g = ensureSurround(scene, BEACH.palette.surround, BEACH.palette)!;
+  const sea = g.getObjectByName("sea") as THREE.Mesh | undefined;
+  const shore = g.getObjectByName("shore") as THREE.Mesh | undefined;
+  ok("the beach's surround carries a sea and a shore", !!sea && !!shore);
+  // WOUND TO FACE UP — the defect that renders as NOTHING, because a FrontSide
+  // plane facing down is culled whole. journeyWater.ts's ribbon shipped it
+  // once; measured on every triangle rather than on the first.
+  for (const [name, mesh] of [["sea", sea], ["shore", shore]] as const) {
+    if (!mesh) continue;
+    const pos = mesh.geometry.getAttribute("position");
+    const idx = mesh.geometry.index!;
+    const a = new THREE.Vector3();
+    const b = new THREE.Vector3();
+    const c = new THREE.Vector3();
+    let down = 0;
+    for (let i = 0; i < idx.count; i += 3) {
+      a.fromBufferAttribute(pos, idx.getX(i));
+      b.fromBufferAttribute(pos, idx.getX(i + 1));
+      c.fromBufferAttribute(pos, idx.getX(i + 2));
+      if (b.sub(a).cross(c.sub(a)).y <= 0) down++;
+    }
+    ok(`the ${name} faces up on every triangle`, down === 0, `${down} facing down`);
+    // A ShaderMaterial is what keeps IDEA-079's swap off it: no `color`, so
+    // `applyMadboxStyle` passes it by. A toon sea would be snapped to a
+    // matcap and lose its gradient and its surf.
+    ok(
+      `the ${name} is its own shader, not a styleable material`,
+      (mesh.material as THREE.Material).type === "ShaderMaterial",
+    );
+  }
+  ok("the sea casts and takes no shadow", !!sea && !sea.castShadow && !sea.receiveShadow);
+  disposeSurround();
+  const garden = ensureSurround(new THREE.Group(), GARDEN.palette.surround, GARDEN.palette)!;
+  ok("…and no other theme has one", !garden.getObjectByName("seaside"));
+  disposeSurround();
 }
 
 restoreParams();

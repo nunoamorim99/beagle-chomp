@@ -79,6 +79,7 @@ const PARAM_FIELD_ORDER: readonly (keyof WorkingPropParams)[] = [
   "bellyColor",
   "accentColor",
   // IDEA-067 the hedge archway.
+  "archKind",
   "archOpening",
   "archRise",
   "archCurve",

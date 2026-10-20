@@ -78,9 +78,10 @@ import * as THREE from "three";
 import type { PropParams } from "../game/props";
 import { COLS, type Grid, ROWS, TILE, worldX, worldZ } from "../game/grid";
 import { toon } from "./toon";
-import { lobedFoliageGeometry } from "./foliage";
+import { flaredTrunkProfile, lobedFoliageGeometry } from "./foliage";
+import { taperedSweepGeometry, type SweepStation } from "./beagleSculpt";
 import { FENCE_H, fencePanelGeometry } from "./fence";
-import { hexOf, lit, rgbOf } from "./paint";
+import { hexOf, lit, mix, rgbOf } from "./paint";
 
 /** Deterministic per-instance variation from the placement hash — the same
  *  generator gardenProps.ts and forestProps.ts use, so an arch looks the same
@@ -112,6 +113,34 @@ function pick<T>(list: readonly T[], h: number): T {
  * arch band came back. Lifting it is not a fudge, it is matching the surface
  * that is actually on screen rather than the number it was generated from.
  */
+/**
+ * A green shifted toward NEW GROWTH — yellower, not merely brighter.
+ *
+ * **BRIGHTENING CANNOT CHANGE A PALETTE ENTRY, AND UNDER THE SHIPPED STYLE
+ * THAT IS THE WHOLE POINT OF THE CREST.** `brighten` scales all three
+ * channels, which leaves the HUE exactly where it was — and IDEA-079's snap
+ * weights hue at 3.0 against lightness at 0.1, so a foliage green and the
+ * same green at 1.5x land on the SAME entry, become the same generated matcap
+ * texture, and the lighter growth that is this arch's only internal contrast
+ * is gone. Measured: 0x2e6337 and its own 1.52x both snap to `leaf`, and so
+ * did the hedge arch's crest against its own foliage — a part correctly
+ * built, correctly coloured, and invisible, which is IDEA-065 rule 9 ("no two
+ * parts of one prop may share a palette entry") in a second place.
+ *
+ * Rotating the hue toward yellow-green puts it on `grass`, a rung up, and in
+ * CLASSIC it still reads as this year's growth catching the sun. One change
+ * that is right in both looks.
+ */
+function youngGrowth(hex: number): number {
+  const c = new THREE.Color(hex);
+  const hsl = { h: 0, s: 0, l: 0 };
+  c.getHSL(hsl);
+  // THREE's hue runs 0..1 with green at 1/3 and yellow at 1/6, so subtracting
+  // walks a leaf green toward the `grass`/`lime` end of the palette.
+  c.setHSL(Math.max(0, hsl.h - 0.055), Math.min(1, hsl.s * 1.2), Math.min(0.55, hsl.l * 1.7));
+  return c.getHex();
+}
+
 function brighten(hex: number, k: number): number {
   // THROUGH paint.ts's CLAMPED PACKER. Doing the shift by hand here is what
   // turned this arch magenta: `lit()` does not clamp, so a foliage green of
@@ -181,6 +210,10 @@ const STONE_DEFAULT = 0x9c9a90;
  *  this one is `palette.fenceColor`'s shipped value. */
 const FENCE_DEFAULT = 0xa9743f;
 const BLOSSOM_DEFAULT = 0xf4efe6;
+/** The tree arch's bark. The forest's own pine trunk, so the two stand in one
+ *  wood rather than in two — and a rung clear of every green above it, which
+ *  is the whole of this arch's value ladder (IDEA-065 rule 9). */
+const TREE_ARCH_BARK = 0x7a6142;
 /** The daisy's gold eye — fixed rather than a param, because it is the one
  *  mark that says "flower" and a theme retinting it has nothing to gain. */
 const EYE_DEFAULT = 0xf2b632;
@@ -254,6 +287,8 @@ function archCurvePoints(
  * five identity features, carried by a construction this camera can read.
  */
 export function makeArchway(p: PropParams, instanceHash: number): THREE.Group {
+  if ((p.archKind ?? "hedge") === "trees") return makeTreeArch(p, instanceHash);
+  if (p.archKind === "rocks") return makeRockArch(p, instanceHash);
   const r = rand(instanceHash);
   const g = new THREE.Group();
 
@@ -290,7 +325,7 @@ export function makeArchway(p: PropParams, instanceHash: number): THREE.Group {
   // sun on a mass that is otherwise one tone. It is the only thing left giving
   // the arch internal contrast now that the flat pier faces are gone.
   const crestMat = toon({
-    color: brighten(pick(greens, (instanceHash * 7.3) % 1), 1.5),
+    color: youngGrowth(pick(greens, (instanceHash * 7.3) % 1)),
     emissive: 0x16341a,
     emissiveIntensity: 0.18,
   });
@@ -600,6 +635,867 @@ export function makeArchway(p: PropParams, instanceHash: number): THREE.Group {
   }
 
   return g;
+}
+
+/**
+ * THE TREE ARCH — the Deep Forest's tunnel mouth (IDEA-067 v3).
+ *
+ * Nuno: *"lets work in a arch to the deep forest, its the only thing that is
+ * missing. The tunnel arch on the deep forest we can make like a tunnel with
+ * like two trees one in each side and one branch from each tree making the
+ * arch."*
+ *
+ * Same brief as the hedge arch and the same hard constraint — rule 6, the
+ * opening has to be open to the SKY rather than to the far side — but a
+ * different construction, and the constraint is what SHAPES it rather than
+ * something it merely passes.
+ *
+ * **THE CROWNS ARE SMALL AND HIGH, AND THAT IS THE WHOLE DESIGN.** The
+ * obvious tree arch is two broad canopies over two trunks, and it is the
+ * green slab all over again. Worked out in the arch's own plane (the camera
+ * descends at 59 degrees, so a mass between heights yb and yt whose inner
+ * edge is at xi and outer at xo shadows the floor from xo - 0.6 yb inward),
+ * a canopy of the usual width sitting just above the branch springing puts
+ * the whole far half of the corridor in its own shadow — it reads exactly
+ * like the portal-in-a-wall version that cost IDEA-067 a complete build.
+ * The fix is not a narrower opening, it is a different TREE: tall and
+ * slender, with a modest crown carried well above the crown of the arch, so
+ * the mass that would close the sky is lifted well clear of the walk-through
+ * and the BRANCHES become the arch. Which is also what Nuno asked for in so many
+ * words — one branch from each tree, not two canopies meeting.
+ *
+ * `scripts/_scratch-arch-sightline.ts` measures the visible share of the
+ * corridor floor by raycasting the built mesh rather than by re-deriving
+ * that arithmetic, and `scripts/test-archway.ts` holds both arches to it.
+ * The inequality the hedge arch is pinned by is the special case of this for
+ * a solid pier standing on the ground; a tree is not that shape, so applying
+ * its formula here would be measuring something else with confidence.
+ *
+ * THREE DIALS ARE REINTERPRETED and the rest mean exactly what they do on the
+ * hedge arch. `archPier` is the TRUNK's girth rather than a pier's width,
+ * `archDepth` how far the pair spreads through the portal, and `archCrest`
+ * the leaf clusters riding the branches. `archFence` and `archThreshold` are
+ * honoured and both ship OFF: the forest has `fence: "none"` and a cut stone
+ * sill on leaf litter belongs to a garden.
+ */
+function makeTreeArch(p: PropParams, instanceHash: number): THREE.Group {
+  const r = rand(instanceHash);
+  const g = new THREE.Group();
+
+  // The shared geometry, read exactly as the hedge arch reads it — so the
+  // Props tab's dials move the same quantities and `test-archway.ts` can
+  // recompute the springing height from the same three numbers.
+  const H = ARCH_DEFAULTS.baseHeight * (p.height ?? 1);
+  const wide = p.width ?? 1;
+  const openW = H * (p.archOpening ?? ARCH_DEFAULTS.opening) * wide;
+  const spread = H * (p.archDepth ?? ARCH_DEFAULTS.depth) * wide;
+  const bandT = H * (p.archCrown ?? ARCH_DEFAULTS.crown);
+  const curve = Math.max(1.05, p.archCurve ?? ARCH_DEFAULTS.curve);
+  const hw = openW / 2;
+  const rise = hw * (p.archRise ?? ARCH_DEFAULTS.rise);
+  const springH = Math.max(0.35, H - rise - bandT);
+  const crownY = springH + rise;
+  // 0.33 is what turns a PIER width into a TRUNK radius: the hedge arch's
+  // default 0.208 of H is a pier you could lean on, and a third of that is a
+  // tree you could not get your arms round — which at this scale is right,
+  // since one maze tile is one world unit.
+  const trunkR = Math.max(0.05, H * (p.archPier ?? ARCH_DEFAULTS.pier) * 0.33 * wide);
+  // The trunks stand just OUTSIDE the opening, so `archOpening` is the clear
+  // gap the beagle walks through rather than a centre-to-centre distance.
+  const trunkX = hw + trunkR;
+  const ribbon = Math.min(1, Math.max(0.15, p.archRibbon ?? ARCH_DEFAULTS.ribbon));
+
+  const greens = p.foliageColors ?? HEDGE_GREENS;
+  // Lifted off `palette.wall` for the hedge arch's own reason, which does not
+  // change because the plant did: the maze wall is a TEXTURE and comes out far
+  // lighter than the value it was generated from, so flat foliage painted in
+  // that value reads dark beside it.
+  const foliageMat = toon({
+    color: brighten(pick(greens, instanceHash), 1.34),
+    emissive: 0x0e2a0e,
+    emissiveIntensity: 0.2,
+  });
+  const crestMat = toon({
+    color: youngGrowth(pick(greens, (instanceHash * 7.3) % 1)),
+    emissive: 0x16341a,
+    emissiveIntensity: 0.18,
+  });
+  // THE BARK IS THE VALUE LADDER THIS ARCH HAS AND THE HEDGE ONE DOES NOT.
+  // IDEA-067's third verdict was that a correctly-built green arch standing
+  // on green beside green reads as one more bush, and the garden's answer was
+  // to borrow the maze wall's white daisies. A tree arch does not need them:
+  // two brown trunks under a green crown is already two rungs apart, which is
+  // why `archBlossoms` ships at 0 here rather than being removed.
+  const barkMat = toon({ color: p.trunkColor ?? TREE_ARCH_BARK });
+  const eyeMat = toon({ color: EYE_DEFAULT, emissive: 0x3a2f10, emissiveIntensity: 0.2 });
+  const blossomMat = toon({
+    color: p.blossomColor ?? BLOSSOM_DEFAULT,
+    emissive: 0x3a3630,
+    emissiveIntensity: 0.2,
+  });
+
+  // --- 0: the trunks ---------------------------------------------------------
+  // ONE SWEEP EACH, leaning slightly away from the corridor. A lathe would
+  // give the flare for free and cannot lean; a leaning lathe is a cylinder
+  // whose base no longer meets the floor, which is this project's own
+  // only-vertices-say-where-a-prop's-floor-is defect waiting to happen. So the
+  // path carries the lean and the station radii carry the flare — taken from
+  // `flaredTrunkProfile` rather than retyped, so the garden's broadleaf tree
+  // and this one splay by the same concave curve. (IDEA-060: a four-fold root
+  // flare is the most characterful number in that whole set, and a
+  // CylinderGeometry cannot express it.)
+  // **THE TRUNK CONTINUES PAST THE FORK, AND THAT IS WHAT MAKES IT A TREE.**
+  // The first two builds put the touch point at `H - bandT` -- the hedge
+  // arch's own rule, where the crown of the arch IS the top of the prop --
+  // so the limb rose higher than the bole it grew from and the trunk's own
+  // head was hidden behind the crown. The eye joined trunk to limb into one
+  // bending form, which is exactly what Nuno's sketch is correcting. A tree
+  // carries its crown ABOVE the branch it forks at, so the trunk is taken
+  // past `crownY` and the foliage goes on top of THAT.
+  const trunkTopY = crownY + H * 0.14;
+  // And a little past again, so its flat end cap is buried inside the
+  // foliage: a swept solid is capped square, and a square cut across the top
+  // of a tree is the one thing on it that says "mesh".
+  const trunkCapY = trunkTopY + H * 0.055;
+  const trunks = new THREE.Group();
+  trunks.name = "trunks";
+  g.add(trunks);
+  // THE TRUNKS STAND UP (v3b, Nuno's sketch: *"instead of having the trees
+  // making the arch, we can just make two branches touching"*). The first
+  // build leaned them a whole trunk-radius outward and the branch left the
+  // bole thicker than the bole itself, so the eye read ONE form — two trunks
+  // bending over into each other — rather than two trees with limbs. A hint
+  // of lean is life; a trunk-width of it is a bent tree.
+  const lean = trunkR * 0.15;
+  for (const s of [-1, 1] as const) {
+    const flare = flaredTrunkProfile(trunkR, trunkCapY, 2.3, 7);
+    const stations: SweepStation[] = flare.map(([rad, y]) => {
+      const t = y / trunkCapY;
+      // A real trunk is not a ruled surface either: the lean eases in, so the
+      // foot stands straight and the head carries the bend. A linear lean is
+      // a stick propped against a wall.
+      const x = s * (trunkX + lean * Math.pow(t, 1.7));
+      // Deliberate per-tree sway through the portal, so the pair does not read
+      // as one object mirrored. Small: the two have to look like a gate.
+      const z = (s * spread * 0.1 + (r() - 0.5) * spread * 0.06) * t;
+      return { pos: [x, y, z] as [number, number, number], rx: rad, rz: rad };
+    });
+    // A SWEPT TRUNK'S BASE CAP IS NOT FLAT, and no render says so. The cap
+    // lies in the plane perpendicular to the first TANGENT, and the lean
+    // tilts that tangent off vertical — measured, the foot dipped 0.013 below
+    // the lawn on a model that is correct in every other respect. Clamped
+    // rather than lifted, for the hedge arch's own reason one part along:
+    // lifting leaves the tree standing on tiptoe with daylight under it, and
+    // a trunk does meet the soil in a flat line. (IDEA-060 rule 6 — only
+    // vertices say where a prop's floor is.)
+    const geo = taperedSweepGeometry(stations, 8);
+    const a = geo.getAttribute("position") as THREE.BufferAttribute;
+    for (let v = 0; v < a.count; v++) if (a.getY(v) < 0) a.setY(v, 0);
+    a.needsUpdate = true;
+    geo.computeVertexNormals();
+    const m = part(geo, barkMat, s < 0 ? "trunkL" : "trunkR", trunks);
+    m.castShadow = true;
+  }
+
+  // --- 1: the branches -------------------------------------------------------
+  // ONE LIMB FROM EACH TREE, AND THEY TOUCH. They run on the SAME superellipse
+  // the hedge arch's band does (`archCurvePoints`), so `archRise` and
+  // `archCurve` still answer what KIND of arch this is and the two kinds
+  // cannot disagree about where the opening's head sits.
+  //
+  // **A BRANCH THINNER THAN ITS OWN TRUNK IS THE WHOLE DIFFERENCE BETWEEN TWO
+  // TREES AND ONE BENT ONE** (v3b, Nuno's sketch). The first build sized the
+  // limb off `archCrown` — the hedge arch's BAND thickness, which is a
+  // structural member carrying a hedge — and it came out 0.33 against a trunk
+  // of 0.16, i.e. twice the bole it grew from. Nothing about that is wrong as
+  // an arch; it simply is not two trees. The radius is a fraction of the
+  // TRUNK now and the taper runs from there, which is the relationship the
+  // sketch is actually about, and it cannot drift when the trunk is retuned.
+  //
+  // They MEET at the centre line with a knuckle over the joint rather than
+  // running past each other: two solids crossing read as one continuous arc
+  // (which is the thing being fixed), while two that butt leave a crease
+  // exactly where the eye goes — IDEA-065 rule 17, answered by COVERING the
+  // junction, which is also what a real graft looks like.
+  const branches = new THREE.Group();
+  branches.name = "branches";
+  g.add(branches);
+  const arc = archCurvePoints(hw, rise, curve, springH, 28);
+  const mid = Math.floor(arc.length / 2);
+  /** At the bole and at the touch, as fractions of the trunk's own radius. */
+  const limbBase = trunkR * 0.58;
+  const limbTip = trunkR * 0.34;
+  const branchPaths: Array<Array<[number, number]>> = [];
+  for (const s of [1, -1] as const) {
+    // `archCurvePoints` runs from +hw round to -hw, so the right branch is its
+    // head and the left branch its tail reversed — both then run OUTSIDE-IN,
+    // which is what lets one radius easing serve both. One station PAST the
+    // middle so the two overlap by a hair and the knuckle has something to
+    // sit on; any more and they read as one arc again.
+    const half = s > 0 ? arc.slice(0, mid + 1) : arc.slice(mid).reverse();
+    // The branch leaves the TRUNK, not the opening's edge: it starts inside
+    // the bark so there is no socket to see, and a touch below the springing
+    // so it grows OUT of the tree rather than balancing on it.
+    const path: Array<[number, number]> = [
+      [s * (trunkX + lean * 0.6), springH - trunkR * 0.9],
+      ...half,
+    ];
+    branchPaths.push(path);
+    const n = path.length;
+    const stations: SweepStation[] = path.map((pt, i) => {
+      const t = i / (n - 1);
+      // Eased, so the thickening lives near the bole — a constant-radius
+      // branch is a pipe.
+      const rad = limbTip + (limbBase - limbTip) * Math.pow(1 - t, 1.6);
+      return {
+        pos: [pt[0], pt[1], 0] as [number, number, number],
+        rx: rad,
+        // Flattened through the portal toward the touch, for rule 6's reason:
+        // the head has to CROSS the gap rather than lid it.
+        rz: rad * (1 + (ribbon - 1) * Math.pow(t, 1.5)),
+      };
+    });
+    const m = part(
+      taperedSweepGeometry(stations, 7),
+      barkMat,
+      s > 0 ? "branchR" : "branchL",
+      branches,
+    );
+    m.castShadow = true;
+  }
+  // THE TOUCH ITSELF. A knuckle at the joint, the same answer `jointedLimb`
+  // gives every bend in forestCritters.ts: two tapering solids meeting at an
+  // angle leave an open wedge across the fold, and no amount of overlap along
+  // their own axes closes it.
+  const knuckle = part(
+    new THREE.IcosahedronGeometry(limbTip * 1.32, 1),
+    barkMat,
+    "branchJoint",
+    branches,
+  );
+  knuckle.position.set(0, crownY, 0);
+  knuckle.scale.set(1.1, 0.9, ribbon);
+  knuckle.castShadow = true;
+
+  // --- 2: the crowns ---------------------------------------------------------
+  // SMALL AND HIGH — see the header. Three blobs rather than one, so the crown
+  // has a silhouette instead of being a ball on a stick, and offset OUTWARD so
+  // the mass sits over the trunk's own side of the sightline rather than over
+  // the corridor.
+  const crowns = new THREE.Group();
+  crowns.name = "crowns";
+  g.add(crowns);
+  // TWO BLOBS PER TREE AT detail 2, NOT THREE AT detail 1, AND THAT TRADE IS
+  // THE WHOLE TUNING. Faceting is a function of how big a blob is ON SCREEN
+  // (IDEA-071's flowering border and IDEA-072's pale hexagons are the same
+  // finding twice), so a handful of small low-detail blobs read as a cluster
+  // of cut EMERALDS at any angle closer than the board's own -- which is what
+  // the first build came back as. Much the same triangle budget, spent on
+  // smoothness rather than on count.
+  const crownR = H * 0.13 * wide;
+  for (const s of [-1, 1] as const) {
+    const baseX = s * (trunkX + lean);
+    // THREE, and the third is the one that makes it a tree rather than a
+    // lollipop: it sits lower and further out, so the crown has a ragged
+    // underside instead of a single round head balanced on a pole. It is the
+    // cheap one (`detail: 1`) because it is also the smallest — faceting is
+    // a function of how big a blob lands ON SCREEN, not of how many there
+    // are.
+    for (let i = 0; i < 3; i++) {
+      const low = i === 2;
+      const rad = crownR * (low ? 0.6 + r() * 0.16 : 0.86 + r() * 0.26);
+      const blob = lobedFoliageGeometry(rad, {
+        detail: low ? 1 : 2,
+        lobes: 7,
+        sharpness: 6,
+        amplitude: 0.24,
+        scale: [1.05, 0.84, 1.0],
+        seed: 211 + i + (s > 0 ? 9 : 0),
+      });
+      const m = part(blob, foliageMat, `${s < 0 ? "crownL" : "crownR"}${i}`, crowns);
+      m.position.set(
+        baseX + s * crownR * (low ? 0.6 + r() * 0.3 : 0.05 + r() * 0.22),
+        trunkTopY + crownR * (low ? -0.3 : 0.22 + i * 0.5),
+        // Kept tight through the portal. A crown is the widest thing on this
+        // prop, so its own jitter is what decides whether the arch still
+        // reads as a portal rather than as a covered way -- measured, a
+        // spread of 0.4 took the pair past a full tile deep.
+        (r() - 0.5) * spread * 0.2,
+      );
+      m.rotation.set((r() - 0.5) * 0.4, r() * Math.PI, (r() - 0.5) * 0.4);
+      m.castShadow = true;
+    }
+  }
+
+  // --- 3: the leaves ---------------------------------------------------------
+  // The clusters that make the branches read as an arch rather than as two
+  // sticks. `archCrest` sizes them, as it sizes the hedge arch's own looser
+  // growth, and they are the lighter green for the same reason: this year's
+  // growth catching the sun is the only internal contrast a green mass gets.
+  const leaves = new THREE.Group();
+  leaves.name = "leaves";
+  g.add(leaves);
+  const crestAmt = p.archCrest ?? ARCH_DEFAULTS.crest;
+  if (crestAmt > 0.01) {
+    let i = 0;
+    for (const path of branchPaths) {
+      const n = path.length;
+      for (let k = 1; k < n; k += 4) {
+        const t = k / (n - 1);
+        const pt = path[k];
+        // Smaller toward the crown, so the foliage tapers with the wood it
+        // rides on — even clusters on a tapering branch read as beads
+        // threaded onto it rather than as leaves growing out of it.
+        const rad = (0.2 + r() * 0.09) * crestAmt * (1 - 0.3 * t) + bandT * 0.34;
+        const blob = lobedFoliageGeometry(rad, {
+          detail: 1,
+          lobes: 5,
+          sharpness: 5,
+          amplitude: 0.3,
+          scale: [1.3, 0.8, 1.2],
+          seed: 131 + i,
+        });
+        const m = part(blob, crestMat, `leaf${i}`, leaves);
+        // Outward from the arch's own centre, so a cluster sits ON the branch
+        // rather than inside it — and biased UPWARD, because at 59 degrees the
+        // top of the arc is most of what a player sees of it.
+        const nx = pt[0];
+        const ny = pt[1] - (springH + rise * 0.35);
+        const len = Math.hypot(nx, ny) || 1;
+        m.position.set(
+          pt[0] + (nx / len) * bandT * 0.3,
+          pt[1] + (ny / len) * bandT * 0.3 + rad * 0.25,
+          (r() - 0.5) * spread * 0.4,
+        );
+        m.rotation.set((r() - 0.5) * 0.5, r() * Math.PI, (r() - 0.5) * 0.5);
+        m.castShadow = true;
+        i++;
+      }
+    }
+    // THE JOINT GETS ITS OWN CLUSTER, and it is not decoration: the two
+    // branches overlap at the crown and two solids meeting leave a crease
+    // precisely where the eye goes.
+    const capR = (0.12 + r() * 0.05) * crestAmt + bandT * 0.3;
+    const cap = part(
+      lobedFoliageGeometry(capR, {
+        detail: 1,
+        lobes: 6,
+        sharpness: 5,
+        amplitude: 0.3,
+        scale: [1.5, 0.82, 1.15],
+        seed: 177,
+      }),
+      crestMat,
+      "leafCrown",
+      leaves,
+    );
+    cap.position.set(0, crownY + capR * 0.22, 0);
+    cap.castShadow = true;
+  }
+
+  // --- 4: the blossoms -------------------------------------------------------
+  // Off by default here (`archBlossoms: 0` on the shipped def) and kept
+  // because a flowering tree is a thing somebody might want. The hedge arch
+  // needs them; this one has bark for its value step.
+  const blooms = new THREE.Group();
+  blooms.name = "blossoms";
+  g.add(blooms);
+  const bn = Math.max(0, Math.round(p.archBlossoms ?? 0));
+  const OUT = new THREE.Vector3(0, 0, 1);
+  for (let i = 0; i < bn; i++) {
+    const path = branchPaths[i % 2];
+    const pt = path[1 + Math.floor(r() * (path.length - 1))];
+    const rad = 0.05 + r() * 0.02;
+    const nx = pt[0];
+    const ny = pt[1] - (springH + rise * 0.35);
+    const len = Math.hypot(nx, ny) || 1;
+    const zs = (r() - 0.5) * 2;
+    const n = new THREE.Vector3(nx / len, ny / len, zs * 1.1).normalize();
+    const x = pt[0] + n.x * bandT * 0.5;
+    const y = pt[1] + n.y * bandT * 0.5;
+    const z = zs * spread * 0.3;
+    const s = part(new THREE.IcosahedronGeometry(rad, 0), blossomMat, `bloom${i}`, blooms);
+    s.position.set(x, y, z);
+    s.quaternion.setFromUnitVectors(OUT, n);
+    s.scale.set(1.15, 1.15, 0.38);
+    s.castShadow = false;
+    const eye = part(new THREE.IcosahedronGeometry(rad * 0.42, 0), eyeMat, `bloom${i}Eye`, blooms);
+    eye.position.set(x + n.x * rad * 0.34, y + n.y * rad * 0.34, z + n.z * rad * 0.34);
+    eye.quaternion.copy(s.quaternion);
+    eye.scale.set(1, 1, 0.5);
+    eye.castShadow = false;
+  }
+
+  // --- 5: the trunk tufts ----------------------------------------------------
+  // GREEN DOWN THE TREE, NOT ONLY ON TOP OF IT (Nuno: *"lets just add more
+  // green to the trees to have more volume and not just on the top"*). Three
+  // blobs hugging each bole between the fork and the crown, which is the one
+  // stretch of this prop that was bare bark — and it is a real tree's own
+  // habit rather than decoration: foliage clings to the trunk under the head.
+  //
+  // **THEY HANG OUTBOARD, AND THAT BOUND IS SOLVED RATHER THAN EYEBALLED.**
+  // Everything below the branch springing has to leave the walk-through
+  // alone, which is rule 6's whole subject — so a tuft of radius `rad`
+  // centred at `trunkX + rad * 0.55` has its inner edge at
+  // `trunkX - rad * 0.75` (the blob reaches ~1.3x its radius once the lobe
+  // amplitude and the x scale are in), and keeping that at or outside the
+  // opening's own half-width caps the radius at `(trunkX - hw) / 0.75`. Sized
+  // past it they would close the gap the two trees exist to frame.
+  //
+  // Appended LAST, after the blossoms: a prop's part edits are saved by
+  // depth-first INDEX PATH, so inserting a group anywhere earlier silently
+  // repoints every edit already authored against this def (IDEA-065 rule 9's
+  // log-cabin lesson).
+  const tufts = new THREE.Group();
+  tufts.name = "tufts";
+  g.add(tufts);
+  if (crestAmt > 0.01) {
+    const maxRad = Math.max(0.04, (trunkX - hw) / 0.75);
+    for (const s2 of [-1, 1] as const) {
+      for (let i = 0; i < 3; i++) {
+        const rad = Math.min(maxRad, crownR * (0.42 + r() * 0.2));
+        const blob = lobedFoliageGeometry(rad, {
+          detail: 1,
+          lobes: 6,
+          sharpness: 5,
+          amplitude: 0.3,
+          scale: [1.2, 0.8, 1.15],
+          seed: 311 + i + (s2 > 0 ? 5 : 0),
+        });
+        const m = part(blob, foliageMat, `${s2 < 0 ? "tuftL" : "tuftR"}${i}`, tufts);
+        // Spaced up the bare stretch, highest first so the lowest one still
+        // sits clear of the fork.
+        const span = Math.max(0.1, trunkTopY - crownY * 0.55);
+        m.position.set(
+          s2 * (trunkX + rad * 0.55),
+          crownY * 0.55 + span * ((i + 0.5) / 3),
+          (r() - 0.5) * spread * 0.3,
+        );
+        m.rotation.set((r() - 0.5) * 0.5, r() * Math.PI, (r() - 0.5) * 0.5);
+        m.castShadow = true;
+      }
+    }
+  }
+
+  return g;
+}
+
+/** The sea arch's palette (IDEA-080). Rock and its weathered top sit two
+ *  rungs apart on IDEA-079's warm ladder (`bark` / `wood`), the corals on
+ *  `pink` and `violet`, the crabs on `coral` and the algae on `leaf` / `grass`
+ *  — and none of them on `sand`, which is the beach wall's own entry, or the
+ *  arch would melt into the maze it stands at the end of. Checked with
+ *  `scripts/_scratch-snap-probe.ts` and pinned by `test-archway.ts`. */
+const SEA_ROCK = 0xa07a58;
+const SEA_ALGAE: readonly number[] = [0x3f8a5a, 0x8fbf5a];
+const SEA_CORAL = 0xe8789a;
+const SEA_CORAL_B = 0xa070d0;
+const SEA_CRAB = 0xd84a2a;
+const SEA_EYE = 0xf4f1ea;
+const SEA_INK = 0x2b2724;
+
+/**
+ * THE SEA ARCH — the Sunny Beach's tunnel mouth (IDEA-080).
+ *
+ * Nuno: *"for the arch on the beach I was thinking in something like a rock
+ * arch with corals and beach flora, like algae, and some small crabs on the
+ * rocks."* A natural sea arch — the Algarve's limestone kind — rather than
+ * anything built.
+ *
+ * **IT IS THE HEDGE ARCH'S CONSTRUCTION IN STONE, AND THAT IS FORCED.** Rule 6
+ * is about MASS, not material: a solid leg of height h hides 0.6h of the floor
+ * behind it from 59 degrees, so the legs spring at the hedge arch's own height
+ * from the same three numbers (`archRise`, `archCrown`, `height`) and
+ * `test-archway.ts` holds this arch to the identical inequality. One chain of
+ * boulders up a leg, over the head and down the other, stepped by the LOCAL
+ * radius and thickening toward the feet — the hedge chain's reasoning, with
+ * sharper lobes, because sharp lobes are what make `lobedFoliageGeometry` read
+ * as rock rather than as foliage (groundDetail.ts tunes it the same way).
+ *
+ * **THE VALUE LADDER IS ROCK, WEATHERED TOP, THEN LIFE.** A brown arch standing
+ * on tan sand beside tan walls is IDEA-067's "one more bush" in a new colour.
+ * So the cap stones along the top are a rung lighter (`bark` to `wood`), the
+ * tide line is draped in dark algae, and the feet carry the saturated things —
+ * pink and violet coral, red crabs — which are the only marks on the board
+ * that say SEA up close.
+ *
+ * **NOTHING ALIVE STANDS IN THE OPENING.** Corals, algae and sea grass all sit
+ * OUTBOARD of the legs or on their front and back faces; the beagle walks
+ * through this tile, and a coral in the doorway reads as something in the way
+ * (the threshold's own reasoning, below).
+ *
+ * The dials mean what they mean on the hedge arch, with three reinterpreted:
+ * `archCrest` sizes the weathered cap stones, `archBlossoms` is the number of
+ * coral clusters at each foot, and `foliageColors` are the algae. `stoneColor`
+ * is the rock, `blossomColor` the coral.
+ */
+function makeRockArch(p: PropParams, instanceHash: number): THREE.Group {
+  const r = rand(instanceHash);
+  const g = new THREE.Group();
+
+  const H = ARCH_DEFAULTS.baseHeight * (p.height ?? 1);
+  const wide = p.width ?? 1;
+  const openW = H * (p.archOpening ?? ARCH_DEFAULTS.opening) * wide;
+  const depth = H * (p.archDepth ?? ARCH_DEFAULTS.depth) * wide;
+  const bandT = H * (p.archCrown ?? ARCH_DEFAULTS.crown);
+  const curve = Math.max(1.05, p.archCurve ?? ARCH_DEFAULTS.curve);
+  const hw = openW / 2;
+  const rise = hw * (p.archRise ?? ARCH_DEFAULTS.rise);
+  const pierH = Math.max(0.35, H - rise - bandT);
+  const crownY = pierH + rise;
+  const ribbonD = depth * Math.min(1, Math.max(0.15, p.archRibbon ?? ARCH_DEFAULTS.ribbon));
+
+  const rockHex = p.stoneColor ?? SEA_ROCK;
+  const algae = p.foliageColors ?? SEA_ALGAE;
+  const rockMat = toon({ color: rockHex, emissive: 0x2a1a0c, emissiveIntensity: 0.12 });
+  // A rung LIGHTER and a touch YELLOWER — the sun-bleached top of a sea stack.
+  // Brightening alone keeps the hue, and under the shipped style the snap
+  // weights hue at 3.0, so a pure brighten can land on the SAME entry as the
+  // rock and the whole ladder collapses (the crest finding in youngGrowth).
+  const capMat = toon({ color: bleached(rockHex), emissive: 0x2a1e0c, emissiveIntensity: 0.12 });
+  const algaeMat = toon({ color: algae[0], emissive: 0x0c2414, emissiveIntensity: 0.14 });
+  const grassMat = toon({ color: algae[algae.length - 1], emissive: 0x16240a, emissiveIntensity: 0.14 });
+  const coralMat = toon({ color: p.blossomColor ?? SEA_CORAL, emissive: 0x3a1420, emissiveIntensity: 0.18 });
+  const coralMatB = toon({ color: SEA_CORAL_B, emissive: 0x24143a, emissiveIntensity: 0.18 });
+  const crabMat = toon({ color: SEA_CRAB, emissive: 0x3a1008, emissiveIntensity: 0.2 });
+  const eyeMat = toon({ color: SEA_EYE });
+  const inkMat = toon({ color: SEA_INK });
+  // A pupil is a MARKING: without the declared role the snap matches a
+  // near-black against the neutrals and lifts it to `slate`, a blue-grey —
+  // IDEA-065 rule 10's six blue-eyed woodland animals.
+  inkMat.userData.madboxRole = "ink";
+
+  /** Clamp a blob's vertices to the floor — the hedge chain's rule: lifted, a
+   *  rock stands on tiptoe with daylight under it; clamped, it sits. */
+  const seat = (geo: THREE.BufferGeometry, y: number): void => {
+    const a = geo.getAttribute("position") as THREE.BufferAttribute;
+    for (let v = 0; v < a.count; v++) if (a.getY(v) < -y) a.setY(v, -y);
+    a.needsUpdate = true;
+    geo.computeVertexNormals();
+  };
+
+  // --- 0: the rock -----------------------------------------------------------
+  const rock = new THREE.Group();
+  rock.name = "rock";
+  g.add(rock);
+  const bandRad = bandT * 0.66;
+  const footRad = bandRad * (1 + (p.archPier ?? ARCH_DEFAULTS.pier) * 3.4);
+  const radAt = (y: number): number => {
+    const t = Math.min(1, Math.max(0, y / Math.max(0.01, crownY)));
+    return bandRad + (footRad - bandRad) * Math.pow(1 - t, 2.2);
+  };
+  // EACH LEG BOULDER'S CENTRE SITS ONE LOCAL RADIUS OUTBOARD OF THE OPENING,
+  // so its inner face is the door jamb. The hedge chain centres its legs at a
+  // fixed `hw + bandT / 2` and lets the thick feet bulge inward, which a
+  // hedge gets away with; a rock leg doing the same measured 0.27 units INTO
+  // a 1.1-unit doorway — a quarter of the corridor the beagle walks through,
+  // found by test-archway.ts's doorway check rather than by any render.
+  // 1.6, not 1.0: a lobed blob reaches ~1.2x its nominal radius once the
+  // lobe amplitude is in, the chain scales it 1.1 wider again, and its own
+  // random spin points the longest lobe anywhere — measured, 1.3 still left
+  // a dozen vertices in the doorway, and the probe measured 1.55.
+  const legXAt = (y: number): number => hw + radAt(y) * 1.6;
+  /** Where the leg meets the sand — everything outboard is placed from here. */
+  const footX = legXAt(0);
+  {
+    const legSteps = Math.max(2, Math.round(pierH / 0.16));
+    const path: Array<[number, number]> = [];
+    for (let i = 0; i <= legSteps; i++) {
+      const y = (i / legSteps) * pierH;
+      path.push([-legXAt(y), y]);
+    }
+    const arc = archCurvePoints(legXAt(pierH), rise, curve, pierH, 40);
+    for (let i = arc.length - 1; i >= 0; i--) path.push(arc[i]);
+    for (let i = legSteps; i >= 0; i--) {
+      const y = (i / legSteps) * pierH;
+      path.push([legXAt(y), y]);
+    }
+    const depthAt = (y: number): number => {
+      const t = Math.min(1, Math.max(0, y / Math.max(0.01, crownY)));
+      return depth + (ribbonD - depth) * Math.pow(t, 1.6);
+    };
+    let acc = Infinity;
+    let prev = path[0];
+    let i = 0;
+    for (const pt of path) {
+      acc += Math.hypot(pt[0] - prev[0], pt[1] - prev[1]);
+      prev = pt;
+      const rad = radAt(pt[1]);
+      // 0.6, tighter than the hedge's 0.78: a stone chain spaced like a
+      // hedge reads as BEADS on a string, and a sea arch is one mass of rock.
+      if (acc < rad * 0.6) continue;
+      acc = 0;
+      const blob = lobedFoliageGeometry(rad, {
+        detail: 1,
+        lobes: 5,
+        sharpness: 7,
+        amplitude: 0.24,
+        scale: [1.1, 1.0, Math.max(0.6, depthAt(pt[1]) / (2 * rad))],
+        seed: 401 + i,
+      });
+      if (pt[1] < rad * 1.4) seat(blob, pt[1]);
+      const m = part(blob, rockMat, `rock${i}`, rock);
+      // Pushed OUTWARD a little on the legs, never in: a stone that bulges
+      // into the opening narrows the door the beagle walks through.
+      const out = pt[1] < pierH ? Math.sign(pt[0]) * r() * rad * 0.12 : 0;
+      m.position.set(pt[0] + out, pt[1], (r() - 0.5) * rad * 0.15);
+      m.rotation.y = r() * Math.PI;
+      i++;
+    }
+    // A boulder at each foot, outboard, so the arch grows out of a rocky
+    // outcrop rather than standing on the sand like furniture.
+    for (const s of [-1, 1] as const) {
+      const br = footRad * (0.8 + r() * 0.15);
+      const b = lobedFoliageGeometry(br, {
+        detail: 1,
+        lobes: 5,
+        sharpness: 7,
+        amplitude: 0.26,
+        scale: [1.25, 0.72, 1.1],
+        seed: 451 + (s > 0 ? 1 : 0),
+      });
+      seat(b, 0);
+      const m = part(b, rockMat, s < 0 ? "footL" : "footR", rock);
+      m.position.set(s * (footX + footRad * 0.6), 0, (r() - 0.5) * depth * 0.2);
+      m.rotation.y = r() * Math.PI;
+    }
+  }
+
+  // --- 1: the weathered caps -------------------------------------------------
+  // Lighter flattened slabs along the OUTER top of the arch — the bleached
+  // stone a sea stack carries on top, and this arch's first value step.
+  const caps = new THREE.Group();
+  caps.name = "caps";
+  g.add(caps);
+  const crestAmt = p.archCrest ?? ARCH_DEFAULTS.crest;
+  // Offset by a full boulder radius, not a fraction of one: the chain's
+  // lobes reach ~1.2x their nominal radius, and the first build set the caps
+  // at 0.55-0.75 of it — every one of them inside the rock, built, coloured
+  // and invisible (this project's buried-part defect, once more).
+  const capPts = archCurvePoints(legXAt(pierH) + bandRad * 0.95, rise + bandRad * 1.05, curve, pierH, 14);
+  if (crestAmt > 0.01) {
+    for (let i = 1; i < capPts.length - 1; i += 2) {
+      const rad = (0.13 + r() * 0.06) * crestAmt + bandT * 0.22;
+      const blob = lobedFoliageGeometry(rad, {
+        detail: 1,
+        lobes: 5,
+        sharpness: 6,
+        amplitude: 0.22,
+        scale: [1.5, 0.5, 1.25],
+        seed: 471 + i,
+      });
+      const m = part(blob, capMat, `cap${i}`, caps);
+      m.position.set(capPts[i][0], capPts[i][1], (r() - 0.5) * ribbonD * 0.3);
+      // Tilted to follow the arch, so a cap lies ALONG the curve instead of
+      // sitting level on a slope like a hat.
+      const prevPt = capPts[i - 1];
+      const nextPt = capPts[i + 1];
+      m.rotation.set(0, 0, Math.atan2(nextPt[1] - prevPt[1], nextPt[0] - prevPt[0]) + Math.PI);
+    }
+    for (const s of [-1, 1] as const) {
+      const rad = footRad * 0.55 * (0.6 + crestAmt * 0.6);
+      const blob = lobedFoliageGeometry(rad, {
+        detail: 1,
+        lobes: 5,
+        sharpness: 6,
+        amplitude: 0.22,
+        scale: [1.4, 0.45, 1.2],
+        seed: 491 + (s > 0 ? 1 : 0),
+      });
+      const m = part(blob, capMat, s < 0 ? "capFootL" : "capFootR", caps);
+      m.position.set(s * (footX + footRad * 0.65), footRad * 0.62, 0);
+      m.rotation.y = r() * Math.PI;
+    }
+  }
+
+  // --- 2: the algae ----------------------------------------------------------
+  // A TIDE LINE, not a scatter: dark weed draped on the lower legs' front and
+  // back faces up to about the height a wave reaches, which is what says
+  // "this rock stands in the sea" — plus sea-grass tufts at the outboard feet.
+  // The weed is FLATTENED ONTO the face (the hedge arch's blossom rule): a
+  // round blob stuck to a rock is a sponge; a squashed one is a drape.
+  const weed = new THREE.Group();
+  weed.name = "algae";
+  g.add(weed);
+  {
+    let i = 0;
+    for (const s of [-1, 1] as const) {
+      for (const f of [-1, 1] as const) {
+        const n = 2 + Math.floor(r() * 2);
+        for (let k = 0; k < n; k++) {
+          const rad = 0.1 + r() * 0.05;
+          const blob = lobedFoliageGeometry(rad, {
+            detail: 1,
+            lobes: 6,
+            sharpness: 4,
+            amplitude: 0.32,
+            scale: [1.3, 0.9, 0.38],
+            seed: 511 + i,
+          });
+          const m = part(blob, algaeMat, `weed${i++}`, weed);
+          // Clear of the sand by its own squashed half-height, so no frond
+          // sinks below the beach.
+          const y = rad * 1.25 + (k / n) * 0.4 + r() * 0.06;
+          // ON the face, a hair proud, and centred far enough outboard that
+          // its inner edge (~1.7x its radius once the lobes and the x scale
+          // are in) stops at the door jamb rather than in the doorway.
+          m.position.set(s * (hw + rad * 1.75 + r() * footRad * 0.5), y, f * (depth / 2 + 0.01));
+        }
+      }
+    }
+    // Sea grass: fans of flattened blades, outboard of each foot boulder. A
+    // blade is a SQUASHED CONE, thick at the root — a thin rod returns the
+    // matcap's bounce colour rather than its own (IDEA-065 rule 27) and a
+    // grass blade that renders near-white is a feather.
+    for (const s of [-1, 1] as const) {
+      for (let t = 0; t < 2; t++) {
+        const tuft = new THREE.Group();
+        tuft.name = `grass${s < 0 ? "L" : "R"}${t}`;
+        weed.add(tuft);
+        tuft.position.set(
+          s * (footX + footRad * (1.15 + r() * 0.2)),
+          0,
+          (t === 0 ? 1 : -1) * depth * (0.25 + r() * 0.2),
+        );
+        for (let b = 0; b < 4; b++) {
+          const h = 0.24 + r() * 0.12;
+          const blade = part(new THREE.ConeGeometry(0.038, h, 5), grassMat, `blade${b}`, tuft);
+          const a = (b / 4) * Math.PI * 2 + r() * 0.6;
+          const lean = 0.25 + r() * 0.3;
+          // Centre offset ALONG the lean, so the root stays planted at the
+          // tuft's own spot rather than swinging out with the tip.
+          const off = 0.03 + (h / 2) * Math.sin(lean);
+          // Lifted by the base ring's own tilt, or the low side of a leaning
+          // cone's base dips under the sand.
+          blade.position.set(Math.cos(a) * off, (h / 2) * Math.cos(lean) + 0.038 * Math.sin(lean), Math.sin(a) * off);
+          blade.rotation.set(Math.sin(a) * lean, 0, -Math.cos(a) * lean);
+          blade.scale.set(1, 1, 0.45);
+        }
+      }
+    }
+  }
+
+  // --- 3: the corals ---------------------------------------------------------
+  // At the feet, outboard. Two kinds, because two is what reads as a REEF
+  // rather than a planted ornament: BRANCHING coral (round-tipped capsules
+  // splaying up from a knot) and BRAIN coral (a tight-lobed dome). Different
+  // silhouettes AND different hues — the five-flowers rule (IDEA-060): two of
+  // a kind that differ only by colour read as one thing in two paints.
+  const corals = new THREE.Group();
+  corals.name = "corals";
+  g.add(corals);
+  const perFoot = Math.max(0, Math.round(p.archBlossoms ?? 3));
+  {
+    let i = 0;
+    for (const s of [-1, 1] as const) {
+      for (let k = 0; k < perFoot; k++) {
+        const c = new THREE.Group();
+        const branching = (k + (s > 0 ? 1 : 0)) % 2 === 0;
+        c.name = `coral${i++}`;
+        corals.add(c);
+        // Around the outboard half of the foot, front and back alternately —
+        // the faces the play camera sees.
+        const ang = (k / Math.max(1, perFoot - 1) - 0.5) * 2.2 + (r() - 0.5) * 0.3;
+        const rr = footRad * (1.05 + r() * 0.2);
+        c.position.set(s * (footX + footRad * 0.45 + Math.cos(ang) * rr * 0.5), 0, Math.sin(ang) * rr);
+        c.rotation.y = r() * Math.PI * 2;
+        const sc = 0.9 + r() * 0.3;
+        c.scale.setScalar(sc);
+        if (branching) {
+          part(new THREE.SphereGeometry(0.06, 7, 5), coralMat, "knot", c).position.y = 0.06;
+          const n = 4 + Math.floor(r() * 2);
+          for (let b = 0; b < n; b++) {
+            const len = 0.1 + r() * 0.08;
+            const br = part(new THREE.CapsuleGeometry(0.032, len, 3, 6), coralMat, `branch${b}`, c);
+            const a = (b / n) * Math.PI * 2 + r() * 0.5;
+            const tilt = 0.35 + r() * 0.35;
+            const reach = (len / 2 + 0.03) * Math.sin(tilt);
+            br.position.set(Math.cos(a) * reach, 0.06 + (len / 2 + 0.03) * Math.cos(tilt), Math.sin(a) * reach);
+            br.rotation.set(Math.sin(a) * tilt, 0, -Math.cos(a) * tilt);
+          }
+        } else {
+          const brain = lobedFoliageGeometry(0.11, {
+            detail: 2,
+            lobes: 10,
+            sharpness: 3,
+            amplitude: 0.16,
+            scale: [1, 0.72, 1],
+            seed: 531 + k,
+          });
+          seat(brain, 0.03);
+          part(brain, coralMatB, "brain", c).position.y = 0.03;
+        }
+      }
+    }
+  }
+
+  // --- 4: the crabs ----------------------------------------------------------
+  // SMALL, RED, AND SIDEWAYS. One on the crown — the highest point on the
+  // board's edge, where a player's eye goes when it finds the arch — and one
+  // on a foot boulder. Rule 27 again for the legs: thick enough to keep their
+  // own colour. Every crab is turned to face a little off the camera, because
+  // a crab walks sideways and a crab seen head-on is a red bead.
+  const crabs = new THREE.Group();
+  crabs.name = "crabs";
+  g.add(crabs);
+  const crabAt = (name: string, x: number, y: number, z: number, yaw: number, tilt = 0): void => {
+    const c = new THREE.Group();
+    c.name = name;
+    c.position.set(x, y, z);
+    c.rotation.set(0, yaw, tilt);
+    crabs.add(c);
+    const body = part(new THREE.SphereGeometry(0.085, 10, 6), crabMat, "shell", c);
+    body.position.y = 0.05;
+    body.scale.set(1.25, 0.55, 0.9);
+    for (const s of [-1, 1] as const) {
+      // Claws forward (+Z), a chunky ball each — the identity at 10 px.
+      const claw = part(new THREE.SphereGeometry(0.042, 8, 5), crabMat, s < 0 ? "clawL" : "clawR", c);
+      claw.position.set(s * 0.085, 0.05, 0.085);
+      claw.scale.set(1, 0.8, 1.2);
+      for (let l = 0; l < 3; l++) {
+        const leg = part(new THREE.CapsuleGeometry(0.014, 0.07, 2, 4), crabMat, `leg${s < 0 ? "L" : "R"}${l}`, c);
+        leg.position.set(s * 0.12, 0.045, -0.04 + l * 0.04);
+        leg.rotation.set(0, 0, s * 1.05);
+      }
+      const eye = part(new THREE.SphereGeometry(0.022, 7, 5), eyeMat, s < 0 ? "eyeL" : "eyeR", c);
+      eye.position.set(s * 0.032, 0.1, 0.05);
+      const pupil = part(new THREE.SphereGeometry(0.012, 6, 4), inkMat, s < 0 ? "pupilL" : "pupilR", c);
+      pupil.position.set(s * 0.032, 0.105, 0.068);
+    }
+  };
+  // On TOP of the cap stones, which sit a boulder radius above the chain's
+  // crown line and are themselves ~0.08 thick — at the chain's own crown the
+  // crab was under the caps and could not be seen.
+  crabAt("crabCrown", (r() - 0.5) * hw * 0.4, crownY + bandRad * 1.05 + 0.07, ribbonD * 0.1, 0.5 + r() * 0.4);
+  crabAt("crabFoot", -(footX + footRad * 0.65), footRad * 0.62 + 0.02, depth * 0.15, -0.9 - r() * 0.4);
+  if (r() < 0.6) {
+    crabAt("crabSand", footX + footRad * 1.5, 0, -depth * 0.4, 2.2 + r() * 0.6);
+  }
+
+  // --- 5: the threshold ------------------------------------------------------
+  // A GROUP even when empty, so the parts after it keep their index — the
+  // hedge arch's rule. Ships OFF on the beach: a cut stone sill on sand is a
+  // garden's idea, and the beach floor is already the threshold.
+  const sillHost = new THREE.Group();
+  sillHost.name = "threshold";
+  g.add(sillHost);
+  if (p.archThreshold === true) {
+    const sill = part(new THREE.BoxGeometry(openW * 0.98, 0.06, depth * 0.9), capMat, "sill", sillHost);
+    sill.position.y = 0.03;
+    sill.castShadow = false;
+  }
+
+  return g;
+}
+
+/** Sun-bleached stone: the rock mixed two thirds of the way toward a pale
+ *  warm tan, in sRGB. Measured with `scripts/_scratch-cap-snap.ts`: that lands
+ *  a rung up the warm ladder (`bark` to `wood`) for every rock from #8c6a4c to
+ *  #b08560. An HSL lift does NOT — three's HSL is in the linear working space,
+ *  so a 1.3x lightness there moved the shipped rock's cap nowhere at all and
+ *  it rendered the same brown as the stone under it. */
+function bleached(hex: number): number {
+  return hexOf(mix(rgbOf(hex), rgbOf(0xe0a868), 0.65));
 }
 
 /**

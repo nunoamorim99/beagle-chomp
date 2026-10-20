@@ -164,6 +164,33 @@ export interface PropParams {
   // number, so `height` stays the single scale control and no dial has to be
   // re-tuned after it moves. src/render/archway.ts's ARCH_DEFAULTS holds the
   // values and the measurement spec holds the reasons.
+  /** archway only: WHICH KIND of arch this is (default "hedge").
+   *
+   *  "trees" is IDEA-067 v3 and it is the Deep Forest's own answer — Nuno:
+   *  *"the tunnel arch on the deep forest we can make like a tunnel with like
+   *  two trees one in each side and one branch from each tree making the
+   *  arch."* A `kind` rather than a second PropBaseShape, following
+   *  `flowerKind` and `critterKind`: the two share a brief (mark the one
+   *  crossing the board has, readable in PLAN from 59 degrees) and almost
+   *  every dial below means the same thing to both — `archOpening` is the gap
+   *  the beagle walks through either way, `archRise`/`archCurve` draw the
+   *  same superellipse, `archCrown` is the band's thickness at the crown. It
+   *  also keeps the Board tab working for free: the Tunnel arch slot lists
+   *  every library def whose SHAPE is `archway`, so a new shape would have
+   *  been invisible there until someone widened that filter too.
+   *
+   *  The three dials that are REINTERPRETED rather than shared are named in
+   *  `makeTreeArch`'s own doc comment: `archPier` is the trunk's girth,
+   *  `archDepth` how far the pair spreads through the portal, and `archCrest`
+   *  the leaf clusters riding the branches.
+   *
+   *  "rocks" is IDEA-080, the Sunny Beach's: a sea arch of stacked boulders
+   *  with weathered caps, algae at the tide line, corals at the feet and a
+   *  few crabs — Nuno: *"something like a rock arch with corals and beach
+   *  flora, like algae, and some small crabs on the rocks."* `makeRockArch`
+   *  names its three reinterpreted dials: `archCrest` sizes the cap stones,
+   *  `archBlossoms` is coral clusters per foot, `foliageColors` the algae. */
+  archKind?: "hedge" | "trees" | "rocks";
   /** archway only: the opening's width as a fraction of the portal's height
    *  (default 0.5, which is 1.03 world units — ONE MAZE TILE, so the arch
    *  frames the tunnel corridor exactly). The reference measures 0.338; the
@@ -378,6 +405,7 @@ export const PROP_SHAPE_FIELDS: Record<PropBaseShape, readonly (keyof PropParams
   archway: [
     "height",
     "width",
+    "archKind",
     "archOpening",
     "archRise",
     "archCurve",
@@ -393,6 +421,12 @@ export const PROP_SHAPE_FIELDS: Record<PropBaseShape, readonly (keyof PropParams
     "blossomColor",
     "fenceColor",
     "stoneColor",
+    // The tree arch's bark. Deliberately the SAME field the pine, the nest
+    // tree and the log cabin use rather than an `archTrunkColor` of its own:
+    // a second name for one idea is a second thing to keep in step, and a new
+    // colour param would also need its own seed (IDEA-065's white-critter
+    // defect). The hedge arch simply never sets it.
+    "trunkColor",
   ],
 } as const;
 
@@ -1012,6 +1046,70 @@ export const PROP_LIBRARY: readonly PropDef[] = [
       blossomColor: 0xf4efe6,
       fenceColor: 0xb78450,
       stoneColor: 0xa8a69c,
+    },
+  },
+  {
+    // IDEA-067 v3 — the Deep Forest's tunnel mouth. Two trees and one branch
+    // from each, which is Nuno's own description; `archKind: "trees"` is what
+    // makes it a different plant rather than a different green.
+    //
+    // THE CROWNS ARE SMALL AND THE TREES ARE TALL, and that is forced rather
+    // than chosen — a broad canopy just above the branch springing shadows
+    // the far half of the corridor from a camera that descends at 59 degrees,
+    // which is the green-slab defect IDEA-067 already paid for once. See
+    // `makeTreeArch`.
+    //
+    // No fence (the forest's palette has `fence: "none"`), no stone sill on
+    // leaf litter, and no blossoms: the bark gives this arch the value step
+    // the garden's all-green one had to borrow daisies for.
+    id: "forest-arch",
+    name: "Forest Arch",
+    shape: "archway",
+    params: {
+      height: 1,
+      width: 1,
+      archKind: "trees",
+      foliageColors: [0x2e6337, 0x285835, 0x38703c],
+      trunkColor: 0x7a6142,
+      archOpening: 0.45,
+      archRise: 1.7,
+      archCurve: 1.9,
+      archPier: 0.17,
+      archDepth: 0.3,
+      archCrown: 0.05,
+      archRibbon: 0.72,
+      archCrest: 0.6,
+      archBlossoms: 0,
+      archThreshold: false,
+      archFence: false,
+    },
+  },
+  {
+    // IDEA-080 — the Sunny Beach's tunnel mouth. A sea arch: the hedge arch's
+    // construction in stone (rule 6 is about mass, not material), so every
+    // shared dial below means what it means there. No fence and no sill: the
+    // beach has neither, and a picket footing on sand is a garden.
+    id: "sea-arch",
+    name: "Sea Arch",
+    shape: "archway",
+    params: {
+      height: 1,
+      width: 1,
+      archKind: "rocks",
+      foliageColors: [0x3f8a5a, 0x8fbf5a],
+      stoneColor: 0xa07a58,
+      blossomColor: 0xe8789a,
+      archOpening: 0.458,
+      archRise: 1.29,
+      archCurve: 2.3,
+      archPier: 0.12,
+      archDepth: 0.33,
+      archCrown: 0.15,
+      archRibbon: 0.7,
+      archCrest: 0.6,
+      archBlossoms: 3,
+      archThreshold: false,
+      archFence: false,
     },
   },
 ] as const;

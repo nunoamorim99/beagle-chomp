@@ -28,7 +28,7 @@ Living backlog of ideas. Two purposes:
   header now carries the before-table.
 
 ## Backlog (open ideas)
-> New registered ideas go here. Next free ID: IDEA-080
+> New registered ideas go here. Next free ID: IDEA-081
 > (054 went to the crab and 055 to the mosquito — built in parallel by two sessions, which is
 > why the ids were split up front rather than both taking the next free one. 056 and 057 are the
 > sushi pair, registered together because neither is buildable without the other as its
@@ -45,6 +45,37 @@ Living backlog of ideas. Two purposes:
 > passed. 077 and 078 are registered together and in that order for the same reason 056/057
 > were: the rename is what frees the WORD the second one needs, so 078 is unbuildable without
 > it.)
+
+### IDEA-080 — Sunny Beach: a sea to the north, a beach around the board, a sea arch 🔨
+- **Priority:** 🟡
+- **Area:** render
+- **Registered:** 2026-10-19
+- **Description:** Nuno: *"on the Sunny beach maze we have some dunes on the environment around
+  the maze but lets add instead a sea on the top on the north part of the maze and on the left we
+  will add some beach towels and umbrella, on the right we will add some tents. For the arch on
+  the beach I was thinking in something like a rock arch with corals and beach flora, like algae,
+  and some small crabs on the rocks."*
+- **Versions:**
+  - **v1** (2026-10-19, built, not yet committed) — `src/render/seaside.ts` (new): the Journey's
+    madbox water brought to a straight coast — a flat unlit sea with a depth gradient and broken
+    crest arcs, plus a shore ribbon with a swash line that runs up the sand, a hard foam edge,
+    scrolling dashes and a wet-sand band. One `shoreZ(x)` drives the sea, the ribbon and the
+    recipe's keep-out test; it animates itself in `onBeforeRender`. The beach surround (kind id
+    still `"dunes"`) drops the dunes — under IDEA-079 they rendered as pale boulders — for striped
+    umbrellas with towels on the WEST and a campsite of ridge and dome tents on the EAST, all on
+    the three bloom roles (no new draw call). Tents face the board: the campsite is seen from the
+    west and above, and any other yaw leaves one pitch a back face. `archKind: "rocks"` +
+    `sea-arch` def: the hedge arch's construction in stone (rule 6 is about mass), bleached cap
+    stones a rung up the warm ladder, algae at the tide line, sea grass, branching and brain
+    coral, crabs on the crown and a foot boulder; leg boulders sit one MEASURED reach outboard so
+    the doorway stays clear. Beach theme gains `tunnelArch: "sea-arch"`. Guards:
+    `test-surround.ts` (+16: coast vs verge/floor/desktop frame, dry pitches, west/east split,
+    face-up winding — re-injected) and `test-archway.ts` (+23: rule 6, nothing in the doorway,
+    on the ground, six distinct palette entries none of them the wall's). `shoot-board.ts`
+    gained `GAME_SIZE` for a desktop game frame, since a phone cannot see east or west.
+- **Notes:** the menu/shop showcase still builds its own palette-tinted hedge arch for the beach
+  (IDEA-072 v2 rule 2) — switching it to the theme's own arch is a one-function follow-up.
+  `SEASIDE_PARAMS` is a named mutable table but not yet on the World tab.
 
 ### IDEA-028 — Challenge twist: moving walls / maze changes mid-level 💡
 - **Priority:** 🟢
@@ -592,6 +623,115 @@ Living backlog of ideas. Two purposes:
     `archway.ts`, `fence.ts`, `propMerge.ts`, `props.ts`, `boardInspector.ts`,
     `boardTree.ts`, `propsInspector.ts`, `propsCodegen.ts`, `propsSeedColors.ts`,
     `preview-board/index.html`, `shoot-board.ts`, `test-archway.ts`.
+  - **v3** (2026-10-19) - **the Deep Forest gets one, and it is two trees.**
+    Nuno: *"lets work in a arch to the deep forest, its the only thing that is
+    missing. The tunnel arch on the deep forest we can make like a tunnel with
+    like two trees one in each side and one branch from each tree making the
+    arch."* v1's own brief had already said the other maps would need
+    something; this is that, and it is the second KIND of arch rather than a
+    second colourway.
+    **A `kind`, NOT A SECOND PropBaseShape**, following `flowerKind` and
+    `critterKind`. The two share a brief and almost every dial — `archOpening`
+    is the gap the beagle walks through either way, `archRise`/`archCurve`
+    draw the same superellipse — and three are REINTERPRETED (`archPier` is
+    the trunk's girth, `archDepth` the pair's spread through the portal,
+    `archCrest` the leaf clusters). It also keeps the Board tab working for
+    free: the Tunnel arch slot lists every library def whose SHAPE is
+    `archway`, so a new shape would have been invisible there until someone
+    widened that filter too.
+    **THE CROWNS ARE SMALL AND HIGH, AND THAT IS FORCED RATHER THAN CHOSEN.**
+    The obvious tree arch is two broad canopies over two trunks, and it is
+    v1's green slab all over again. Worked out in the arch's own plane - the
+    camera descends at 59 degrees, so a mass between heights yb and yt whose
+    outer edge sits at xo shadows the floor inward from `xo - 0.6 yb` - a
+    canopy of the usual width just above the branch springing puts the whole
+    far half of the corridor in its own shade. The fix is not a narrower
+    opening, it is a different TREE: tall and slender, crown carried well
+    clear of the walk-through, so the BRANCHES become the arch. Which is also
+    exactly what Nuno asked for - one branch from each tree, not two canopies
+    meeting.
+    **AND IT FOUND A LIVE, INVISIBLE DEFECT IN THE SHIPPED HEDGE ARCH.**
+    `brighten` scales all three channels, so it cannot move a HUE - and
+    IDEA-079's snap weights hue at 3.0 against lightness at 0.1. Measured:
+    0x2e6337 and its own 1.52x both land on `leaf`, become the same generated
+    matcap texture, and the lighter crest that is an all-green arch's only
+    internal contrast is simply gone. It has been gone on the garden's arch
+    since the style shipped, with nothing erroring: the prop builds, the
+    materials are valid and the editor shows the authored colours, which are
+    still correct. `youngGrowth` rotates the hue toward yellow-green instead,
+    which lands on `grass` or `lime` - a real rung up - and in CLASSIC still
+    reads as this year's growth catching the sun. One change that is right in
+    both looks, applied to both arches. IDEA-065 rule 9 in a second place.
+    **AND A BRANCH THINNER THAN ITS OWN TRUNK IS THE WHOLE DIFFERENCE BETWEEN
+    TWO TREES AND ONE BENT ONE.** Nuno, with a sketch drawn over the render:
+    *"instead of having the trees making the arch and look a little bit off,
+    we can just make two branches touching like the sketch."* The first build
+    sized the limb off `archCrown` - the hedge arch's BAND thickness, which is
+    a structural member carrying a hedge - and it came out **0.33 against a
+    trunk of 0.16**, twice the bole it grew from, with the trunks leaning a
+    full trunk-radius outward on top of that. Both read as ONE form. The limb
+    is a fraction of the TRUNK now (0.58 at the bole, 0.34 at the touch), so
+    the relationship cannot drift when the trunk is retuned; the lean is down
+    to 0.15 of a radius; and the two limbs MEET at the centre line with a
+    knuckle over the joint rather than running past each other - crossing
+    solids read as one continuous arc, which is the defect, and butting ones
+    leave an open wedge across the fold that no overlap along their own axes
+    closes (`jointedLimb`'s answer in forestCritters.ts, same reason). The
+    crowns went to three per tree with the third hung low and outboard, so the
+    head has a ragged underside instead of being a ball balanced on a pole.
+    **And even with thin limbs it still read as one bent form until the TOUCH
+    moved below the trunk tops.** It sat at `H - bandT`, the hedge arch's own
+    rule - where the crown of the ARCH is the top of the prop - so the limb
+    rose higher than its own bole and each trunk's head hid behind the
+    foliage. A tree carries its crown ABOVE the branch it forks at; two
+    numbers, and the whole difference between a gate and a croquet hoop. Both
+    facts are pinned now, because neither errors and both read as a plausible
+    arch. A THIRD instrument slip came with them: the limb-versus-trunk girth
+    check sampled a 0.05 band at the fork and reported the trunk at 0.000,
+    since a swept solid has vertices only AT its stations and the trunk's
+    eight sit 0.39 apart - sample a swept form on a band wider than its
+    station spacing.
+    **AND THE GREEN RUNS DOWN THE TREE, NOT ONLY OVER IT.** Nuno: *"lets just
+    add more green to the trees to have more volume and not just on the top."*
+    The bare stretch was the bole between the fork and the crown, so three
+    tufts per tree hang there - and the bound on them is SOLVED rather than
+    eyeballed, because anything below the springing has to leave the
+    walk-through alone. A tuft of radius `rad` centred at `trunkX + rad*0.55`
+    has its inner edge at `trunkX - rad*0.75` (a lobed blob reaches about 1.3x
+    its nominal radius once the amplitude and the x scale are in), so keeping
+    that outside the opening's half-width caps the radius at
+    `(trunkX - hw) / 0.75`. Sized past it they close the gap the two trees
+    exist to frame.
+    **FACETING IS A FUNCTION OF ON-SCREEN SIZE, NOT OF TRIANGLE COUNT.** The
+    first crowns were three small `detail: 1` blobs per tree and came back as
+    a cluster of cut EMERALDS at anything closer than the board's own camera.
+    Two big `detail: 2` blobs cost about the same and read as a crown -
+    IDEA-071's flowering border and IDEA-072's pale hexagons are this finding
+    twice already.
+    **A SWEPT TRUNK'S BASE CAP IS NOT FLAT.** The cap lies in the plane
+    perpendicular to the first TANGENT and the lean tilts that off vertical,
+    so the foot dipped 0.013 below the lawn on a model correct in every other
+    respect - and no render says so. Clamped rather than lifted, for the hedge
+    arch's own reason: lifting leaves the tree standing on tiptoe.
+    **TWO INSTRUMENT FAILURES, BOTH THIS PROJECT'S STANDING RULE.** A
+    corridor-floor sightline probe, built to generalise rule 6 by raycasting
+    instead of re-deriving its inequality, reported **0% visible for the
+    SHIPPED, approved hedge arch** - because any arch's own BAND necessarily
+    crosses that sightline. The recorded rule is about the PIERS eclipsing the
+    APERTURE, not about lighting the floor between them; the probe was
+    measuring something else with confidence and was deleted rather than kept.
+    The assertion written from the same mistaken reading ("the crowns clear
+    the arch's apex") then failed a sound model by 0.4 of a unit, and is now
+    what the rule actually needs - the wide mass stops being solid above the
+    SPRINGING.
+    **AND `shoot-board.ts` HAD NEVER GOT THE NAVIGATION-TIMEOUT FIX** this
+    file has carried since IDEA-064: a cold load of /preview-board/ pulls the
+    board, every prop factory and the surround across a Windows bind mount and
+    times out at Playwright's 30s default on a server that is working
+    perfectly. It reads exactly like the feature being broken.
+    26 checks added (100 in the suite); measured span 2.30, depth 0.72,
+    height 3.13 - the tallest arch, which is what a landmark tree should be -
+    at 2,864 triangles against the hedge arch's 2,428.
 ### IDEA-066 — The world around the maze 🔨
 - **Priority:** 🔴
 - **Area:** render / theme

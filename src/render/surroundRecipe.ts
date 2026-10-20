@@ -50,16 +50,18 @@ import {
   makeSurroundMaterials,
   distantBed,
   distantBroadleaf,
+  distantBeachSpot,
   distantConifer,
-  distantDune,
   distantFlowerBorder,
   distantHedgeRun,
   distantHouse,
   distantRockOutcrop,
   distantShrubClump,
+  distantTent,
   distantTower,
 } from "./surroundProps";
 import { mergeBySignature } from "./propMerge";
+import { SEASIDE_PARAMS, type Seaside, buildSeaside, disposeSeaside, inSea } from "./seaside";
 
 const SURROUND_HASH_SEED = 600;
 
@@ -749,26 +751,94 @@ function woodlandContent(host: THREE.Group, plot: Plot, m: SurroundMaterials): v
   }
 }
 
-/** The beach: low mounds and almost no vertical mass, because a beach's read
- *  is the horizon. */
+/**
+ * How far up the beach from the waterline's MEAN a thing must stand: the
+ * swash's highest reach, the wet band behind it, and a margin for the object's
+ * own footprint (a scaled tent is ~1.2 across). An umbrella planted at the mean
+ * waterline stands in the surf half the time — see `inSea`.
+ */
+const BEACH_KEEP_DRY =
+  SEASIDE_PARAMS.swashReach + SEASIDE_PARAMS.wetWidth + 1.4;
+
+/** The yaw that turns a tent's door (local +Z) to face WEST, toward the
+ *  board — see `dunesContent`. Ry(t) sends +Z to (sin t, 0, cos t). */
+const TENT_FACING = -Math.PI / 2;
+
+/** `placeIn`, refusing a spot in the sea. Returns whether it placed. */
+function placeOnBeach(
+  host: THREE.Group,
+  plot: Plot,
+  child: THREE.Object3D,
+  u: number,
+  v: number,
+  rotY: number,
+): boolean {
+  const [x, z] = pointIn(plot, u, v);
+  if (inSea(x, z, BEACH_KEEP_DRY)) return false;
+  placeIn(host, plot, child, u, v, plot.scale, rotY);
+  return true;
+}
+
+/**
+ * The beach (IDEA-080): the SEA to the north, SUNBATHERS to the west and a
+ * CAMPSITE to the east — Nuno's layout, side for side. The kind id is still
+ * `"dunes"` because it is a palette value in themes.ts; what it builds is no
+ * longer dunes.
+ *
+ * NO BOUNDARIES. Every other kind with people in it fences its plots; a beach
+ * is the one place nobody does, and a hedge on sand would say "garden". The
+ * plot is only a unit of placement here — the four SLOTS below are what keep a
+ * spot's umbrella out of its neighbour's towels, since a plot fraction of
+ * +-0.5 is ~3.5 units apart against a spot ~2 across.
+ *
+ * Split by the sign of x rather than by band, so the SOUTH band (portrait-only,
+ * under the HUD) continues whichever side it is on instead of becoming a third
+ * thing — a beach has two halves and the camera's south edge cuts across both.
+ */
 function dunesContent(host: THREE.Group, plot: Plot, m: SurroundMaterials): void {
-  const n = 1 + Math.floor(hash(plot.px, plot.pz, 4) * 3);
-  for (let i = 0; i < n; i++) {
-    const dune = distantDune(m, { seed: 121 + i + plot.px * 5 });
-    placeIn(
-      host,
-      plot,
-      dune,
-      hash(plot.px, plot.pz, 5 + i) * 1.2 - 0.6,
-      hash(plot.px, plot.pz, 9 + i) * 1.2 - 0.6,
-      plot.scale,
-      hash(plot.px, plot.pz, 13 + i) * Math.PI,
-    );
+  // Wholly in the water: nothing to build. Tested on the plot's centre with
+  // no margin, because the per-object test below is the real guard and this
+  // only saves the work.
+  if (inSea(plot.cx, plot.cz)) return;
+  const south = plot.band === "south";
+  const campsite = plot.cx > 0;
+  const seed = plot.px * 31 + plot.pz * 17;
+  const slots: Array<[number, number]> = [
+    [-0.5, -0.45],
+    [0.5, -0.45],
+    [-0.5, 0.45],
+    [0.5, 0.45],
+  ];
+  // Fewer in the south, for rule 4's reason: it is the nearest, largest,
+  // unfogged band and it sits under the controls.
+  const want = south ? 2 : 3 + (hash(plot.px, plot.pz, 4) < 0.5 ? 1 : 0);
+  let placed = 0;
+  for (let i = 0; i < slots.length && placed < want; i++) {
+    if (hash(plot.px, plot.pz, 30 + i) < 0.18) continue; // an empty pitch is part of a beach too
+    const [su, sv] = slots[i];
+    const u = su + (hash(plot.px, plot.pz, 5 + i) - 0.5) * 0.35;
+    const v = sv + (hash(plot.px, plot.pz, 9 + i) - 0.5) * 0.35;
+    const child = campsite
+      ? distantTent(m, { seed: 171 + i + seed })
+      : distantBeachSpot(m, { seed: 121 + i + seed });
+    // A campsite's tents face roughly ONE way — a campsite is pitched, not
+    // scattered — and that way is WEST, toward the board, for a reason the
+    // camera dictates rather than taste. The campsite is 15-40 units EAST of
+    // a camera on the centre line, so it is seen from the west and above:
+    // facing the door west puts the door's triangle toward the viewer, and
+    // runs the ridge east-west so BOTH pitches face up into the view. Turned
+    // any other way, one pitch is a back face and a two-tone tent shows one
+    // colour — a tile on the sand. Sunbathers lie at any angle.
+    const rot = campsite
+      ? TENT_FACING + (hash(plot.px, plot.pz, 13 + i) - 0.5) * 0.7
+      : hash(plot.px, plot.pz, 13 + i) * Math.PI * 2;
+    if (placeOnBeach(host, plot, child, u, v, rot)) placed++;
   }
-  if (plot.band !== "south" && hash(plot.px, plot.pz, 17) < 0.3) {
-    const sh = distantShrubClump(m, { seed: 131 + plot.pz });
-    placeIn(host, plot, sh, hash(plot.px, plot.pz, 18) - 0.5, hash(plot.px, plot.pz, 19) - 0.5, plot.scale, 0);
-  }
+  // NO BEACH GRASS, deliberately. `distantShrubClump` takes its greens off
+  // `palette.wall`, which on this theme is SAND — so a "grass tuft" came out
+  // as a tan lump, and a scatter of those read as pebbles and litter across
+  // the beach (they were on the old dune build too). Open sand between the
+  // pitches is what a beach is; the colour lives on the people's things.
 }
 
 /** The park: loose groves and lawn patches, paths instead of hedgerows. */
@@ -847,7 +917,17 @@ function fringeContent(
   const roll = hash(Math.round(f.x), Math.round(f.z), 54);
   let child: THREE.Object3D;
   if (kind === "dunes") {
-    child = roll < 0.35 ? distantDune(m, { radius: 1.4, seed }) : distantShrubClump(m, { radius: 0.24, seed });
+    // IDEA-080. The fringe is the annulus nearest the board, so the beach's
+    // north fringe is where the surf is: nothing in the water, and nothing on
+    // the wet sand either.
+    if (inSea(f.x, f.z, BEACH_KEEP_DRY)) return;
+    // Same west/east split as the plots, so the fringe continues each side
+    // rather than mixing them at the board's edge. Sparser than the plots:
+    // most of the fringe stays open sand and grass, which is what lets the
+    // pitches further out read as a beach rather than a car park.
+    // Open sand otherwise — see `dunesContent` on why there is no grass.
+    if (roll >= 0.3) return;
+    child = f.x > 0 ? distantTent(m, { seed }) : distantBeachSpot(m, { seed });
   } else if (kind === "woodland") {
     // A RANGE, NOT A LITERAL (IDEA-065 v4). Every woodland fringe conifer was
     // exactly 1.3 units, so the ring of trees nearest the board was a row of
@@ -934,7 +1014,13 @@ function fringeContent(
           : distantBroadleaf(m, { height: 1.15, seed });
   }
   child.position.set(f.x, 0, f.z);
-  child.rotation.y = hash(Math.round(f.x), Math.round(f.z), 55) * Math.PI * 2;
+  const spin = hash(Math.round(f.x), Math.round(f.z), 55);
+  // A tent faces the board, here as in `dunesContent` and for its reason: a
+  // random yaw shows most tents with one pitch as a back face, and a ridge
+  // tent showing one colour is a box with nothing to say it is canvas.
+  child.rotation.y = child.name.startsWith("tent-")
+    ? TENT_FACING + (spin - 0.5) * 0.7
+    : spin * Math.PI * 2;
   child.scale.multiplyScalar(f.scale);
   host.add(child);
 }
@@ -956,6 +1042,10 @@ interface Cached {
   key: string;
   group: THREE.Group;
   mats: SurroundMaterials;
+  /** The beach's sea (IDEA-080), owned alongside the band: its two shader
+   *  materials are NOT in the shared set, so disposing that set would leak
+   *  them. */
+  sea: Seaside | null;
 }
 let cached: Cached | null = null;
 
@@ -1073,8 +1163,22 @@ export function ensureSurround(
     o.receiveShadow = false;
   });
 
+  // THE SEA GOES IN AFTER THE MERGE, never before it. Its two materials are
+  // ShaderMaterials owned by seaside.ts, and `mergeBySignature` exists to weld
+  // the shared toon set — handing it a transparent, depth-ignoring shore
+  // ribbon to bucket is asking it to reason about something it was never
+  // written for. Parented to the band so it is cached, borrowed and removed
+  // with it, and built over the ground's FULL extent rather than the culled
+  // view: it is two meshes whatever its size, and IDEA-069's rule is that
+  // only props are culled, never ground.
+  const sea =
+    kind === "dunes"
+      ? buildSeaside(SURROUND_PARAMS.halfWidth, SURROUND_PARAMS.zFar)
+      : null;
+  if (sea) host.add(sea.group);
+
   scene.add(host);
-  cached = { key, group: host, mats };
+  cached = { key, group: host, mats, sea };
   return host;
 }
 
@@ -1109,5 +1213,6 @@ export function disposeSurround(): void {
     if (m.isMesh) m.geometry.dispose();
   });
   disposeSurroundMaterials(cached.mats);
+  if (cached.sea) disposeSeaside(cached.sea);
   cached = null;
 }

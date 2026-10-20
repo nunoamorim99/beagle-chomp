@@ -438,6 +438,7 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
     blurb: "Deep pines and leaf litter · low light",
     price: 50,
     ambience: "forest",
+    tunnelArch: "forest-arch",
     palette: {
       bg: 0x87a998,
       backdropTop: 0xc8dcc8,
@@ -512,6 +513,7 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
     // seafoam, coral — with seagrass specks.
     price: 50,
     ambience: "surf",
+    tunnelArch: "sea-arch",
     palette: {
       bg: 0xa8d8ef,
       backdropTop: 0xd8f0fa,
