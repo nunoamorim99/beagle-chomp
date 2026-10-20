@@ -73,6 +73,14 @@ Living backlog of ideas. Two purposes:
     face-up winding — re-injected) and `test-archway.ts` (+23: rule 6, nothing in the doorway,
     on the ground, six distinct palette entries none of them the wall's). `shoot-board.ts`
     gained `GAME_SIZE` for a desktop game frame, since a phone cannot see east or west.
+  - **v2** (2026-10-20) — Nuno: *"remove the props we have around the maze, I will work on that
+    props and then I place the props myself... the biscuit in this map are hard to see so the
+    biscuit in this map should be more brown."* The beach's apron `placements` (12 umbrellas,
+    11 palms) are emptied for him to re-place; the procedural surround and the sea arch stay.
+    `biscuit` 0xf8f0e2 -> **0x8a5428** (emissive 0x2a1608 at 0.3): the shipped style lifts the
+    floor to pale sand, where a cream biscuit vanished. Under the style it bakes to the `wood`
+    rung (a warm tan-brown); in classic it is a dark chocolate on the mid-tan floor — both
+    rendered and readable. `shoot-board.ts` gained `STYLE=classic`.
 - **Notes:** the menu/shop showcase still builds its own palette-tinted hedge arch for the beach
   (IDEA-072 v2 rule 2) — switching it to the theme's own arch is a one-function follow-up.
   `SEASIDE_PARAMS` is a named mutable table but not yet on the World tab.

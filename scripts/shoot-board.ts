@@ -21,8 +21,10 @@ const maze = process.env.MAZE ?? "0";
 const flat = process.env.FLAT === "1" ? "&flat=1" : "";
 const fence = process.env.FENCE === "0" ? "&fence=0" : "";
 const views = (process.env.VIEWS ?? "game,close,hero,top").split(",");
+// STYLE=classic shoots the opt-out look (the page defaults to what ships).
+const style = process.env.STYLE ? `&style=${process.env.STYLE}` : "";
 
-const OUT = `.img2threejs/${subject}/renders/${label}`;
+const OUT = `.img2threejs/${subject}/renders/${label}${process.env.STYLE ? "-" + process.env.STYLE : ""}`;
 mkdirSync(OUT, { recursive: true });
 
 const browser = await chromium.launch();
@@ -50,7 +52,7 @@ for (const view of views) {
     if (m.type() === "error") errors.push(`${view}: ${m.text()}`);
   });
 
-  const url = `${baseUrl}/preview-board/?theme=${theme}&maze=${maze}&view=${view}&hud=0${flat}${fence}`;
+  const url = `${baseUrl}/preview-board/?theme=${theme}&maze=${maze}&view=${view}&hud=0${flat}${fence}${style}`;
   // PAST PLAYWRIGHT'S 30s DEFAULT, deliberately. A cold navigation here
   // refetches the whole module graph across a Windows bind mount, and this
   // page pulls in the board, every prop factory and the surround — measured,

@@ -507,10 +507,12 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
     id: "beach",
     name: "Sunny Beach",
     blurb: "Wind-rippled sand · sea air",
-    // Bright seaside noon: warm sky, sandy dune walls, darker wet-sand floor
-    // (kept well below the biscuit tone so the trail stays readable), the
+    // Bright seaside noon: warm sky, sandy dune walls, wet-sand floor, the
     // brightest sun of any theme. Blooms are shoreline finds — shell white,
-    // seafoam, coral — with seagrass specks.
+    // seafoam, coral — with seagrass specks. The biscuits are BROWN here
+    // (IDEA-080 v2): the shipped style lifts this floor to a pale sand, and a
+    // cream biscuit on pale sand disappeared — so the trail is the one thing
+    // on this board darker than the ground it lies on.
     price: 50,
     ambience: "surf",
     tunnelArch: "sea-arch",
@@ -533,9 +535,9 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
       floorTexture: "sand",
       floorEmissive: 0x3a2e14,
       floorEmissiveIntensity: 0.25,
-      biscuit: 0xf8f0e2,
-      biscuitEmissive: 0x6a5a30,
-      biscuitEmissiveIntensity: 0.6,
+      biscuit: 0x8a5428,
+      biscuitEmissive: 0x2a1608,
+      biscuitEmissiveIntensity: 0.3,
       hemiSky: 0xe8f6ff,
       hemiGround: 0x8a7448,
       hemiIntensity: 0.7,
@@ -550,31 +552,7 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
       speckEmissive: 0x2a3a14,
       speckChance: 0.3,
     },
-    placements: [
-      { propId: "umbrella", tile: [19, 4], offset: [-0.24, -0.162], rotationY: 5.691, scale: 1 },
-      { propId: "umbrella", tile: [7, -1], offset: [0.184, -0.163], rotationY: 6.188, scale: 1.083 },
-      { propId: "umbrella", tile: [0, -1], offset: [-0.22, -0.111], rotationY: 1.294, scale: 1.008 },
-      { propId: "umbrella", tile: [5, -1], offset: [0.217, 0.075], rotationY: 5.538, scale: 0.974 },
-      { propId: "umbrella", tile: [19, 6], offset: [-0.007, -0.091], rotationY: 2.731, scale: 0.906 },
-      { propId: "umbrella", tile: [11, -1], offset: [-0.037, -0.143], rotationY: 6.276, scale: 1.047 },
-      { propId: "umbrella", tile: [4, -1], offset: [-0.065, 0.152], rotationY: 5.757, scale: 1.089 },
-      { propId: "umbrella", tile: [8, -1], offset: [0.144, -0.125], rotationY: 4.636, scale: 1.171 },
-      { propId: "umbrella", tile: [10, -1], offset: [-0.17, 0.032], rotationY: 3.87, scale: 1.107 },
-      { propId: "umbrella", tile: [9, -1], offset: [-0.236, -0.048], rotationY: 3.852, scale: 1.079 },
-      { propId: "umbrella", tile: [-1, -1], offset: [-0.152, 0.121], rotationY: 0.948, scale: 1.036 },
-      { propId: "umbrella", tile: [1, -1], offset: [-0.038, -0.119], rotationY: 0.911, scale: 1.119 },
-      { propId: "palm", tile: [-1, 15], offset: [-0.182, 0.25], rotationY: 5.075, scale: 1 },
-      { propId: "palm", tile: [19, 5], offset: [-0.242, 0.123], rotationY: 0.269, scale: 1 },
-      { propId: "palm", tile: [19, 11], offset: [0.132, 0.154], rotationY: 3.038, scale: 1 },
-      { propId: "palm", tile: [-1, 16], offset: [0.121, -0.157], rotationY: 2.239, scale: 0.955 },
-      { propId: "palm", tile: [17, -1], offset: [-0.035, 0.01], rotationY: 2.977, scale: 1.264 },
-      { propId: "palm", tile: [18, -1], offset: [-0.185, 0.249], rotationY: 5.882, scale: 1.028 },
-      { propId: "palm", tile: [19, 7], offset: [0.026, -0.144], rotationY: 0.013, scale: 1 },
-      { propId: "palm", tile: [19, 16], offset: [-0.036, -0.164], rotationY: 4.991, scale: 1 },
-      { propId: "palm", tile: [-1, 17], offset: [-0.114, -0.047], rotationY: 4.742, scale: 1 },
-      { propId: "palm", tile: [19, 1], offset: [-0.066, 0.227], rotationY: 3.638, scale: 1 },
-      { propId: "palm", tile: [-1, 2], offset: [-0.218, 0.056], rotationY: 2.902, scale: 1 },
-    ],
+    placements: [],
     verge: [],
     wallDecor: [],
   },
