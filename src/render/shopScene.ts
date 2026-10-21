@@ -43,7 +43,7 @@ import {
   makeAnchor,
   makeStar,
 } from "./board";
-import { floorPreviewTexture } from "./floorTexture";
+import { floorAccentsFor, floorPreviewTexture } from "./floorTexture";
 import {
   VIGNETTE_CELLS,
   applyShowcaseSurfaces,
@@ -434,7 +434,7 @@ function makeThemeDiorama(theme: MazeTheme): THREE.Group {
   // (tinting twice squares the colour), and the same texture drives the
   // emissive map or the palette's flat emissive lift swamps the pattern on
   // the dark themes. The diorama OWNS this texture — see disposeHero.
-  const floorTex = floorPreviewTexture(palette.floorTexture, DIORAMA_FLOOR_CELLS, palette.floor);
+  const floorTex = floorPreviewTexture(palette.floorTexture, DIORAMA_FLOOR_CELLS, palette.floor, floorAccentsFor(palette));
   const floorMat = toon({
     color: floorTex ? 0xffffff : palette.floor,
     map: floorTex,

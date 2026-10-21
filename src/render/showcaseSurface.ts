@@ -26,7 +26,7 @@
 //     since a needless recompile stalls the frame.
 import * as THREE from "three";
 import type { ThemePalette } from "../game/themes";
-import { floorPreviewTexture } from "./floorTexture";
+import { floorAccentsFor, floorPreviewTexture } from "./floorTexture";
 import { wallTextureFor } from "./wallTexture";
 
 /**
@@ -86,7 +86,7 @@ export function applyShowcaseSurfaces(s: ShowcaseSurfaces, palette: ThemePalette
   // same ground, and drawing it once per material would pay for the same
   // canvas twice.
   const previous = s.floor[0]?.map ?? null;
-  const next = floorPreviewTexture(palette.floorTexture, s.cells, palette.floor);
+  const next = floorPreviewTexture(palette.floorTexture, s.cells, palette.floor, floorAccentsFor(palette));
   if (previous !== next) previous?.dispose();
   for (const m of s.floor) {
     if (m.map !== next) {

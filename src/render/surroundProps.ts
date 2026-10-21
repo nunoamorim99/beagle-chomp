@@ -42,6 +42,7 @@ import { flaredTrunkProfile, lobedFoliageGeometry, trunkGeometry } from "./folia
 import { pineWhorlStack } from "./forestProps";
 import { mergeGrouped, splitByGroup } from "./propMerge";
 import { hexOf, lit, mix, rgbOf } from "./paint";
+import { pavingColorFor } from "./floorTexture";
 
 
 /**
@@ -72,6 +73,11 @@ export interface SurroundMaterials {
   soil: THREE.MeshToonMaterial;
   groundAccent: THREE.MeshToonMaterial;
   sand: THREE.MeshToonMaterial;
+  /** The park lake (IDEA-081). Deep water and the lighter shallows / ripple
+   *  marks. Every theme builds them; only the park draws them, and a material
+   *  nothing draws costs no draw call after the merge. */
+  water: THREE.MeshToonMaterial;
+  waterLight: THREE.MeshToonMaterial;
 }
 
 /** Everything the set needs off a theme. Kept structural so `src/game` never
@@ -110,7 +116,9 @@ export function makeSurroundMaterials(p: SurroundPaletteInput): SurroundMaterial
     foliageLit: toon({ color: hexOf(lit(canopy, 1.06)) }),
     foliageDark: toon({ color: hexOf(lit(canopy, 0.7)) }),
     trunk: toon({ color: hexOf(lit(timber, 0.78)) }),
-    wallLight: toon({ color: hexOf(mix([0.9, 0.86, 0.78], ground, 0.14)) }),
+    // Also the park avenue's PAVING, so it shares one definition with the
+    // walk painted down the board's corridors (floorTexture.ts).
+    wallLight: toon({ color: pavingColorFor(p.surroundGround) }),
     wallDark: toon({ color: hexOf(mix([0.72, 0.67, 0.58], ground, 0.14)) }),
     roof: toon({ color: hexOf(mix([0.62, 0.26, 0.2], wall, 0.12)) }),
     roofTrim: toon({ color: hexOf(mix([0.86, 0.82, 0.76], wall, 0.1)) }),
@@ -151,6 +159,12 @@ export function makeSurroundMaterials(p: SurroundPaletteInput): SurroundMaterial
     // sand and every mound came back as a pale BOULDER on a dark plain --
     // a beach that read as a quarry. Value contrast is what made them objects.
     sand: toon({ color: hexOf(mix(ground, [0.92, 0.84, 0.62], 0.18)) }),
+    // Fixed blues, only TINTED by the ground, for the buildings' reason: water
+    // has to read as water on any lawn. Two values a full step apart, because
+    // a lake that is one flat colour is a hole in the ground — the shallows
+    // round the edge are what give it a shore and a depth.
+    water: toon({ color: hexOf(mix([0.2, 0.47, 0.64], ground, 0.1)) }),
+    waterLight: toon({ color: hexOf(mix([0.5, 0.76, 0.84], ground, 0.08)) }),
   };
 }
 
@@ -1293,5 +1307,558 @@ export function distantRockOutcrop(
       [(r() - 0.5) * 0.5, rad * 0.55, (r() - 0.5) * 0.5],
     );
   }
+  return g;
+}
+
+// ---------------------------------------------------------------------------
+// The City Park's avenue (IDEA-081). Laid out by parkLayout.ts.
+
+/**
+ * A straight paved path, `length` along local Z, with a stone KERB down each
+ * side.
+ *
+ * The kerb is what makes it read as a path at all. A pale strip lying flush on
+ * a green field is a stripe of paint; the two raised edges give it a real step
+ * at the boundary, which is IDEA-071's kerbed flower bed and IDEA-059's ledge
+ * one scale up.
+ *
+ * It is a SLAB, not a plane laid on the ground: the surround ground is at
+ * y = -0.02 and the board floor at -0.01, so a plane at either height is a
+ * z-fight waiting for a far camera. The slab's top sits at +0.02, clear of
+ * both, and its underside is buried in the ground where nobody can see it.
+ *
+ * Paving JOINTS run across it at a slow pitch. Every slab seam would be a
+ * ladder at this size; one joint every few units is what says "paved" rather
+ * than "a long pale box".
+ */
+export function distantPath(
+  m: SurroundMaterials,
+  o: { length: number; width?: number; jointPitch?: number },
+): THREE.Group {
+  const g = new THREE.Group();
+  g.name = "park-path";
+  const w = o.width ?? 2.6;
+  const len = o.length;
+  const top = 0.02;
+  const kerbW = 0.16;
+  const kerbH = 0.07;
+  part(g, new THREE.BoxGeometry(w, 0.04, len), m.wallLight, "paving", [0, top - 0.02, 0]);
+  for (const s of [-1, 1]) {
+    part(g, new THREE.BoxGeometry(kerbW, kerbH, len), m.stone, s < 0 ? "kerbL" : "kerbR", [
+      s * (w / 2 + kerbW / 2),
+      kerbH / 2 - 0.02,
+      0,
+    ]);
+  }
+  const pitch = o.jointPitch ?? 3;
+  const n = Math.floor(len / pitch);
+  for (let i = 1; i < n; i++) {
+    // A hair PROUD of the paving, never flush: flush is a z-fight, and buried
+    // is the defect this project has shipped more often than any other.
+    part(g, new THREE.BoxGeometry(w, 0.006, 0.12), m.stone, "joint" + i, [
+      0,
+      top + 0.003,
+      -len / 2 + i * pitch,
+    ]);
+  }
+  return g;
+}
+
+/**
+ * A park bench: wooden seat and back on two dark iron frames. Long axis
+ * along local X, sitting side facing local +Z.
+ *
+ * TWO VALUES, AND THE FRAME IS THE DARK ONE. From 59 degrees above, a bench
+ * is mostly its SEAT, so the warm timber carries the object — and the dark
+ * end frames standing either side of it are what make it read as furniture
+ * rather than as a plank lying on the grass.
+ */
+export function distantBench(m: SurroundMaterials, o: { seed?: number } = {}): THREE.Group {
+  const g = new THREE.Group();
+  g.name = "park-bench";
+  const r = seeded(o.seed ?? 5);
+  const len = 1.1 + r() * 0.15;
+  const seatY = 0.3;
+  const seatD = 0.36;
+  part(g, new THREE.BoxGeometry(len, 0.07, seatD), m.trunk, "seat", [0, seatY, 0]);
+  const back = part(g, new THREE.BoxGeometry(len, 0.24, 0.06), m.trunk, "back", [
+    0,
+    seatY + 0.2,
+    -seatD / 2 + 0.03,
+  ]);
+  // Raked back a little, as every bench is — upright, it reads as a box.
+  back.rotation.x = -0.18;
+  for (const s of [-1, 1]) {
+    // One frame per end: leg, arm and back-post as one dark slab. Inset from
+    // the ends so the timber overhangs it, which is what real benches do and
+    // what keeps the frame from reading as the bench's whole silhouette.
+    part(g, new THREE.BoxGeometry(0.08, seatY, seatD), m.glass, s < 0 ? "frameL" : "frameR", [
+      s * (len / 2 - 0.12),
+      seatY / 2,
+      0,
+    ]);
+    part(g, new THREE.BoxGeometry(0.08, 0.3, 0.06), m.glass, s < 0 ? "postL" : "postR", [
+      s * (len / 2 - 0.12),
+      seatY + 0.13,
+      -seatD / 2 + 0.03,
+    ]);
+  }
+  return g;
+}
+
+/** A litter bin: a dark drum under a pale stone lid. */
+export function distantBin(m: SurroundMaterials): THREE.Group {
+  const g = new THREE.Group();
+  g.name = "park-bin";
+  const h = 0.5;
+  part(g, new THREE.CylinderGeometry(0.19, 0.16, h, 8), m.glass, "drum", [0, h / 2, 0]);
+  // The lid is WIDER than the drum and pale: from above it is the only part
+  // of a bin the camera really sees, and a dark disc on grass is a hole.
+  part(g, new THREE.CylinderGeometry(0.23, 0.23, 0.07, 8), m.stone, "lid", [0, h + 0.035, 0]);
+  return g;
+}
+
+// ---------------------------------------------------------------------------
+// The City Park's playground (IDEA-081 phase 3). Laid out by parkLayout.ts.
+//
+// THE EQUIPMENT IS PAINTED IN THE THEME'S BLOOM COLOURS, and that is the
+// cheapest correct answer rather than a shortcut. Play equipment is the one
+// thing in a park that is SATURATED on purpose, the park's `bloomColors` are
+// already its loud yellow / pink / purple, and they are already in the shared
+// set: the playground costs no draw call and still reads as the loudest
+// corner of the picture, which is what a playground is.
+
+/** A tube between two points, the one primitive every frame here needs.
+ *  Aimed with setFromUnitVectors, never with Euler angles (IDEA-055 rule 4). */
+function rod(
+  g: THREE.Group,
+  a: [number, number, number],
+  b: [number, number, number],
+  radius: number,
+  mat: THREE.Material,
+  name: string,
+): THREE.Mesh {
+  const va = new THREE.Vector3(...a);
+  const vb = new THREE.Vector3(...b);
+  const dir = vb.clone().sub(va);
+  const len = dir.length();
+  const mesh = part(g, new THREE.CylinderGeometry(radius, radius, len, 5), mat, name);
+  mesh.position.copy(va).addScaledVector(dir, 0.5);
+  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
+  return mesh;
+}
+
+/**
+ * A slide: ladder up the back (-Z), a roofed platform, a chute down the front
+ * (+Z). The CHUTE is the identity (a long bright ramp is the one shape no
+ * other object in the band has), so it is the widest, brightest part.
+ */
+export function distantSlide(m: SurroundMaterials): THREE.Group {
+  const g = new THREE.Group();
+  g.name = "play-slide";
+  const deckY = 1.0;
+  const half = 0.36;
+  const postH = 1.6;
+  const cz = -0.6;
+  for (const sx of [-1, 1]) {
+    for (const sz of [-1, 1]) {
+      rod(g, [sx * half, 0, cz + sz * half], [sx * half, postH, cz + sz * half], 0.05, m.bloomC, `post${sx}${sz}`);
+    }
+  }
+  part(g, new THREE.BoxGeometry(half * 2 + 0.1, 0.08, half * 2 + 0.1), m.trunk, "deck", [0, deckY, cz]);
+  const roof = part(g, new THREE.ConeGeometry(0.62, 0.42, 4), m.bloomB, "roof", [0, postH + 0.21, cz]);
+  roof.rotation.y = Math.PI / 4;
+  // The ladder leans on the deck's back edge.
+  const lz0 = cz - half - 0.55;
+  const lz1 = cz - half;
+  for (const sx of [-1, 1]) rod(g, [sx * 0.2, 0, lz0], [sx * 0.2, deckY, lz1], 0.035, m.glass, `rail${sx}`);
+  for (let i = 1; i <= 3; i++) {
+    const t = i / 4;
+    part(g, new THREE.BoxGeometry(0.4, 0.04, 0.05), m.glass, "rung" + i, [0, deckY * t, lz0 + (lz1 - lz0) * t]);
+  }
+  // The chute: deck front edge down to the ground, running out along +Z.
+  const z0 = cz + half;
+  const z1 = 1.55;
+  const run = z1 - z0;
+  const drop = deckY - 0.1;
+  const len = Math.hypot(run, drop);
+  const chute = new THREE.Group();
+  chute.name = "chute";
+  chute.position.set(0, deckY, z0);
+  // Rx(t) sends +Z to (0, -sin t, cos t): a positive angle tilts it DOWN.
+  chute.rotation.x = Math.atan2(drop, run);
+  g.add(chute);
+  part(chute, new THREE.BoxGeometry(0.5, 0.06, len), m.bloomA, "bed", [0, 0, len / 2]);
+  for (const sx of [-1, 1]) {
+    part(chute, new THREE.BoxGeometry(0.06, 0.16, len), m.bloomA, sx < 0 ? "lipL" : "lipR", [sx * 0.25, 0.06, len / 2]);
+  }
+  return g;
+}
+
+/**
+ * A dome climber, the round bar-frame every playground had. Four meridian
+ * arches crossing at the top and three horizontal rings.
+ *
+ * Built from TUBES along curves rather than from an icosahedron's edges: an
+ * icosahedron is not pole-aligned in three.js, so cutting it at y = 0 leaves a
+ * ragged rim, and a ragged rim reads as a broken one.
+ */
+export function distantClimbDome(m: SurroundMaterials, o: { radius?: number } = {}): THREE.Group {
+  const g = new THREE.Group();
+  g.name = "play-dome";
+  const R = o.radius ?? 0.95;
+  const tube = 0.045;
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI;
+    const ca = Math.cos(a);
+    const sa = Math.sin(a);
+    const pts: THREE.Vector3[] = [];
+    for (let k = 0; k <= 10; k++) {
+      const t = (k / 10) * Math.PI;
+      pts.push(new THREE.Vector3(Math.cos(t) * R * ca, Math.sin(t) * R, Math.cos(t) * R * sa));
+    }
+    part(g, new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 10, tube, 4), m.bloomC, "arch" + i);
+  }
+  const rings = [0.02, 0.4, 0.75];
+  rings.forEach((h, i) => {
+    const y = h * R;
+    const r = Math.sqrt(R * R - y * y);
+    const ring = part(g, new THREE.TorusGeometry(r, tube, 4, 16), i === 0 ? m.glass : m.bloomA, "ring" + i, [0, y, 0]);
+    ring.rotation.x = Math.PI / 2;
+  });
+  return g;
+}
+
+/** An A-frame double swing. Beam along local X, seats hanging under it. */
+export function distantSwing(m: SurroundMaterials): THREE.Group {
+  const g = new THREE.Group();
+  g.name = "play-swing";
+  const H = 1.45;
+  const hx = 1.15;
+  const splay = 0.6;
+  for (const sx of [-1, 1]) {
+    for (const sz of [-1, 1]) {
+      rod(g, [sx * hx, 0, sz * splay], [sx * hx, H, 0], 0.055, m.bloomB, `leg${sx}${sz}`);
+    }
+  }
+  rod(g, [-hx - 0.08, H, 0], [hx + 0.08, H, 0], 0.06, m.bloomB, "beam");
+  const seats = [-0.48, 0.48];
+  seats.forEach((x, i) => {
+    const seatY = 0.4;
+    for (const s of [-1, 1]) rod(g, [x + s * 0.17, H, 0], [x + s * 0.17, seatY, 0], 0.018, m.glass, `chain${i}${s}`);
+    part(g, new THREE.BoxGeometry(0.42, 0.05, 0.2), m.bloomA, "seat" + i, [x, seatY, 0]);
+  });
+  return g;
+}
+
+/**
+ * The play area's ground and boundary: a soft-surface pad inside a stone
+ * kerb, and a low pale fence with a GATE gap on the side `gateSide` names
+ * (+X "east" or -Z "north").
+ *
+ * THE PAD IS `soil`, AND THE TWO STYLES READ IT TWO WAYS — both of them
+ * right. In classic it is dark bark mulch, which is what real playgrounds
+ * stand on and a value step under every bright piece. Under IDEA-079's style
+ * the snap lands it on the warm sand rung (the flower beds' mulch does the
+ * same), so it reads as a SANDPIT, which is the other thing a playground
+ * stands on. Either way the equipment is saturated and the pad is not, and
+ * that hue step is what separates them — under that style a value step has to
+ * be a hue step (IDEA-067).
+ *
+ * A PALE fence, for the garden picket's reason (IDEA-060 rule 2): dark rails
+ * on dark mulch and green lawn would be a line nobody can see.
+ */
+export function distantPlayArea(
+  m: SurroundMaterials,
+  o: { width: number; depth: number; gate?: number; gateSide?: "east" | "north" },
+): THREE.Group {
+  const g = new THREE.Group();
+  g.name = "play-area";
+  const w = o.width;
+  const d = o.depth;
+  part(g, new THREE.BoxGeometry(w, 0.04, d), m.soil, "mulch", [0, 0, 0]);
+  const kerbW = 0.16;
+  part(g, new THREE.BoxGeometry(w + kerbW * 2, 0.07, kerbW), m.stone, "kerbN", [0, 0.015, -d / 2 - kerbW / 2]);
+  part(g, new THREE.BoxGeometry(w + kerbW * 2, 0.07, kerbW), m.stone, "kerbS", [0, 0.015, d / 2 + kerbW / 2]);
+  part(g, new THREE.BoxGeometry(kerbW, 0.07, d), m.stone, "kerbW", [-w / 2 - kerbW / 2, 0.015, 0]);
+  part(g, new THREE.BoxGeometry(kerbW, 0.07, d), m.stone, "kerbE", [w / 2 + kerbW / 2, 0.015, 0]);
+
+  // The fence stands on the kerb line.
+  const gate = o.gate ?? 1.6;
+  const fx = w / 2 + kerbW / 2;
+  const fz = d / 2 + kerbW / 2;
+  const postH = 0.55;
+  const pitch = 0.9;
+  const north = o.gateSide === "north";
+  const runs: Array<[[number, number], [number, number], string]> = [
+    [[-fx, fz], [fx, fz], "S"],
+    [[-fx, -fz], [-fx, fz], "W"],
+    // The gated side in two halves either side of the gap.
+    ...(north
+      ? ([
+          [[-fx, -fz], [-gate / 2, -fz], "N0"],
+          [[gate / 2, -fz], [fx, -fz], "N1"],
+          [[fx, -fz], [fx, fz], "E"],
+        ] as Array<[[number, number], [number, number], string]>)
+      : ([
+          [[-fx, -fz], [fx, -fz], "N"],
+          [[fx, -fz], [fx, -gate / 2], "E0"],
+          [[fx, gate / 2], [fx, fz], "E1"],
+        ] as Array<[[number, number], [number, number], string]>)),
+  ];
+  for (const [a, b, name] of runs) {
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const n = Math.max(1, Math.round(len / pitch));
+    for (let i = 0; i <= n; i++) {
+      const t = i / n;
+      part(g, new THREE.BoxGeometry(0.08, postH, 0.08), m.roofTrim, `post${name}_${i}`, [
+        a[0] + (b[0] - a[0]) * t,
+        postH / 2,
+        a[1] + (b[1] - a[1]) * t,
+      ]);
+    }
+    [0.22, 0.45].forEach((y, k) => {
+      const rail = part(g, new THREE.BoxGeometry(len, 0.06, 0.05), m.roofTrim, `rail${name}_${k}`, [
+        (a[0] + b[0]) / 2,
+        y,
+        (a[1] + b[1]) / 2,
+      ]);
+      // A box's long axis is local +X; Ry(t) sends +X to (cos t, 0, -sin t).
+      rail.rotation.y = Math.atan2(-(b[1] - a[1]), b[0] - a[0]);
+    });
+  }
+  return g;
+}
+
+// ---------------------------------------------------------------------------
+// The City Park's lake (IDEA-081 phase 4). Laid out by parkLayout.ts.
+
+/**
+ * The lake's outline as a radius multiplier at angle `t` — an ellipse with two
+ * slow wobbles, so the shore reads as a pond somebody dug rather than a
+ * stamped oval. Shared by the water, its bank and the footpath round it, so the
+ * three can never disagree about where the shore is (the pizza's
+ * `sectorOutline` reasoning).
+ */
+export function lakeShore(t: number, seed = 0): number {
+  return 1 + 0.07 * Math.sin(2 * t + 1.1 + seed) + 0.05 * Math.sin(3 * t + 2.3 + seed * 0.7);
+}
+
+/** The most `lakeShore` can return — what a caller sizes clearances with. */
+export const LAKE_SHORE_MAX = 1.12;
+
+/**
+ * A flat ring or disc following the lake's outline, `inner`..`outer` times
+ * the ellipse, lying on the ground at height `y`. `inner` 0 is a full disc.
+ *
+ * Built as a polar GRID rather than a `Shape` with a hole: ShapeGeometry only
+ * emits contour vertices, and a ring is cleaner as quads between two rings of
+ * points whose angles match by construction.
+ */
+function lakeBand(
+  rx: number,
+  rz: number,
+  inner: number,
+  outer: number,
+  y: number,
+  seed: number,
+  seg = 48,
+): THREE.BufferGeometry {
+  const pos: number[] = [];
+  const idx: number[] = [];
+  for (let i = 0; i <= seg; i++) {
+    const t = (i / seg) * Math.PI * 2;
+    const k = lakeShore(t, seed);
+    const c = Math.cos(t);
+    const s = Math.sin(t);
+    pos.push(c * rx * k * inner, y, s * rz * k * inner);
+    pos.push(c * rx * k * outer, y, s * rz * k * outer);
+  }
+  for (let i = 0; i < seg; i++) {
+    const a = i * 2;
+    // Wound to face UP. Angle increases from +X toward +Z, which seen from
+    // above is CLOCKWISE, so the counter-clockwise-from-above order is
+    // inner(i), inner(i+1), outer(i) — the obvious order faces down and is
+    // culled whole (journeyWater's ribbon shipped exactly that once).
+    idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+
+/**
+ * The water body: a sandy bank, pale shallows round the shore, deep water in
+ * the middle, and a few ripple marks on it.
+ *
+ * THREE VALUES, OUTSIDE IN, and the order is the whole read. A lake that is
+ * one flat blue is a HOLE in the lawn; the pale band at its edge is what says
+ * the ground slopes down into water, and the bank under that is what gives it
+ * a shore rather than a cut edge.
+ */
+export function distantLake(
+  m: SurroundMaterials,
+  o: { rx: number; rz: number; seed?: number },
+): THREE.Group {
+  const g = new THREE.Group();
+  g.name = "lake";
+  const seed = o.seed ?? 0;
+  const { rx, rz } = o;
+  // The layers step up by 0.02 — comfortably over this camera's depth
+  // resolution at 50 units (~0.0015 with a 0.1 near plane), so nothing fights.
+  part(g, lakeBand(rx, rz, 0, 1.06, 0.0, seed), m.soil, "bank");
+  part(g, lakeBand(rx, rz, 0, 1.0, 0.02, seed), m.waterLight, "shallows");
+  part(g, lakeBand(rx, rz, 0, 0.8, 0.04, seed), m.water, "deep");
+  // Ripples: short pale arcs on the deep water. Flat, a hair proud of it.
+  const r = seeded(91 + seed);
+  for (let i = 0; i < 5; i++) {
+    const a = r() * Math.PI * 2;
+    const d = 0.2 + r() * 0.4;
+    const ripple = part(
+      g,
+      new THREE.TorusGeometry(0.32 + r() * 0.2, 0.035, 3, 10, Math.PI * 0.7),
+      m.waterLight,
+      "ripple" + i,
+      [Math.cos(a) * rx * d, 0.06, Math.sin(a) * rz * d],
+    );
+    ripple.rotation.set(-Math.PI / 2, 0, r() * Math.PI * 2);
+    ripple.scale.set(1, 1, 0.3);
+  }
+  return g;
+}
+
+/**
+ * The gravel footpath round the lake: a ring a fixed distance out from the
+ * shore. Same `lakeShore` outline, so it follows every bay and point the water
+ * makes.
+ */
+export function distantLakePath(
+  m: SurroundMaterials,
+  o: { rx: number; rz: number; offset: number; width: number; seed?: number },
+): THREE.Group {
+  const g = new THREE.Group();
+  g.name = "lake-path";
+  // Offset in WORLD units, not as a multiplier: the ellipse's two radii
+  // differ, and a multiplier would give a path that is twice as far from the
+  // water at the ends as at the sides.
+  const rxIn = o.rx + o.offset;
+  const rzIn = o.rz + o.offset;
+  const outerK = 1 + o.width / Math.min(rxIn, rzIn);
+  part(g, lakeBand(rxIn, rzIn, 1, outerK, 0.025, o.seed ?? 0, 64), m.wallLight, "gravel");
+  return g;
+}
+
+/**
+ * A duck, floating. White body, yellow bill — the one bird everybody draws,
+ * and the only small thing in the band that is WHITE, which is how it reads at
+ * a few pixels on blue.
+ */
+export function distantDuck(m: SurroundMaterials, o: { size?: number } = {}): THREE.Group {
+  const g = new THREE.Group();
+  g.name = "duck";
+  const s = o.size ?? 1;
+  const body = part(g, new THREE.SphereGeometry(0.17 * s, 7, 5), m.roofTrim, "body", [0, 0.1 * s, 0]);
+  body.scale.set(1, 0.62, 1.45);
+  // The tail flicks UP at the back — the duck silhouette's one hook.
+  const tail = part(g, new THREE.ConeGeometry(0.07 * s, 0.16 * s, 5), m.roofTrim, "tail", [0, 0.16 * s, -0.26 * s]);
+  tail.rotation.x = -0.9;
+  part(g, new THREE.SphereGeometry(0.095 * s, 6, 4), m.roofTrim, "head", [0, 0.27 * s, 0.17 * s]);
+  const bill = part(g, new THREE.ConeGeometry(0.045 * s, 0.13 * s, 5), m.bloomA, "bill", [0, 0.25 * s, 0.3 * s]);
+  // A cone points up its +Y; Rx(+pi/2) sends +Y to +Z, i.e. forward.
+  bill.rotation.x = Math.PI / 2;
+  return g;
+}
+
+/**
+ * A clump of reeds with bulrush heads. Stems as thin CONES so each comes to a
+ * point, and the brown heads are what say "bulrush" rather than "grass".
+ */
+export function distantReeds(m: SurroundMaterials, o: { seed?: number } = {}): THREE.Group {
+  const g = new THREE.Group();
+  g.name = "reeds";
+  const r = seeded(o.seed ?? 4);
+  const n = 5 + Math.floor(r() * 3);
+  for (let i = 0; i < n; i++) {
+    const h = 0.55 + r() * 0.35;
+    const x = (r() - 0.5) * 0.45;
+    const z = (r() - 0.5) * 0.45;
+    const stem = part(g, new THREE.ConeGeometry(0.05, h, 4), i % 2 ? m.foliageDark : m.hedgeLit, "stem" + i, [x, h / 2, z]);
+    stem.rotation.set((r() - 0.5) * 0.3, 0, (r() - 0.5) * 0.3);
+    if (i % 3 === 0) {
+      part(g, new THREE.CylinderGeometry(0.055, 0.055, 0.16, 5), m.trunk, "head" + i, [x, h * 0.8, z]);
+    }
+  }
+  return g;
+}
+
+/** A lily pad — a flat green disc with a notch — and sometimes its flower. */
+export function distantLilyPad(m: SurroundMaterials, o: { seed?: number } = {}): THREE.Group {
+  const g = new THREE.Group();
+  g.name = "lily";
+  const r = seeded(o.seed ?? 8);
+  const rad = 0.2 + r() * 0.1;
+  const pad = part(g, new THREE.CircleGeometry(rad, 10, 0.4, Math.PI * 2 - 0.4), m.foliageLit, "pad", [0, 0.065, 0]);
+  pad.rotation.x = -Math.PI / 2;
+  if (r() < 0.45) {
+    const f = part(g, new THREE.SphereGeometry(0.08, 6, 3), m.bloomC, "flower", [rad * 0.2, 0.1, 0]);
+    f.scale.y = 0.6;
+  }
+  return g;
+}
+
+/**
+ * A low CLIPPED hedge — a run, not a row of bushes. Long axis local X, flat
+ * cut ends, rounded shoulders, standing on y = 0.
+ *
+ * NOT `distantHedgeRun`, and the difference is the whole point. That one is a
+ * boundary hedge built from a few wide overlapping blobs, which reads as
+ * continuous at its own height — at half that height the blobs shrink, the
+ * gaps between them open, and an avenue fence came back as a STRING OF BEADS.
+ * A clipped hedge is one mass: a rounded-top section EXTRUDED along the run,
+ * then gently undulated so the top is foliage rather than a machined plank.
+ * The undulation depends only on POSITION, so the extrusion's duplicated
+ * vertices move together and no seam can open.
+ */
+export function distantClippedHedge(
+  m: SurroundMaterials,
+  o: { length: number; height?: number; depth?: number; seed?: number },
+): THREE.Group {
+  const g = new THREE.Group();
+  g.name = "clipped-hedge";
+  const L = o.length;
+  const h = o.height ?? 0.5;
+  const d = o.depth ?? 0.46;
+  const seed = o.seed ?? 0;
+  const rr = Math.min(h, d) * 0.32;
+  // The section in (z, y): square at the foot, rounded shoulders on top.
+  const s = new THREE.Shape();
+  s.moveTo(-d / 2, 0);
+  s.lineTo(d / 2, 0);
+  s.lineTo(d / 2, h - rr);
+  s.quadraticCurveTo(d / 2, h, d / 2 - rr, h);
+  s.lineTo(-d / 2 + rr, h);
+  s.quadraticCurveTo(-d / 2, h, -d / 2, h - rr);
+  s.closePath();
+  const steps = Math.max(4, Math.round(L / 0.25));
+  const geo = new THREE.ExtrudeGeometry(s, { depth: L, steps, bevelEnabled: false, curveSegments: 3 });
+  // ExtrudeGeometry runs along +Z from 0 to L; centre it and turn it onto X.
+  geo.translate(0, 0, -L / 2);
+  geo.rotateY(Math.PI / 2);
+  const pos = geo.getAttribute("position") as THREE.BufferAttribute;
+  const p = seed * 1.7;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const y = pos.getY(i);
+    const z = pos.getZ(i);
+    // Two incommensurate waves along the run, so the lumps never read as a
+    // pattern; stronger toward the top, where clipping leaves the most growth.
+    const wave = Math.sin(x * 4.1 + p) * 0.6 + Math.sin(x * 9.3 + p * 2.1) * 0.4;
+    const up = y / h;
+    pos.setXYZ(i, x, y + wave * 0.035 * up, z * (1 + wave * 0.06 * up));
+  }
+  geo.computeVertexNormals();
+  part(g, geo, m.hedgeLit, "hedge");
   return g;
 }

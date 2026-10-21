@@ -48,7 +48,9 @@ import { PROP_SHAPE_FIELDS, getPropDef, type PropParams } from "../src/game/prop
 import {
   ARCH_DEFAULTS,
   ARCH_PARAMS,
+  archIsDirected,
   archTransformFor,
+  archYawFor,
   makeArchway,
   tunnelMouths,
 } from "../src/render/archway";
@@ -865,6 +867,100 @@ section("The beach arch is a sea arch, with corals, algae and crabs");
   {
     const m = /archKind:\s*\[([^\]]*)\]/.exec(inspectorSrc);
     ok("the Props tab offers the rock kind", !!m && m[1].includes('"rocks"'), m ? m[1] : "");
+  }
+}
+
+// ---------------------------------------------------------------------------
+section("The park arch is an open gate under a flowering shrub arch");
+
+// IDEA-081. Nuno: *"for this board I was thinking to put like a gate and above
+// the gate a arch of shrubs the same color as the maze wall and with some
+// flowers like the ones we made on the props, the daisy, roses and tulips per
+// example, the gate should be open."*
+{
+  const park = MAZE_THEMES.find((t) => t.id === "park");
+  ok("the park names a tunnel arch", typeof park?.tunnelArch === "string");
+  const def = getPropDef(park?.tunnelArch ?? "");
+  ok("…and it is a real prop of the archway shape", def.shape === "archway");
+  const gp = def.params as PropParams;
+  ok("…and it is the GATE kind", gp.archKind === "gate");
+  ok("…with its shrub keyed on the park's own wall colour", (gp.foliageColors ?? [])[0] === park?.palette.wall);
+  ok("only a gate has a front", archIsDirected(gp) && ["hedge-arch", "forest-arch", "sea-arch"].every((id) => !archIsDirected(getPropDef(id).params as PropParams)));
+
+  const gate = makeArchway(gp, 0.37);
+  const H = ARCH_DEFAULTS.baseHeight * (gp.height ?? 1);
+  const openW = H * (gp.archOpening ?? ARCH_DEFAULTS.opening) * (gp.width ?? 1);
+  const depth = H * (gp.archDepth ?? ARCH_DEFAULTS.depth) * (gp.width ?? 1);
+  const rise = (openW / 2) * (gp.archRise ?? ARCH_DEFAULTS.rise);
+  const bandT = H * (gp.archCrown ?? ARCH_DEFAULTS.crown);
+  const springH = H - rise - bandT;
+  ok(
+    "the shrub springs low enough that the corridor shows under it (rule 6)",
+    springH / Math.tan((59 * Math.PI) / 180) < 0.86 * openW,
+    `hides ${(springH * 0.6).toFixed(2)} of ${(0.86 * openW).toFixed(2)}`,
+  );
+  ok("…and high enough that the beagle walks under it", springH > 1.0, `${springH.toFixed(2)}`);
+
+  // --- the gate --------------------------------------------------------------
+  const gateGrp = gate.getObjectByName("gate");
+  ok("there is a gate with two posts and two leaves", !!gateGrp && ["postL", "postR", "leafL", "leafR"].every((n) => !!gateGrp.getObjectByName(n)));
+  // OPEN, and out of the beagle's way. The corridor is one tile wide, so every
+  // gate vertex must sit outboard of |x| = 0.5 in the arch's own frame — a leaf
+  // swung across the opening is a closed gate the dog runs through.
+  {
+    gate.updateMatrixWorld(true);
+    let inCorridor = 0;
+    let leafReach = -Infinity;
+    const v = new THREE.Vector3();
+    gateGrp?.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh) return;
+      const a = m.geometry.getAttribute("position");
+      for (let i = 0; i < a.count; i++) {
+        v.fromBufferAttribute(a, i).applyMatrix4(m.matrixWorld);
+        if (Math.abs(v.x) < 0.5 * TILE) inCorridor++;
+        leafReach = Math.max(leafReach, v.z);
+      }
+    });
+    ok("the gate stands clear of the corridor", inCorridor === 0, `${inCorridor} vertices in the corridor`);
+    // Swung OUT past the portal's own face rather than folded inside the
+    // hedge, where all a player saw of a leaf was its last few pickets.
+    ok("…and its leaves are swung open, out past the portal's face", leafReach > depth / 2 + 0.4, `reach z ${leafReach.toFixed(2)} against face ${(depth / 2).toFixed(2)}`);
+  }
+
+  // --- the flowers -----------------------------------------------------------
+  const fl = gate.getObjectByName("flowers");
+  const heads = fl?.children.length ?? 0;
+  ok("there are flowers on the arch", heads === Math.round(gp.archBlossoms ?? 12) && heads >= 9, `${heads} heads`);
+  ok(
+    "…every one of them up on the shrub, not in the doorway",
+    (fl?.children ?? []).every((c) => c.position.y > springH * 0.9),
+  );
+  ok("no picket footing beside a picket gate", gp.archFence === false);
+
+  // --- both mouths open OUTWARD ----------------------------------------------
+  // The arch's open side is its local +Z. At every tunnel mouth of every maze
+  // that has to point OUT of the board, along the mouth's own sign: turned the
+  // other way the leaves swing into the maze walls flanking the tunnel. The
+  // symmetric arches keep archTransformFor's turn exactly.
+  {
+    let wrong = 0;
+    let moved = 0;
+    for (const maze of MAZES) {
+      for (const m of tunnelMouths(new Grid(maze))) {
+        const yaw = archYawFor(m, gp);
+        const out = m.axis === "x" ? Math.sin(yaw) : Math.cos(yaw);
+        if (out * m.sign < 0.99) wrong++;
+        if (archYawFor(m, getPropDef("hedge-arch").params as PropParams) !== archTransformFor(m).rotationY) moved++;
+      }
+    }
+    ok("every gate opens out of the board, at every mouth of every maze", wrong === 0, `${wrong} open inward`);
+    ok("…and no symmetric arch was turned", moved === 0, `${moved} moved`);
+  }
+
+  {
+    const m = /archKind:\s*\[([^\]]*)\]/.exec(inspectorSrc);
+    ok("the Props tab offers the gate kind", !!m && m[1].includes('"gate"'), m ? m[1] : "");
   }
 }
 

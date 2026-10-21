@@ -62,6 +62,7 @@ import {
 } from "./surroundProps";
 import { mergeBySignature } from "./propMerge";
 import { SEASIDE_PARAMS, type Seaside, buildSeaside, disposeSeaside, inSea } from "./seaside";
+import { boxInParkZone, buildLake, buildParkAvenue, buildPlayground, inParkZone } from "./parkLayout";
 
 const SURROUND_HASH_SEED = 600;
 
@@ -841,7 +842,7 @@ function dunesContent(host: THREE.Group, plot: Plot, m: SurroundMaterials): void
   // pitches is what a beach is; the colour lives on the people's things.
 }
 
-/** The park: loose groves and lawn patches, paths instead of hedgerows. */
+/** The park: loose groves of trees on open lawn. */
 function parklandContent(host: THREE.Group, plot: Plot, m: SurroundMaterials): void {
   const south = plot.band === "south";
   const n = south ? 1 : 2 + Math.floor(hash(plot.px, plot.pz, 4) * 3);
@@ -860,19 +861,11 @@ function parklandContent(host: THREE.Group, plot: Plot, m: SurroundMaterials): v
       0,
     );
   }
-  const beds = 1 + Math.floor(hash(plot.px, plot.pz, 17) * 3);
-  for (let i = 0; i < beds; i++) {
-    const b = distantBed(m, { width: 1.6, depth: 1.1, seed: 151 + i + plot.px });
-    placeIn(
-      host,
-      plot,
-      b,
-      hash(plot.px, plot.pz, 18 + i) * 1.4 - 0.7,
-      hash(plot.px, plot.pz, 22 + i) * 1.4 - 0.7,
-      plot.scale,
-      hash(plot.px, plot.pz, 26 + i) * Math.PI,
-    );
-  }
+  // NO FLOWER BEDS (IDEA-081, Nuno: *"around the park we have the trees and
+  // that ok but we have the oval things with some dots with colors, lets
+  // remove that"*). Scattered over open lawn they read as litter rather than
+  // planting; the park's flowers live on the avenue, behind its benches, where
+  // there is a reason for them to be.
 }
 
 /** The city: blocks on a street grid. The one kind whose regularity is the
@@ -970,7 +963,14 @@ function fringeContent(
       height: 1.7 + hash(Math.round(f.x), Math.round(f.z), 56) * 0.6,
       seed,
     });
-  } else if (f.band === "south" && roll < SURROUND_PARAMS.southFringeBuildings) {
+  } else if (
+    kind !== "parkland" &&
+    f.band === "south" &&
+    roll < SURROUND_PARAMS.southFringeBuildings
+  ) {
+    // NOT IN THE PARK (IDEA-081): a public park has no sheds or greenhouses,
+    // and its south is the avenue's continuation. Those cells fall through to
+    // the planting below instead.
     // IDEA-070: THE SOUTH FRINGE IS WHERE A SOUTH BUILDING HAS TO GO, and
     // finding that out is most of what this change was.
     //
@@ -1006,8 +1006,12 @@ function fringeContent(
     // for a border to stand against -- and a saturated mass alone on lawn is
     // the exact thing that made the first build read as litter, at the one
     // distance where everything is biggest and least fogged.
+    //
+    // And no flower BED out here in the park either (IDEA-081) — see
+    // `parklandContent`. That share of cells goes to shrubs instead.
+    const bedShare = kind === "parkland" ? 0 : 0.23;
     child =
-      roll < 0.55
+      roll < 0.78 - bedShare
         ? distantShrubClump(m, { seed })
         : roll < 0.78
           ? distantBed(m, { seed })
@@ -1191,6 +1195,13 @@ export function ensureSurround(
  * finished group. The greenhouse-inside-the-house defect lived in that blind
  * spot for two releases.
  */
+/** Does a plot's quadrilateral touch any of the park's reserved zones? */
+function plotInPark(plot: Plot): boolean {
+  const xs = plot.corners.map((c) => c[0]);
+  const zs = plot.corners.map((c) => c[1]);
+  return boxInParkZone(Math.min(...xs), Math.max(...xs), Math.min(...zs), Math.max(...zs));
+}
+
 export function buildSurroundContent(
   kind: Exclude<SurroundKind, "none">,
   mats: SurroundMaterials,
@@ -1198,8 +1209,23 @@ export function buildSurroundContent(
   const host = new THREE.Group();
   host.name = "surround";
   const content = CONTENT[kind];
-  for (const plot of planPlots()) content(host, plot, mats);
-  for (const f of planFringe()) fringeContent(host, f, kind, mats);
+  // The park reserves the ground its designed zones stand on (IDEA-081). A
+  // plot touching one is dropped WHOLE, rule 2's reasoning, and a fringe item
+  // is dropped with a margin so nothing grows out of the avenue's tree row.
+  const park = kind === "parkland";
+  for (const plot of planPlots()) {
+    if (park && plotInPark(plot)) continue;
+    content(host, plot, mats);
+  }
+  for (const f of planFringe()) {
+    if (park && inParkZone(f.x, f.z, 0.8)) continue;
+    fringeContent(host, f, kind, mats);
+  }
+  if (park) {
+    buildParkAvenue(host, mats);
+    buildPlayground(host, mats);
+    buildLake(host, mats);
+  }
   return host;
 }
 

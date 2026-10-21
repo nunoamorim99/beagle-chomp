@@ -31,7 +31,80 @@
 // theme and the old one disposed.
 import * as THREE from "three";
 import { COLS, ROWS, type Grid } from "../game/grid";
-import { css, lit, mix, rgbOf, rng, type RGB } from "./paint";
+import { css, hexOf, lit, mix, rgbOf, rng, type RGB } from "./paint";
+import { MADBOX_STYLE_ON } from "./madboxFlag";
+import { snapToPalette } from "./madboxStyle";
+
+/**
+ * The PAVING colour of a park path, from the ground it is laid in. ONE
+ * definition, because two surfaces must agree on it: the avenue's paving in
+ * the surround (surroundProps.ts's `wallLight`) and the gravel walk painted
+ * down the board's corridors (IDEA-081, Nuno: *"the floor of this maze should
+ * follow the color path of the path we have on the west and east side"*). A
+ * second copy of the arithmetic is a second chance for the path to change
+ * colour exactly where it leaves the board.
+ */
+export function pavingColorFor(groundHex: number): number {
+  return hexOf(mix([0.9, 0.86, 0.78], rgbOf(groundHex), 0.14));
+}
+
+/**
+ * Colours a floor painter takes from the REST of the palette rather than
+ * inventing. Optional, and only `parkGrass` reads them today.
+ */
+export interface FloorAccents {
+  /** The lawn — the ground outside the board, so the two meet without a seam. */
+  lawn?: number;
+  /** The walk down the corridors — the avenue's paving. */
+  path?: number;
+  /** The keyline round the walk — the avenue's stone kerb. */
+  kerb?: number;
+}
+
+/**
+ * The accents a theme's floor should be painted with.
+ *
+ * THE PARK'S GRASS IS THE SURROUND'S GRASS. Its lawn used to be mixed 88% of
+ * the way to a fixed dark green, chosen when the board was the only ground in
+ * the picture; once IDEA-066 put a lawn round it, the board's own border
+ * rendered at (55, 90, 34) against the surround's (120, 150, 93) — a dark
+ * frame round the maze that nothing else in the scene explains. Painted from
+ * `surroundGround` it is the same colour on the same material under the same
+ * light, so the seam goes away by construction rather than by tuning.
+ */
+export function floorAccentsFor(palette: {
+  floorTexture: string;
+  surroundGround: number;
+  groundDetailColor: number;
+}): FloorAccents {
+  if (palette.floorTexture !== "parkGrass") return {};
+  return {
+    lawn: palette.surroundGround,
+    path: corridorPaving(pavingColorFor(palette.surroundGround)),
+    kerb: palette.groundDetailColor,
+  };
+}
+
+/**
+ * The colour to PAINT so a corridor renders as the avenue's paving does.
+ *
+ * In classic the two are the same material under the same light, so the
+ * paving colour itself is the answer. Under IDEA-079's style they are not:
+ * the avenue's paving is BAKED to its snapped palette entry and drawn as a
+ * matcap, while the board floor is a toon-lit canvas — measured, flat ground
+ * keeps ~79% of its painted colour under this light. Painting the paving hex
+ * gave a corridor a full HUE away from the path it joins (a grey beige against
+ * a warm sand). So paint the snapped entry instead, scaled until its brightest
+ * channel is full: the path's own hue, as light as this board can render it.
+ * It cannot reach the matcap's value — that would need a texel brighter than
+ * white — and the hue is what reads as "the same path" at 17 px a tile.
+ */
+function corridorPaving(paving: number): number {
+  if (!MADBOX_STYLE_ON) return paving;
+  const c = rgbOf(snapToPalette(paving).hex);
+  const k = 1 / Math.max(c[0], c[1], c[2]);
+  return hexOf([c[0] * k, c[1] * k, c[2] * k]);
+}
 
 /** Which surface a theme's floor wears. */
 export type FloorTextureKind = "flat" | "lawn" | "earth" | "sand" | "parkGrass" | "road";
@@ -423,11 +496,12 @@ function drawSandFloor(ctx: CanvasRenderingContext2D, sh: Sheet, base: RGB): voi
 }
 
 /** City park: real grass everywhere, a gravel path only where the dog walks. */
-function drawParkGrass(ctx: CanvasRenderingContext2D, sh: Sheet, base: RGB): void {
+function drawParkGrass(ctx: CanvasRenderingContext2D, sh: Sheet, base: RGB, acc: FloorAccents): void {
   // The lawn is GREEN, not a shade of the palette's tan. This is the whole
   // reason these textures carry colour: the theme keeps its warm floor tone for
-  // the gravel, and the planted half gets the hue it actually needs.
-  const lawn = mix(base, [0.24, 0.44, 0.16], 0.88);
+  // the gravel, and the planted half gets the hue it actually needs. With
+  // accents it is the surround's own lawn — see `floorAccentsFor`.
+  const lawn = acc.lawn !== undefined ? rgbOf(acc.lawn) : mix(base, [0.24, 0.44, 0.16], 0.88);
   const lawnDark = lit(lawn, 0.86);
   const lawnLight = lit(lawn, 1.16);
   const tuftDark = lit(lawn, 0.7);
@@ -456,8 +530,11 @@ function drawParkGrass(ctx: CanvasRenderingContext2D, sh: Sheet, base: RGB): voi
   // Laid down twice: once fatter in a darker tone, then the gravel inside it.
   // That leaves a clean keyline all the way round the path, which is what
   // stops a flat tan ribbon from reading as a hole cut in the lawn.
-  const gravel = mix(base, [0.76, 0.69, 0.55], 0.7);
-  const edge = lit(gravel, 0.68);
+  // With accents, the walk is the avenue's PAVING and its keyline the
+  // avenue's stone KERB, so a corridor reads as the same path the beagle walks
+  // out onto through the tunnel.
+  const gravel = acc.path !== undefined ? rgbOf(acc.path) : mix(base, [0.76, 0.69, 0.55], 0.7);
+  const edge = acc.kerb !== undefined ? rgbOf(acc.kerb) : lit(gravel, 0.68);
   paintCorridors(ctx, sh, sh.S * 0.46 + Math.max(2, sh.K * 1.6) * 2, css(edge));
   paintCorridors(ctx, sh, sh.S * 0.46, css(gravel));
 
@@ -537,7 +614,12 @@ function drawRoad(ctx: CanvasRenderingContext2D, sh: Sheet, base: RGB): void {
 }
 
 /** Paints `kind` onto `sh` and hands back the texture, or null for "flat". */
-function render(kind: FloorTextureKind, sh: Sheet, baseHex: number): THREE.Texture | null {
+function render(
+  kind: FloorTextureKind,
+  sh: Sheet,
+  baseHex: number,
+  acc: FloorAccents = {},
+): THREE.Texture | null {
   if (kind === "flat") return null;
   const c = document.createElement("canvas");
   c.width = sh.W;
@@ -549,7 +631,7 @@ function render(kind: FloorTextureKind, sh: Sheet, baseHex: number): THREE.Textu
   if (kind === "lawn") drawLawn(ctx, sh, base);
   else if (kind === "earth") drawEarth(ctx, sh, base);
   else if (kind === "sand") drawSandFloor(ctx, sh, base);
-  else if (kind === "parkGrass") drawParkGrass(ctx, sh, base);
+  else if (kind === "parkGrass") drawParkGrass(ctx, sh, base, acc);
   else drawRoad(ctx, sh, base);
 
   const tex = new THREE.CanvasTexture(c);
@@ -577,8 +659,9 @@ export function floorTextureFor(
   kind: FloorTextureKind,
   grid: Grid,
   baseHex: number,
+  accents: FloorAccents = {},
 ): THREE.Texture | null {
-  return render(kind, boardSheet(grid), baseHex);
+  return render(kind, boardSheet(grid), baseHex, accents);
 }
 
 /**
@@ -599,6 +682,7 @@ export function floorPreviewTexture(
   kind: FloorTextureKind,
   cells: readonly string[],
   baseHex: number,
+  accents: FloorAccents = {},
 ): THREE.Texture | null {
-  return render(kind, previewSheet(cells), baseHex);
+  return render(kind, previewSheet(cells), baseHex, accents);
 }

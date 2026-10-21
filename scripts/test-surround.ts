@@ -30,6 +30,7 @@ import {
   disposeSurroundMaterials,
   distantBed,
   distantBroadleaf,
+  distantClippedHedge,
   distantConifer,
   distantDune,
   distantHedgeRun,
@@ -46,6 +47,10 @@ import { MAZES } from "../src/game/mazes";
 import { WORLD_GROUPS } from "../src/editor/worldFields";
 import { readConfigNumber } from "../src/editor/configRewrite";
 import { SEASIDE_PARAMS, inSea, shoreZ } from "../src/render/seaside";
+import { floorAccentsFor, pavingColorFor } from "../src/render/floorTexture";
+import { snapToPalette } from "../src/render/madboxStyle";
+import { MADBOX_STYLE_ON } from "../src/render/madboxFlag";
+import { LAKE, PARK_PARAMS, PLAYGROUND, avenueHalfWidth, inParkZone } from "../src/render/parkLayout";
 
 let passed = 0;
 let failed = 0;
@@ -198,6 +203,7 @@ section("Every builder is addressable and stands on the ground");
     ["shed", distantHouse(mats, { kind: "shed", seed: 2 }), 0.02],
     ["greenhouse", distantHouse(mats, { kind: "greenhouse", seed: 3 }), 0.02],
     ["hedgeRun", distantHedgeRun(mats, { length: 6, seed: 4 }), 0.25],
+    ["clippedHedge", distantClippedHedge(mats, { length: 4, seed: 4 }), 0.02],
     ["broadleaf", distantBroadleaf(mats, { seed: 5 }), 0.02],
     ["conifer", distantConifer(mats, { seed: 6 }), 0.02],
     ["shrubClump", distantShrubClump(mats, { seed: 7 }), 0.15],
@@ -745,6 +751,333 @@ section("The beach has a sea to the north, sunbathers west and a campsite east")
   const garden = ensureSurround(new THREE.Group(), GARDEN.palette.surround, GARDEN.palette)!;
   ok("…and no other theme has one", !garden.getObjectByName("seaside"));
   disposeSurround();
+}
+
+// ---------------------------------------------------------------------------
+section("The park: an avenue east and west, a lake north, a playground south");
+
+// IDEA-081. Nuno's layout, after the first build put the lake and the
+// playground east and west, where a phone cannot see them: *"the path instead
+// of being on north and south pass to be in east and west and the lake on
+// north and the park on south."*
+{
+  restoreParams();
+  const PARK = MAZE_THEMES.find((t) => t.id === "park")!;
+  ok("the park still grows the parkland kind", PARK.palette.surround === "parkland");
+  const mats = makeSurroundMaterials(PARK.palette);
+  const host = buildSurroundContent("parkland", mats);
+  const az = PARK_PARAMS.avenueZ;
+
+  // --- the avenue -------------------------------------------------------------
+  // It leaves the board where the beagle does: the tunnel is row 9 on every
+  // maze, so pin the avenue to the GRID rather than to its own constant.
+  const tunnelRows = new Set<number>();
+  for (const maze of MAZES) for (const ty of new Grid(maze).tunnelRows) tunnelRows.add(ty);
+  ok(
+    "the avenue runs along the maze's tunnel row",
+    tunnelRows.size === 1 && az === [...tunnelRows][0] - (ROWS - 1) / 2,
+    `tunnel rows ${[...tunnelRows]}, avenue z ${az}`,
+  );
+  const paths = host.children.filter((c) => c.name === "park-path");
+  ok(
+    "there is a path east AND a path west",
+    paths.some((p) => p.position.x < 0) && paths.some((p) => p.position.x > 0),
+    `${paths.length} paths`,
+  );
+  ok("both paths run straight along that row", paths.every((p) => p.position.z === az));
+  // They must START AT THE BOARD, or the path is a strip floating in a field.
+  // Measured from vertices: the path is rotated, so Box3 would over-report.
+  ok(
+    "both paths reach the board's floor edge",
+    paths.every((p) => {
+      p.updateMatrixWorld(true);
+      let near = Infinity;
+      const v = new THREE.Vector3();
+      p.traverse((o) => {
+        const mesh = o as THREE.Mesh;
+        if (!mesh.isMesh || mesh.name !== "paving") return;
+        const pos = mesh.geometry.getAttribute("position");
+        for (let i = 0; i < pos.count; i++) {
+          v.fromBufferAttribute(pos, i).applyMatrix4(mesh.matrixWorld);
+          near = Math.min(near, Math.abs(v.x));
+        }
+      });
+      return Math.abs(near - FLOOR_HALF_X) < 0.05;
+    }),
+  );
+  const benches = host.children.filter((c) => c.name === "park-bench");
+  const bins = host.children.filter((c) => c.name === "park-bin");
+  ok(
+    "benches line both sides, east and west",
+    [-1, 1].every((end) =>
+      [-1, 1].every((side) =>
+        benches.some((b) => Math.sign(b.position.x) === end && Math.sign(b.position.z - az) === side),
+      ),
+    ),
+    `${benches.length} benches`,
+  );
+  ok("there are a FEW bins, fewer than benches", bins.length > 0 && bins.length < benches.length, `${bins.length} bins`);
+  // A bench's sitting side is its local +Z. Facing the path means +Z points
+  // back toward the avenue's line — wrong-signed, it sits with its back to it.
+  const v = new THREE.Vector3();
+  const facingAway = benches.filter((b) => {
+    v.set(0, 0, 1).applyEuler(b.rotation);
+    return v.z * (b.position.z - az) >= 0;
+  });
+  ok("every avenue bench faces the path", facingAway.length === 0, `${facingAway.length} face away`);
+  const own = host.children.filter((c) => c.userData.avenue);
+  ok("the avenue's own trees and hedges are tagged", own.length > 0, `${own.length}`);
+  // The furniture keeps out of the verge, which is hand-placed ground.
+  const clearX = FLOOR_HALF_X + SURROUND_PARAMS.keepClear;
+  const clearZ = FLOOR_HALF_Z + SURROUND_PARAMS.keepClear;
+  const inVerge = [...benches, ...bins, ...own].filter(
+    (c) => Math.abs(c.position.x) < clearX && Math.abs(c.position.z) < clearZ,
+  );
+  ok("no avenue furniture stands in the verge", inVerge.length === 0, `${inVerge.length} inside`);
+  ok(
+    "the reserved ground covers the avenue's own tree row",
+    avenueHalfWidth() > PARK_PARAMS.pathWidth / 2 + PARK_PARAMS.outerRow,
+  );
+
+  // --- nothing else stands on the park's zones ---------------------------------
+  // MEASURED INDEPENDENTLY of parkLayout's own `inParkZone`: when this check
+  // called that function, gutting it removed the reservation AND blinded the
+  // check in one edit, and it passed on the defect it exists for.
+  const onParkGround = (x: number, z: number): boolean => {
+    const G = PLAYGROUND;
+    const inPlay = Math.abs(x - G.cx) < G.width / 2 + G.reserve && Math.abs(z - G.cz) < G.depth / 2 + G.reserve;
+    // The lake's water and path, by its own numbers: an ellipse 1.12x the
+    // radii (the shore wobble's ceiling) plus the path.
+    const lx = (LAKE.rx + LAKE.pathOffset) * 1.12 + LAKE.pathWidth;
+    const lz = (LAKE.rz + LAKE.pathOffset) * 1.12 + LAKE.pathWidth;
+    const inWater = ((x - LAKE.cx) / lx) ** 2 + ((z - LAKE.cz) / lz) ** 2 < 1;
+    const onAvenue = Math.abs(z - az) < avenueHalfWidth() && Math.abs(x) > FLOOR_HALF_X;
+    return inPlay || inWater || onAvenue;
+  };
+  const intruders = host.children.filter(
+    (c) =>
+      !c.name.startsWith("park-") &&
+      c.name !== "playground" &&
+      !c.userData.avenue &&
+      onParkGround(c.position.x, c.position.z),
+  );
+  ok(
+    "no plot or fringe item stands on the avenue, the lake or the playground",
+    intruders.length === 0,
+    intruders.length
+      ? `${intruders.length}, e.g. ${intruders[0].name || "(unnamed)"} at (${intruders[0].position.x.toFixed(1)}, ${intruders[0].position.z.toFixed(1)})`
+      : "",
+  );
+  ok("each zone's ground is reserved", [
+    [PLAYGROUND.cx, PLAYGROUND.cz],
+    [LAKE.cx, LAKE.cz],
+    [FLOOR_HALF_X + 6, az],
+    [-FLOOR_HALF_X - 6, az],
+  ].every(([x, z]) => inParkZone(x, z)));
+
+  /** World-space XZ extent of the named meshes under `root`, from VERTICES. */
+  const extent = (root: THREE.Object3D, names?: string[]): { x0: number; x1: number; z0: number; z1: number } => {
+    root.updateMatrixWorld(true);
+    const e = { x0: Infinity, x1: -Infinity, z0: Infinity, z1: -Infinity };
+    const p = new THREE.Vector3();
+    const visit = (o: THREE.Object3D): void => {
+      o.traverse((n) => {
+        const mesh = n as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        const pos = mesh.geometry.getAttribute("position");
+        for (let i = 0; i < pos.count; i++) {
+          p.fromBufferAttribute(pos, i).applyMatrix4(mesh.matrixWorld);
+          e.x0 = Math.min(e.x0, p.x);
+          e.x1 = Math.max(e.x1, p.x);
+          e.z0 = Math.min(e.z0, p.z);
+          e.z1 = Math.max(e.z1, p.z);
+        }
+      });
+    };
+    if (names) for (const n of names) visit(root.getObjectByName(n)!);
+    else visit(root);
+    return e;
+  };
+
+  // --- the lake ------------------------------------------------------------------
+  // Nuno: *"a lake with some flora and duck and a path around the lake to
+  // indicate the people walk around there."*
+  const lake = host.getObjectByName("park-lake");
+  ok("there is a lake", !!lake);
+  if (lake) {
+    ok("…NORTH of the board", LAKE.cz < -FLOOR_HALF_Z && Math.abs(LAKE.cx) < 1);
+    for (const piece of ["lake", "lake-path", "duck", "reeds", "lily"]) {
+      ok(`…with ${piece}`, !!lake.getObjectByName(piece));
+    }
+    const all = extent(lake);
+    ok("…entirely outside the keep-clear box", all.z1 < -clearZ, `south edge at z ${all.z1.toFixed(2)} against ${-clearZ}`);
+    // Framed for BOTH screens. A phone sees the north band whole; measured off
+    // the portrait render its frame is about +-11 units wide at the lake's
+    // near shore. A desktop's frame ends at z -21.2, so the near shore AND the
+    // ducks must sit south of that or a desktop shows no lake at all.
+    const water = extent(lake, ["lake", "lake-path"]);
+    ok("…the water and its path fit a phone's width", water.x0 > -12 && water.x1 < 12, `x ${water.x0.toFixed(2)}..${water.x1.toFixed(2)}`);
+    ok("…and a desktop sees its near shore", water.z1 > -19, `near shore at z ${water.z1.toFixed(2)}`);
+    for (const name of ["bank", "shallows", "deep", "gravel"]) {
+      const mesh = lake.getObjectByName(name) as THREE.Mesh;
+      const pos = mesh.geometry.getAttribute("position");
+      const idx = mesh.geometry.index!;
+      const a = new THREE.Vector3();
+      const b = new THREE.Vector3();
+      const c = new THREE.Vector3();
+      let down = 0;
+      for (let i = 0; i < idx.count; i += 3) {
+        a.fromBufferAttribute(pos, idx.getX(i));
+        b.fromBufferAttribute(pos, idx.getX(i + 1));
+        c.fromBufferAttribute(pos, idx.getX(i + 2));
+        if (b.sub(a).cross(c.sub(a)).y < 0) down++;
+      }
+      // Wound the other way it is culled whole and renders as nothing.
+      ok(`the lake's ${name} faces up on every triangle`, down === 0, `${down} facing down`);
+    }
+    const ducks = lake.children.filter((c) => c.name === "duck");
+    const dry = ducks.filter(
+      (d) => ((d.position.x - LAKE.cx) / LAKE.rx) ** 2 + ((d.position.z - LAKE.cz) / LAKE.rz) ** 2 > 0.85,
+    );
+    ok("there are ducks, and every one is on the water", ducks.length >= 4 && dry.length === 0, `${ducks.length} ducks, ${dry.length} ashore`);
+    ok("…floating, not sunk to the lake bed", ducks.every((d) => d.position.y > 0.02));
+    ok("…and the family is on the near half, where a desktop sees it", ducks.filter((d) => d.position.z > -21.2).length >= 4);
+    const lakeBenches = lake.children.filter((c) => c.name === "park-bench");
+    const away = lakeBenches.filter((b) => {
+      v.set(0, 0, 1).applyEuler(b.rotation);
+      return v.x * (LAKE.cx - b.position.x) + v.z * (LAKE.cz - b.position.z) <= 0;
+    });
+    ok("benches by the lake face the water", lakeBenches.length > 0 && away.length === 0, `${lakeBenches.length} benches, ${away.length} facing away`);
+  }
+
+  // --- the playground ----------------------------------------------------------
+  // Nuno: *"a kids park with a slide and a climbing toy we use to see and a
+  // swing."*
+  const play = host.getObjectByName("playground");
+  ok("there is a playground", !!play);
+  if (play) {
+    ok("…SOUTH of the board", play.position.z > FLOOR_HALF_Z && Math.abs(play.position.x) < 1);
+    for (const piece of ["play-slide", "play-dome", "play-swing", "play-area"]) {
+      ok(`…with its ${piece.slice(5)}`, !!play.getObjectByName(piece));
+    }
+    const e = extent(play);
+    ok("…entirely outside the keep-clear box", e.z0 > clearZ, `north edge at z ${e.z0.toFixed(2)} against ${clearZ}`);
+    // The south band is the phone's alone: its frame ends at z +22.4 and is
+    // only ~+-10 units wide down there. Measured off the portrait render.
+    const pad = extent(play, ["play-area"]);
+    ok("…and its fenced area fits a phone's frame", pad.z1 < 22 && pad.x0 > -10 && pad.x1 < 10, `x ${pad.x0.toFixed(2)}..${pad.x1.toFixed(2)}, z ..${pad.z1.toFixed(2)}`);
+    // The chute runs DOWN-frame (+Z), toward the viewer. Turned away, it is
+    // foreshortened behind its own platform and the slide reads as a hut.
+    const chute = play.getObjectByName("chute")!;
+    const cdir = new THREE.Vector3(0, 0, 1).transformDirection(chute.matrixWorld);
+    ok("…its slide's chute runs toward the camera and downhill", cdir.z > 0.5 && cdir.y < -0.2, `dir ${cdir.toArray().map((n) => n.toFixed(2))}`);
+    // The gate faces the MAZE: no fence post in the middle of the north side.
+    const posts = play.getObjectByName("play-area")!.children.filter((c) => c.name.startsWith("post"));
+    const blocking = posts.filter((p) => Math.abs(p.position.x) < 0.5 && p.position.z < 0);
+    ok("…and its gate faces the maze", blocking.length === 0 && posts.length > 0, `${blocking.length} posts across the gate`);
+    // Nothing tall in the nearest, unfogged band under the controls.
+    let top = 0;
+    const tv = new THREE.Vector3();
+    play.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      const pos = mesh.geometry.getAttribute("position");
+      for (let i = 0; i < pos.count; i++) top = Math.max(top, tv.fromBufferAttribute(pos, i).applyMatrix4(mesh.matrixWorld).y);
+    });
+    ok("…and nothing in it stands taller than the south band allows", top < 2.6, `top at y ${top.toFixed(2)}`);
+  }
+
+  // No flower beds anywhere in the park (Nuno, twice: first the lawns', then
+  // the avenue's). A bed is the one group with a "kerb" mesh in it.
+  const beds = host.children.filter((c) => c.getObjectByName("kerb"));
+  ok("no flower beds anywhere in the park", beds.length === 0, `${beds.length} beds`);
+  // The avenue's trees are joined by low hedges, one behind every bench.
+  const hedges = host.children.filter((c) => c.name === "avenue-hedge");
+  const avBenches = benches.filter((b) => Math.abs(b.position.z - az) < avenueHalfWidth());
+  ok("a hedge stands behind every avenue bench", hedges.length > 0 && hedges.length === avBenches.length, `${hedges.length} hedges, ${avBenches.length} benches`);
+  ok(
+    "…low enough to read as a fence, not as more maze",
+    PARK_PARAMS.hedgeHeight <= 0.6,
+    `hedgeHeight ${PARK_PARAMS.hedgeHeight}`,
+  );
+  // And it must not reach INTO a trunk — the gap is what makes the trees
+  // read as standing in the hedge line rather than buried in it.
+  const trees = own.filter((c) => c.name !== "avenue-hedge");
+  const hv = new THREE.Vector3();
+  let buried = 0;
+  for (const h of hedges) {
+    h.updateMatrixWorld(true);
+    let x0 = Infinity;
+    let x1 = -Infinity;
+    h.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      const pos = mesh.geometry.getAttribute("position");
+      for (let i = 0; i < pos.count; i++) {
+        hv.fromBufferAttribute(pos, i).applyMatrix4(mesh.matrixWorld);
+        x0 = Math.min(x0, hv.x);
+        x1 = Math.max(x1, hv.x);
+      }
+    });
+    for (const t of trees) {
+      if (Math.abs(t.position.z - h.position.z) > 0.01) continue;
+      if (t.position.x > x0 + 0.05 && t.position.x < x1 - 0.05) buried++;
+    }
+  }
+  ok("no avenue tree's trunk stands inside a hedge", buried === 0, `${buried} buried`);
+  // A park has no sheds — those came from the garden's south-fringe rule.
+  const buildings = host.children.filter((c) => c.name.startsWith("building-"));
+  ok("the park has no houses, sheds or greenhouses", buildings.length === 0, `${buildings.length} buildings`);
+  host.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    if (mesh.isMesh) mesh.geometry.dispose();
+  });
+  disposeSurroundMaterials(mats);
+}
+
+
+// ---------------------------------------------------------------------------
+section("The park's floor is the park's ground: its lawn and its path");
+
+// IDEA-081. Nuno: *"the floor of this maze should follow the color path of the
+// path we have on the west and east side and the green part should be the same
+// color as the environment green color."*
+{
+  const PARK = MAZE_THEMES.find((t) => t.id === "park")!;
+  const acc = floorAccentsFor(PARK.palette);
+  // The lawn: measured before this, the board's own border rendered at
+  // (55, 90, 34) against the surround's (120, 150, 93) — a dark frame round
+  // the maze. Same colour, same material, same light is the whole fix.
+  ok("the board's lawn is painted in the surround's own ground colour", acc.lawn === PARK.palette.surroundGround);
+  // The path: ONE definition shared with the avenue's paving material, so the
+  // walk cannot change colour where it leaves the board through the tunnel.
+  const mats = makeSurroundMaterials(PARK.palette);
+  ok(
+    "the avenue's paving IS the shared paving colour",
+    mats.wallLight.color.getHex() === pavingColorFor(PARK.palette.surroundGround),
+    `material #${mats.wallLight.color.getHexString()} against #${pavingColorFor(PARK.palette.surroundGround).toString(16)}`,
+  );
+  disposeSurroundMaterials(mats);
+  // The corridors must be the avenue's HUE. Under the shipped style the avenue
+  // is drawn as its SNAPPED palette entry, so painting the paving hex straight
+  // gave a grey beige corridor beside a warm sand path. Compared as a hue, not
+  // as "which entry would this snap to": a board texture is never snapped, so
+  // that question measures something that does not happen — and the first
+  // version of this check failed a correct floor on exactly that, the scaled
+  // colour sitting just over the gold/sand boundary it is never put through.
+  const paving = pavingColorFor(PARK.palette.surroundGround);
+  const drawn = MADBOX_STYLE_ON ? snapToPalette(paving).hex : paving;
+  const hsl = (hex: number): { h: number; s: number; l: number } => new THREE.Color(hex).getHSL({ h: 0, s: 0, l: 0 });
+  const dh = acc.path === undefined ? 1 : Math.abs(hsl(acc.path).h - hsl(drawn).h);
+  ok(
+    "the corridors are the hue the avenue is drawn in",
+    Math.min(dh, 1 - dh) * 360 < 3,
+    `corridor #${acc.path?.toString(16)} against #${drawn.toString(16)}, ${(Math.min(dh, 1 - dh) * 360).toFixed(1)} degrees apart`,
+  );
+  ok("…edged in the avenue's own kerb stone", acc.kerb === PARK.palette.groundDetailColor);
+  // And nobody else's floor moves: every other theme paints exactly as before.
+  const others = MAZE_THEMES.filter((t) => t.id !== "park" && t.palette.floorTexture !== "parkGrass");
+  ok("no other theme's floor takes accents", others.every((t) => Object.keys(floorAccentsFor(t.palette)).length === 0));
 }
 
 restoreParams();

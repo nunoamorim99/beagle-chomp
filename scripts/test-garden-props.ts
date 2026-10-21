@@ -381,10 +381,12 @@ ok(
   "the garden no longer uses the old sphere-stack shrub or oak",
   ![...garden.placements].some((p) => p.propId === "shrub" || p.propId === "oak"),
 );
+// The rule is that the garden's new shapes did not REWRITE the shared ones in
+// place. No theme has to be using them for that to hold — Nuno cleared the
+// park's apron to hand-place it himself — so assert the defs survive instead.
 ok(
-  "…while the forest and the park still do, untouched",
-  MAZE_THEMES.filter((t) => t.id === "forest" || t.id === "park")
-    .some((t) => t.placements.some((p) => p.propId === "shrub" || p.propId === "oak")),
+  "…while the shared shrub and oak defs survive, untouched",
+  getPropDef("shrub").id === "shrub" && getPropDef("oak").id === "oak",
 );
 // IDEA-066 MOVED THE TREEHOUSES OUT TO THE VERGE, and this assertion did not
 // follow them — it kept reading `placements` and went red without anything

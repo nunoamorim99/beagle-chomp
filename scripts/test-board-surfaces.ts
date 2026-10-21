@@ -229,8 +229,11 @@ ok(
   /wallTextureFor\(palette\.wallTexture, palette\.wall\)/.test(shopSrc),
 );
 ok(
-  "the shop diorama draws its own ground",
-  /floorPreviewTexture\(palette\.floorTexture, DIORAMA_FLOOR_CELLS, palette\.floor\)/.test(shopSrc),
+  // With the theme's ACCENTS (IDEA-081): without them the shop's park preview
+  // paints the board's old dark lawn and grey walk, i.e. a different ground
+  // from the one the game draws.
+  "the shop diorama draws its own ground, with the theme's accents",
+  /floorPreviewTexture\(palette\.floorTexture, DIORAMA_FLOOR_CELLS, palette\.floor, floorAccentsFor\(palette\)\)/.test(shopSrc),
 );
 ok(
   "a textured showcase floor is left white so the palette is not applied twice",

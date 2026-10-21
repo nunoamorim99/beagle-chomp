@@ -190,7 +190,7 @@ export interface PropParams {
    *  flora, like algae, and some small crabs on the rocks."* `makeRockArch`
    *  names its three reinterpreted dials: `archCrest` sizes the cap stones,
    *  `archBlossoms` is coral clusters per foot, `foliageColors` the algae. */
-  archKind?: "hedge" | "trees" | "rocks";
+  archKind?: "hedge" | "trees" | "rocks" | "gate";
   /** archway only: the opening's width as a fraction of the portal's height
    *  (default 0.5, which is 1.03 world units — ONE MAZE TILE, so the arch
    *  frames the tunnel corridor exactly). The reference measures 0.338; the
@@ -1108,6 +1108,38 @@ export const PROP_LIBRARY: readonly PropDef[] = [
       archRibbon: 0.7,
       archCrest: 0.6,
       archBlossoms: 3,
+      archThreshold: false,
+      archFence: false,
+    },
+  },
+  {
+    // IDEA-081: the City Park's tunnel mouth. An OPEN garden gate under an
+    // arch of the maze wall's own shrub, flowering with the library's daisy,
+    // rose and tulip heads. `archKind: "gate"` is the hedge arch plus a gate
+    // and real flowers, so every shared dial means what it does there.
+    //
+    // The opening is wider than the Hedge Arch's (0.56 against 0.458) because
+    // the gate's leaves hang just outboard of it: at 0.56 they clear the
+    // one-tile corridor, so the beagle runs between them. No fence footing
+    // (the gate is the fence) and no sill (the park's walk runs straight on).
+    id: "park-gate",
+    name: "Park Gate",
+    shape: "archway",
+    params: {
+      height: 1,
+      width: 1,
+      archKind: "gate",
+      foliageColors: [0x5aa348],
+      fenceColor: 0xf2eee4,
+      archOpening: 0.56,
+      archRise: 1.2,
+      archCurve: 2.1,
+      archPier: 0.1,
+      archDepth: 0.3,
+      archCrown: 0.14,
+      archRibbon: 0.65,
+      archCrest: 0.45,
+      archBlossoms: 12,
       archThreshold: false,
       archFence: false,
     },

@@ -82,6 +82,8 @@ import { flaredTrunkProfile, lobedFoliageGeometry } from "./foliage";
 import { taperedSweepGeometry, type SweepStation } from "./beagleSculpt";
 import { FENCE_H, fencePanelGeometry } from "./fence";
 import { hexOf, lit, mix, rgbOf } from "./paint";
+import { makeGardenFlowerHead } from "./gardenProps";
+import { wallTextureFor } from "./wallTexture";
 
 /** Deterministic per-instance variation from the placement hash — the same
  *  generator gardenProps.ts and forestProps.ts use, so an arch looks the same
@@ -288,6 +290,7 @@ function archCurvePoints(
  */
 export function makeArchway(p: PropParams, instanceHash: number): THREE.Group {
   if ((p.archKind ?? "hedge") === "trees") return makeTreeArch(p, instanceHash);
+  if (p.archKind === "gate") return makeGateArch(p, instanceHash);
   if (p.archKind === "rocks") return makeRockArch(p, instanceHash);
   const r = rand(instanceHash);
   const g = new THREE.Group();
@@ -634,6 +637,182 @@ export function makeArchway(p: PropParams, instanceHash: number): THREE.Group {
     );
   }
 
+  return g;
+}
+
+/**
+ * Does this arch have a FRONT? A gate swung open has an outside and an inside;
+ * every other kind is symmetric front-to-back and does not care which way it
+ * is turned. `buildTunnelArches` reads this to turn a directed arch's open
+ * side AWAY from the board at both tunnel mouths.
+ */
+export function archIsDirected(p: PropParams): boolean {
+  return p.archKind === "gate";
+}
+
+/** The gate arch's flowers, in order round the band. Three kinds, three
+ *  colours: the daisy's white, the rose's red, and the tulip YELLOW (the
+ *  park's own bloom yellow). Rose and tulip are both red by default, and at
+ *  this size their shapes alone would not separate them. */
+const GATE_FLOWERS: ReadonlyArray<Pick<PropParams, "flowerKind" | "petalColor">> = [
+  { flowerKind: "daisy" },
+  { flowerKind: "rose" },
+  { flowerKind: "tulip", petalColor: 0xf2d43a },
+];
+
+/**
+ * THE GATE ARCH, the City Park's tunnel mouth (IDEA-081).
+ *
+ * Nuno: *"for this board I was thinking to put like a gate and above the gate
+ * a arch of shrubs the same color as the maze wall and with some flowers like
+ * the ones we made on the props, the daisy, roses and tulips per example, the
+ * gate should be open."*
+ *
+ * It IS the hedge arch (the same one continuous chain of foliage, so rule 6
+ * holds by construction and every shared dial means what it means there) with
+ * two things added AFTER it, so a part edit saved against the hedge's own
+ * children keeps its index:
+ *
+ *  - THE GATE, SWUNG OPEN, ON THE OUTSIDE FACE. Two painted posts at the
+ *    portal's outward face and a picket leaf hung on each, opened a quarter
+ *    turn so the leaves lie along the edges of the path beyond rather than
+ *    across it. Hung INSIDE the portal they would come out of the hedge chain
+ *    for most of their length (the chain is ~0.7 deep and a leaf ~0.55 long),
+ *    leaving a stub; on the outer face they stand clear in the open. The
+ *    leaves sit outboard of the corridor, so the beagle runs between them,
+ *    and they are lower than a wall so the hedge is still the arch.
+ *  - THE FLOWERS ARE THE PROPS LIBRARY'S OWN HEADS (`makeGardenFlowerHead`),
+ *    not a new blossom: the same daisy, rose and tulip the Props tab authors,
+ *    so retuning one there retunes it here. Each is aimed out of the arch
+ *    along its own normal, which is what makes a head read as growing on the
+ *    hedge rather than stuck to it.
+ *
+ * The gate is FRONTED, so `archIsDirected` says so and the tunnel builder
+ * turns it to open toward the outside at both mouths.
+ */
+function makeGateArch(p: PropParams, instanceHash: number): THREE.Group {
+  // The hedge arch, with its own footing and specks switched off: a picket
+  // fence round each foot beside a picket GATE is two fences, and the daisy
+  // specks are replaced by real flower heads below.
+  const g = makeArchway({ ...p, archKind: "hedge", archFence: false, archBlossoms: 0 }, instanceHash);
+  const r = rand((instanceHash * 0.731 + 0.17) % 1);
+
+  // THE SHRUB IS THE MAZE WALL'S OWN SURFACE (Nuno: "the same color as the
+  // maze wall"). The hedge arch paints flat foliage at 1.34x its colour, which
+  // is tuned for the garden's darker wall; on the park's lighter one every
+  // authored green snapped to `grass` and drew as a bright lime matcap beside a
+  // mid-green textured hedge. No colour fixes that, because the wall is not a
+  // colour: it is `wallTexture.ts`'s hedge canvas on a toon material, and the
+  // style skips anything with a map. So the chain wears that same canvas, from
+  // the same cache, and is drawn by the same shading as the wall it adjoins.
+  // `foliageColors[0]` is the wall colour; the tunnel builder hands the theme's
+  // own (lifted) value in, so the texture is the board's exact cache entry.
+  const wallHex = (p.foliageColors ?? HEDGE_GREENS)[0];
+  // Headless (the Node test suites) there is no canvas to paint it on, so the
+  // chain keeps the hedge arch's flat foliage; every shape is identical.
+  const wallMap = typeof document === "undefined" ? null : wallTextureFor("hedge", wallHex);
+  if (wallMap) {
+    const hedgeMat = toon({ color: 0xffffff, map: wallMap, emissive: 0x143a12, emissiveIntensity: 0.2 });
+    g.getObjectByName("hedge")?.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh) return;
+      (m.material as THREE.Material).dispose();
+      m.material = hedgeMat;
+    });
+  }
+
+  const H = ARCH_DEFAULTS.baseHeight * (p.height ?? 1);
+  const wide = p.width ?? 1;
+  const openW = H * (p.archOpening ?? ARCH_DEFAULTS.opening) * wide;
+  const depth = H * (p.archDepth ?? ARCH_DEFAULTS.depth) * wide;
+  const bandT = H * (p.archCrown ?? ARCH_DEFAULTS.crown);
+  const curve = Math.max(1.05, p.archCurve ?? ARCH_DEFAULTS.curve);
+  const hw = openW / 2;
+  const rise = hw * (p.archRise ?? ARCH_DEFAULTS.rise);
+  const pierH = Math.max(0.35, H - rise - bandT);
+
+  // --- 5: the gate -----------------------------------------------------------
+  const gate = new THREE.Group();
+  gate.name = "gate";
+  g.add(gate);
+  // Painted timber. `fenceColor` because it IS a fence's job, and because the
+  // tunnel builder already lifts that param for the high-key style.
+  const paintMat = toon({ color: p.fenceColor ?? 0xf2eee4 });
+  const postW = 0.13;
+  const postH = Math.min(pierH * 0.82, 1.0);
+  const faceZ = depth / 2;
+  const postX = hw - postW / 2;
+  const leafL = hw - postW; // each leaf closes half the opening
+  const leafH = postH * 0.72;
+  for (const s of [-1, 1] as const) {
+    const post = part(new THREE.BoxGeometry(postW, postH, postW), paintMat, s < 0 ? "postL" : "postR", gate);
+    post.position.set(s * postX, postH / 2, faceZ);
+    const cap = part(new THREE.SphereGeometry(postW * 0.62, 8, 6), paintMat, s < 0 ? "capL" : "capR", gate);
+    cap.position.set(s * postX, postH + postW * 0.45, faceZ);
+
+    // The leaf, built OPEN: hung on the post's inner corner and laid along +Z,
+    // splayed a little further outward than square so it reads as swung open
+    // rather than as a fence panel that happens to be there.
+    const leaf = new THREE.Group();
+    leaf.name = s < 0 ? "leafL" : "leafR";
+    leaf.position.set(s * (postX - postW / 2), 0, faceZ + postW / 2);
+    leaf.rotation.y = s * 0.18;
+    gate.add(leaf);
+    const rails: Array<[string, number]> = [
+      ["railLow", 0.16],
+      ["railHigh", leafH * 0.78],
+    ];
+    for (const [name, y] of rails) {
+      const rail = part(new THREE.BoxGeometry(0.04, 0.07, leafL), paintMat, name, leaf);
+      rail.position.set(0, y, leafL / 2);
+    }
+    const pickets = 5;
+    for (let i = 0; i < pickets; i++) {
+      const z = ((i + 0.5) / pickets) * leafL;
+      const pk = part(new THREE.BoxGeometry(0.035, leafH, 0.07), paintMat, "picket" + i, leaf);
+      pk.position.set(0, 0.04 + leafH / 2, z);
+      // A pointed top, the one mark that says "picket" rather than "plank".
+      const tip = part(new THREE.ConeGeometry(0.05, 0.09, 4), paintMat, "tip" + i, leaf);
+      tip.position.set(0, 0.04 + leafH + 0.045, z);
+      tip.rotation.y = Math.PI / 4;
+      tip.scale.set(0.7, 1, 1);
+    }
+  }
+
+  // --- 6: the flowers --------------------------------------------------------
+  // Mostly on the HEAD, for the hedge arch's reason: it is the part that clears
+  // the hedge line and has sky behind it, so it is where a player sees them.
+  const flowers = new THREE.Group();
+  flowers.name = "flowers";
+  g.add(flowers);
+  const n = Math.max(0, Math.round(p.archBlossoms ?? 12));
+  const ribbonD = depth * Math.min(1, Math.max(0.15, p.archRibbon ?? ARCH_DEFAULTS.ribbon));
+  const band = archCurvePoints(hw + bandT / 2, rise, curve, pierH, 48);
+  const cy = pierH + rise * 0.35;
+  const UP = new THREE.Vector3(0, 1, 0);
+  for (let i = 0; i < n; i++) {
+    // Even along the band, nudged: a regular spacing is a garland, a random
+    // one leaves bald patches, a jittered even one reads as growing.
+    const t = (i + 0.5 + (r() - 0.5) * 0.6) / n;
+    const pt = band[Math.min(band.length - 1, Math.max(0, Math.round(t * (band.length - 1))))];
+    const nx = pt[0];
+    const ny = pt[1] - cy;
+    const len = Math.hypot(nx, ny) || 1;
+    // Alternate the two faces, so both the side a player sees and the crown
+    // seen from above carry flowers.
+    const zs = (i % 2 === 0 ? 1 : -1) * (0.35 + r() * 0.5);
+    const normal = new THREE.Vector3(nx / len, ny / len, zs).normalize();
+    const kind = GATE_FLOWERS[i % GATE_FLOWERS.length];
+    const head = makeGardenFlowerHead({ ...kind } as PropParams, (instanceHash + i * 0.137) % 1);
+    head.name = `flower${i}`;
+    // The head is built facing UP; aim that at the arch's outward normal and
+    // set it ON the foliage surface rather than inside it.
+    head.quaternion.setFromUnitVectors(UP, normal);
+    const out = bandT * 0.5;
+    head.position.set(pt[0] + normal.x * out, pt[1] + normal.y * out, normal.z * ribbonD * 0.45);
+    head.scale.setScalar(0.85 + r() * 0.3);
+    flowers.add(head);
+  }
   return g;
 }
 
@@ -1590,4 +1769,19 @@ export function archTransformFor(m: TunnelMouth): {
     return { x: worldX(m.tx) + m.sign * out, z: worldZ(m.ty), rotationY: Math.PI / 2 + ARCH_PARAMS.yaw };
   }
   return { x: worldX(m.tx), z: worldZ(m.ty) + m.sign * out, rotationY: ARCH_PARAMS.yaw };
+}
+
+/**
+ * The yaw one mouth's arch is placed at, for THIS arch's params.
+ *
+ * `archTransformFor` turns every arch the same way, which is all a symmetric
+ * arch needs. A DIRECTED one (a gate swung open, see `archIsDirected`) opens
+ * toward its local +Z, and that turn points +Z out of the board only at a
+ * +sign mouth, so the other half are turned round. Swung inward, a gate's
+ * leaves would go straight into the maze walls flanking the tunnel. Pure, so
+ * `scripts/test-archway.ts` asserts it at every mouth of every maze: the merge
+ * that follows in buildTunnelArches leaves nothing to inspect afterwards.
+ */
+export function archYawFor(m: TunnelMouth, p: PropParams): number {
+  return archTransformFor(m).rotationY + (archIsDirected(p) && m.sign < 0 ? Math.PI : 0);
 }

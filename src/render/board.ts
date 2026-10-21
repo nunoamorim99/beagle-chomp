@@ -42,7 +42,7 @@ import {
 } from "../game/props";
 import { toon } from "./toon";
 import { wallTextureFor } from "./wallTexture";
-import { floorTextureFor } from "./floorTexture";
+import { floorAccentsFor, floorTextureFor } from "./floorTexture";
 import { buildFence, disposeFence } from "./fence";
 import { buildGroundDetail, disposeGroundDetail } from "./groundDetail";
 import {
@@ -68,7 +68,9 @@ import {
   ARCH_DEFAULTS,
   ARCH_INSTANCE_HASH_SEED,
   ARCH_PARAMS,
+  archIsDirected,
   archTransformFor,
+  archYawFor,
   makeArchway,
   tunnelMouths,
 } from "./archway";
@@ -2212,7 +2214,7 @@ function syncBoardMaterials(palette: ThemePalette, grid: Grid): void {
   // the level or the theme changes. The outgoing one is disposed here because
   // nothing else owns it: leaking one canvas texture per level would grow all
   // through a run.
-  const nextFloor = floorTextureFor(palette.floorTexture, grid, palette.floor);
+  const nextFloor = floorTextureFor(palette.floorTexture, grid, palette.floor, floorAccentsFor(palette));
   if (matFloor.map !== nextFloor) {
     matFloor.map?.dispose();
     matFloor.map = nextFloor;
@@ -3477,10 +3479,18 @@ export function buildTunnelArches(
   // is correct rather than a loss:
   // what separates the three is head curve, rise and proportion, never timber.
   // Applied to the built prop, never written back to props.ts.
-  const archDef =
+  let archDef =
     MADBOX_STYLE_ON && shouldStyleBoard(theme.palette) && typeof def.params?.fenceColor === "number"
       ? { ...def, params: { ...def.params, fenceColor: liftSurfaceColor(def.params.fenceColor) } }
       : def;
+  // A GATE ARCH'S SHRUB IS THIS BOARD'S WALL (IDEA-081): it wears the wall's
+  // own texture, keyed on the wall colour, so hand it the palette's value as
+  // the board uses it. Lifted at boot in the high-key style, so the authored
+  // props.ts number would key a DIFFERENT cache entry and draw a different
+  // green from the hedge the arch stands against.
+  if (archIsDirected(def.params as PropParams)) {
+    archDef = { ...archDef, params: { ...archDef.params, foliageColors: [theme.palette.wall] } };
+  }
 
   // ONE hash for BOTH mouths, deliberately — everywhere else in this file a
   // prop is varied by its own tile so a row does not read as clones. These
@@ -3493,7 +3503,9 @@ export function buildTunnelArches(
     const mesh = makePropFromDef(archDef, instanceHash);
     const at = archTransformFor(m);
     mesh.position.set(at.x, ARCH_PARAMS.lift, at.z);
-    mesh.rotation.y = at.rotationY;
+    // A directed arch (a gate) is turned to open OUT of the board at both
+    // mouths; symmetric ones keep archTransformFor's turn. See archYawFor.
+    mesh.rotation.y = archYawFor(m, def.params as PropParams);
     // MULTIPLY, never assign — a def-level root part edit has to compose with
     // the fixture's own scale (IDEA-062's rule, and the birdhouse is the def
     // that proved it by carrying an inert 1.5 for a whole release).
