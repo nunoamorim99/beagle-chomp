@@ -78,6 +78,13 @@ export interface SurroundMaterials {
    *  nothing draws costs no draw call after the merge. */
   water: THREE.MeshToonMaterial;
   waterLight: THREE.MeshToonMaterial;
+  /** Night City's streets (IDEA-082). The carriageway, a lit window, and a
+   *  street tree's two greens. Every theme builds them; only the city draws
+   *  them, and a material nothing draws costs no draw call after the merge. */
+  asphalt: THREE.MeshToonMaterial;
+  windowLit: THREE.MeshToonMaterial;
+  streetLeaf: THREE.MeshToonMaterial;
+  streetLeafDark: THREE.MeshToonMaterial;
 }
 
 /** Everything the set needs off a theme. Kept structural so `src/game` never
@@ -165,6 +172,20 @@ export function makeSurroundMaterials(p: SurroundPaletteInput): SurroundMaterial
     // round the edge are what give it a shore and a depth.
     water: toon({ color: hexOf(mix([0.2, 0.47, 0.64], ground, 0.1)) }),
     waterLight: toon({ color: hexOf(mix([0.5, 0.76, 0.84], ground, 0.08)) }),
+    // The road has to be DARKER than the ground it crosses, because on the
+    // city the ground already IS asphalt-coloured (0x3a3640): a carriageway in
+    // the ground's own colour is only its markings floating on nothing.
+    asphalt: toon({ color: hexOf(lit(mix(ground, [0.16, 0.16, 0.19], 0.5), 0.72)) }),
+    // A lit window is the one thing in a night city that must GLOW, so it is
+    // the only material in the set with a real emissive. Warm sodium, the same
+    // family as the biscuits and the streetlights.
+    windowLit: toon({ color: 0xffd98a, emissive: 0xffb84a, emissiveIntensity: 0.65 }),
+    // FIXED greens, only tinted by the ground — the foliage pair is derived
+    // from `palette.wall`, which on the city is grey BRICK, so a street tree
+    // built from it is a grey-purple lump. A tree has to read as a tree on
+    // any street, the water's reasoning.
+    streetLeaf: toon({ color: hexOf(mix([0.33, 0.58, 0.32], ground, 0.12)) }),
+    streetLeafDark: toon({ color: hexOf(mix([0.2, 0.4, 0.24], ground, 0.12)) }),
   };
 }
 
@@ -608,8 +629,12 @@ export function distantHedgeRun(
 /** A broadleaf: one trunk, one or two lobed crowns. */
 export function distantBroadleaf(
   m: SurroundMaterials,
-  o: { height?: number; seed?: number } = {},
+  o: { height?: number; seed?: number; street?: boolean } = {},
 ): THREE.Group {
+  // `street` swaps the crown onto the fixed street greens (see the material
+  // set) — the city's own foliage pair is derived from grey brick.
+  const leafLit = o.street ? m.streetLeaf : m.foliageLit;
+  const leafDark = o.street ? m.streetLeafDark : m.foliageDark;
   const g = new THREE.Group();
   const r = seeded(o.seed ?? 3);
   const h = o.height ?? 1.8 + r() * 1.1;
@@ -623,7 +648,7 @@ export function distantBroadleaf(
   part(
     g,
     lobedFoliageGeometry(rad, { detail: 1, lobes: 9, sharpness: 7, amplitude: 0.24, seed: 11 }),
-    m.foliageLit,
+    leafLit,
     "crownA",
     [0, trunkH + rad * 0.78, 0],
   );
@@ -632,7 +657,7 @@ export function distantBroadleaf(
     part(
       g,
       lobedFoliageGeometry(r2, { detail: 0, lobes: 7, sharpness: 6, amplitude: 0.26, seed: 13 }),
-      m.foliageDark,
+      leafDark,
       "crownB",
       [(r() - 0.5) * rad, trunkH + rad * 1.24, (r() - 0.5) * rad],
     );
@@ -983,6 +1008,274 @@ export function distantTower(
         [(x + 0.5 - cols / 2) * (w / cols), (y + 0.6) * (h / rows), d / 2 + 0.01],
       );
     }
+  }
+  return g;
+}
+
+// ---------------------------------------------------------------------------
+// Night City's streets (IDEA-082). Laid out by cityLayout.ts.
+//
+// Nuno: *"the building look too basic and we have a lack of details."* The
+// tower above is a slab with a window grid, and a slab reads as a slab however
+// many windows it carries — at 15-40px what separates a BUILDING from a box is
+// that it has a bottom, a top and a front: a shopfront at street level, a
+// cornice where it stops, and something on the roof. Those three are what
+// `distantCityBuilding` adds, and every one is a value step large enough to
+// survive the board camera rather than a detail that needs magnifying.
+
+/** Lit and dark windows on one face, as thin plates a hair proud of it.
+ *  `along` is the face's width, `across` sets which axis it lies on. */
+function windowGrid(
+  g: THREE.Group,
+  m: SurroundMaterials,
+  r: () => number,
+  o: {
+    face: "front" | "left" | "right";
+    along: number;
+    y0: number;
+    y1: number;
+    /** Distance from the building's centre to this face. */
+    off: number;
+    litShare: number;
+    tag: string;
+  },
+): void {
+  const floorH = 0.5;
+  const rows = Math.max(1, Math.floor((o.y1 - o.y0) / floorH));
+  const cols = Math.max(1, Math.floor(o.along / 0.42));
+  const pitchY = (o.y1 - o.y0) / rows;
+  const pitchA = o.along / cols;
+  const ww = Math.max(0.13, pitchA * 0.5);
+  const wh = Math.max(0.13, pitchY * 0.46);
+  for (let y = 0; y < rows; y++) {
+    for (let a = 0; a < cols; a++) {
+      const lit = r() < o.litShare;
+      // Most dark windows are simply wall: a full grid of dark plates reads as
+      // a chequerboard, while lit ones scattered on a plain face read as people
+      // at home.
+      if (!lit && r() < 0.45) continue;
+      const along = (a + 0.5 - cols / 2) * pitchA;
+      const yy = o.y0 + (y + 0.55) * pitchY;
+      const mat = lit ? m.windowLit : m.glass;
+      const name = `${o.tag}win${y}_${a}`;
+      // A PLANE, not a box: two triangles against twelve, and a window is only
+      // ever seen from outside. The city carries ~150 buildings at the
+      // surround's full extent and the windows were 80% of its triangles.
+      if (o.face === "front") {
+        part(g, new THREE.PlaneGeometry(ww, wh), mat, name, [along, yy, o.off + 0.012]);
+      } else {
+        const s = o.face === "right" ? 1 : -1;
+        const pane = part(g, new THREE.PlaneGeometry(ww, wh), mat, name, [s * (o.off + 0.012), yy, along]);
+        // Ry(t) sends the plane's +Z normal to (sin t, cos t).
+        pane.rotation.y = s * (Math.PI / 2);
+      }
+    }
+  }
+}
+
+/**
+ * A downtown building with a FRONT (local +Z), a shopfront at street level, a
+ * cornice and roof clutter. Stands on y = 0, centred on the origin.
+ *
+ * Three reads, in order: the lit windows (it is night — a dark facade with a
+ * few warm squares is what a city at night IS), the shopfront band with its
+ * coloured awning (the one place the theme's neon lands on a building), and
+ * the cornice line where the mass stops, which is what turns a box into
+ * architecture at twenty pixels. A water tank or a plant room on the roof
+ * breaks the skyline so a row of these is not a row of identical lids.
+ */
+export function distantCityBuilding(
+  m: SurroundMaterials,
+  o: { height?: number; width?: number; depth?: number; seed?: number } = {},
+): THREE.Group {
+  const g = new THREE.Group();
+  g.name = "city-building";
+  const r = seeded(o.seed ?? 21);
+  const h = o.height ?? 2.6 + r() * 2.6;
+  const w = o.width ?? 1.8 + r() * 0.9;
+  const d = o.depth ?? 1.5 + r() * 0.7;
+  const bodies = [m.wallDark, m.wallLight, m.roof];
+  const body = bodies[Math.floor(r() * bodies.length)];
+  const base = 0.55;
+
+  // Street level: a darker plinth, recessed glazing and an awning over it.
+  part(g, new THREE.BoxGeometry(w, base, d), m.glass, "plinth", [0, base / 2, 0]);
+  part(g, new THREE.BoxGeometry(w * 0.82, base * 0.62, 0.04), m.windowLit, "shopfront", [
+    0,
+    base * 0.4,
+    d / 2 + 0.01,
+  ]);
+  const awnings = [m.bloomA, m.bloomB, m.bloomC];
+  part(g, new THREE.BoxGeometry(w * 0.86, 0.06, 0.26), awnings[Math.floor(r() * 3)], "awning", [
+    0,
+    base * 0.82,
+    d / 2 + 0.12,
+  ]);
+
+  // The body, sitting on a ledge that marks where the shop ends.
+  part(g, new THREE.BoxGeometry(w + 0.06, 0.07, d + 0.06), m.roofTrim, "ledge", [0, base + 0.035, 0]);
+  part(g, new THREE.BoxGeometry(w * 0.96, h - base, d * 0.96), body, "body", [0, base + (h - base) / 2, 0]);
+  const litShare = 0.35 + r() * 0.25;
+  windowGrid(g, m, r, { face: "front", along: w * 0.96, y0: base + 0.1, y1: h - 0.15, off: (d * 0.96) / 2, litShare, tag: "f" });
+  windowGrid(g, m, r, { face: "left", along: d * 0.96, y0: base + 0.1, y1: h - 0.15, off: (w * 0.96) / 2, litShare, tag: "l" });
+  windowGrid(g, m, r, { face: "right", along: d * 0.96, y0: base + 0.1, y1: h - 0.15, off: (w * 0.96) / 2, litShare, tag: "r" });
+  part(g, new THREE.BoxGeometry(w + 0.12, 0.12, d + 0.12), m.roofTrim, "cornice", [0, h + 0.06, 0]);
+
+  // A setback tier on the taller ones, so the skyline steps.
+  let top = h + 0.12;
+  if (h > 3.8 && r() < 0.6) {
+    const th = 0.7 + r() * 0.6;
+    part(g, new THREE.BoxGeometry(w * 0.62, th, d * 0.62), body, "tier", [0, top + th / 2, 0]);
+    windowGrid(g, m, r, { face: "front", along: w * 0.62, y0: top + 0.05, y1: top + th - 0.05, off: (d * 0.62) / 2, litShare, tag: "t" });
+    part(g, new THREE.BoxGeometry(w * 0.66, 0.1, d * 0.66), m.roofTrim, "tierCornice", [0, top + th + 0.05, 0]);
+    top += th + 0.1;
+  } else {
+    // Roof clutter on a flat roof: a plant room, and sometimes a water tank.
+    part(g, new THREE.BoxGeometry(w * 0.32, 0.22, d * 0.3), m.stone, "plantRoom", [
+      (r() - 0.5) * w * 0.4,
+      top + 0.11,
+      -d * 0.18,
+    ]);
+    if (r() < 0.45) {
+      const tx = (r() < 0.5 ? -1 : 1) * w * 0.24;
+      const tz = d * 0.12;
+      for (const s of [-1, 1]) {
+        part(g, new THREE.BoxGeometry(0.05, 0.2, 0.05), m.trunk, s < 0 ? "tankLegL" : "tankLegR", [
+          tx + s * 0.11,
+          top + 0.1,
+          tz,
+        ]);
+      }
+      part(g, new THREE.CylinderGeometry(0.17, 0.17, 0.3, 8), m.trunk, "tank", [tx, top + 0.35, tz]);
+      part(g, new THREE.ConeGeometry(0.2, 0.14, 8), m.wallDark, "tankCap", [tx, top + 0.57, tz]);
+    }
+  }
+  g.userData.top = top;
+  return g;
+}
+
+export type VehicleKind = "car" | "taxi" | "bus";
+
+/**
+ * A car, a taxi or a bus. Long axis along local +X, which is FORWARD: the
+ * headlights are on +X and the tail lights on -X.
+ *
+ * From 59 degrees above a car is mostly its ROOF and BONNET, so the body
+ * colour carries it and the dark cabin glass between the two is what says
+ * "car" rather than "box". The wheels barely show and are kept anyway — they
+ * are what stops it reading as a brick lying in the road at any lower angle.
+ */
+export function distantCar(
+  m: SurroundMaterials,
+  o: { kind?: VehicleKind; seed?: number } = {},
+): THREE.Group {
+  const g = new THREE.Group();
+  const r = seeded(o.seed ?? 31);
+  const kind = o.kind ?? "car";
+  g.name = "city-" + kind;
+  const wheelR = 0.12;
+  const wheel = (x: number, z: number, i: number): void => {
+    const wm = part(g, new THREE.CylinderGeometry(wheelR, wheelR, 0.08, 8), m.glass, "wheel" + i, [x, wheelR, z]);
+    wm.rotation.x = Math.PI / 2;
+  };
+  const lamps = (L: number, W: number, y: number): void => {
+    for (const s of [-1, 1]) {
+      part(g, new THREE.BoxGeometry(0.04, 0.08, 0.14), m.windowLit, s < 0 ? "headL" : "headR", [L / 2 + 0.01, y, s * W * 0.3]);
+      part(g, new THREE.BoxGeometry(0.04, 0.08, 0.14), m.roof, s < 0 ? "tailL" : "tailR", [-L / 2 - 0.01, y, s * W * 0.3]);
+    }
+  };
+
+  if (kind === "bus") {
+    const L = 2.5;
+    const W = 0.72;
+    const H = 0.78;
+    part(g, new THREE.BoxGeometry(L, H, W), m.bloomC, "body", [0, 0.1 + H / 2, 0]);
+    // One long window band each side and a windscreen: a bus at this size is a
+    // long box with a dark stripe round it.
+    part(g, new THREE.BoxGeometry(L * 0.86, 0.22, W + 0.02), m.glass, "windows", [-L * 0.04, 0.1 + H * 0.68, 0]);
+    part(g, new THREE.BoxGeometry(0.04, 0.26, W * 0.84), m.glass, "windscreen", [L / 2 + 0.01, 0.1 + H * 0.66, 0]);
+    part(g, new THREE.BoxGeometry(L * 0.94, 0.05, W * 0.9), m.roofTrim, "roof", [0, 0.1 + H + 0.025, 0]);
+    lamps(L, W, 0.24);
+    [-L * 0.32, L * 0.32].forEach((x, i) => {
+      wheel(x, W / 2, i * 2);
+      wheel(x, -W / 2, i * 2 + 1);
+    });
+    return g;
+  }
+
+  const L = 1.2 + r() * 0.15;
+  const W = 0.6;
+  const paints = [m.bloomB, m.bloomC, m.roofTrim, m.roof, m.wallDark, m.wallLight];
+  const paint = kind === "taxi" ? m.bloomA : paints[Math.floor(r() * paints.length)];
+  part(g, new THREE.BoxGeometry(L, 0.26, W), paint, "body", [0, 0.1 + 0.13, 0]);
+  part(g, new THREE.BoxGeometry(L * 0.56, 0.22, W * 0.86), m.glass, "cabin", [-L * 0.05, 0.36 + 0.11, 0]);
+  part(g, new THREE.BoxGeometry(L * 0.5, 0.05, W * 0.82), paint, "carRoof", [-L * 0.06, 0.58 + 0.025, 0]);
+  if (kind === "taxi") {
+    part(g, new THREE.BoxGeometry(0.2, 0.08, 0.13), m.windowLit, "taxiSign", [-L * 0.06, 0.61 + 0.04, 0]);
+  }
+  lamps(L, W, 0.27);
+  [-L * 0.32, L * 0.32].forEach((x, i) => {
+    wheel(x, W / 2, i * 2);
+    wheel(x, -W / 2, i * 2 + 1);
+  });
+  return g;
+}
+
+/**
+ * A two-lane carriageway along local Z: asphalt, a dashed centre line and a
+ * white edge line each side. The kerbs belong to the pavements either side
+ * (`distantPath`), so a road can butt against them with no double kerb.
+ */
+export function distantRoad(
+  m: SurroundMaterials,
+  o: { length: number; width?: number; dashPitch?: number },
+): THREE.Group {
+  const g = new THREE.Group();
+  g.name = "city-road";
+  const w = o.width ?? 3.4;
+  const len = o.length;
+  const top = 0.015;
+  part(g, new THREE.BoxGeometry(w, 0.04, len), m.asphalt, "carriageway", [0, top - 0.02, 0]);
+  // Markings a hair PROUD, never flush (flush is a z-fight).
+  const pitch = o.dashPitch ?? 2;
+  const n = Math.floor(len / pitch);
+  for (let i = 0; i < n; i++) {
+    part(g, new THREE.BoxGeometry(0.13, 0.006, pitch * 0.5), m.bloomA, "dash" + i, [
+      0,
+      top + 0.003,
+      -len / 2 + (i + 0.5) * pitch,
+    ]);
+  }
+  for (const s of [-1, 1]) {
+    part(g, new THREE.BoxGeometry(0.12, 0.006, len), m.roofTrim, s < 0 ? "edgeL" : "edgeR", [
+      s * (w / 2 - 0.22),
+      top + 0.003,
+      0,
+    ]);
+  }
+  return g;
+}
+
+/** A zebra crossing across a road of `roadWidth` (along local Z), `width`
+ *  wide along local X. Bars are long along X — the traffic direction —
+ *  repeated across the road, which is what a zebra is. */
+export function distantCrosswalk(
+  m: SurroundMaterials,
+  o: { roadWidth: number; width?: number },
+): THREE.Group {
+  const g = new THREE.Group();
+  g.name = "city-crosswalk";
+  const w = o.width ?? 1.3;
+  const pitch = 0.5;
+  const n = Math.floor((o.roadWidth - 0.3) / pitch);
+  for (let i = 0; i < n; i++) {
+    // Above the road's own markings (whose tops are at 0.021), so a bar
+    // crossing the centre dash or an edge line does not z-fight it.
+    part(g, new THREE.BoxGeometry(w, 0.007, 0.26), m.roofTrim, "bar" + i, [
+      0,
+      0.025,
+      -((n - 1) * pitch) / 2 + i * pitch,
+    ]);
   }
   return g;
 }

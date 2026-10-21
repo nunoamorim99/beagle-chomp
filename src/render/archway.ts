@@ -292,6 +292,7 @@ export function makeArchway(p: PropParams, instanceHash: number): THREE.Group {
   if ((p.archKind ?? "hedge") === "trees") return makeTreeArch(p, instanceHash);
   if (p.archKind === "gate") return makeGateArch(p, instanceHash);
   if (p.archKind === "rocks") return makeRockArch(p, instanceHash);
+  if (p.archKind === "neon") return makeNeonArch(p, instanceHash);
   const r = rand(instanceHash);
   const g = new THREE.Group();
 
@@ -812,6 +813,203 @@ function makeGateArch(p: PropParams, instanceHash: number): THREE.Group {
     head.position.set(pt[0] + normal.x * out, pt[1] + normal.y * out, normal.z * ribbonD * 0.45);
     head.scale.setScalar(0.85 + r() * 0.3);
     flowers.add(head);
+  }
+  return g;
+}
+
+/** The neon gateway's defaults: outer tube, inner tube, bulbs-and-sign, the
+ *  steel and the plinths. Night City's own neon (its `bloomColors`) and its
+ *  sodium biscuit yellow. */
+const NEON_TUBES: readonly number[] = [0xe860a8, 0x5fc8e8];
+const NEON_BULB = 0xf4d060;
+const NEON_STEEL = 0x2e2a36;
+const NEON_PLINTH = 0x6e6a74;
+
+/**
+ * An emissive tube material: the colour AND its own glow. The city is a NIGHT
+ * theme, so `shouldStyleBoard` leaves its board in toon and the emissive
+ * survives — under the matcap style it would not, which is fine: a neon arch
+ * on a daylight board would be the wrong prop anyway.
+ */
+function neonMat(hex: number, glow = 0.9): THREE.MeshToonMaterial {
+  return toon({ color: hex, emissive: hex, emissiveIntensity: glow });
+}
+
+/** A tube following `pts` (in the arch's local XY plane, at depth `z`). */
+function neonTube(pts: Array<[number, number]>, z: number, radius: number): THREE.TubeGeometry {
+  const curve = new THREE.CatmullRomCurve3(
+    pts.map(([x, y]) => new THREE.Vector3(x, y, z)),
+    false,
+    "centripetal",
+  );
+  return new THREE.TubeGeometry(curve, Math.max(24, pts.length * 3), radius, 6, false);
+}
+
+/**
+ * The gateway's outline as one polyline: up one post, round the head, down
+ * the other — the same `archCurvePoints` superellipse every other kind draws,
+ * so `archRise`/`archCurve` mean exactly what they do on the hedge arch. The
+ * legs carry intermediate points so the Catmull-Rom does not bow them.
+ */
+function neonOutline(hw: number, rise: number, curve: number, springY: number, footY: number): Array<[number, number]> {
+  const legN = 5;
+  const out: Array<[number, number]> = [];
+  for (let i = 0; i < legN; i++) out.push([hw, footY + ((springY - footY) * i) / legN]);
+  out.push(...archCurvePoints(hw, rise, curve, springY, 28));
+  for (let i = legN - 1; i >= 0; i--) out.push([-hw, footY + ((springY - footY) * i) / legN]);
+  return out;
+}
+
+/**
+ * THE NEON GATEWAY — Night City's tunnel mouth (IDEA-083).
+ *
+ * Nuno, choosing it from four: *"lets make the neon gateway."* Two slim steel
+ * posts, an outline of neon tube — pink outside, cyan inside — running up one
+ * post, round the head and down the other, a row of marquee bulbs along the
+ * steel, and a neon BONE on the crown: the one sign in Night City that says
+ * whose city it is.
+ *
+ * RULE 6 HOLDS BY BEING THIN, NOT BY BEING LOW. Every other kind keeps its
+ * piers under ~1.4 units because a solid pier hides 0.6 of its own height
+ * behind it from the 59-degree camera. A 0.12 post hides a strip 0.12 wide,
+ * whatever its height, so the gateway can stand tall enough to be the
+ * landmark at the tunnel mouth and still leave the corridor in view. There is
+ * no lid anywhere: everything above the springing is tube.
+ *
+ * IT IS READ BY ITS GLOW. At the play camera the arch's own plane is seen
+ * nearly edge-on, so its curve collapses into a short stroke; what carries it
+ * is that the stroke is the brightest, most saturated thing at that edge of
+ * the board. Two tubes of two hues — which a single neon line is not — are
+ * what make it read as a SIGN rather than as a lit pipe.
+ *
+ * FOUR DIALS ARE REINTERPRETED and are listed so nobody hunts for them:
+ * `archPier` is the post's width, `archCrown` the gap between the two tubes,
+ * `archBlossoms` the number of marquee bulbs, and `archCrest` the bone sign's
+ * size (0 = no sign). `foliageColors` are the two tubes, `blossomColor` the
+ * bulbs and the bone, `trunkColor` the steel, `stoneColor` the plinths.
+ * `archDepth`, `archRibbon`, `archFence` and `archThreshold` do nothing here.
+ */
+function makeNeonArch(p: PropParams, instanceHash: number): THREE.Group {
+  const g = new THREE.Group();
+  const r = rand(instanceHash);
+  const H = ARCH_DEFAULTS.baseHeight * (p.height ?? 1);
+  const wide = p.width ?? 1;
+  const openW = H * (p.archOpening ?? ARCH_DEFAULTS.opening) * wide;
+  const hw = openW / 2;
+  const rise = hw * (p.archRise ?? ARCH_DEFAULTS.rise);
+  const curve = Math.max(1.05, p.archCurve ?? ARCH_DEFAULTS.curve);
+  const postW = H * (p.archPier ?? 0.05);
+  const gap = H * (p.archCrown ?? 0.06);
+  const springY = H - rise;
+  const tubeR = 0.05;
+
+  const steel = toon({ color: p.trunkColor ?? NEON_STEEL });
+  const plinthMat = toon({ color: p.stoneColor ?? NEON_PLINTH });
+  const tubes = p.foliageColors?.length ? p.foliageColors : NEON_TUBES;
+  const outerMat = neonMat(tubes[0]);
+  const innerMat = neonMat(tubes[Math.min(1, tubes.length - 1)]);
+  const bulbHex = p.blossomColor ?? NEON_BULB;
+  const bulbMat = neonMat(bulbHex, 1.0);
+
+  // --- 1: the steel ----------------------------------------------------------
+  // The posts stand OUTSIDE the opening (their inner faces at +-hw), so the
+  // opening is the gap the beagle runs through, exactly as on every other kind.
+  const frame = new THREE.Group();
+  frame.name = "frame";
+  g.add(frame);
+  const postX = hw + postW / 2;
+  const plinthH = 0.14;
+  for (const s of [-1, 1] as const) {
+    // Widened OUTWARD only: centred on the post, a 2.2x plinth lipped 0.015
+    // into the corridor (test-archway's check). Its inner edge is the post's.
+    const plinth = part(new THREE.BoxGeometry(postW * 1.9, plinthH, postW * 2.2), plinthMat, s < 0 ? "plinthL" : "plinthR", frame);
+    plinth.position.set(s * (postX + postW * 0.45), plinthH / 2, 0);
+    const post = part(new THREE.BoxGeometry(postW, springY - plinthH, postW), steel, s < 0 ? "postL" : "postR", frame);
+    post.position.set(s * postX, plinthH + (springY - plinthH) / 2, 0);
+  }
+  // The head: a steel rail on the posts' own centreline, the thing the tubes
+  // are fixed to. A rail rather than a band, so there is still nothing up
+  // there wide enough to lid the corridor.
+  const railPts = archCurvePoints(postX, rise + postW / 2, curve, springY, 32);
+  part(neonTube(railPts, 0, postW * 0.42), steel, "rail", frame);
+
+  // --- 2: the neon -----------------------------------------------------------
+  // Pink OUTSIDE the steel, cyan INSIDE it, both on the camera-facing and the
+  // far face alike (the tube is round, so one tube serves both sides).
+  const neon = new THREE.Group();
+  neon.name = "neon";
+  g.add(neon);
+  const outerX = postX + postW / 2 + tubeR + gap * 0.25;
+  // The cyan is MOUNTED ON the posts' inner faces, sunk 40% into the steel:
+  // stood off them by its own radius, its legs reached |x| 0.47 and cut into
+  // the one-tile corridor the beagle runs down (test-archway caught it).
+  const innerX = hw - tubeR * 0.6;
+  part(
+    neonTube(neonOutline(outerX, rise + (outerX - postX) * 1.1, curve, springY, plinthH + 0.08), 0, tubeR),
+    outerMat,
+    "tubeOuter",
+    neon,
+  );
+  part(
+    neonTube(neonOutline(innerX, Math.max(0.1, rise - (postX - innerX) * 1.1), curve, springY, plinthH + 0.08), 0, tubeR),
+    innerMat,
+    "tubeInner",
+    neon,
+  );
+
+  // --- 3: the marquee bulbs --------------------------------------------------
+  // Proud of the rail on BOTH faces, alternating, so whichever face a camera
+  // sees carries half of them. Even along the rail: a marquee is regular.
+  const bulbs = new THREE.Group();
+  bulbs.name = "bulbs";
+  g.add(bulbs);
+  const nb = Math.max(0, Math.round(p.archBlossoms ?? 10));
+  const bulbGeo = new THREE.SphereGeometry(0.06, 8, 6);
+  // Spaced by ARC LENGTH. `archCurvePoints` samples evenly in x, which crowds
+  // the points onto the steep shoulders, and a marquee spaced by index came
+  // out bunched on one side of the crown.
+  const railCurve = new THREE.CatmullRomCurve3(railPts.map(([x, y]) => new THREE.Vector3(x, y, 0)));
+  for (let i = 0; i < nb; i++) {
+    const t = (i + 0.5) / nb;
+    const v = railCurve.getPointAt(t);
+    const pt: [number, number] = [v.x, v.y];
+    const b = part(bulbGeo, bulbMat, `bulb${i}`, bulbs);
+    b.position.set(pt[0], pt[1], (i % 2 === 0 ? 1 : -1) * (postW / 2 + 0.04));
+  }
+
+  // --- 4: the bone sign ------------------------------------------------------
+  // Glowing yellow, standing on the crown on two short steel stays. In the
+  // arch's own plane, so it reads in elevation; at the play camera it is a
+  // bright bar along the top of the stroke the arch makes.
+  const crest = Math.max(0, p.archCrest ?? 1);
+  if (crest > 0.01) {
+    const sign = new THREE.Group();
+    sign.name = "sign";
+    const crownY = springY + rise + postW / 2 + postW * 0.21;
+    const lift = 0.16 * crest;
+    sign.position.set(0, crownY + lift, 0);
+    g.add(sign);
+    const L = 0.62 * crest;
+    const shaftR = 0.065 * crest;
+    const shaft = part(new THREE.CylinderGeometry(shaftR, shaftR, L, 10), bulbMat, "boneShaft", sign);
+    shaft.rotation.z = Math.PI / 2;
+    shaft.position.y = 0.11 * crest;
+    // The four knuckles that make a bar a BONE — the whole of its identity.
+    const knobR = 0.085 * crest;
+    for (const sx of [-1, 1]) {
+      for (const sy of [-1, 1]) {
+        const k = part(new THREE.SphereGeometry(knobR, 10, 8), bulbMat, `boneKnob${sx < 0 ? "L" : "R"}${sy < 0 ? "Lo" : "Hi"}`, sign);
+        k.position.set(sx * L / 2, 0.11 * crest + sy * knobR * 0.75, 0);
+      }
+    }
+    for (const sx of [-1, 1]) {
+      // From the crown (local y = -lift) up into the shaft (y = 0.11 crest).
+      const top = 0.11 * crest;
+      const stay = part(new THREE.BoxGeometry(0.04, lift + top, 0.04), steel, sx < 0 ? "stayL" : "stayR", sign);
+      stay.position.set(sx * L * 0.22, (top - lift) / 2, 0);
+    }
+    // A hair of tilt per instance, so it reads as hung rather than machined.
+    sign.rotation.z = (r() - 0.5) * 0.06;
   }
   return g;
 }

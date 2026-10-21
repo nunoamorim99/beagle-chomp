@@ -640,6 +640,7 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
     // stronger than any flower, with sparse cool-grey vents as specks.
     price: 50,
     ambience: "city",
+    tunnelArch: "neon-gateway",
     palette: {
       // Identity note (two tuning passes): the first cuts (cool grey walls +
       // blue window emissive under cool moonlight) kept collapsing into
@@ -678,70 +679,14 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
       rimIntensity: 0.5,
       bloomColors: [0xf4d060, 0x5fc8e8, 0xe860a8],
       bloomEmissiveIntensity: 0.8,
-      bloomChance: 0.22,
+      bloomChance: 0,
       speckColor: 0xaaaacc,
       speckEmissive: 0x3a3a4a,
-      speckChance: 0.15,
+      speckChance: 0,
     },
-    placements: [
-      { propId: "tower", tile: [19, 4], offset: [-0.24, -0.162], rotationY: 5.691, scale: 1 },
-      { propId: "tower", tile: [7, -1], offset: [0.184, -0.163], rotationY: 6.188, scale: 1.307 },
-      { propId: "tower", tile: [0, -1], offset: [-0.22, -0.111], rotationY: 1.294, scale: 1.119 },
-      { propId: "tower", tile: [5, -1], offset: [0.217, 0.075], rotationY: 5.538, scale: 1.035 },
-      { propId: "tower", tile: [19, 6], offset: [-0.007, -0.091], rotationY: 2.731, scale: 0.866 },
-      { propId: "tower", tile: [11, -1], offset: [-0.037, -0.143], rotationY: 6.276, scale: 1.218 },
-      { propId: "tower", tile: [4, -1], offset: [-0.065, 0.152], rotationY: 5.757, scale: 1.322 },
-      { propId: "tower", tile: [8, -1], offset: [0.144, -0.125], rotationY: 4.636, scale: 1.527 },
-      { propId: "tower", tile: [10, -1], offset: [-0.17, 0.032], rotationY: 3.87, scale: 1.368 },
-      { propId: "tower", tile: [9, -1], offset: [-0.236, -0.048], rotationY: 3.852, scale: 1.296 },
-      { propId: "tower", tile: [-1, -1], offset: [-0.152, 0.121], rotationY: 0.948, scale: 1.19 },
-      { propId: "tower", tile: [1, -1], offset: [-0.038, -0.119], rotationY: 0.911, scale: 1.397 },
-      { propId: "tower", tile: [-1, 15], offset: [-0.182, 0.25], rotationY: 5.075, scale: 1 },
-      { propId: "tower", tile: [19, 5], offset: [-0.242, 0.123], rotationY: 0.269, scale: 1 },
-      { propId: "tower", tile: [19, 11], offset: [0.132, 0.154], rotationY: 3.038, scale: 1 },
-      { propId: "tower", tile: [-1, 16], offset: [0.121, -0.157], rotationY: 2.239, scale: 0.942 },
-      { propId: "tower", tile: [17, -1], offset: [-0.035, 0.01], rotationY: 2.977, scale: 1.457 },
-      { propId: "tower", tile: [18, -1], offset: [-0.185, 0.249], rotationY: 5.882, scale: 1.064 },
-      { propId: "tower", tile: [19, 7], offset: [0.026, -0.144], rotationY: 0.013, scale: 1 },
-      { propId: "tower", tile: [19, 16], offset: [-0.036, -0.164], rotationY: 4.991, scale: 1 },
-      { propId: "tower", tile: [-1, 17], offset: [-0.114, -0.047], rotationY: 4.742, scale: 1 },
-      { propId: "tower", tile: [19, 1], offset: [-0.066, 0.227], rotationY: 3.638, scale: 1 },
-      { propId: "tower", tile: [-1, 2], offset: [-0.218, 0.056], rotationY: 2.902, scale: 1 },
-      { propId: "tower", tile: [19, 2], offset: [0.178, -0.196], rotationY: 4.689, scale: 1 },
-      { propId: "tower", tile: [-1, 3], offset: [-0.001, 0.245], rotationY: 1.083, scale: 1 },
-      { propId: "tower", tile: [19, 3], offset: [-0.131, 0.085], rotationY: 4.418, scale: 1 },
-      { propId: "tower", tile: [3, -1], offset: [0.198, 0.017], rotationY: 4.434, scale: 1.046 },
-      { propId: "tower", tile: [19, 15], offset: [-0.17, -0.128], rotationY: 5.99, scale: 1 },
-      { propId: "tower", tile: [14, -1], offset: [0.063, -0.094], rotationY: 5.201, scale: 1.563 },
-      { propId: "tower", tile: [-1, 5], offset: [0.095, 0.224], rotationY: 2.701, scale: 1 },
-      { propId: "streetlight", tile: [2, -1], offset: [-0.073, -0.126], rotationY: 2.816, scale: 0.969 },
-      { propId: "streetlight", tile: [19, -1], offset: [-0.227, 0.089], rotationY: 1.579, scale: 1.032 },
-      { propId: "streetlight", tile: [-1, 7], offset: [0.197, -0.04], rotationY: 2.341, scale: 1.118 },
-      { propId: "streetlight", tile: [15, -1], offset: [0.029, 0.202], rotationY: 3.5, scale: 1.069 },
-      { propId: "streetlight", tile: [19, 14], offset: [0.017, -0.132], rotationY: 4.627, scale: 1.054 },
-      { propId: "streetlight", tile: [-1, 11], offset: [-0.183, 0.008], rotationY: 0.287, scale: 1.082 },
-      { propId: "streetlight", tile: [-1, 12], offset: [0.02, -0.024], rotationY: 1.648, scale: 1.074 },
-      { propId: "streetlight", tile: [-1, 1], offset: [0.088, -0.241], rotationY: 0.581, scale: 1.137 },
-      { propId: "streetlight", tile: [-1, 13], offset: [-0.186, -0.206], rotationY: 6.08, scale: 1.1 },
-      { propId: "streetlight", tile: [19, 12], offset: [-0.134, 0.002], rotationY: 1.942, scale: 1.089 },
-    ],
-    // IDEA-060 moved all five of these. They were authored against tiles that
-    // are wall in 0 to 4 of the eighteen mazes — the one at (9, 9) has never
-    // been on a wall in ANY of them — so before buildWallDecor learned to skip
-    // a non-wall tile they hung in mid-air over open corridor, and after it
-    // they would simply never have appeared. Found by the audit that came with
-    // the garden's own wall-top flowers (scripts/_scratch-walldecor-audit.ts,
-    // now guarded by scripts/test-garden-props.ts). The replacements are all
-    // wall in 15+ of the 18, and the city is otherwise untouched — its own
-    // rebuild is a later session's job.
+    placements: [],
     verge: [],
-    wallDecor: [
-      { propId: "lamp-post", tile: [2, 2], rotationY: 0, scale: 1 },
-      { propId: "transit-sign", tile: [16, 2], rotationY: 1.571, scale: 1 },
-      { propId: "lamp-post", tile: [3, 12], rotationY: 0, scale: 1 },
-      { propId: "transit-sign", tile: [15, 12], rotationY: 0, scale: 1 },
-      { propId: "lamp-post", tile: [6, 18], rotationY: 0, scale: 1 },
-    ],
+    wallDecor: [],
   },
 ] as const;
 

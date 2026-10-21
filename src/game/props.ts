@@ -189,8 +189,14 @@ export interface PropParams {
    *  few crabs — Nuno: *"something like a rock arch with corals and beach
    *  flora, like algae, and some small crabs on the rocks."* `makeRockArch`
    *  names its three reinterpreted dials: `archCrest` sizes the cap stones,
-   *  `archBlossoms` is coral clusters per foot, `foliageColors` the algae. */
-  archKind?: "hedge" | "trees" | "rocks" | "gate";
+   *  `archBlossoms` is coral clusters per foot, `foliageColors` the algae.
+   *
+   *  "neon" is IDEA-083, Night City's: two slim steel posts, a pink-and-cyan
+   *  neon outline, marquee bulbs and a glowing bone sign on the crown.
+   *  `makeNeonArch` lists its reinterpreted dials (`archPier` the post,
+   *  `archCrown` the gap between the tubes, `archBlossoms` the bulbs,
+   *  `archCrest` the sign's size). */
+  archKind?: "hedge" | "trees" | "rocks" | "gate" | "neon";
   /** archway only: the opening's width as a fraction of the portal's height
    *  (default 0.5, which is 1.03 world units — ONE MAZE TILE, so the arch
    *  frames the tunnel corridor exactly). The reference measures 0.338; the
@@ -1139,6 +1145,33 @@ export const PROP_LIBRARY: readonly PropDef[] = [
       archCrown: 0.14,
       archRibbon: 0.65,
       archCrest: 0.45,
+      archBlossoms: 12,
+      archThreshold: false,
+      archFence: false,
+    },
+  },
+  {
+    // IDEA-083: Night City's tunnel mouth. A neon gateway — slim steel posts,
+    // a pink outer and cyan inner tube, marquee bulbs and a glowing bone on the
+    // crown. Thin rather than low is how it keeps the corridor in view from
+    // the play camera (archway.ts rule 6); see `makeNeonArch`.
+    id: "neon-gateway",
+    name: "Neon Gateway",
+    shape: "archway",
+    params: {
+      height: 1,
+      width: 1,
+      archKind: "neon",
+      foliageColors: [0xe860a8, 0x5fc8e8],
+      blossomColor: 0xf4d060,
+      trunkColor: 0x2e2a36,
+      stoneColor: 0x6e6a74,
+      archOpening: 0.5,
+      archRise: 1.15,
+      archCurve: 2.2,
+      archPier: 0.08,
+      archCrown: 0.05,
+      archCrest: 1,
       archBlossoms: 12,
       archThreshold: false,
       archFence: false,

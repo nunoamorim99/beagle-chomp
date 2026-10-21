@@ -964,5 +964,86 @@ section("The park arch is an open gate under a flowering shrub arch");
   }
 }
 
+// ---------------------------------------------------------------------------
+section("Night City's arch is a neon gateway");
+
+// IDEA-083. Nuno, choosing it from four: *"lets make the neon gateway."*
+{
+  const city = MAZE_THEMES.find((t) => t.id === "city");
+  ok("Night City names a tunnel arch", typeof city?.tunnelArch === "string");
+  const def = getPropDef(city?.tunnelArch ?? "");
+  ok("…and it is a real prop of the archway shape", def.shape === "archway");
+  const np = def.params as PropParams;
+  ok("…and it is the NEON kind", np.archKind === "neon");
+  ok("…symmetric, so both mouths keep the shared turn", !archIsDirected(np));
+
+  const arch = makeArchway(np, 0.37);
+  for (const n of ["frame", "neon", "bulbs", "sign", "postL", "postR", "tubeOuter", "tubeInner", "boneShaft"]) {
+    ok(`it has its ${n}`, !!arch.getObjectByName(n));
+  }
+
+  // THIN, NOT LOW: nothing but the two posts may stand in the walk-through
+  // below the springing, and the posts stand OUTSIDE the one-tile corridor.
+  {
+    const H = ARCH_DEFAULTS.baseHeight * (np.height ?? 1);
+    const openW = H * (np.archOpening ?? ARCH_DEFAULTS.opening) * (np.width ?? 1);
+    const springY = H - (openW / 2) * (np.archRise ?? ARCH_DEFAULTS.rise);
+    arch.updateMatrixWorld(true);
+    let inCorridor = 0;
+    const v = new THREE.Vector3();
+    arch.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh) return;
+      const a = m.geometry.getAttribute("position");
+      for (let i = 0; i < a.count; i++) {
+        v.fromBufferAttribute(a, i).applyMatrix4(m.matrixWorld);
+        if (Math.abs(v.x) < 0.5 * TILE && v.y < springY - 0.05) inCorridor++;
+      }
+    });
+    ok("nothing stands in the corridor below the head", inCorridor === 0, `${inCorridor} vertices`);
+    ok("…and the beagle walks under the head", springY > 1.0, `${springY.toFixed(2)}`);
+    const postW = H * (np.archPier ?? 0.05);
+    ok("the posts are thin enough to hide no corridor (rule 6 by thinness)", postW < 0.25, `${postW.toFixed(2)}`);
+  }
+
+  // IT GLOWS: every tube, bulb and the bone carry a real emissive, and the
+  // steel does not. A neon arch that does not glow is a painted pipe.
+  {
+    const glow = (n: string): boolean => {
+      const m = (arch.getObjectByName(n) as THREE.Mesh | undefined)?.material as THREE.MeshToonMaterial | undefined;
+      return !!m && m.emissive.getHex() !== 0 && m.emissiveIntensity > 0.5;
+    };
+    ok("the tubes glow", glow("tubeOuter") && glow("tubeInner"));
+    ok("…and the bone and the bulbs", glow("boneShaft") && glow("bulb0"));
+    ok("…and the steel does not", !glow("postL") && !glow("rail"));
+    const outer = (arch.getObjectByName("tubeOuter") as THREE.Mesh).material as THREE.MeshToonMaterial;
+    const inner = (arch.getObjectByName("tubeInner") as THREE.Mesh).material as THREE.MeshToonMaterial;
+    ok("…in TWO hues, which is what makes it a sign", outer.color.getHex() !== inner.color.getHex());
+  }
+
+  // The marquee is even along the head, not crowded onto one shoulder.
+  {
+    const bulbs = arch.getObjectByName("bulbs")!.children;
+    ok("there is a marquee of bulbs", bulbs.length === Math.round(np.archBlossoms ?? 10) && bulbs.length >= 8);
+    const gaps: number[] = [];
+    for (let i = 1; i < bulbs.length; i++) gaps.push(bulbs[i].position.distanceTo(bulbs[i - 1].position));
+    // Alternate bulbs sit on opposite faces, so compare in the arch plane.
+    const planar: number[] = [];
+    for (let i = 1; i < bulbs.length; i++) {
+      const a = bulbs[i].position;
+      const b = bulbs[i - 1].position;
+      planar.push(Math.hypot(a.x - b.x, a.y - b.y));
+    }
+    const lo = Math.min(...planar);
+    const hi = Math.max(...planar);
+    ok("…evenly spaced along the curve", hi / lo < 1.35, `gaps ${lo.toFixed(3)}..${hi.toFixed(3)}`);
+  }
+
+  {
+    const m = /archKind:\s*\[([^\]]*)\]/.exec(inspectorSrc);
+    ok("the Props tab offers the neon kind", !!m && m[1].includes('"neon"'), m ? m[1] : "");
+  }
+}
+
 console.log(`ARCHWAY: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

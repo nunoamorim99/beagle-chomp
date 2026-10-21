@@ -110,12 +110,13 @@ export interface Board {
   life: THREE.Object3D | null;
   /** IDEA-011 hedge-top decoration, now DUAL-PURPOSE as of v4.1 "Set
    *  Dressing" (see the module doc comment above):
-   *   - `theme.wallDecor` EMPTY (garden/forest/beach/park): the original
+   *   - `theme.wallDecor` EMPTY (most themes, Night City included since
+   *     IDEA-082 — which therefore keeps its bloomChance at 0): the original
    *     density-scattered blooms/specks — a handful of THREE.InstancedMesh,
    *     one per bloom color + one for leaf specks (buildHedgeDecor, entirely
    *     unchanged from IDEA-011/IDEA-026).
-   *   - `theme.wallDecor` NON-EMPTY (city): explicit hand-placed wall-top
-   *     PROP components (lamps/signs/blooms from the prop library), one
+   *   - `theme.wallDecor` NON-EMPTY (the garden's birdhouses): explicit
+   *     hand-placed wall-top PROP components from the prop library, one
    *     THREE.Group per placement (buildWallDecor, new in v4.1).
    *  A theme gets ONE of the two, never both (see buildBoard's dispatch)— so
    *  this array is always either all InstancedMesh or all Group, never mixed

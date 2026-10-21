@@ -57,10 +57,10 @@ import {
   distantHouse,
   distantRockOutcrop,
   distantShrubClump,
-  distantTower,
 } from "./surroundProps";
 import { mergeBySignature } from "./propMerge";
 import { SEASIDE_PARAMS, type Seaside, buildSeaside, disposeSeaside, inSea } from "./seaside";
+import { buildCityStreets } from "./cityLayout";
 import { boxInParkZone, buildLake, buildParkAvenue, buildPlayground, inParkZone } from "./parkLayout";
 
 const SURROUND_HASH_SEED = 600;
@@ -854,32 +854,6 @@ function parklandContent(host: THREE.Group, plot: Plot, m: SurroundMaterials): v
   // there is a reason for them to be.
 }
 
-/** The city: blocks on a street grid. The one kind whose regularity is the
- *  point, so this is the only content function that does not jitter. */
-function cityblocksContent(host: THREE.Group, plot: Plot, m: SurroundMaterials): void {
-  const south = plot.band === "south";
-  const cols = 2;
-  const rows = 2;
-  for (let z = 0; z < rows; z++) {
-    for (let x = 0; x < cols; x++) {
-      if (hash(plot.px * 7 + x, plot.pz * 7 + z, 4) < 0.25) continue;
-      const tower = distantTower(m, {
-        height: south ? 1.2 + hash(plot.px + x, plot.pz + z, 5) * 0.8 : undefined,
-        seed: 161 + x + z * 3 + plot.px * 5 + plot.pz * 9,
-      });
-      placeIn(
-        host,
-        plot,
-        tower,
-        (x + 0.5 - cols / 2) * (1.6 / cols) * 2,
-        (z + 0.5 - rows / 2) * (1.6 / rows) * 2,
-        plot.scale,
-        0,
-      );
-    }
-  }
-}
-
 /**
  * What stands in the fringe. LOW, always — it is the nearest thing to the
  * board on the south side, where the frame ends at z = +22 and fog is at
@@ -923,12 +897,6 @@ function fringeContent(
         : roll < 0.8
           ? distantShrubClump(m, { seed })
           : distantRockOutcrop(m, { seed });
-  } else if (kind === "cityblocks") {
-    // NOT beds. The city’s bloomColors are its NEON, so a flower bed out here
-    // scatters magenta dots across the pavement and reads as litter rather than
-    // as planting — a palette slot doing the job it was named for and the wrong
-    // job for this object. Rubble and low planting instead.
-    child = roll < 0.55 ? distantRockOutcrop(m, { seed }) : distantShrubClump(m, { seed });
   } else if (
     f.band === "south" &&
     roll >= SURROUND_PARAMS.southFringeBuildings &&
@@ -1008,15 +976,16 @@ function fringeContent(
   host.add(child);
 }
 
+// The city is not here: it does not use the plot lattice at all (IDEA-082, see
+// cityLayout.ts), so `buildSurroundContent` hands it to `buildCityStreets`.
 const CONTENT: Record<
-  Exclude<SurroundKind, "none">,
+  Exclude<SurroundKind, "none" | "cityblocks">,
   (host: THREE.Group, plot: Plot, m: SurroundMaterials) => void
 > = {
   plots: plotsContent,
   woodland: woodlandContent,
   dunes: dunesContent,
   parkland: parklandContent,
-  cityblocks: cityblocksContent,
 };
 
 // ---------------------------------------------------------------------------
@@ -1187,6 +1156,12 @@ export function buildSurroundContent(
 ): THREE.Group {
   const host = new THREE.Group();
   host.name = "surround";
+  // Night City is laid out as STREETS rather than grown on the plot lattice
+  // (IDEA-082): no plots, no fringe — the street frontages are both.
+  if (kind === "cityblocks") {
+    buildCityStreets(host, mats);
+    return host;
+  }
   const content = CONTENT[kind];
   // The park reserves the ground its designed zones stand on (IDEA-081). A
   // plot touching one is dropped WHOLE, rule 2's reasoning, and a fringe item

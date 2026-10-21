@@ -51,6 +51,7 @@ import { floorAccentsFor, pavingColorFor } from "../src/render/floorTexture";
 import { snapToPalette } from "../src/render/madboxStyle";
 import { MADBOX_STYLE_ON } from "../src/render/madboxFlag";
 import { LAKE, PARK_PARAMS, PLAYGROUND, avenueHalfWidth, inParkZone } from "../src/render/parkLayout";
+import { CITY_PARAMS, crossingX, sideWalkBand, streetBands } from "../src/render/cityLayout";
 
 let passed = 0;
 let failed = 0;
@@ -1117,6 +1118,96 @@ section("The park's floor is the park's ground: its lawn and its path");
   // And nobody else's floor moves: every other theme paints exactly as before.
   const others = MAZE_THEMES.filter((t) => t.id !== "park" && t.palette.floorTexture !== "parkGrass");
   ok("no other theme's floor takes accents", others.every((t) => Object.keys(floorAccentsFor(t.palette)).length === 0));
+}
+
+// ---------------------------------------------------------------------------
+section("IDEA-082: Night City is streets, cars, trees and fewer, finished buildings");
+
+{
+  // Nuno: *"on the board night city lets remove the props around the maze ...
+  // lets make less buildings but lets add a road on the north and south sides
+  // and in the road some cars. On the sides lets have a building and some
+  // trees. On the sides of the north and south road lets have a walking path
+  // and trees on the sides of the road."*
+  restoreParams();
+  const CITY = MAZE_THEMES.find((t) => t.id === "city")!;
+  ok("the props around Night City's maze are gone", CITY.placements.length === 0 && CITY.verge.length === 0);
+  const host = buildSurroundContent("cityblocks", makeSurroundMaterials(CITY.palette));
+  const streets = host.getObjectByName("city-streets");
+  ok("the city is laid out as streets", !!streets);
+  if (streets) {
+    const kids = streets.children;
+    const named = (n: string): THREE.Object3D[] => kids.filter((c) => c.name === n);
+    const S = streetBands();
+    const roads = named("city-road");
+    ok(
+      "a road on the NORTH and one on the SOUTH",
+      roads.length === 2 &&
+        roads.some((r) => Math.abs(r.position.z + S.roadCentre) < 1e-6) &&
+        roads.some((r) => Math.abs(r.position.z - S.roadCentre) < 1e-6),
+    );
+    const clearZ = FLOOR_HALF_Z + SURROUND_PARAMS.keepClear;
+    ok("the street starts outside the keep-clear box", S.nearWalk[0] > clearZ, `${S.nearWalk[0]} vs ${clearZ}`);
+    // Framed for both screens: a desktop sees north to z -21.2, a phone south
+    // to +22.4. Measured off the rigs (IDEA-066/069).
+    ok("…and ends inside both frames", S.farWalk[1] < 21.2, `outer edge at ${S.farWalk[1]}`);
+
+    // Rule 3: every vehicle on a road, in a lane, facing the way it goes.
+    const cars = kids.filter((c) => /^city-(car|taxi|bus)$/.test(c.name));
+    ok(
+      "there is traffic on both roads",
+      cars.some((c) => c.position.z < 0) && cars.some((c) => c.position.z > 0),
+      `${cars.length} vehicles`,
+    );
+    const v = new THREE.Vector3();
+    const wrongWay = cars.filter((c) => {
+      v.set(1, 0, 0).applyEuler(c.rotation);
+      const roadZ = Math.sign(c.position.z) * S.roadCentre;
+      const laneDir = c.position.z > roadZ ? 1 : -1; // the near lane drives +X
+      return Math.sign(v.x) !== laneDir || Math.abs(c.position.z - roadZ) > CITY_PARAMS.roadWidth / 2 - 0.4;
+    });
+    ok("every vehicle is in a lane, facing the way its lane goes", wrongWay.length === 0, `${wrongWay.length} wrong`);
+    const cx = crossingX();
+    const onZebra = cars.filter((c) => Math.abs(Math.abs(c.position.x) - cx) < CITY_PARAMS.crossingWidth / 2 + 0.6);
+    ok("no vehicle stands on a zebra", onZebra.length === 0, `${onZebra.length}`);
+    ok("both roads have both crossings", named("city-crosswalk").length === 4);
+
+    // Pavements and trees on BOTH sides of BOTH roads.
+    const trees = named("city-tree");
+    const onBand = (z: number, [a, b]: [number, number]): boolean => Math.abs(z) >= a && Math.abs(z) <= b;
+    for (const [label, sgn] of [["north", -1], ["south", 1]] as const) {
+      const mine = trees.filter((t) => Math.sign(t.position.z) === sgn);
+      ok(`${label}: street trees on the near pavement`, mine.some((t) => onBand(t.position.z, S.nearWalk)));
+      ok(`${label}: …and on the far one`, mine.some((t) => onBand(t.position.z, S.farWalk)));
+    }
+    ok("no tree stands in a road", trees.every((t) => !onBand(t.position.z, S.road)));
+
+    // East and west: buildings and trees past the side pavement.
+    const [sx0] = sideWalkBand();
+    for (const [label, sgn] of [["east", 1], ["west", -1]] as const) {
+      const side = (o: THREE.Object3D): boolean =>
+        Math.sign(o.position.x) === sgn && Math.abs(o.position.z) < S.nearWalk[0] && Math.abs(o.position.x) > sx0;
+      ok(`${label}: buildings`, named("city-building").some(side));
+      ok(`${label}: …and trees`, trees.some(side));
+    }
+
+    // Nothing built on a street, and nothing built SOUTH of the south road
+    // (cityLayout rule 2: the phone's nearest, unfogged band, under the controls).
+    const buildings = named("city-building");
+    const onStreet = buildings.filter(
+      (b) => Math.abs(b.position.z) > S.nearWalk[0] - 0.3 && Math.abs(b.position.z) < S.farWalk[1] + 0.3,
+    );
+    ok("no building stands on a street", onStreet.length === 0, `${onStreet.length}`);
+    ok("nothing is built south of the south street", buildings.every((b) => b.position.z < S.nearWalk[0]));
+
+    // "Too basic": each one has a bottom, a top and a front, and lit windows.
+    const b0 = buildings[0];
+    for (const piece of ["shopfront", "awning", "cornice", "body", "plinth"]) {
+      ok(`a building carries its ${piece}`, !!b0?.getObjectByName(piece));
+    }
+    const litMat = (b0?.getObjectByName("shopfront") as THREE.Mesh | undefined)?.material;
+    ok("…and lit windows", !!b0 && b0.children.some((c) => c.name.includes("win") && (c as THREE.Mesh).material === litMat));
+  }
 }
 
 restoreParams();
