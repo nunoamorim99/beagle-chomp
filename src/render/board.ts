@@ -75,6 +75,7 @@ import {
   tunnelMouths,
 } from "./archway";
 import { collapseByMaterial, mergeBySignature } from "./propMerge";
+import { buildTunnelPortals, type TunnelPortals } from "./tunnelPortal";
 
 export const WALL_H = 1;
 
@@ -198,6 +199,11 @@ export interface Board {
    *  right (see buildTunnelArches). Owned like `props` is, so teardown is
    *  `disposePropGroup`. */
   tunnelArches: THREE.Group | null;
+  /** IDEA-083: the glowing portal at every tunnel mouth, or `null` for a maze
+   *  with no tunnel. Grid-derived like `tunnelArches` but NOT gated on one —
+   *  every theme gets a portal, in its own colour (tunnelPortal.ts). Owns its
+   *  geometry and materials, so teardown is its own `dispose()`. */
+  tunnelPortals: TunnelPortals | null;
 }
 
 // IDEA-026: wall/floor/biscuit materials are shared, module-level, and
@@ -2074,6 +2080,7 @@ export function buildBoard(scene: THREE.Object3D, grid: Grid): Board {
   const surround = ensureSurround(scene, theme.palette.surround, theme.palette);
   const verge = buildVerge(scene, theme);
   const tunnelArches = buildTunnelArches(scene, grid, theme);
+  const tunnelPortals = buildTunnelPortals(scene, grid, theme);
 
   return {
     pelletMeshes,
@@ -2092,6 +2099,7 @@ export function buildBoard(scene: THREE.Object3D, grid: Grid): Board {
     surround,
     verge,
     tunnelArches,
+    tunnelPortals,
   };
 }
 
@@ -3771,6 +3779,9 @@ export function applyBoardTheme(board: Board, scene: THREE.Object3D, grid: Grid,
   // from: applyBoardTheme is handed the SAME grid the level was built with.
   if (board.tunnelArches) disposePropGroup(scene, board.tunnelArches);
   board.tunnelArches = buildTunnelArches(scene, grid, theme);
+  // IDEA-083: the portal's colour is the theme's, so a re-theme rebuilds it.
+  board.tunnelPortals?.dispose();
+  board.tunnelPortals = buildTunnelPortals(scene, grid, theme);
 }
 
 /**
@@ -3948,6 +3959,8 @@ export function spinDecor(board: Board, dt: number): void {
   if (board.fruit) board.fruit.rotation.y += dt * 1.5;
   if (board.coin) board.coin.rotation.y += dt * 3;
   if (board.life) board.life.rotation.y += dt * 3;
+  // IDEA-083: the tunnel portals swirl here so they pause with the game.
+  board.tunnelPortals?.update(dt);
 
   // IDEA-046: the power-up spins like the other bonus pickups, and the STAR
   // bone additionally cycles its emissive through the spectrum — the Mario-star

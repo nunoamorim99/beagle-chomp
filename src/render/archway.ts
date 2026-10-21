@@ -1914,6 +1914,37 @@ export const ARCH_PARAMS = {
  *  surround (600-639). */
 export const ARCH_INSTANCE_HASH_SEED = 701;
 
+/**
+ * IDEA-083: the CLEAR OPENING of an arch built from `p`, in the arch's own
+ * frame (spanning local X, standing on y = 0): straight sides to `springY`,
+ * then the same superellipse head every kind draws with `archCurvePoints`.
+ *
+ * Pure, and derived from the SAME dials each builder reads, so a retuned
+ * `archOpening` / `archRise` / `archCurve` reshapes the tunnel portal with it.
+ * The neon gateway springs at `H - rise` (it has no band); every other kind
+ * carries its band above the head and springs `bandT` lower. The figure is the
+ * NOMINAL outline — a hedge band's blobs and a gate's posts bulge inside it,
+ * which is fine for the portal: it is depth-tested, so whatever of it runs
+ * into the arch's own mass is hidden by that mass.
+ */
+export function archAperture(p: PropParams): {
+  hw: number;
+  springY: number;
+  rise: number;
+  curve: number;
+} {
+  const H = ARCH_DEFAULTS.baseHeight * (p.height ?? 1);
+  const wide = p.width ?? 1;
+  const hw = (H * (p.archOpening ?? ARCH_DEFAULTS.opening) * wide) / 2;
+  const rise = hw * (p.archRise ?? ARCH_DEFAULTS.rise);
+  const curve = Math.max(1.05, p.archCurve ?? ARCH_DEFAULTS.curve);
+  const springY =
+    p.archKind === "neon"
+      ? H - rise
+      : Math.max(0.35, H - rise - H * (p.archCrown ?? ARCH_DEFAULTS.crown));
+  return { hw, springY, rise, curve };
+}
+
 /** One tunnel mouth: the border tile, and which way out of the board it
  *  faces. `axis` is the axis the beagle TRAVELS along, so the arch has to
  *  span the other one. */

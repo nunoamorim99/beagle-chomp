@@ -1193,6 +1193,8 @@ export class Game {
     if (level.board.tunnelArches) {
       disposePropGroup(this.rig.scene, level.board.tunnelArches);
     }
+    // IDEA-083: the portals own their shader materials and geometry.
+    level.board.tunnelPortals?.dispose();
     // IDEA-060: the fence owns its geometry AND its material (fence.ts), so it
     // needs a real disposal, not the bare scene.remove the walls above get.
     if (level.board.fence) {
@@ -2848,7 +2850,12 @@ export class Game {
     // entity at collect time so it simply stops applying when the star expires,
     // with no restore step to forget.
     this.beagle.speed = SPEEDS.beagle * this.activeModifiers.speedMult * powerupBeagleSpeedMult(this.powerups);
+    const beagleTx = this.beagle.tx;
     stepEntity(this.beagle, dt, this.level.grid, false, this.onBeagleArrive);
+    // IDEA-083: a jump of more than one column in one step is the tunnel wrap,
+    // and the portals flash to cover it — that frame is where the beagle
+    // vanishes from one side and appears on the other.
+    if (Math.abs(this.beagle.tx - beagleTx) > 1) this.level.board.tunnelPortals?.pulse(1);
     syncToEntity(this.beagleMesh, this.beagle, dt);
 
     this.ghosts.forEach((rig) => {
@@ -2869,6 +2876,7 @@ export class Game {
       // already here — which is why slowing the pack needed no new mechanism.
       const ghostSpeedMult = this.activeModifiers.ghostSpeedMult * powerupGhostSpeedMult(this.powerups);
       gh.e.speed = (gh.state === "eaten" ? SPEEDS.eaten : gh.state === "frightened" ? SPEEDS.frightened : SPEEDS.ghost) * ghostSpeedMult;
+      const ghostTx = gh.e.tx;
       stepEntity(gh.e, dt, this.level.grid, true, (e) => {
         if (gh.state === "eaten" && e.tx === spawn.x && e.ty === spawn.y) {
           gh.state = this.globalMode; // respawned to current global mode
@@ -2880,6 +2888,9 @@ export class Game {
           ghostSpawn: spawn,
         });
       });
+      // IDEA-083: an enemy through the tunnel lights it too, softer than the
+      // beagle — the portal is the board's, not the player's.
+      if (Math.abs(gh.e.tx - ghostTx) > 1) this.level.board.tunnelPortals?.pulse(0.6);
       syncToEntity(rig.mesh, gh.e, dt);
       applyGhostState(rig.mesh, gh.state, gh.e.dir);
     });
