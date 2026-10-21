@@ -136,6 +136,11 @@ export interface WorkingTheme {
    *  saved out of the Board tab. Optional and written only when set, so every
    *  theme without one keeps a byte-identical entry. */
   tunnelArch?: string;
+  /** IDEA-081: MazeTheme.inkBiscuits, carried for `secret`'s reason — the
+   *  writer emits every field by hand, so an unknown one is silently deleted
+   *  from any theme saved out of the Board tab, and the park's trail would go
+   *  back to a mid-brown nobody can see on a phone. Written only when true. */
+  inkBiscuits?: boolean;
   /** IDEA-073: MazeTheme.ambience -- WHICH bed plays in this theme. Carried
    *  for `secret`'s reason, and it bites harder here because the field is
    *  REQUIRED on MazeTheme: dropping an optional one emits a theme that still
@@ -173,6 +178,7 @@ export function cloneWorkingTheme(theme: MazeTheme): WorkingTheme {
     price: theme.price,
     ...(theme.secret ? { secret: true as const } : {}),
     ...(theme.tunnelArch ? { tunnelArch: theme.tunnelArch } : {}),
+    ...(theme.inkBiscuits ? { inkBiscuits: true as const } : {}),
     ambience: theme.ambience,
     palette: { ...theme.palette, bloomColors: [...theme.palette.bloomColors] },
     placements: theme.placements.map((p) => ({
@@ -353,6 +359,8 @@ export function formatThemeEntry(theme: WorkingTheme, indent = 2): string {
     // order matches MazeTheme's own declaration order, which is what keeps a
     // save diffable against the hand-authored entries.
     ...(theme.tunnelArch ? [`${i1}tunnelArch: ${str(theme.tunnelArch)},`] : []),
+    // IDEA-081, after tunnelArch for the same declaration-order reason.
+    ...(theme.inkBiscuits ? [`${i1}inkBiscuits: true,`] : []),
     `${i1}palette: {`,
     paletteLines,
     `${i1}},`,

@@ -101,7 +101,16 @@ export function floorAccentsFor(palette: {
  */
 function corridorPaving(paving: number): number {
   if (!MADBOX_STYLE_ON) return paving;
-  const c = rgbOf(snapToPalette(paving).hex);
+  // MIXED MOST OF THE WAY TO WHITE, AND THAT IS THE PELLET-CONTRAST RULE
+  // OUTRANKING THE HUE MATCH. Painted as the full-strength sand it rendered at
+  // L 0.46 against a biscuit at 0.12 — 3.1:1 on the darkest biscuit pixels and
+  // worse on the average one, which on a phone, where a biscuit is about five
+  // pixels across, is a trail you have to hunt for. A pale cream keeps the
+  // path's warmth (it is still the sand's hue, just much lighter) and is the
+  // brightest thing this toon-lit floor can render, so it is the value step
+  // the dark biscuit needs (Nuno, after playing on a phone: "the contrast is
+  // not the best... allow the user see clearly the dots").
+  const c = mix(rgbOf(snapToPalette(paving).hex), [1, 1, 1], 0.6);
   const k = 1 / Math.max(c[0], c[1], c[2]);
   return hexOf([c[0] * k, c[1] * k, c[2] * k]);
 }
@@ -539,6 +548,11 @@ function drawParkGrass(ctx: CanvasRenderingContext2D, sh: Sheet, base: RGB, acc:
   paintCorridors(ctx, sh, sh.S * 0.46, css(gravel));
 
   // Grit as actual pebbles, kept on the path by simply re-rolling inside it.
+  //
+  // NOT ON THE PARK'S WALK (accents set): a pebble is a dot the size of a
+  // biscuit, in the biscuit's own warm family, lying on the same strip — at
+  // phone size it is NOISE around the one dot the player is reading for.
+  if (acc.path !== undefined) return;
   const grit = [lit(gravel, 0.78), lit(gravel, 1.14)] as const;
   for (let y = 0; y < sh.rows; y++) {
     for (let x = 0; x < sh.cols; x++) {

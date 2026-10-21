@@ -643,11 +643,13 @@ section("No building stands inside another one");
 }
 
 // ---------------------------------------------------------------------------
-section("The beach has a sea to the north, sunbathers west and a campsite east");
+section("The beach has a sea to the north, sunbathers to the south and open sides");
 
 // IDEA-080. Nuno: *"lets add instead a sea on the top on the north part of the
 // maze and on the left we will add some beach towels and umbrella, on the
-// right we will add some tents."*
+// right we will add some tents."* Then (v4): *"the east and west sides don't
+// need to have any decoration, so let's put the towels and the umbrellas on
+// the south side and remove the things on the sides."*
 {
   restoreParams();
   const BEACH = MAZE_THEMES.find((t) => t.id === "beach")!;
@@ -687,7 +689,7 @@ section("The beach has a sea to the north, sunbathers west and a campsite east")
   const host = buildSurroundContent("dunes", mats);
   let spots = 0;
   let tents = 0;
-  let wrongSide = 0;
+  let notSouth = 0;
   let wet = 0;
   let dunes = 0;
   for (const child of host.children) {
@@ -699,13 +701,22 @@ section("The beach has a sea to the north, sunbathers west and a campsite east")
     else tents++;
     const x = child.position.x;
     const z = child.position.z;
-    if ((isSpot && x > 0) || (isTent && x < 0)) wrongSide++;
+    // South of the board's own floor — anything level with the maze is on a
+    // side, which is exactly what v4 cleared.
+    if (z <= FLOOR_HALF_Z) notSouth++;
     // Dry means above the swash's highest reach AND its wet band.
     if (inSea(x, z, SEASIDE_PARAMS.swashReach + SEASIDE_PARAMS.wetWidth)) wet++;
   }
   ok("there are sunbathers", spots > 6, `${spots} beach spots`);
-  ok("there is a campsite", tents > 6, `${tents} tents`);
-  ok("umbrellas and towels on the WEST, tents on the EAST", wrongSide === 0, `${wrongSide} on the wrong side`);
+  ok("the campsite is gone", tents === 0, `${tents} tents`);
+  ok("everything stands SOUTH of the board — the sides are open sand", notSouth === 0, `${notSouth} beside or above the maze`);
+  // Edge to edge, not a patch: the south band includes its corner plots.
+  const xs = host.children.filter((c) => c.name === "beach-spot").map((c) => c.position.x);
+  ok(
+    "…and the sunbathers run along both halves of the south",
+    xs.some((x) => x < -COLS / 2) && xs.some((x) => x > COLS / 2),
+    `x from ${Math.min(...xs).toFixed(1)} to ${Math.max(...xs).toFixed(1)}`,
+  );
   ok("nothing is pitched in the water or on the wet sand", wet === 0, `${wet} in the surf`);
   ok("the dunes are gone", dunes === 0, `${dunes} dunes`);
   host.traverse((o) => {
@@ -1075,6 +1086,34 @@ section("The park's floor is the park's ground: its lawn and its path");
     `corridor #${acc.path?.toString(16)} against #${drawn.toString(16)}, ${(Math.min(dh, 1 - dh) * 360).toFixed(1)} degrees apart`,
   );
   ok("…edged in the avenue's own kerb stone", acc.kerb === PARK.palette.groundDetailColor);
+
+  // THE BISCUIT TRAIL HAS TO READ ON A PHONE (Nuno, after playing: "the
+  // contrast is not the best... allow the user see clearly the dots"). A
+  // biscuit there is about five pixels across, so hue is worth nothing and
+  // VALUE is everything. Measured on the phone render: 3.1:1 with a sand walk
+  // and a `bark` biscuit, 10.9:1 with a cream walk and an ink one.
+  //
+  // The biscuit is a declared INK marking — the high-key palette's darkest
+  // warm rung is `bark` (#b07d52), and no authored colour can get below it.
+  ok("the park's biscuit trail is drawn from the ink set", PARK.inkBiscuits === true);
+  ok("…and lands on the WARM ink, a chocolate rather than a hole", snapToPalette(PARK.palette.biscuit, "ink").id === "inkWarm");
+  // Bounded in PAINT terms, before lighting, so this holds whatever the scene
+  // does: the walk as painted against the biscuit's ink entry. WCAG's 4.5:1 is
+  // the floor for body text, which is the right bar for a small mark the
+  // player reads constantly.
+  if (MADBOX_STYLE_ON && acc.path !== undefined) {
+    const relL = (hex: number): number => {
+      const ch = [(hex >> 16) & 255, (hex >> 8) & 255, hex & 255].map((v) => {
+        const c = v / 255;
+        return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2];
+    };
+    const walk = relL(acc.path);
+    const dot = relL(snapToPalette(PARK.palette.biscuit, "ink").hex);
+    const ratio = (walk + 0.05) / (dot + 0.05);
+    ok("the painted walk and the biscuit clear 4.5:1", ratio >= 4.5, `${ratio.toFixed(2)}:1`);
+  }
   // And nobody else's floor moves: every other theme paints exactly as before.
   const others = MAZE_THEMES.filter((t) => t.id !== "park" && t.palette.floorTexture !== "parkGrass");
   ok("no other theme's floor takes accents", others.every((t) => Object.keys(floorAccentsFor(t.palette)).length === 0));

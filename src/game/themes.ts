@@ -262,6 +262,23 @@ export interface MazeTheme {
    * this one recoloured: a yew portal at a beach tunnel mouth is not a beach.
    */
   tunnelArch?: string;
+  /**
+   * IDEA-081: the biscuit trail is a deliberate DARK MARKING, so the shipped
+   * style draws it from its INK set rather than snapping it like a surface.
+   *
+   * The high-key palette's darkest warm entry is `bark` (#b07d52), so a
+   * biscuit authored dark brown still renders mid-brown — and on the City
+   * Park's pale walk that measured 3.5:1 on a phone, where a biscuit is about
+   * five pixels across. The ink set is the style's declared exception for
+   * exactly this ("dark only as deliberate contrast accents"), and the
+   * biscuit trail is the most important contrast accent in the game.
+   *
+   * A THEME FLAG rather than inferred from colour, for madboxStyle.ts's own
+   * reason: colour cannot say what a dark thing is FOR, and inferring it here
+   * would quietly repaint every theme whose biscuit happens to be brown.
+   * Optional and only the park sets it; classic ignores it.
+   */
+  inkBiscuits?: boolean;
   /** IDEA-031: explicit wall-top component placements (generalizes IDEA-011's
    *  density blooms — the palette still carries bloom COLORS as a fallback for
    *  themes that keep the classic scattered garden look via bloomChance, but a
@@ -516,6 +533,7 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
     price: 50,
     ambience: "surf",
     tunnelArch: "sea-arch",
+    inkBiscuits: true,
     palette: {
       bg: 0xa8d8ef,
       backdropTop: 0xd8f0fa,
@@ -547,10 +565,10 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
       rimIntensity: 0.35,
       bloomColors: [0xf8f0e2, 0x5fc8c0, 0xf29a8a],
       bloomEmissiveIntensity: 0.25,
-      bloomChance: 0.18,
+      bloomChance: 0.05,
       speckColor: 0x8aa860,
       speckEmissive: 0x2a3a14,
-      speckChance: 0.3,
+      speckChance: 0,
     },
     placements: [],
     verge: [],
@@ -571,6 +589,7 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
     price: 50,
     ambience: "park",
     tunnelArch: "park-gate",
+    inkBiscuits: true,
     palette: {
       bg: 0x9ecbe8,
       backdropTop: 0xd4ecfa,

@@ -1010,6 +1010,30 @@ for (const kind of ["deer", "fox", "rabbit", "raccoon", "squirrel", "squirrelExp
   );
 }
 
+// ---------------------------------------------------------------------------
+// THE BEACH'S BISCUIT IS INK (IDEA-080 v3). Measured on a phone render, the
+// `wood` biscuit and the lifted sand corridor were the SAME luminance (0.29 vs
+// 0.29) — only hue separated them, and a phone outdoors loses hue first. As
+// ink it renders at ~0.012 against 0.288, a 5.4:1 ratio. Every brown the
+// ordinary snap can reach lands on `wood` or `bark`, which is why this is a
+// declared role and not a darker hex.
+// ---------------------------------------------------------------------------
+{
+  const beach = MAZE_THEMES.find((t) => t.id === "beach")!;
+  const role = beach.inkBiscuits ? "ink" : undefined;
+  const entry = snapToPalette(beach.palette.biscuit, role);
+  ok(
+    "beach: the biscuit is drawn from the ink set",
+    MADBOX_INK.some((e) => e.id === entry.id),
+    `snapped to ${entry.id}`,
+  );
+  ok(
+    "beach: the biscuit's ink is the WARM one (it is still brown)",
+    entry.id === "inkWarm",
+    `snapped to ${entry.id}`,
+  );
+}
+
 console.log("");
 console.log("-".repeat(60));
 console.log(`MADBOX STYLE: ${pass} passed, ${fail} failed`);

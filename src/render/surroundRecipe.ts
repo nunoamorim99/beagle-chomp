@@ -57,7 +57,6 @@ import {
   distantHouse,
   distantRockOutcrop,
   distantShrubClump,
-  distantTent,
   distantTower,
 } from "./surroundProps";
 import { mergeBySignature } from "./propMerge";
@@ -761,10 +760,6 @@ function woodlandContent(host: THREE.Group, plot: Plot, m: SurroundMaterials): v
 const BEACH_KEEP_DRY =
   SEASIDE_PARAMS.swashReach + SEASIDE_PARAMS.wetWidth + 1.4;
 
-/** The yaw that turns a tent's door (local +Z) to face WEST, toward the
- *  board — see `dunesContent`. Ry(t) sends +Z to (sin t, 0, cos t). */
-const TENT_FACING = -Math.PI / 2;
-
 /** `placeIn`, refusing a spot in the sea. Returns whether it placed. */
 function placeOnBeach(
   host: THREE.Group,
@@ -781,10 +776,13 @@ function placeOnBeach(
 }
 
 /**
- * The beach (IDEA-080): the SEA to the north, SUNBATHERS to the west and a
- * CAMPSITE to the east — Nuno's layout, side for side. The kind id is still
- * `"dunes"` because it is a palette value in themes.ts; what it builds is no
- * longer dunes.
+ * The beach (IDEA-080): the SEA to the north and SUNBATHERS to the south —
+ * and nothing on the east and west sides (v4, Nuno: *"the east and west sides
+ * don't need to have any decoration, so let's put the towels and the umbrellas
+ * on the south side and remove the things on the sides"*). The campsite that
+ * stood east went with them; `distantTent` stays in surroundProps.ts as a
+ * library shape. The kind id is still `"dunes"` because it is a palette value
+ * in themes.ts; what it builds is no longer dunes.
  *
  * NO BOUNDARIES. Every other kind with people in it fences its plots; a beach
  * is the one place nobody does, and a hedge on sand would say "garden". The
@@ -792,17 +790,16 @@ function placeOnBeach(
  * spot's umbrella out of its neighbour's towels, since a plot fraction of
  * +-0.5 is ~3.5 units apart against a spot ~2 across.
  *
- * Split by the sign of x rather than by band, so the SOUTH band (portrait-only,
- * under the HUD) continues whichever side it is on instead of becoming a third
- * thing — a beach has two halves and the camera's south edge cuts across both.
+ * The SOUTH band is the whole width below the board (corner plots included),
+ * so the sunbathers run edge to edge under the maze rather than in a patch.
  */
 function dunesContent(host: THREE.Group, plot: Plot, m: SurroundMaterials): void {
   // Wholly in the water: nothing to build. Tested on the plot's centre with
   // no margin, because the per-object test below is the real guard and this
   // only saves the work.
   if (inSea(plot.cx, plot.cz)) return;
-  const south = plot.band === "south";
-  const campsite = plot.cx > 0;
+  // Open sand everywhere but the south.
+  if (plot.band !== "south") return;
   const seed = plot.px * 31 + plot.pz * 17;
   const slots: Array<[number, number]> = [
     [-0.5, -0.45],
@@ -810,29 +807,18 @@ function dunesContent(host: THREE.Group, plot: Plot, m: SurroundMaterials): void
     [-0.5, 0.45],
     [0.5, 0.45],
   ];
-  // Fewer in the south, for rule 4's reason: it is the nearest, largest,
-  // unfogged band and it sits under the controls.
-  const want = south ? 2 : 3 + (hash(plot.px, plot.pz, 4) < 0.5 ? 1 : 0);
+  // Kept to two or three a plot, for rule 4's reason: the south is the
+  // nearest, largest, unfogged band and it sits under the controls.
+  const want = 2 + (hash(plot.px, plot.pz, 4) < 0.5 ? 1 : 0);
   let placed = 0;
   for (let i = 0; i < slots.length && placed < want; i++) {
     if (hash(plot.px, plot.pz, 30 + i) < 0.18) continue; // an empty pitch is part of a beach too
     const [su, sv] = slots[i];
     const u = su + (hash(plot.px, plot.pz, 5 + i) - 0.5) * 0.35;
     const v = sv + (hash(plot.px, plot.pz, 9 + i) - 0.5) * 0.35;
-    const child = campsite
-      ? distantTent(m, { seed: 171 + i + seed })
-      : distantBeachSpot(m, { seed: 121 + i + seed });
-    // A campsite's tents face roughly ONE way — a campsite is pitched, not
-    // scattered — and that way is WEST, toward the board, for a reason the
-    // camera dictates rather than taste. The campsite is 15-40 units EAST of
-    // a camera on the centre line, so it is seen from the west and above:
-    // facing the door west puts the door's triangle toward the viewer, and
-    // runs the ridge east-west so BOTH pitches face up into the view. Turned
-    // any other way, one pitch is a back face and a two-tone tent shows one
-    // colour — a tile on the sand. Sunbathers lie at any angle.
-    const rot = campsite
-      ? TENT_FACING + (hash(plot.px, plot.pz, 13 + i) - 0.5) * 0.7
-      : hash(plot.px, plot.pz, 13 + i) * Math.PI * 2;
+    const child = distantBeachSpot(m, { seed: 121 + i + seed });
+    // Sunbathers lie at any angle.
+    const rot = hash(plot.px, plot.pz, 13 + i) * Math.PI * 2;
     if (placeOnBeach(host, plot, child, u, v, rot)) placed++;
   }
   // NO BEACH GRASS, deliberately. `distantShrubClump` takes its greens off
@@ -914,13 +900,11 @@ function fringeContent(
     // north fringe is where the surf is: nothing in the water, and nothing on
     // the wet sand either.
     if (inSea(f.x, f.z, BEACH_KEEP_DRY)) return;
-    // Same west/east split as the plots, so the fringe continues each side
-    // rather than mixing them at the board's edge. Sparser than the plots:
-    // most of the fringe stays open sand and grass, which is what lets the
+    // South only, as in `dunesContent`: the sides stay open sand. Sparser
+    // than the plots — most of the fringe stays open, which is what lets the
     // pitches further out read as a beach rather than a car park.
-    // Open sand otherwise — see `dunesContent` on why there is no grass.
-    if (roll >= 0.3) return;
-    child = f.x > 0 ? distantTent(m, { seed }) : distantBeachSpot(m, { seed });
+    if (f.band !== "south" || roll >= 0.3) return;
+    child = distantBeachSpot(m, { seed });
   } else if (kind === "woodland") {
     // A RANGE, NOT A LITERAL (IDEA-065 v4). Every woodland fringe conifer was
     // exactly 1.3 units, so the ring of trees nearest the board was a row of
@@ -1019,12 +1003,7 @@ function fringeContent(
   }
   child.position.set(f.x, 0, f.z);
   const spin = hash(Math.round(f.x), Math.round(f.z), 55);
-  // A tent faces the board, here as in `dunesContent` and for its reason: a
-  // random yaw shows most tents with one pitch as a back face, and a ridge
-  // tent showing one colour is a box with nothing to say it is canvas.
-  child.rotation.y = child.name.startsWith("tent-")
-    ? TENT_FACING + (spin - 0.5) * 0.7
-    : spin * Math.PI * 2;
+  child.rotation.y = spin * Math.PI * 2;
   child.scale.multiplyScalar(f.scale);
   host.add(child);
 }

@@ -2011,7 +2011,7 @@ export function makeCoin(): THREE.Group {
  */
 export function buildBoard(scene: THREE.Object3D, grid: Grid): Board {
   const theme = getEquippedMazeTheme();
-  syncBoardMaterials(theme.palette, grid);
+  syncBoardMaterials(theme.palette, grid, theme.inkBiscuits === true);
 
   const pelletMeshes = new Map<string, PelletMesh>();
   let pelletsLeft = 0;
@@ -2186,7 +2186,7 @@ function buildWallTopDecor(scene: THREE.Object3D, grid: Grid, theme: MazeTheme):
  * by buildBoard (fresh level) and applyBoardTheme (mid-run re-theme) so the
  * two can never drift.
  */
-function syncBoardMaterials(palette: ThemePalette, grid: Grid): void {
+function syncBoardMaterials(palette: ThemePalette, grid: Grid, inkBiscuits = false): void {
   matWall.emissive.set(palette.wallEmissive);
   matWall.emissiveIntensity = palette.wallEmissiveIntensity;
   // The theme's SURFACE (hedge / sand / brick / none). Swapping a map between
@@ -2234,6 +2234,11 @@ function syncBoardMaterials(palette: ThemePalette, grid: Grid): void {
   matFloor.color.set(nextFloor ? 0xffffff : palette.floor);
 
   matBiscuit.color.set(palette.biscuit);
+  // IDEA-081: a theme that declares its trail a DARK MARKING has it drawn from
+  // the style's ink set (MazeTheme.inkBiscuits). Cleared, not merely left
+  // unset, because matBiscuit is SHARED across themes and survives a re-theme.
+  if (inkBiscuits) matBiscuit.userData.madboxRole = "ink";
+  else delete matBiscuit.userData.madboxRole;
   matBiscuit.emissive.set(palette.biscuitEmissive);
   matBiscuit.emissiveIntensity = palette.biscuitEmissiveIntensity;
 }
@@ -3671,7 +3676,7 @@ export function buildWallDecor(
  * leaving city's hand-placed lamps for garden's density blooms) never leaks.
  */
 export function applyBoardTheme(board: Board, scene: THREE.Object3D, grid: Grid, theme: MazeTheme): void {
-  syncBoardMaterials(theme.palette, grid);
+  syncBoardMaterials(theme.palette, grid, theme.inkBiscuits === true);
 
   // IDEA-068: the wall GEOMETRY is a per-theme choice now, so a re-theme has
   // to swap it — the same reasoning the fence and the ground detail already
