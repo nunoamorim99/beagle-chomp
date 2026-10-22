@@ -221,6 +221,8 @@ export function createJourneyScene(): JourneyScene {
     update(dt, elapsedMs) {
       rig?.update(dt);
       clouds.update(dt);
+      // Forty portals, a couple of float writes each — never a traversal.
+      for (const isl of islands) isl.portal.update(dt);
       const cam = rig?.camera ?? placeholder;
       seaCenter.set(cam.position.x, cam.position.z - SEA_LOOK_AHEAD);
       updateJourneyWater(sea.animated, elapsedMs, seaCenter);

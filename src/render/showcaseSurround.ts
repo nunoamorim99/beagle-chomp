@@ -59,27 +59,30 @@ import * as THREE from "three";
 import type { MazeTheme, ThemePalette } from "../game/themes";
 import { mergeBySignature } from "./propMerge";
 import { surroundTextureFor } from "./surroundTexture";
-import { luminance, surroundTextureKindFor, type SurroundKind } from "./surround";
+import {
+  SURROUND_PARAMS,
+  SURROUND_VIEW,
+  luminance,
+  surroundTextureKindFor,
+  type SurroundKind,
+} from "./surround";
 import {
   type SurroundMaterials,
   disposeSurroundMaterials,
   makeSurroundMaterials,
-  distantBroadleaf,
-  distantConifer,
-  distantDune,
-  distantFlowerBorder,
-  distantHedgeRun,
-  distantHouse,
-  distantRockOutcrop,
-  distantShrubClump,
-  distantTower,
 } from "./surroundProps";
+import { buildSurroundContent } from "./surroundRecipe";
+import { buildSeaside, disposeSeaside, type Seaside } from "./seaside";
 import { getPropDef } from "../game/props";
-import { makePropFromDef, WALL_H } from "./board";
-import { makeArchway } from "./archway";
+import { ROWS } from "../game/grid";
+import { makePropFromDef, tunnelArchDefFor, TUNNEL_ARCH_INSTANCE_HASH, WALL_H } from "./board";
+import { ARCH_PARAMS } from "./archway";
+import { buildPortalsAt, type TunnelPortals } from "./tunnelPortal";
+import { FENCE_PARAMS, fencePanelGeometry } from "./fence";
 import { wallGeometry, wallShapeFor } from "./hedgeWall";
 import { wallTextureFor } from "./wallTexture";
 import { toon } from "./toon";
+import { shouldStyleBoard } from "./madboxStyle";
 
 /** Under the stage's own disc/floor, exactly as the board's surround runs
  *  under the board floor — no joint to align, no crack, no z-fight. */
@@ -168,45 +171,49 @@ export function showcaseFog(palette: ThemePalette, reach: number, camDist: numbe
 }
 
 /**
- * The band, in world units from the stage's own centre, at `scale` 1.
+ * The band, in world units from the stage's own centre.
  *
- * IT HAS MOVED TWICE, OUT AND THEN BACK, AND BOTH REASONS STILL HOLD.
- * Out first: at 26 the near ring's tree crowns read as pale HEXAGONS, because
- * a `lobedFoliageGeometry` at `detail: 0` is twenty faces — invisible on the
- * board where a crown is 15-40 px, glaring the moment it fills 80. 34 fixed
- * the faceting and the scale together.
- * Back in second, after Nuno: *"bring the trees closer to the dog."* He was
- * right, and the honest fix is not to undo the first one — it is that the
- * middle distance was EMPTY. `buildStageDressing` now fills 5-13 units with
- * the theme's REAL library props, which carry proper detail because they were
- * authored for a camera two tiles away. With those in place the band is a
- * horizon again rather than the only content, so it comes back to 26-52 and
- * the two ranges chain instead of leaving a gap of bare lawn between them.
+ * IT IS THE BOARD'S OWN NEIGHBOURHOOD NOW, so these are no longer chosen —
+ * they are read off it. The stage stands where the MAZE stands (the origin of
+ * the board's world), and the surround recipe keeps everything outside the
+ * board's floor plus `keepClear`, so the near edge is that box's north face
+ * and the far edge is the ground the recipe builds on.
+ *
+ * It used to be a hand-made ring at 26-52 units built from the same library of
+ * distant shapes, and that was honest while every theme's neighbourhood was a
+ * scatter of those shapes. It stopped being honest when the beach grew a SEA
+ * (IDEA-080), the park an avenue, a lake and a playground (IDEA-081) and Night
+ * City a street grid with traffic (IDEA-082): the menu went on advertising the
+ * dunes, the loose groves and the skyscraper ring those replaced. Building the
+ * real recipe means a neighbourhood edit reaches the menu by existing.
  */
-const BAND_INNER = 26;
-const BAND_OUTER = 52;
+const BAND_INNER = (ROWS + 2) / 2 + SURROUND_PARAMS.keepClear;
+const BAND_OUTER = Math.max(-SURROUND_PARAMS.zFar, SURROUND_PARAMS.halfWidth);
 
-/** The default fog reach for a stage that HAS a band: just past its far ring,
- *  so the horizon always finishes dissolving before the band runs out. */
-export const SHOWCASE_FOG_REACH = BAND_OUTER;
+/** The default fog reach for a stage that HAS a band: just past its far edge,
+ *  so the horizon always finishes dissolving before the ground runs out. */
+export const SHOWCASE_FOG_REACH = BAND_OUTER + 2;
 
 /** The band's own extent, exported so a test can check the fog clears it. */
 export const SHOWCASE_BAND = { inner: BAND_INNER, outer: BAND_OUTER } as const;
 
-
 /**
- * The wedge behind the camera, which gets nothing.
+ * The cull, as a view cone from the camera rather than a fixed wedge.
  *
- * Every rig here looks from +Z toward the origin, so content at +Z beyond the
- * camera is out of frame at every aspect — and this is the one cheap cull
- * available, since the ground is a disc and the band is a ring. IDEA-069's
- * rule applies unchanged: cull what is EXPENSIVE (the props), never what is
- * cheap and load-bearing (the ground).
+ * Every rig here looks from +Z toward the origin with a horizontal half-angle
+ * of at most ~32 degrees (desktop; a phone is ~10). The neighbourhood is laid
+ * out all the way round the board, so more than half of it can never be in
+ * frame — the south band is behind the camera outright. IDEA-069's rule
+ * applies unchanged: cull what is EXPENSIVE (the props), never what is cheap
+ * and load-bearing (the ground, the sea).
  */
-const BEHIND_WEDGE = Math.PI * 0.55;
+const VIEW_HALF_ANGLE = (40 * Math.PI) / 180;
+/** Nothing whose nearest edge is further toward the camera than this is kept:
+ *  it is beside or behind every rig's eye (the portrait dolly ends near 5.3). */
+const VIEW_Z_CUT = 6;
 
 /** Exported so a test can check the cull actually happened. */
-export const SHOWCASE_BEHIND_WEDGE = BEHIND_WEDGE;
+export const SHOWCASE_VIEW_CULL = { halfAngle: VIEW_HALF_ANGLE, zCut: VIEW_Z_CUT } as const;
 
 /** Deterministic hash in [0,1). Seed band 900-949 — clear of buildProps
  *  (200/201), buildWallDecor (301), buildHedgeDecor (1-7), groundDetail
@@ -301,6 +308,9 @@ export interface ShowcaseSurround {
    *  to call on every theme change — it is what the shop's Themes tab does on
    *  every card tap. */
   apply(theme: MazeTheme): void;
+  /** Advances what moves in the stage — the tunnel portal's swirl. The sea
+   *  keeps its own clock (seaside.ts reads performance.now() per draw). */
+  update(dt: number): void;
   /**
    * Switch to a stage with a different sense of scale.
    *
@@ -320,121 +330,58 @@ export interface ShowcaseSurround {
 }
 
 /**
- * Content for one theme, as a ring of distant objects.
+ * Content for one theme: the board's real neighbourhood, culled to the view.
  *
- * EVERY THEME USES ITS OWN VOCABULARY, taken from `surroundRecipe.ts` rather
- * than invented here: `palette.surround` already says which neighbourhood this
- * theme grows, and a showcase that put houses behind the Deep Forest would be
- * advertising the wrong thing on the one screen where a player is buying it.
- * `"none"` (Arcade Night) gets NOTHING, which preserves IDEA-066's deliberate
- * void — its fog IS its surround, and that is the look someone paid for.
+ * EVERY THEME SHOWS WHAT ITS BOARD SHOWS, because it is built by the same
+ * function the board's surround is (`buildSurroundContent`). Looking north
+ * from the stage, which is where every rig here looks, that is: the garden's
+ * hedged plots and houses, the forest's pines, the beach's SEA running to the
+ * horizon, the park's lake with its avenue running off either side, and Night
+ * City's first street — pavement, traffic and frontages. `"none"` (Arcade
+ * Night) builds nothing, which preserves IDEA-066's deliberate void.
+ *
+ * `SURROUND_VIEW` is the GAME camera's footprint and the recipe reads it to
+ * cull, so it is opened to the full extent for the build and put back
+ * afterwards — a board built later must not inherit the menu's view, and the
+ * menu must not inherit a phone's narrow strip of the board's.
+ *
+ * The beach's sea is NOT in here: it is two ShaderMaterials owned by
+ * seaside.ts, which `mergeBySignature` was never written to bucket, so the
+ * caller builds it alongside — the same split `ensureSurround` makes.
  */
 export function buildShowcaseBand(
   kind: SurroundKind,
   m: SurroundMaterials,
-  seed: number,
   scale: number,
+  camDist: number,
 ): THREE.Group {
   const g = new THREE.Group();
+  g.userData.itemCount = 0;
   // `scale` 0 is GROUND ONLY, and the shop's diorama is why it exists. That rig
   // looks down at 33 degrees, so its horizon is off the top of the frame and
   // the ground already fills every pixel — IDEA-066's situation exactly, where
   // a bigger floor was the whole answer. A band there has nowhere to stand that
   // is both in frame and not in the way: inside the frame's own ground line it
-  // sprawls hedges across the top of the picture, and past it the only thing
-  // that ever shows is a CROPPED fragment at the very edge. Both were built and
-  // both read as debris. Nothing is the right amount.
+  // sprawls across the top of the picture, and past it the only thing that
+  // ever shows is a CROPPED fragment at the very edge. Both were built and both
+  // read as debris. Nothing is the right amount.
   if (kind === "none" || scale <= 0) return g;
 
-  const inner = BAND_INNER * scale;
-  const outer = BAND_OUTER * scale;
-  // Three rings, near to far. A single ring reads as a fence of objects all
-  // the same size; three at different depths is what makes it a landscape,
-  // and the fog does the rest.
-  const RINGS = 4;
-  let n = 0;
-  for (let ring = 0; ring < RINGS; ring++) {
-    const t = ring / (RINGS - 1);
-    const radius = inner + (outer - inner) * t;
-    // Circumference grows with radius, so a fixed count would thin out the
-    // far rings exactly where the eye reads the horizon line.
-    //
-    // THESE NUMBERS ARE WHAT MAKES IT A TREELINE RATHER THAN SOME TREES. The
-    // first build ran 14/21/28 and, after the behind-camera wedge takes its
-    // 28%, that is about seven objects spread across the whole visible
-    // horizon — which renders as a few lonely props standing in a field, not
-    // as a landscape. A horizon reads on being CONTINUOUS; the fog is what
-    // stops a continuous one from becoming a wall.
-    const count = Math.round((34 + ring * 14) * Math.min(1.6, scale));
-    for (let i = 0; i < count; i++) {
-      const a = (i / count) * Math.PI * 2 + hash(i * 3 + ring, seed) * 0.22;
-      // Skip the wedge behind the camera (+Z).
-      let d = Math.atan2(Math.sin(a), Math.cos(a)) - Math.PI / 2;
-      d = Math.atan2(Math.sin(d), Math.cos(d));
-      if (Math.abs(d) < BEHIND_WEDGE / 2) continue;
-
-      const r = radius * (0.9 + hash(i * 7 + ring, seed + 1) * 0.2);
-      const x = Math.cos(a) * r;
-      const z = Math.sin(a) * r;
-      const roll = hash(i * 11 + ring, seed + 2);
-      const s = seed * 17 + ring * 101 + i;
-
-      let child: THREE.Object3D;
-      if (kind === "plots") {
-        // A hedged field boundary is the garden's own horizon, so it is the
-        // majority. Runs are aimed TANGENTIALLY (see below), which is what
-        // makes them read as boundaries rather than as objects pointed at you.
-        child =
-          roll < 0.46
-            ? distantHedgeRun(m, { length: 6 + hash(i, s) * 5, height: 0.62, seed: s })
-            : roll < 0.7
-              ? distantBroadleaf(m, { height: 2.1 + hash(i, s + 1) * 1.1, seed: s })
-              : roll < 0.84
-                ? distantHouse(m, { kind: hash(i, s + 2) < 0.6 ? "house" : "greenhouse", seed: s })
-                : roll < 0.93
-                  ? distantFlowerBorder(m, { length: 3 + hash(i, s + 3) * 2, seed: s })
-                  : distantShrubClump(m, { radius: 0.6, seed: s });
-      } else if (kind === "woodland") {
-        child =
-          roll < 0.82
-            ? distantConifer(m, { height: 3.2 + hash(i, s) * 2.2, seed: s, detail: 1 })
-            : roll < 0.94
-              ? distantBroadleaf(m, { height: 2.4 + hash(i, s + 1) * 1.0, seed: s })
-              : distantShrubClump(m, { radius: 0.7, seed: s });
-      } else if (kind === "dunes") {
-        // A beach's read is the HORIZON, so almost nothing out there stands
-        // up — IDEA-066's own note. Dunes and outcrops only.
-        child =
-          roll < 0.72
-            ? distantDune(m, { seed: s })
-            : roll < 0.9
-              ? distantRockOutcrop(m, { seed: s })
-              : distantShrubClump(m, { radius: 0.5, seed: s });
-      } else if (kind === "parkland") {
-        child =
-          roll < 0.62
-            ? distantBroadleaf(m, { height: 2.6 + hash(i, s) * 1.4, seed: s })
-            : roll < 0.84
-              ? distantHedgeRun(m, { length: 5 + hash(i, s + 1) * 4, height: 0.55, seed: s })
-              : distantShrubClump(m, { radius: 0.7, seed: s });
-      } else {
-        child =
-          roll < 0.86
-            ? distantTower(m, { height: 3 + hash(i, s) * 5, seed: s })
-            : distantBroadleaf(m, { height: 2.2, seed: s });
-      }
-
-      child.position.set(x, 0, z);
-      // A HEDGE RUN IS BUILT ALONG ITS LOCAL +X, so a run aimed at the stage
-      // is a hedge seen END-ON: one blob, and the whole point of a boundary
-      // lost. Turning it a quarter past the radial direction lays it ACROSS
-      // the view, which is what reads as a field edge on the horizon.
-      // (`hedgePerimeter`'s own atan2(-dz, dx) sign trap, in a simpler form.)
-      child.rotation.y = -a + Math.PI / 2 + (hash(i * 13 + ring, seed + 3) - 0.5) * 0.5;
-      g.add(child);
-      n++;
-    }
+  const saved = { ...SURROUND_VIEW };
+  const P = SURROUND_PARAMS;
+  let host: THREE.Group;
+  try {
+    SURROUND_VIEW.halfX = P.halfWidth;
+    SURROUND_VIEW.zNear = P.zNear;
+    SURROUND_VIEW.zFar = P.zFar;
+    host = buildSurroundContent(kind, m);
+  } finally {
+    SURROUND_VIEW.halfX = saved.halfX;
+    SURROUND_VIEW.zNear = saved.zNear;
+    SURROUND_VIEW.zFar = saved.zFar;
   }
+  const kept = cullToView(host, camDist);
+  g.add(host);
   // One mesh per distinct material for the whole band, exactly as the board's
   // surround does — and for the same reason: this is a few hundred objects and
   // a per-object draw call is not affordable on a menu that also renders a
@@ -444,8 +391,49 @@ export function buildShowcaseBand(
     o.castShadow = false;
     o.receiveShadow = false;
   });
-  g.userData.itemCount = n;
+  g.userData.itemCount = kept;
   return g;
+}
+
+/**
+ * Removes everything that can never be in frame, recursing into a group only
+ * when it straddles the edge (Night City's streets are one group spanning the
+ * whole board). Returns how many objects were kept, for the test.
+ */
+function cullToView(group: THREE.Object3D, camDist: number): number {
+  const box = new THREE.Box3();
+  const tan = Math.tan(VIEW_HALF_ANGLE);
+  let kept = 0;
+  for (const child of [...group.children]) {
+    child.updateMatrixWorld(true);
+    box.setFromObject(child);
+    if (box.isEmpty()) continue;
+    // The cone at this object's FAR edge is the widest it gets over the
+    // object's depth; the margin covers its height poking into a taller frame.
+    const halfW = (camDist - box.min.z) * tan + 2;
+    const inside = box.min.z < VIEW_Z_CUT && box.min.x < halfW && box.max.x > -halfW;
+    if (!inside) {
+      group.remove(child);
+      disposeGeometryOnly(child);
+      continue;
+    }
+    const straddles = box.max.z > VIEW_Z_CUT || box.max.x > halfW || box.min.x < -halfW;
+    if (straddles && !(child as THREE.Mesh).isMesh && child.children.length > 0) {
+      kept += cullToView(child, camDist);
+    } else {
+      kept++;
+    }
+  }
+  return kept;
+}
+
+/** Geometry only: the band's materials are the shared surround set, owned and
+ *  disposed by the caller. */
+function disposeGeometryOnly(o: THREE.Object3D): void {
+  o.traverse((x) => {
+    const mesh = x as THREE.Mesh;
+    if (mesh.isMesh) mesh.geometry.dispose();
+  });
 }
 
 /**
@@ -478,29 +466,34 @@ export function buildShowcaseBand(
  *     gets its brick. The menu's old stand-in was five 0.5 x 0.28 boxes: a
  *     doll's-house hedge, which is precisely why "the walls of each theme
  *     should appear" needed asking for.
- *  3. **THE ARCH IS TINTED FROM THE PALETTE, NOT TAKEN FROM `tunnelArch`.**
- *     Only the garden names one, and deliberately — IDEA-067 rule 5 keeps a
- *     yew portal off the beach's tunnel mouths, and setting `tunnelArch` on
- *     five more themes to fix a MENU would change five BOARDS. `makeArchway`
- *     already takes `foliageColors`, `blossomColor` and `stoneColor` as
- *     params, so the showcase builds its own from the theme the same way
- *     `makeSurroundMaterials` does. Every theme gets a coherent arch and no
- *     board changes at all.
+ *  3. **THE ARCH IS THE BOARD'S OWN, FROM `tunnelArchDefFor`.** It used to be
+ *     the garden's Hedge Arch tinted from each palette, which was right while
+ *     only the garden named an arch — and has been wrong since every theme got
+ *     its own (the forest's two trees, the beach's rock arch, the park's gate,
+ *     the city's neon gateway). The menu was advertising a recoloured yew
+ *     portal on five themes that do not have one. It stands where the board
+ *     stands it — `ARCH_PARAMS.outset` past the wall face, at the board's
+ *     scale, over a ONE-tile gap — with the theme's PORTAL glowing in it, and
+ *     a theme with no arch (Arcade Night) gets the board's frameless portal,
+ *     so the doorway in the menu is the doorway in a run.
  *  4. **THE LANDMARKS ARE THE REAL LIBRARY PROPS**, `makePropFromDef` off
  *     `PROP_LIBRARY`, so the menu plants the same treehouse the garden does
- *     rather than a lookalike that drifts out of step with it — the standing
- *     reason `DIORAMA_SIGNATURE_IDS` exists. Arcade Night's list is EMPTY, as
- *     everywhere else: its void is what somebody paid 50 coins for.
+ *     rather than a lookalike that drifts out of step with it — and only
+ *     props the theme's board actually plants. The beach, the park and the
+ *     city have no hand-placed props any more (their places are their sea,
+ *     lake and streets, which the band now shows), so they get none here
+ *     either; the old umbrella/palm/oak/tower picks were advertising props
+ *     those boards stopped planting.
  */
 const SHOWCASE_LANDMARKS: Readonly<Record<string, readonly string[]>> = {
   // The treehouse first because Nuno named it, and because it is the garden's
   // only singular prop — IDEA-060 built it for one apron corner and this is
   // the second place in the game it can stand at full size.
-  garden: ["treehouse", "garden-tree", "garden-shrub", "flower-sunflower", "birdhouse"],
-  forest: ["log-cabin", "pine", "nest-tree", "critter-deer", "pine"],
-  beach: ["umbrella", "palm", "shrub", "palm"],
-  park: ["oak", "streetlight", "shrub", "bloom"],
-  city: ["tower", "streetlight", "lamp-post", "transit-sign"],
+  garden: ["treehouse", "garden-tree", "garden-shrub", "nest-tree", "birdhouse"],
+  forest: ["log-cabin", "pine", "critter-deer", "pine", "critter-fox"],
+  beach: [],
+  park: [],
+  city: [],
   classic: [],
 };
 
@@ -541,36 +534,44 @@ export function faceCameraYaw(px: number, pz: number, camDist: number): number {
   return Math.atan2(0 - px, camDist - pz);
 }
 
-/** Where the wall run and the arch stand, in units behind the subject. */
+/** Where the wall run stands, in units behind the subject. */
 // Pushed back from -3.6 after the desktop render: at 3.2 units of camera the
 // arch's crown landed behind the "Beagle Chomp" title. The menu's own copy is
 // part of the composition, not something to be drawn over.
 const STAGE_WALL_Z = -4.2;
-/** Half-length of the wall run, in tiles either side of the arch. */
+/** Half-length of the wall run, in tiles either side of the tunnel. */
 const STAGE_WALL_TILES = 5;
-/** The arch, as a fraction of its own 2.4-unit default height. */
 /**
- * The arch, as a fraction of its own 2.4-unit default height.
+ * The whole tunnel mouth — wall, fence, arch and portal together — as a
+ * fraction of its size on the board.
  *
  * SIZED FOR THE PORTRAIT FRAME, WHICH IS MUCH NARROWER THAN IT LOOKS. The menu
  * dollies to 5.3 units on a phone and its vertical FOV is 42 degrees, so at
  * aspect 0.462 the HORIZONTAL half-angle is only 10.1 degrees — the visible
- * world at the wall's depth is about 3.2 units across. A first pass at 0.78
- * (1.87 units tall, ~1.4 wide) therefore filled 58% of the frame's width and
- * ran off the top: an arch that dwarfed the dog it was supposed to frame.
- * 0.56 is 1.34 units, which stands a little taller than the beagle and leaves
- * the wall run either side of it visible.
+ * world at the wall's depth is about 3.2 units across. The board's arches are
+ * 2.4 units tall; at full size one runs off the top of a phone and dwarfs the
+ * dog it is meant to frame. Scaling the WHOLE mouth rather than the arch alone
+ * keeps the relationship the board has — the arch exactly spanning a one-tile
+ * corridor between two wall blocks — which is the thing a player recognises.
  */
-const STAGE_ARCH_HEIGHT = 0.6;
+const STAGE_SCALE = 0.62;
 
 function buildStageDressing(
-  themeId: string,
-  palette: ThemePalette,
+  theme: MazeTheme,
   seed: number,
   camDist: number,
 ): THREE.Group {
+  const palette = theme.palette;
   const g = new THREE.Group();
   g.name = "showcaseStage";
+
+  // The tunnel mouth, in BOARD units, scaled as one. Its origin is the
+  // tunnel's own corridor tile.
+  const mouth = new THREE.Group();
+  mouth.name = "showcaseTunnelMouth";
+  mouth.position.set(0, 0, STAGE_WALL_Z);
+  mouth.scale.setScalar(STAGE_SCALE);
+  g.add(mouth);
 
   // --- the wall run ---------------------------------------------------------
   const wallTex = wallTextureFor(palette.wallTexture, palette.wall);
@@ -581,45 +582,57 @@ function buildStageDressing(
     emissiveIntensity: palette.wallEmissiveIntensity,
   });
   const wallGeo = wallGeometry(wallShapeFor(palette.wallTexture), WALL_H);
-  for (let i = -STAGE_WALL_TILES; i <= STAGE_WALL_TILES; i++) {
-    // The middle two tiles are the tunnel gap the arch stands in. One tile
-    // would be the board's real opening; two is what lets the arch's piers sit
-    // INSIDE the gap rather than against the wall's end faces, which at this
-    // camera is the difference between a doorway and a hedge with a lump.
-    if (i === 0 || i === -1) continue;
+  // ONE tile of gap, centred on the origin — the board's real tunnel. The arch
+  // spans exactly that, standing outside the wall face, so its piers land in
+  // front of the two blocks either side of the corridor as they do in a run.
+  const tiles: number[] = [];
+  for (let i = -STAGE_WALL_TILES; i <= STAGE_WALL_TILES; i++) if (i !== 0) tiles.push(i);
+  for (const i of tiles) {
     const w = new THREE.Mesh(wallGeo, wallMat);
-    w.position.set((i + 0.5) * 1, WALL_H / 2, STAGE_WALL_Z);
+    w.position.set(i, WALL_H / 2, 0);
     // The same quarter-turn variety the maze gets, so a straight run is not
-    // eleven copies of one block.
+    // ten copies of one block.
     w.rotation.y = (Math.PI / 2) * Math.floor(hash(i + 40, seed) * 4);
     w.castShadow = true;
     w.receiveShadow = true;
-    g.add(w);
+    mouth.add(w);
+  }
+
+  // --- the fence ------------------------------------------------------------
+  // The garden's picket stands in front of every exposed wall face on the
+  // board, so it does here: along the run's face toward the camera, and on the
+  // two ends facing into the tunnel — the panels the arch's own footing fence
+  // continues (IDEA-067 rule 3).
+  if (palette.fence === "picket") {
+    const fenceGeo = fencePanelGeometry(1);
+    const fenceMat = toon({ color: palette.fenceColor, vertexColors: true });
+    const out = 0.5 + FENCE_PARAMS.proud;
+    const panel = (x: number, z: number, rot: number): void => {
+      const f = new THREE.Mesh(fenceGeo, fenceMat);
+      f.position.set(x, 0, z);
+      f.rotation.y = rot;
+      f.castShadow = true;
+      mouth.add(f);
+    };
+    for (const i of tiles) panel(i, out, 0);
+    panel(-1 + out, 0, Math.PI / 2);
+    panel(1 - out, 0, -Math.PI / 2);
   }
 
   // --- the arch -------------------------------------------------------------
-  const wall = new THREE.Color(palette.wall);
-  const lift = (k: number): number =>
-    new THREE.Color(wall.r, wall.g, wall.b).multiplyScalar(k).getHex();
-  const arch = makeArchway(
-    {
-      height: STAGE_ARCH_HEIGHT,
-      // Lifted off `palette.wall` for IDEA-067 rule 3's reason, unchanged: the
-      // maze hedge bakes its colour into a TEXTURE that comes out far lighter
-      // than the value it was built from, so flat foliage painted in the raw
-      // palette colour reads dark beside the wall it stands in.
-      foliageColors: [lift(1.34), lift(1.18), lift(1.5)],
-      blossomColor: palette.bloomColors.length ? palette.bloomColors[0] : palette.biscuit,
-      stoneColor: palette.fenceColor ?? palette.groundDetailColor,
-    },
-    hash(7, seed),
-  );
-  // Local +X spans the opening (see `archTransformFor`), so an unrotated arch
-  // is one you look THROUGH along Z — which is where the camera is.
-  // x = 0: the skipped tiles are centred at -0.5 and +0.5, so the gap they
-  // leave is centred on the origin, which is also where the beagle stands.
-  arch.position.set(0, 0, STAGE_WALL_Z);
-  g.add(arch);
+  // `archTransformFor` for a mouth opening toward +Z: the wall face plus the
+  // outset, local +X spanning the corridor, a gate's leaves opening OUT of the
+  // maze — which is toward the camera.
+  const archZ = 0.5 + ARCH_PARAMS.outset;
+  const archDef = tunnelArchDefFor(theme);
+  if (archDef) {
+    const arch = makePropFromDef(archDef, TUNNEL_ARCH_INSTANCE_HASH);
+    arch.position.set(0, ARCH_PARAMS.lift, archZ);
+    arch.rotation.y = ARCH_PARAMS.yaw;
+    arch.scale.multiplyScalar(ARCH_PARAMS.scale);
+    mouth.add(arch);
+  }
+  g.userData.archZ = archZ;
 
   // --- the landmarks --------------------------------------------------------
   // An arc BEHIND the wall run, near enough to read as "the trees by the dog"
@@ -634,7 +647,7 @@ function buildStageDressing(
   // |x| < 2.4. So the offsets are measured from the -Z axis, the first
   // landmark is placed deliberately close to it, and the rest fan outward for
   // the desktop framing, which is four times wider.
-  const ids = SHOWCASE_LANDMARKS[themeId] ?? [];
+  const ids = SHOWCASE_LANDMARKS[theme.id] ?? [];
   for (let i = 0; i < ids.length; i++) {
     const side = i % 2 === 0 ? -1 : 1;
     // Landmark 0 is the one the theme is KNOWN by (the garden's treehouse) and
@@ -643,7 +656,9 @@ function buildStageDressing(
     // inside a phone's ~2.4-unit half-width AND just outside the centred menu
     // title on desktop. Both framings, one number.
     const off = side * (0.24 + Math.floor(i / 2) * 0.34 + (hash(i * 5, seed) - 0.5) * 0.1);
-    const rad = 7.5 + hash(i * 9, seed + 1) * 5.5;
+    // Held inside the keep-clear box — the neighbourhood starts at its edge —
+    // so a landmark never stands in somebody's plot.
+    const rad = Math.min(BAND_INNER - 1.5, 7.5 + hash(i * 9, seed + 1) * 5.5);
     const prop = makePropFromDef(getPropDef(ids[i]), hash(i * 13, seed + 2));
     const px = Math.sin(off) * rad;
     const pz = -Math.cos(off) * rad;
@@ -673,6 +688,23 @@ function buildStageDressing(
 }
 
 /**
+ * The portal in the stage's tunnel mouth: the board's own (IDEA-083), placed
+ * in the mouth's frame and scaled with it. Kept OUT of the dressing group,
+ * because the dressing is welded by `mergeBySignature` and these are additive
+ * ShaderMaterials and Points that have no business being bucketed.
+ */
+function buildStagePortal(parent: THREE.Object3D, theme: MazeTheme, archZ: number): TunnelPortals {
+  const holder = new THREE.Group();
+  holder.name = "showcasePortal";
+  holder.position.set(0, 0, STAGE_WALL_Z);
+  holder.scale.setScalar(STAGE_SCALE);
+  parent.add(holder);
+  return buildPortalsAt(holder, theme, [
+    { x: 0, z: archZ, rotationY: ARCH_PARAMS.yaw, name: "showcasePortal" },
+  ]);
+}
+
+/**
  * Builds a showcase's ground + horizon band + fog, and re-themes in place.
  *
  * The scene KEEPS OWNERSHIP of nothing here: everything this adds lives under
@@ -699,6 +731,11 @@ export function createShowcaseSurround(
 
   let band: THREE.Group | null = null;
   let dressing: THREE.Group | null = null;
+  /** The beach's sea (IDEA-080) — two ShaderMaterials owned by seaside.ts,
+   *  built beside the band rather than inside it for the board's reason. */
+  let sea: Seaside | null = null;
+  /** The tunnel mouth's portal (IDEA-083), animated from `update`. */
+  let portal: TunnelPortals | null = null;
   let mats: SurroundMaterials | null = null;
   let stage: ShowcaseStage = opts.stage;
   let lastTheme: MazeTheme | null = null;
@@ -728,6 +765,15 @@ export function createShowcaseSurround(
       });
       dressing = null;
     }
+    if (sea) {
+      disposeSeaside(sea);
+      sea = null;
+    }
+    if (portal) {
+      portal.group.parent?.parent?.remove(portal.group.parent);
+      portal.dispose();
+      portal = null;
+    }
     if (mats) {
       disposeSurroundMaterials(mats);
       mats = null;
@@ -736,6 +782,9 @@ export function createShowcaseSurround(
 
   function apply(theme: MazeTheme): void {
     const palette = theme.palette;
+    // A night theme keeps its own look here exactly as it does on its board
+    // (`shouldStyleBoard`) — see `madboxSkip` in madboxStyle.ts.
+    root.userData.madboxSkip = !shouldStyleBoard(palette);
     // --- ground -----------------------------------------------------------
     // Same construction and the same two traps as `buildSurroundGround`: the
     // texture BAKES `surroundGround` in so the material is held at white, and
@@ -767,17 +816,24 @@ export function createShowcaseSurround(
     // --- band -------------------------------------------------------------
     clearBand();
     mats = makeSurroundMaterials(palette);
-    band = buildShowcaseBand(palette.surround, mats, seed, stage.bandScale);
+    band = buildShowcaseBand(palette.surround, mats, stage.bandScale, stage.camDist);
     root.add(band);
+    // The sea is ground, not props: built whole and never culled, exactly as
+    // `ensureSurround` does — two meshes whatever its size.
+    if (palette.surround === "dunes" && stage.bandScale > 0) {
+      sea = buildSeaside(SURROUND_PARAMS.halfWidth, SURROUND_PARAMS.zFar);
+      root.add(sea.group);
+    }
 
     // --- the near stage ---------------------------------------------------
     // Only where there is a band: a stage with `bandScale` 0 is the shop's
     // diorama, which brings its OWN walls and props and would be standing in
     // front of a second set of them.
     if (stage.bandScale > 0) {
-      dressing = buildStageDressing(theme.id, palette, seed, stage.camDist);
+      dressing = buildStageDressing(theme, seed, stage.camDist);
       mergeBySignature(dressing, { castShadow: true });
       root.add(dressing);
+      portal = buildStagePortal(root, theme, dressing.userData.archZ as number);
     }
 
     // --- fog --------------------------------------------------------------
@@ -797,6 +853,9 @@ export function createShowcaseSurround(
 
   return {
     apply,
+    update(dt: number): void {
+      portal?.update(dt);
+    },
     setStage(next: ShowcaseStage): void {
       const rebuild = next.bandScale !== stage.bandScale;
       const refog = next.camDist !== stage.camDist || next.fogReach !== stage.fogReach;

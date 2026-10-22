@@ -34,7 +34,7 @@ import { MAZE_THEMES } from "../src/game/themes";
 import { makeSurroundMaterials } from "../src/render/surroundProps";
 import {
   SHOWCASE_BAND,
-  SHOWCASE_BEHIND_WEDGE,
+  SHOWCASE_VIEW_CULL,
   SHOWCASE_FOG_REACH,
   SHOWCASE_FRONTED,
   buildShowcaseBand,
@@ -122,7 +122,7 @@ section("What each theme builds");
 
 for (const t of MAZE_THEMES) {
   const mats = makeSurroundMaterials(t.palette);
-  const band = buildShowcaseBand(t.palette.surround, mats, 1, 1);
+  const band = buildShowcaseBand(t.palette.surround, mats, 1, 3.2);
   const meshes: THREE.Mesh[] = [];
   band.traverse((o) => {
     const m = o as THREE.Mesh;
@@ -131,6 +131,15 @@ for (const t of MAZE_THEMES) {
 
   if (t.palette.surround === "none") {
     ok(`"${t.id}" is propless by contract, and stays propless`, meshes.length === 0);
+  } else if (t.palette.surround === "dunes") {
+    // The beach's people are SOUTH of its board (IDEA-080 v4) — behind every
+    // showcase camera — and north is open sand to the surf. What it shows is
+    // the SEA, which is ground and is built beside the band, as on the board.
+    ok(`"${t.id}" builds no props north of its board, by design`, meshes.length === 0, `${meshes.length} meshes`);
+    ok(
+      `…and the showcase builds its sea instead`,
+      /palette\.surround === "dunes"[\s\S]{0,80}buildSeaside\(/.test(readFileSync("src/render/showcaseSurround.ts", "utf8")),
+    );
   } else {
     ok(`"${t.id}" builds a band at all`, meshes.length > 0, `${meshes.length} meshes`);
     // One mesh per distinct material — defect #5, and the ceiling is the
@@ -178,19 +187,26 @@ for (const t of MAZE_THEMES) {
     );
   }
 
-  // The behind-camera wedge really is empty. Every rig looks from +Z, so a
-  // prop sitting there is pure cost.
-  let inWedge = 0;
+  // The view cull really happened. Every rig looks north from +Z, and the
+  // board's neighbourhood runs all the way round the board, so the south band
+  // — behind every camera — must be gone. A straddling group (Night City's side
+  // pavements run the board's whole length) may leave a few vertices past the
+  // cut, which is why this is a share rather than zero.
+  let total = 0;
+  let behind = 0;
   for (const m of meshes) {
     const pos = m.geometry.getAttribute("position") as THREE.BufferAttribute;
     for (let i = 0; i < pos.count; i += 7) {
       v.fromBufferAttribute(pos, i).applyMatrix4(m.matrixWorld);
-      if (Math.hypot(v.x, v.z) < 5) continue;
-      const a = Math.atan2(v.x, v.z); // 0 = straight toward +Z, i.e. the camera
-      if (Math.abs(a) < SHOWCASE_BEHIND_WEDGE / 2 - 0.25) inWedge++;
+      total++;
+      if (v.z > SHOWCASE_VIEW_CULL.zCut + 6) behind++;
     }
   }
-  ok(`…and nothing is built behind the camera`, inWedge === 0, `${inWedge} vertices in the wedge`);
+  ok(
+    `…and almost nothing is built behind the camera`,
+    total === 0 || behind / total < 0.05,
+    `${behind} of ${total} sampled vertices past z = ${SHOWCASE_VIEW_CULL.zCut + 6}`,
+  );
 
   band.traverse((o) => {
     const m = o as THREE.Mesh;
@@ -203,7 +219,7 @@ section("A stage with no band builds nothing, whatever the theme says");
 
 for (const t of MAZE_THEMES) {
   const mats = makeSurroundMaterials(t.palette);
-  const band = buildShowcaseBand(t.palette.surround, mats, 1, 0);
+  const band = buildShowcaseBand(t.palette.surround, mats, 0, 3.2);
   let n = 0;
   band.traverse((o) => {
     if ((o as THREE.Mesh).isMesh) n++;

@@ -46,41 +46,113 @@
 
 import * as THREE from "three";
 import { getPropDef } from "../game/props";
+import { makeSurroundMaterials, type SurroundMaterials } from "./surroundProps";
+import {
+  distantBeachSpot,
+  distantBench,
+  distantBin,
+  distantBroadleaf,
+  distantCar,
+  distantCityBuilding,
+  distantPath,
+  distantRoad,
+  distantTent,
+} from "./surroundProps";
+import { makePropFromDef, tunnelArchDefFor, TUNNEL_ARCH_INSTANCE_HASH, WALL_H } from "./board";
+import { ARCH_PARAMS } from "./archway";
+import { buildPortalsAt, type TunnelPortals } from "./tunnelPortal";
+import { FENCE_PARAMS, fencePanelGeometry } from "./fence";
+import { wallGeometry, wallShapeFor } from "./hedgeWall";
+import { wallTextureFor } from "./wallTexture";
 import { getMazeTheme, type MazeTheme } from "../game/themes";
 import { type JourneyLevel } from "../game/journey";
-import { makePropFromDef } from "./board";
 import { collapseByMaterial, mergeBySignature } from "./propMerge";
 import { rgbOf, css, hexOf, mix } from "./paint";
 import { toon } from "./toon";
 
 /**
- * Signature props per theme.
+ * What stands on each theme's island, in front of its gate.
  *
- * DELIBERATELY A SECOND TABLE rather than an import of showcaseSurround's
- * `SHOWCASE_LANDMARKS`, and only for the spike: that one is `const` and not
- * exported, and reaching into it would mean changing a shipped module to
- * answer a question that might end with this file being deleted. If the spike
- * passes, the two become one exported table — they are the same fact and two
- * copies of it is exactly the drift this codebase keeps writing down.
+ * EVERY ISLAND IS A TUNNEL MOUTH FROM ITS OWN BOARD (see `buildIslandGate`),
+ * and these are the things that board actually stands among — kept in step
+ * with the menu and the shop, which show the same places. Two kinds of source,
+ * because the boards now have two:
  *
- * `classic` is EMPTY on purpose, as it is everywhere else: Arcade Night's void
- * is what somebody paid 50 coins for, and an island that ignored that would be
- * the shop being overruled by a menu.
+ *  - LIBRARY props (`lib`), for the themes that still hand-place them — the
+ *    garden's treehouse and the forest's cabin, built by `makePropFromDef` off
+ *    `PROP_LIBRARY`, so an island plants the SAME prop the board does.
+ *  - The NEIGHBOURHOOD's own builders (`build`), for the themes whose places
+ *    are grown by the surround recipe since IDEA-080..082: the beach's tents
+ *    and sunbathers, the park's path, benches and trees, Night City's
+ *    frontages, street trees and traffic.
+ *
+ * The first version listed a library umbrella, palms, an oak, a streetlight and
+ * a tower — props the beach, the park and the city boards stopped planting, so
+ * the map was advertising places that no longer exist. Arcade Night stays
+ * PROPLESS: its neon deck, neon walls and portal are the whole look.
+ *
+ * Positions are in island space (camera at +Z, gate at the back). The slots are
+ * kept inside the deck's shore ring (0.845 of the radius) so nothing stands in
+ * the water, and tall things go to the SIDES so they never hide the gate.
  */
-export const ISLAND_LANDMARKS: Readonly<Record<string, readonly string[]>> = {
-  garden: ["treehouse", "garden-tree", "garden-shrub", "flower-sunflower", "birdhouse"],
-  forest: ["log-cabin", "pine", "nest-tree", "critter-deer", "pine"],
-  beach: ["umbrella", "palm", "shrub", "palm"],
-  park: ["oak", "streetlight", "shrub", "bloom"],
-  city: ["tower", "streetlight", "lamp-post", "transit-sign"],
+export interface IslandItem {
+  lib?: string;
+  build?: (m: SurroundMaterials) => THREE.Object3D;
+  at: readonly [number, number];
+  /** Yaw; omitted means a seeded random one (a tree has no front). */
+  rotY?: number;
+  scale?: number;
+}
+
+export const ISLAND_DRESSING: Readonly<Record<string, readonly IslandItem[]>> = {
+  garden: [
+    { lib: "treehouse", at: [-1.15, 0.2], rotY: 0.35 },
+    { lib: "garden-tree", at: [1.2, 0.05] },
+    { lib: "garden-shrub", at: [-0.6, 1.2] },
+    { lib: "birdhouse", at: [0.7, 1.05], rotY: -0.3 },
+  ],
+  forest: [
+    { lib: "log-cabin", at: [-1.15, 0.15], rotY: 0.35 },
+    { lib: "pine", at: [1.2, 0.0] },
+    { lib: "critter-deer", at: [0.55, 1.1], rotY: -0.6 },
+    { lib: "critter-fox", at: [-0.5, 1.2], rotY: 0.5 },
+  ],
+  beach: [
+    // Held small and kept off the centre line: an umbrella canopy is the
+    // widest thing on a beach, and at full size two of them hid the arch.
+    { build: (m) => distantTent(m, { kind: "dome", seed: 4 }), at: [-1.2, 0.35], rotY: 0.6, scale: 0.6 },
+    { build: (m) => distantBeachSpot(m, { seed: 7 }), at: [1.15, 0.45], rotY: -0.5, scale: 0.62 },
+    { build: (m) => distantBeachSpot(m, { seed: 11 }), at: [-0.55, 1.2], rotY: 0.9, scale: 0.55 },
+  ],
+  park: [
+    // The avenue, running out of the gate toward the viewer — the park board's
+    // own path leads out of its tunnel the same way.
+    { build: (m) => distantPath(m, { length: 2.3, width: 0.62, jointPitch: 0.7 }), at: [0, 0.55], rotY: 0 },
+    { build: (m) => distantBroadleaf(m, { height: 1.55, seed: 141 }), at: [-1.2, 0.1] },
+    { build: (m) => distantBroadleaf(m, { height: 1.35, seed: 143 }), at: [1.2, 0.2] },
+    { build: (m) => distantBench(m, { seed: 5 }), at: [-0.75, 1.0], rotY: Math.PI / 2, scale: 0.8 },
+    { build: (m) => distantBin(m), at: [0.7, 1.05], scale: 0.8 },
+  ],
+  city: [
+    // A street across the front, with its traffic — what Night City's tunnel
+    // opens onto.
+    { build: (m) => distantRoad(m, { length: 3.0, width: 0.95, dashPitch: 0.7 }), at: [0, 1.05], rotY: Math.PI / 2 },
+    { build: (m) => distantCar(m, { kind: "taxi", seed: 31 }), at: [0.45, 1.0], rotY: Math.PI / 2, scale: 0.55 },
+    { build: (m) => distantCityBuilding(m, { height: 1.7, width: 0.95, depth: 0.85, seed: 21 }), at: [-1.15, 0.05], rotY: 0 },
+    { build: (m) => distantBroadleaf(m, { height: 1.2, seed: 77, street: true }), at: [1.2, 0.1] },
+  ],
   classic: [],
 };
 
-/** Props with a FRONT, whose front is local +Z — the house style, verified by
- *  IDEA-072 against the builders rather than assumed. A building showing its
- *  blank side wall is the same prop with its one recognisable face turned
- *  away; a tree has no front and keeps its random yaw so a row is not clones. */
-const FRONTED = new Set(["treehouse", "log-cabin", "tower", "birdhouse", "transit-sign"]);
+/** The gate — wall run, fence, arch and portal — as a fraction of its board
+ *  size. The board's arches are 2.4 units tall against an island 2.1 in
+ *  radius; at half size the arch stands about as tall as the treehouse and
+ *  the whole mouth fits the back of the deck with the shore ring clear. */
+export const ISLAND_GATE_SCALE = 0.5;
+/** Where the gate's wall line stands, island space (negative is the back). */
+const ISLAND_GATE_Z = -1.0;
+/** Wall blocks either side of the tunnel. */
+const ISLAND_GATE_TILES = 2;
 
 export interface IslandParams {
   /** Top-surface radius in world units. */
@@ -198,6 +270,21 @@ function liftForMap(hex: number, minL = 0.36): number {
 
 const hsl = { h: 0, s: 0, l: 0 };
 
+/**
+ * The deck's colour: the ground a player SEES on that board.
+ *
+ * Usually `surroundGround` lifted for the map. SAND IS THE EXCEPTION, and the
+ * style is why: the beach's lifted ground (#c6b08b) is a mid tan, and the
+ * hue-dominant snap sends it to `bark` — so the beach island shipped as a
+ * brown disc while its board, whose floor is a TEXTURE the style never snaps,
+ * reads as pale sand. A sand floor takes a pale sand that lands on the
+ * palette's `sand` entry (`scripts/_scratch-deck-snap.ts` checks it).
+ */
+function deckColorFor(pal: MazeTheme["palette"]): number {
+  if (pal.floorTexture === "sand") return blendHex(pal.surroundGround, 0xf0dcb0, 0.6);
+  return liftForMap(pal.surroundGround);
+}
+
 /** Blend two palette hexes and come back with a hex.
  *
  *  Material colours stay plain numbers here, exactly as every other material in
@@ -270,8 +357,83 @@ function arcadeDeckTexture(pal: MazeTheme["palette"]): THREE.Texture | null {
   return tex;
 }
 
+
+/**
+ * The theme's own tunnel mouth, at the back of the deck: a short run of its
+ * real maze wall (`wallGeometry` + `wallTextureFor`, the board's block and
+ * cached surface), the picket fence where the theme has one, the arch the board
+ * stands at its tunnels (`tunnelArchDefFor`, so a retuned arch reaches the map
+ * by existing) and, returned separately, the portal glowing in it.
+ *
+ * WHY EVERY ISLAND GETS ONE. Since IDEA-080..083 the arch is the single most
+ * recognisable thing a board has — the garden's yew, the forest's two trees,
+ * the beach's rock arch, the park's gate, the city's neon gateway — and the
+ * map's whole job is telling a player which place a level is. It is also the
+ * one image every level shares: the tunnel is the crossing every maze has.
+ *
+ * The camera here looks down from about 33 degrees, so an arch facing it reads
+ * as an arch — and placed at the BACK, the props in front never hide it.
+ */
+function buildIslandGate(theme: MazeTheme, idx: number): { gate: THREE.Group; archZ: number } {
+  const pal = theme.palette;
+  const gate = new THREE.Group();
+  gate.name = "island-gate";
+  gate.position.set(0, 0, ISLAND_GATE_Z);
+  gate.scale.setScalar(ISLAND_GATE_SCALE);
+
+  // No DOM, no texture — the headless cost measurement's path, for
+  // `arcadeDeckTexture`'s reason: a map changes neither draw calls nor
+  // triangles, which is all `_scratch-journey-spike.ts` asks.
+  const wallTex = typeof document === "undefined" ? null : wallTextureFor(pal.wallTexture, pal.wall);
+  const wallMat = toon({
+    color: wallTex ? 0xffffff : pal.wall,
+    map: wallTex,
+    emissive: pal.wallEmissive,
+    emissiveIntensity: pal.wallEmissiveIntensity,
+  });
+  const wallGeo = wallGeometry(wallShapeFor(pal.wallTexture), WALL_H);
+  const tiles: number[] = [];
+  for (let i = -ISLAND_GATE_TILES; i <= ISLAND_GATE_TILES; i++) if (i !== 0) tiles.push(i);
+  for (const i of tiles) {
+    const w = new THREE.Mesh(wallGeo, wallMat);
+    w.position.set(i, WALL_H / 2, 0);
+    w.rotation.y = (Math.PI / 2) * Math.floor(hash(i + 5, idx + 9) * 4);
+    w.castShadow = true;
+    gate.add(w);
+  }
+
+  if (pal.fence === "picket") {
+    const fenceGeo = fencePanelGeometry(1);
+    const fenceMat = toon({ color: pal.fenceColor, vertexColors: true });
+    const out = 0.5 + FENCE_PARAMS.proud;
+    const panel = (x: number, z: number, rot: number): void => {
+      const f = new THREE.Mesh(fenceGeo, fenceMat);
+      f.position.set(x, 0, z);
+      f.rotation.y = rot;
+      gate.add(f);
+    };
+    for (const i of tiles) panel(i, out, 0);
+    panel(-1 + out, 0, Math.PI / 2);
+    panel(1 - out, 0, -Math.PI / 2);
+  }
+
+  // `archTransformFor` for a mouth opening toward +Z, i.e. toward the camera.
+  const archZ = 0.5 + ARCH_PARAMS.outset;
+  const def = tunnelArchDefFor(theme);
+  if (def) {
+    const arch = makePropFromDef(def, TUNNEL_ARCH_INSTANCE_HASH);
+    arch.position.set(0, ARCH_PARAMS.lift, archZ);
+    arch.rotation.y = ARCH_PARAMS.yaw;
+    arch.scale.multiplyScalar(ARCH_PARAMS.scale);
+    gate.add(arch);
+  }
+  return { gate, archZ };
+}
+
 export interface JourneyIsland {
   group: THREE.Group;
+  /** The gate's portal (IDEA-083). Advanced by the scene's `update`. */
+  portal: TunnelPortals;
   dispose: () => void;
 }
 
@@ -338,7 +500,7 @@ export function makeJourneyIsland(
         emissiveMap: deck,
         emissiveIntensity: 0.85,
       })
-    : toon({ color: liftForMap(pal.surroundGround) });
+    : toon({ color: deckColorFor(pal) });
   // THE TWO SWAP ROLES AND BOTH STAY MEANINGFUL. `floor` is the SOIL under the
   // board's ground texture, which is exactly what a cliff below a lawn is made
   // of — so the deck takes the texture's mean and the skirt takes the earth it
@@ -386,7 +548,7 @@ export function makeJourneyIsland(
     // A hair above the deck: coplanar with it z-fights, and the fight is
     // resolved differently at every distance, so it flickers as the map pans.
     beachGeo.translate(0, 0.012, 0);
-    const beachMat = toon({ color: blendHex(liftForMap(pal.surroundGround), 0xe4d2a6, 0.7) });
+    const beachMat = toon({ color: blendHex(deckColorFor(pal), 0xe4d2a6, 0.7) });
     const beach = new THREE.Mesh(beachGeo, beachMat);
     beach.name = "island-beach";
     beach.receiveShadow = true;
@@ -411,28 +573,43 @@ export function makeJourneyIsland(
     group.add(rim);
   }
 
-  // --- what stands on it ----------------------------------------------------
-  const ids = ISLAND_LANDMARKS[level.themeId] ?? [];
-  const props: THREE.Object3D[] = [];
-  for (let i = 0; i < ids.length; i++) {
-    const def = getPropDef(ids[i]);
-    if (!def) continue;
-    const prop = makePropFromDef(def, hash(i * 13, idx + 2));
+  // --- the gate --------------------------------------------------------------
+  const { gate, archZ } = buildIslandGate(theme, idx);
+  // Arcade Night's walls are flat NEON with a real emissive and no texture —
+  // the one wall the style would snap (to a pale lilac) and strip of its glow.
+  // Its board is exempt from the style for the same reason (shouldStyleBoard).
+  // Kept out of the merge too, which would rebuild it into new meshes and lose
+  // the flag — two meshes on seven islands is not worth welding.
+  if (isArcade) gate.userData.madboxSkip = true;
+  const props: THREE.Object3D[] = isArcade ? [] : [gate];
+  group.add(gate);
+  // The portal stays OUT of the merge: additive ShaderMaterials and Points
+  // that have no business being bucketed, and the style skips them anyway.
+  const portalHolder = new THREE.Group();
+  portalHolder.name = "island-portal";
+  portalHolder.position.copy(gate.position);
+  portalHolder.scale.copy(gate.scale);
+  group.add(portalHolder);
+  const portal = buildPortalsAt(portalHolder, theme, [
+    { x: 0, z: archZ, rotationY: ARCH_PARAMS.yaw, name: "island-portal" },
+  ]);
 
-    // Placed on a ring inside the rim rather than scattered: an island read
-    // from above is mostly its OUTLINE, and a prop over the edge breaks it.
-    // Landmark 0 is the one the theme is known by and takes the centre.
-    if (i === 0) {
-      prop.position.set(0, 0, 0);
-    } else {
-      const a = (i / Math.max(1, ids.length - 1)) * Math.PI * 2 + hash(i * 7, idx) * 0.6;
-      const r = params.radius * (0.42 + hash(i * 11, idx + 1) * 0.28);
-      prop.position.set(Math.cos(a) * r, 0, Math.sin(a) * r);
-    }
-
-    // A building faces out of the screen; anything else takes a random yaw so
-    // a stage does not read as a row of clones.
-    prop.rotation.y = FRONTED.has(ids[i]) ? 0 : hash(i * 17, idx + 3) * Math.PI * 2;
+  // --- what stands in front of it --------------------------------------------
+  const items = ISLAND_DRESSING[level.themeId] ?? [];
+  const mats = items.some((it) => it.build) ? makeSurroundMaterials(pal) : null;
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    const prop = it.lib
+      ? makePropFromDef(getPropDef(it.lib), hash(i * 13, idx + 2))
+      : it.build
+        ? it.build(mats as SurroundMaterials)
+        : null;
+    if (!prop) continue;
+    prop.position.set(it.at[0], 0, it.at[1]);
+    // A building faces out of the screen as authored; anything else takes a
+    // seeded yaw so a stage does not read as a row of clones.
+    prop.rotation.y = it.rotY ?? hash(i * 17, idx + 3) * Math.PI * 2;
+    if (it.scale) prop.scale.multiplyScalar(it.scale);
     props.push(prop);
     group.add(prop);
   }
@@ -467,7 +644,9 @@ export function makeJourneyIsland(
 
   return {
     group,
+    portal,
     dispose(): void {
+      portal.dispose();
       group.traverse((o) => {
         const mesh = o as THREE.Mesh;
         if (!mesh.isMesh) return;

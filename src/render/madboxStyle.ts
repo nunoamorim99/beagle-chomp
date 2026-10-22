@@ -626,6 +626,15 @@ export function applyMadboxStyle(
     // material swap leaves pointing at nothing drawn.
     const isEnemy = !!(o.userData as { bodyMat?: unknown }).bodyMat;
 
+    // A SUBTREE CAN OPT OUT, and a night board is why. `shouldStyleBoard`
+    // keeps Night City and Arcade Night out of the style on the BOARD, but a
+    // showcase restyles its whole scene in one call — so the menu's ground and
+    // neighbourhood behind a night theme were being snapped high-key anyway,
+    // and Arcade Night's black void came back as a pale lavender floor. The
+    // owner of the subtree decides (it knows which theme it is wearing); this
+    // only honours it.
+    if ((o.userData as { madboxSkip?: boolean }).madboxSkip) return;
+
     const mesh = o as THREE.Mesh;
     if (mesh.isMesh) {
       const isDeckMesh = mesh.name === "island-body";

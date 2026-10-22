@@ -23,7 +23,7 @@ import * as THREE from "three";
 import { JOURNEY_LEVELS, JOURNEY_CHAPTERS } from "../src/game/journey";
 import {
   makeJourneyIsland,
-  ISLAND_LANDMARKS,
+  ISLAND_DRESSING,
   type IslandMerge,
 } from "../src/render/journeyIsland";
 
@@ -76,7 +76,7 @@ console.log("  theme      props  meshes  calls     tris");
     seen.add(level.themeId);
     const island = makeJourneyIsland(level, i);
     const c = cost(island.group);
-    const props = (ISLAND_LANDMARKS[level.themeId] ?? []).length;
+    const props = (ISLAND_DRESSING[level.themeId] ?? []).length;
     console.log(
       `  ${level.themeId.padEnd(9)} ${pad(props, 5)}  ${pad(c.meshes, 6)}  ${pad(c.calls, 5)}  ${pad(c.tris.toLocaleString(), 7)}`,
     );

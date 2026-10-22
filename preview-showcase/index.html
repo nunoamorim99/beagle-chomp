@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Beagle showcase preview</title>
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #9ecbe8; }
+      canvas { display: block; width: 100%; height: 100%; }
+    </style>
+  </head>
+  <body>
+    <canvas id="c"></canvas>
+    <script type="module">
+      // Dev-only viewer for the MENU VIGNETTE and the SHOP STAGES, with no auth
+      // gate in front of them. Never a rollup input, so it never ships (same
+      // construction as /editor/, /preview/, /preview-board/).
+      //
+      // `_scratch-showcase-sheet.ts` reaches the same scenes through the real
+      // app, which means signing up — rate-limited to 5/hour per IP, which is
+      // two runs of a sheet. Iterating on a LOOK needs dozens, so this page
+      // builds the two scenes directly and renders them in the game's own rig.
+      //
+      //   ?stage=menu      the main-menu vignette (default)
+      //   ?stage=shop      the shop's character stage (a beagle on the patch)
+      //   ?stage=theme     the shop's Themes-tab diorama
+      //   ?theme=garden|classic|forest|beach|park|city
+      //   ?t=<seconds>     advance the idle animation (and the diorama's spin)
+      //                    before the shot; the portal swirl reads differently
+      //                    at different phases
+      //   ?stage=journey   the Journey island map; ?level=N frames level N, and
+      //                    ?close=1 parks a low camera on that one island
+      //   ?style=classic   the opt-out look (default is what ships)
+      import { createScene } from "/src/render/scene.ts";
+      import { createMenuScene } from "/src/render/menuScene.ts";
+      import { createShopScene } from "/src/render/shopScene.ts";
+      import { createJourneyScene, chainPositions } from "/src/render/journeyScene.ts";
+      import * as THREE from "three";
+      import { MAZE_THEMES, setEquippedMazeThemeId, getMazeTheme } from "/src/game/themes.ts";
+      import { getEquippedBeagleSkin } from "/src/game/cosmetics.ts";
+      import { liftPaletteForMadbox } from "/src/render/madboxStyle.ts";
+      import { MADBOX_STYLE_ON } from "/src/render/madboxFlag.ts";
+
+      const q = new URLSearchParams(location.search);
+      const stage = q.get("stage") ?? "menu";
+      const themeId = q.get("theme") ?? "garden";
+
+      // main.ts's boot order: the lift runs before anything reads a palette,
+      // because the wall/floor textures bake their colour in on first build.
+      if (MADBOX_STYLE_ON) for (const t of MAZE_THEMES) liftPaletteForMadbox(t.id, t.palette);
+      // The scenes read the EQUIPPED theme at construction, as they do in the
+      // game, so equip it first.
+      if (MAZE_THEMES.some((t) => t.id === themeId)) setEquippedMazeThemeId(themeId);
+
+      const rig = createScene(document.getElementById("c"));
+      let view = null;
+      let stageNow = stage;
+
+      // Builds (or rebuilds) one stage for one theme. Exposed on window so the
+      // shooter can walk every stage x theme in ONE page load: a reload costs
+      // ~40s here across the Windows bind mount.
+      function stageFor(nextStage, nextTheme) {
+        if (view) view.dispose();
+        if (MAZE_THEMES.some((t) => t.id === nextTheme)) setEquippedMazeThemeId(nextTheme);
+        stageNow = nextStage;
+        if (nextStage === "journey") {
+          view = journeyView(Number(nextTheme));
+          fit();
+          window.__showcase.view = view;
+          return;
+        }
+        view = nextStage === "menu" ? createMenuScene() : createShopScene();
+        if (nextStage === "menu") view.setMazeTheme(getMazeTheme(nextTheme));
+        else if (nextStage === "theme") view.showTheme(nextTheme);
+        else {
+          view.setMazeTheme(getMazeTheme(nextTheme));
+          view.showBeagle(getEquippedBeagleSkin());
+        }
+        fit();
+        const warm = Number(q.get("t") ?? 0);
+        for (let s = 0; s < warm; s += 0.05) view.update(0.05);
+        window.__showcase.view = view;
+      }
+
+      // The island map, wrapped to the same {scene, camera, update, resize,
+      // dispose} shape. `nextTheme` is a LEVEL index for this stage.
+      let journey = null;
+      function journeyView(level) {
+        if (!journey) {
+          journey = createJourneyScene();
+          journey.activate(document.getElementById("c"));
+          journey.setProgress(40);
+        }
+        const close = q.get("close") === "1";
+        const at = chainPositions(40)[level] ?? new THREE.Vector3();
+        const closeCam = new THREE.PerspectiveCamera(36, 1, 0.1, 400);
+        journey.frameLevel(level);
+        for (let s = 0; s < 3; s += 0.05) journey.update(0.05, performance.now());
+        return {
+          scene: journey.scene,
+          get camera() { return close ? closeCam : journey.camera; },
+          update: (dt) => journey.update(dt, performance.now()),
+          resize: (a) => {
+            journey.resize(innerWidth, innerHeight);
+            closeCam.aspect = a;
+            closeCam.position.set(at.x + 3.2, 3.4, at.z + 5.2);
+            closeCam.lookAt(at.x, 0.5, at.z);
+            closeCam.updateProjectionMatrix();
+          },
+          dispose: () => {},
+        };
+      }
+
+      function fit() {
+        rig.resize();
+        view?.resize(innerWidth / innerHeight);
+      }
+      addEventListener("resize", fit);
+
+      let last = performance.now();
+      window.__showcase = { view, rig, ready: false, stage: stageFor };
+      stageFor(stage, themeId);
+      function frame(now) {
+        const dt = Math.min((now - last) / 1000, 0.05);
+        last = now;
+        if (q.get("freeze") !== "1") view.update(dt);
+        rig.renderer.render(view.scene, view.camera);
+        window.__showcase.ready = true;
+        requestAnimationFrame(frame);
+      }
+      requestAnimationFrame(frame);
+    </script>
+  </body>

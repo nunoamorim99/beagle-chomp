@@ -268,11 +268,27 @@ const cells = [...cellsBlock.slice(0, cellsBlock.indexOf("];")).matchAll(/"([.#]
 );
 
 ok("the diorama's wall run and ground patch were both found", cells.length > 0 && wallTiles.length > 0);
-// Cell (c, r) is diorama tile (c - 1, r - 1) — see DIORAMA_FLOOR_CELLS.
+// One cell per tile, starting at the slab's own first tile centre — read off
+// DIORAMA_FLOOR_SIZE / DIORAMA_FLOOR_CENTER rather than hard-coded, because the
+// slab was re-centred when the tunnel arch joined the diorama and a literal
+// offset here would have gone silently stale with it.
+const num = (re: RegExp): number => Number((shopSrc.match(re) ?? [])[1]);
+const slabW = num(/DIORAMA_FLOOR_SIZE = \{ w: ([\d.]+)/);
+const slabD = num(/DIORAMA_FLOOR_SIZE = \{ w: [\d.]+, d: ([\d.]+)/);
+const slabCx = num(/DIORAMA_FLOOR_CENTER = \{ x: ([-\d.]+)/);
+const slabCz = num(/DIORAMA_FLOOR_CENTER = \{ x: [-\d.]+, z: ([-\d.]+)/);
+const col0 = Math.round(slabCx - slabW / 2 + 0.5);
+const row0 = Math.round(slabCz - slabD / 2 + 0.5);
+ok("the slab's size and centre were read", [slabW, slabD, slabCx, slabCz].every(Number.isFinite));
+ok(
+  "and the patch has exactly one cell per tile of the slab",
+  cells.length === Math.round(slabD) && cells.every((row) => row.length === Math.round(slabW)),
+  `${cells.length} rows x ${cells[0]?.length} for a ${slabW} x ${slabD} slab`,
+);
 const walledCells = new Set<string>();
 cells.forEach((row, r) => {
   [...row].forEach((ch, c) => {
-    if (ch === "#") walledCells.add(c - 1 + "," + (r - 1));
+    if (ch === "#") walledCells.add(c + col0 + "," + (r + row0));
   });
 });
 ok(

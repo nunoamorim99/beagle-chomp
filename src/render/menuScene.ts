@@ -564,6 +564,7 @@ export function createMenuScene(): MenuScene {
     camera,
     update(dt: number): void {
       animateIdle(dt);
+      surround.update(dt);
     },
     resize(aspect: number): void {
       camera.aspect = aspect;

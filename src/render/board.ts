@@ -3464,14 +3464,60 @@ export function buildTunnelArches(
   grid: Grid,
   theme: MazeTheme,
 ): THREE.Group | null {
-  const id = theme.tunnelArch;
-  if (!id) return null;
+  const archDef = tunnelArchDefFor(theme);
+  if (!archDef) return null;
   const mouths = tunnelMouths(grid);
   if (mouths.length === 0) return null;
 
-  const def = getPropDef(id);
   const group = new THREE.Group();
   group.name = "tunnelArches";
+
+  // ONE hash for BOTH mouths, deliberately — everywhere else in this file a
+  // prop is varied by its own tile so a row does not read as clones. These
+  // two are the two ends of ONE tunnel, and a gate that is a different green
+  // at each end is not variety, it is a continuity error. It also halves the
+  // merge: two identical arches weld to one mesh per material, where two
+  // differently-tinted ones weld to none.
+  const instanceHash = TUNNEL_ARCH_INSTANCE_HASH;
+  for (const m of mouths) {
+    const mesh = makePropFromDef(archDef, instanceHash);
+    const at = archTransformFor(m);
+    mesh.position.set(at.x, ARCH_PARAMS.lift, at.z);
+    // A directed arch (a gate) is turned to open OUT of the board at both
+    // mouths; symmetric ones keep archTransformFor's turn. See archYawFor.
+    mesh.rotation.y = archYawFor(m, archDef.params as PropParams);
+    // MULTIPLY, never assign — a def-level root part edit has to compose with
+    // the fixture's own scale (IDEA-062's rule, and the birdhouse is the def
+    // that proved it by carrying an inert 1.5 for a whole release).
+    mesh.scale.multiplyScalar(ARCH_PARAMS.scale);
+    group.add(mesh);
+  }
+
+  mergeBySignature(group, { castShadow: true });
+  scene.add(group);
+  return group;
+}
+
+/** The instance hash both tunnel mouths share — see buildTunnelArches. Exported
+ *  so the menu/shop showcases build the SAME arch the board does. */
+export const TUNNEL_ARCH_INSTANCE_HASH = hash01(0, 0, ARCH_INSTANCE_HASH_SEED);
+
+/**
+ * The prop def `theme`'s tunnel arch is built from, AS THE BOARD BUILDS IT —
+ * the authored `props.ts` def with the two board-time adjustments below
+ * applied — or null for a theme with no arch.
+ *
+ * Split out of `buildTunnelArches` so the menu vignette and the shop diorama
+ * stand the very arch a run shows rather than a lookalike. They used to tint
+ * the garden's Hedge Arch from each palette, which was right while only the
+ * garden had an arch and has been wrong since every theme got its own: the
+ * forest's two trees, the beach's rock arch, the park's gate and the city's
+ * neon gateway all previewed as a recoloured yew portal.
+ */
+export function tunnelArchDefFor(theme: MazeTheme): PropDef | null {
+  const id = theme.tunnelArch;
+  if (!id) return null;
+  const def = getPropDef(id);
 
   // IDEA-079: THE FOOTING'S TIMBER IS LIFTED WITH THE MAZE FENCE'S.
   //
@@ -3505,31 +3551,7 @@ export function buildTunnelArches(
   if (archIsDirected(def.params as PropParams)) {
     archDef = { ...archDef, params: { ...archDef.params, foliageColors: [theme.palette.wall] } };
   }
-
-  // ONE hash for BOTH mouths, deliberately — everywhere else in this file a
-  // prop is varied by its own tile so a row does not read as clones. These
-  // two are the two ends of ONE tunnel, and a gate that is a different green
-  // at each end is not variety, it is a continuity error. It also halves the
-  // merge: two identical arches weld to one mesh per material, where two
-  // differently-tinted ones weld to none.
-  const instanceHash = hash01(0, 0, ARCH_INSTANCE_HASH_SEED);
-  for (const m of mouths) {
-    const mesh = makePropFromDef(archDef, instanceHash);
-    const at = archTransformFor(m);
-    mesh.position.set(at.x, ARCH_PARAMS.lift, at.z);
-    // A directed arch (a gate) is turned to open OUT of the board at both
-    // mouths; symmetric ones keep archTransformFor's turn. See archYawFor.
-    mesh.rotation.y = archYawFor(m, def.params as PropParams);
-    // MULTIPLY, never assign — a def-level root part edit has to compose with
-    // the fixture's own scale (IDEA-062's rule, and the birdhouse is the def
-    // that proved it by carrying an inert 1.5 for a whole release).
-    mesh.scale.multiplyScalar(ARCH_PARAMS.scale);
-    group.add(mesh);
-  }
-
-  mergeBySignature(group, { castShadow: true });
-  scene.add(group);
-  return group;
+  return archDef;
 }
 
 /** Seed band for buildWallDecor's per-placement instance hash — its own band

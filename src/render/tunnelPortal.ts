@@ -349,7 +349,33 @@ export function buildTunnelPortals(
 ): TunnelPortals | null {
   const mouths = tunnelMouths(grid);
   if (mouths.length === 0) return null;
+  return buildPortalsAt(
+    scene,
+    theme,
+    mouths.map((m) => ({ ...archTransformFor(m), name: `tunnelPortal-${m.tx}-${m.ty}` })),
+  );
+}
 
+/** Where one portal stands: the arch's own frame, local X spanning the
+ *  opening. */
+export interface PortalPlacement {
+  x: number;
+  z: number;
+  rotationY: number;
+  name?: string;
+}
+
+/**
+ * The same portals at caller-chosen spots — for the menu vignette and the shop
+ * diorama, which stand a tunnel mouth that is not on any grid. Shape, colour,
+ * lift and animation are exactly the board's, so a showcase cannot advertise a
+ * different doorway from the one a run walks through.
+ */
+export function buildPortalsAt(
+  scene: THREE.Object3D,
+  theme: MazeTheme,
+  placements: readonly PortalPlacement[],
+): TunnelPortals {
   const colors = portalColorsFor(theme);
   const sh = portalShapeFor(theme);
   const lift = theme.tunnelArch ? ARCH_PARAMS.lift : 0;
@@ -386,10 +412,9 @@ export function buildTunnelPortals(
   const group = new THREE.Group();
   group.name = "tunnelPortals";
 
-  for (const m of mouths) {
-    const at = archTransformFor(m);
+  for (const at of placements) {
     const portal = new THREE.Group();
-    portal.name = `tunnelPortal-${m.tx}-${m.ty}`;
+    portal.name = at.name ?? "tunnelPortal";
     // The arch's own frame: local X spans the corridor and the opening stands
     // in local XY. Lifted with the arch, so a sunk or raised arch keeps its
     // doorway.

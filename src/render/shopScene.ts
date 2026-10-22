@@ -37,6 +37,9 @@ import {
 } from "./characters";
 import {
   makePropById,
+  makePropFromDef,
+  tunnelArchDefFor,
+  TUNNEL_ARCH_INSTANCE_HASH,
   makeLifeBone,
   // IDEA-046: the three power-ups the tutorial stages (see showPowerups).
   makeShield,
@@ -58,9 +61,23 @@ import {
   makeMadboxCaches,
   setEmissiveIfPresent,
   boardBounce,
+  shouldStyleBoard,
   type StyleableMat,
 } from "./madboxStyle";
 import { wallTextureFor } from "./wallTexture";
+import { wallGeometry, wallShapeFor } from "./hedgeWall";
+import { FENCE_PARAMS, fencePanelGeometry } from "./fence";
+import { ARCH_PARAMS, archIsDirected } from "./archway";
+import { buildPortalsAt, type TunnelPortals } from "./tunnelPortal";
+import type { PropParams } from "../game/props";
+import {
+  type SurroundMaterials,
+  makeSurroundMaterials,
+  distantBeachSpot,
+  distantBench,
+  distantBroadleaf,
+  distantCityBuilding,
+} from "./surroundProps";
 
 // Same cheap inward-facing skydome technique as menuScene.ts's own
 // makeBackdrop (itself a copy of scene.ts's) — kept as a third small copy
@@ -254,62 +271,77 @@ function applyPatchTheme(patch: GardenPatch, theme: MazeTheme): void {
 const DIORAMA_TILE = 1;
 const DIORAMA_WALL_H = 1;
 
-// The L-shaped run, in local diorama tile coords (x grows right, z grows
-// "into" the corner) — 5 wall tiles: a 3-long back arm plus a 2-long side arm
-// sharing the corner tile, reading unambiguously as "a maze corner" at a
-// glance rather than a straight featureless row.
+// The run, in local diorama tile coords (x grows right, z grows "into" the
+// corner): a 3-long back arm and a side arm, and the side arm is the board's
+// BORDER with the TUNNEL cut through it at (0, 2) — the one crossing every maze
+// has (IDEA-067). It used to be a plain L of five boxes; the tunnel mouth is
+// what lets the diorama carry the theme's own arch and portal, which since
+// every theme got bespoke art (IDEA-080..083) is the single most recognisable
+// thing a board has.
 const DIORAMA_WALL_TILES: ReadonlyArray<[number, number]> = [
   [0, 0],
   [1, 0],
   [2, 0],
   [0, 1],
-  [0, 2],
+  [0, 3],
 ];
+/** The tunnel tile, in the side arm. Its outside is -X. */
+const DIORAMA_TUNNEL_TILE: [number, number] = [0, 2];
+/**
+ * The diorama's starting yaw: it turns the tunnel's OUTSIDE (-X in tile
+ * space) toward the shop's diorama camera, which sits about 18 degrees round
+ * from +Z. Built facing the other way, the first thing a player saw was the
+ * arch edge-on behind the wall it belongs to — a green post — and the portal
+ * not at all. Facing out, it is the menu's own composition in miniature: the
+ * tunnel mouth seen from outside the maze, the trail running out through it.
+ */
+const DIORAMA_FACING = 1.9;
 // The floor footprint is a little larger than the wall run's own bounding
 // box so there's visible walkable ground in front of the corner (where the
 // trail sits), not just under the walls themselves.
-// Sized so the WHOLE trail (including the bone's own ~0.3-unit knuckle
-// span) sits on the slab with margin — the first cut (4.4 x 4.0 around
-// center 1.0) ended at x=3.2 while the trail ran to x~4.2, so the last
-// biscuit sat on the slab's corner edge and the bone floated past it in
-// mid-air (visible in the shop screenshots).
-const DIORAMA_FLOOR_SIZE = { w: 5.0, d: 4.6 };
-const DIORAMA_FLOOR_CENTER = { x: 1.1, z: 1.05 };
+// Sized so the WHOLE trail sits on the slab with margin — the first cut
+// (4.4 x 4.0 around center 1.0) ended short of the trail, so the last biscuit
+// sat on the slab's corner edge and the bone floated past it in mid-air. It
+// also has to carry the arch, which stands OUTSIDE the side arm at x ~ -0.8.
+// One column wider than the bare L was, and centred a tile further left, for
+// the arch: it stands outside the border arm, and on a phone's narrow frame
+// the old centring put it past the left edge for the first half-turn.
+const DIORAMA_FLOOR_SIZE = { w: 6.0, d: 5.0 };
+const DIORAMA_FLOOR_CENTER = { x: 0.5, z: 1.0 };
 
 // The slab as a TILE PATCH, for floorPreviewTexture — which needs to know
-// where the corridors are, because that is what the garden's stepping stones,
-// the park's gravel walk and the road's lane markings follow.
+// where the corridors are, because that is what the park's gravel walk and the
+// road's lane markings follow.
 //
-// It is the wall run above, transcribed: the slab spans 5 tiles across and
-// (near enough) 5 down, so cell (c, r) is diorama tile (c - 1, r - 1) and the
-// L at (0,0),(1,0),(2,0),(0,1),(0,2) lands at (1,1),(2,1),(3,1),(1,2),(1,3).
-// Keeping it aligned is what makes the preview honest: the trail of stones
-// runs along the open ground the biscuits sit on, not underneath the walls.
+// It is the wall run above, transcribed: one cell per tile, cell (c, r) is
+// diorama tile (c - 2, r - 1), so the walls land at (2,1),(3,1),(4,1),(2,2),
+// (2,4) and the tunnel at (2,3) is open floor running straight out of the
+// board. Keeping it aligned is what makes the preview honest: the floor's
+// markings follow the open ground the biscuits sit on, not the walls.
 const DIORAMA_FLOOR_CELLS: readonly string[] = [
-  ".....",
-  ".###.",
-  ".#...",
-  ".#...",
-  ".....",
+  "......",
+  "..###.",
+  "..#...",
+  "......",
+  "..#...",
 ];
 
-// The trail: 4 biscuits stepping away from the corner along the open
-// diagonal, plus one bone at the far end — echoes board.ts's actual pellet
-// spacing (one per tile) and the bone-marks-progress read of the real board.
+// The trail: biscuits one per tile down the tunnel row, heading OUT through
+// the tunnel — the board's own pellet spacing, and the route a player takes
+// into the portal — plus a power bone in the corner pocket.
 const DIORAMA_BISCUIT_TILES: ReadonlyArray<[number, number]> = [
-  [1.5, 1.5],
-  [2.0, 1.85],
-  [2.5, 2.2],
-  [3.0, 2.55],
+  [1, 2],
+  [2, 2],
+  [3, 2],
 ];
-const DIORAMA_BONE_TILE: [number, number] = [3.3, 2.95];
+const DIORAMA_BONE_TILE: [number, number] = [2.1, 1.0];
 
 // Bloom/speck spots on the wall tops, keyed to specific wall tiles above (not
 // hashed per-tile like board.ts's full-maze buildHedgeDecor — a 5-tile
 // diorama is small enough to hand-place for a deliberately "planted" rather
-// than "randomly sparse" read) — a theme with bloomChance 0 (classic) or an
-// empty bloomColors array (also classic) simply shows none, same contract as
-// board.ts's buildHedgeDecor.
+// than "randomly sparse" read) — a theme with bloomChance 0 or an empty
+// bloomColors array simply shows none, same contract as board.ts's
+// buildHedgeDecor.
 const DIORAMA_BLOOM_SPOTS: ReadonlyArray<{ tile: [number, number]; jx: number; jz: number; colorIdx: number }> = [
   { tile: [0, 0], jx: -0.18, jz: 0.12, colorIdx: 0 },
   { tile: [1, 0], jx: 0.1, jz: -0.15, colorIdx: 1 },
@@ -317,93 +349,53 @@ const DIORAMA_BLOOM_SPOTS: ReadonlyArray<{ tile: [number, number]; jx: number; j
 ];
 const DIORAMA_SPECK_SPOTS: ReadonlyArray<{ tile: [number, number]; jx: number; jz: number }> = [
   { tile: [2, 0], jx: -0.1, jz: 0.15 },
-  { tile: [0, 2], jx: 0.12, jz: -0.1 },
+  { tile: [0, 3], jx: 0.12, jz: -0.1 },
 ];
 
-// v4.1 "Set Dressing": 0-2 SIGNATURE props per theme, so the diorama SELLS
-// the decoration a purchase actually plants around the real board, not just
-// the wall/floor/biscuit palette — Nuno's literal per-theme ask, verbatim:
-// "on the garden add some shrubs, on the night city some lighting stations,
-// on the beach some beach umbrella... On the night city we could add some
-// buildings too." Reuses board.ts's exact factory (makePropById) rather than
-// any diorama-local reimplementation, so a preview is always honest — same
-// shapes/materials/params as the real board.
-//
-// Hand-placed, EXPLICITLY per theme id (same "planted, not derived"
-// philosophy as DIORAMA_WALL_TILES/DIORAMA_BISCUIT_TILES/DIORAMA_BLOOM_SPOTS
-// above, all hand-authored literals rather than generically derived from a
-// theme's placements): now maps a theme id to library PROP IDS directly
-// (was ThemePropKind pre-v4.1, back when a "kind" and a "population" were
-// the same thing — the reusable prop library replaced that with named defs,
-// so the diorama picks specific defs by id instead) — the brief's exact
-// mapping: garden -> shrub, forest -> pine, beach -> umbrella,
-// park -> oak + streetlight, city -> tower + streetlight, classic -> none.
-// Each id must exist in PROP_LIBRARY (src/game/props.ts) — getPropDef's
-// never-throws fallback means a stale/renamed id degrades to a neutral prop
-// rather than breaking the diorama, but every entry below is kept in sync
-// with the library by hand, same discipline as every other hand-authored
-// table in this file.
-const DIORAMA_SIGNATURE_IDS: Readonly<Record<string, readonly string[]>> = {
-  // IDEA-060: the garden's own props were rebuilt from references and its
-  // placements repointed, so the diorama has to follow or the shop shows a
-  // DIFFERENT bush from the one the board plants — which is exactly the
-  // hand-kept-in-sync drift the comment above warns about. The tree comes
-  // along too: the garden's signature is a planted one, and one shrub alone
-  // undersells it next to the forest's pines.
-  garden: ["garden-shrub", "garden-tree"],
+/**
+ * 0-2 SIGNATURE props per theme, so the diorama sells what the theme's board
+ * actually stands among — and ONLY that.
+ *
+ * Two kinds of source, because the boards now have two. The garden and the
+ * forest still hand-place LIBRARY props (`makePropById`, the board's exact
+ * factory). The beach, the park and Night City do not place any: since
+ * IDEA-080..082 their places are built by the neighbourhood recipe — umbrellas
+ * and towels on the sand, an avenue of trees and benches, a street of
+ * frontages — so their signatures are those same `surroundProps` builders. The
+ * old picks (the library umbrella, oak, streetlight and tower) were props
+ * those boards stopped planting, i.e. the shop was advertising things the
+ * player would never see after buying.
+ */
+type Signature =
+  | { lib: string }
+  | { build: (m: SurroundMaterials) => THREE.Object3D };
+const DIORAMA_SIGNATURES: Readonly<Record<string, readonly Signature[]>> = {
+  garden: [{ lib: "garden-tree" }, { lib: "garden-shrub" }],
   classic: [],
-  forest: ["pine"],
-  beach: ["umbrella"],
-  park: ["oak", "streetlight"],
-  city: ["tower", "streetlight"],
+  forest: [{ lib: "pine" }, { lib: "critter-fox" }],
+  beach: [{ build: (m) => distantBeachSpot(m, { seed: 7 }) }],
+  park: [
+    { build: (m) => distantBroadleaf(m, { height: 1.8, seed: 141 }) },
+    { build: (m) => distantBench(m, { seed: 5 }) },
+  ],
+  city: [
+    { build: (m) => distantCityBuilding(m, { height: 1.9, width: 1.3, depth: 1.1, seed: 21 }) },
+    // `street: true`, as every tree cityLayout.ts plants: without it the crown
+    // takes the foliage pair derived from `palette.wall`, which on this theme
+    // is grey BRICK — the tree came out with near-black leaves.
+    { build: (m) => distantBroadleaf(m, { height: 1.7, seed: 77, street: true }) },
+  ],
 };
 
-// A single representative scale for every diorama signature prop — the prop
-// library's PropDef carries no min/max scale RANGE (unlike pre-v4.1's
-// ThemeProp population, whose minScale/maxScale the old scheme mid-band
-// lerped — see the dropped findSignatureProp below), just the def's own
-// height/width multipliers baked into its params, so there's nothing left to
-// lerp: 1.0 is simply "the def's own natural, undistorted size", matching
-// the ~1.0-centered scale values the real board's placements (themes.ts)
-// mostly use too.
-const DIORAMA_SIGNATURE_SCALE = 1.0;
-
-// Two open pockets of the 5.0x4.6 slab that sit clear of BOTH the L-shaped
-// wall run and the biscuit-trail/bone diagonal, with comfortable margin
-// inside the slab edges (>=0.4 units, well past the ~0.3-margin discipline
-// the trail sizing note above already established): a "BEHIND" spot past the
-// short back arm (tile [3.2, 0.55], local ~(2.10, -0.50) — a tall/skyline-
-// scale prop reads naturally sitting past the corner) and a "BESIDE" spot
-// past the long side arm (tile [-0.9, 2.3], local ~(-2.00, 1.25) — a
-// ground-level prop reads naturally flanking the run at eye level).
-//
-// Slot assignment is simply DIORAMA_SIGNATURE_IDS' own array order — index
-// 0 -> BEHIND, index 1 -> BESIDE — rather than a generic per-shape preference
-// table: every two-id entry above was deliberately AUTHORED taller/
-// farther-reading id first (city: tower then streetlight; park: oak then
-// streetlight), so array order already encodes the right slot without a
-// second lookup that could collide (a per-shape table sends both of park's
-// ids — oak AND streetlight are both "ground-level"-ish — to the same
-// preferred slot, which was the bug this simpler scheme replaces). A theme
-// with only one signature id (garden/forest/beach) always lands on index 0
-// (BEHIND) since it's the only entry in its list.
+// Two open pockets of the slab clear of the walls, the trail and the arch: a
+// "BEHIND" spot past the short back arm (a tall prop reads naturally sitting
+// past the corner) and a "BESIDE" spot past the back-left corner, OUTSIDE the
+// border like the arch and well clear of its piers. Array order is slot order:
+// every two-entry list above is authored taller first.
 const DIORAMA_SIGNATURE_SLOTS: ReadonlyArray<{ tile: [number, number]; rotY: number; hashSeed: number }> = [
-  { tile: [3.2, 0.55], rotY: 0.5, hashSeed: 0.62 }, // BEHIND — index 0
-  { tile: [-0.9, 2.3], rotY: -0.35, hashSeed: 0.3 }, // BESIDE — index 1
+  { tile: [3.2, 0.3], rotY: 0.5, hashSeed: 0.62 }, // BEHIND — index 0
+  { tile: [-0.95, 0.15], rotY: -0.35, hashSeed: 0.3 }, // BESIDE — index 1
 ];
-// Verified against the EXISTING diorama camera rig (DIORAMA_CAM_*/
-// applyCameraFraming below — untouched, per the brief's "don't move the
-// camera") through a full 360deg turntable spin at every real device aspect:
-// city's tower (the largest signature prop) at DIORAMA_SIGNATURE_SCALE=1.0 is
-// SMALLER than the pre-v4.1 mid-band scale (~1.225, the old population's
-// lerp(0.85, 1.6, 0.5)) that was originally margin-verified here (worst NDC
-// ~0.83 at landscape/4:3, ~0.93 at square — all comfortably inside frame), so
-// the v4.1 fixed scale=1.0 only INCREASES every margin, never risks
-// exceeding them — every other theme's signature prop(s) are smaller still
-// and land well inside those same margins. Portrait (aspect <~0.55) is
-// UNCHANGED from its pre-existing framing (the baseline board — walls/trail/
-// bone alone, no props at all — already exceeds NDC 1 there before this
-// change; fixing that would require moving the camera, out of scope here).
 
 /** Converts a diorama tile coord to a local position, centered under
  *  DIORAMA_FLOOR_CENTER so the whole staging sits roughly on the vignette
@@ -413,21 +405,31 @@ function dioramaPos(tx: number, tz: number): [number, number] {
 }
 
 /**
- * Builds a maze-theme diorama: a small floor slab, an L-shaped run of wall
- * blocks, a short biscuit trail + one bone, a few theme-appropriate
- * blooms/specks on the wall tops, and (IDEA-026 follow-up) 1-2 signature
- * theme PROPS in the open pockets beside the run — all skinned from
- * `theme.palette` using the same material recipe board.ts uses for the real
- * board (so a city theme's glowing "windows" and a classic theme's clean
- * unplanted walls both read exactly as they would in the actual maze). The
- * bone keeps its FIXED off-white identity color, matching board.ts's pellet
- * bones in every theme.
+ * Builds a maze-theme diorama: a small floor slab, a corner of the theme's
+ * real maze wall with the TUNNEL cut through its border arm, the theme's own
+ * tunnel arch and portal standing in it, a biscuit trail running out through
+ * it and a power bone, the theme's wall-top blooms/specks, the picket fence
+ * where the theme has one, and 0-2 signature props — every piece built by the
+ * same function the real board uses for it, so the preview is honest about
+ * what a purchase looks like.
+ *
+ * The portal animates: it is handed back on `userData.portal` and the scene
+ * advances it from `update`.
  */
 function makeThemeDiorama(theme: MazeTheme): THREE.Group {
   const palette = theme.palette;
+  const hero = new THREE.Group();
+  // Everything is built in tile space and then turned as one, so the tunnel
+  // mouth FACES THE CAMERA when the turntable starts — see DIORAMA_FACING.
   const g = new THREE.Group();
+  g.rotation.y = DIORAMA_FACING;
+  // Turned that way, the arch and the corner behind it sit right of the
+  // turntable's axis; this puts their middle back on it, so the mouth stays
+  // in frame on a phone and the spin does not swing it out.
+  g.position.x = -0.55;
+  hero.add(g);
 
-  // Floor — same emissive treatment as board.ts's matFloor, and now the same
+  // Floor — same emissive treatment as board.ts's matFloor, and the same
   // procedural GROUND too, drawn from DIORAMA_FLOOR_CELLS instead of a maze
   // grid. board.ts's two rules come with it: a floor texture bakes the
   // palette colour in, so the material is held at white while one is present
@@ -449,24 +451,21 @@ function makeThemeDiorama(theme: MazeTheme): THREE.Group {
   floor.receiveShadow = true;
   g.add(floor);
 
-  // Walls — same roughness/metalness/emissive treatment as board.ts's
-  // matWall, instanced exactly like the real board (one draw call for the
-  // whole run, even though 5 instances hardly needs it — keeps the "reuse
-  // board.ts's recipe" promise literal, not just visual).
-  // The wall SURFACE is wallTextureFor's cached instance — literally the same
-  // texture object the real board's walls use, and the diorama's blocks are
-  // the same 1x1x1 boxes, so this is the maze's own hedge/sand/brick at the
-  // maze's own scale. Shared and cached, so it is never disposed here.
+  // Walls — the board's own BLOCK (`wallGeometry` + `wallShapeFor`, so a hedge
+  // theme gets IDEA-068's lumpy clipped crown rather than a cube) wearing the
+  // board's own cached texture, instanced exactly like the real board with the
+  // same quarter-turn variety. The texture is wallTextureFor's shared
+  // instance, so it is never disposed here.
   const wallTex = wallTextureFor(palette.wallTexture, palette.wall);
   const wallMat = toon({
     // White while a texture is present: it bakes palette.wall in as its own
-    // ground, exactly like the floor texture below.
+    // ground, exactly like the floor texture above.
     color: wallTex ? 0xffffff : palette.wall,
     map: wallTex,
     emissive: palette.wallEmissive,
     emissiveIntensity: palette.wallEmissiveIntensity,
   });
-  const wallGeo = new THREE.BoxGeometry(DIORAMA_TILE, DIORAMA_WALL_H, DIORAMA_TILE);
+  const wallGeo = wallGeometry(wallShapeFor(palette.wallTexture), DIORAMA_WALL_H);
   const walls = new THREE.InstancedMesh(wallGeo, wallMat, DIORAMA_WALL_TILES.length);
   walls.castShadow = true;
   walls.receiveShadow = true;
@@ -474,19 +473,70 @@ function makeThemeDiorama(theme: MazeTheme): THREE.Group {
   DIORAMA_WALL_TILES.forEach(([tx, tz], i) => {
     const [x, z] = dioramaPos(tx, tz);
     dummy.position.set(x, DIORAMA_WALL_H / 2, z);
+    dummy.rotation.y = (Math.PI / 2) * ((tx * 3 + tz * 5) % 4);
     dummy.updateMatrix();
     walls.setMatrixAt(i, dummy.matrix);
   });
   g.add(walls);
 
-  // Biscuits — same roughness/emissive treatment as board.ts's matBiscuit;
-  // biscuits theme (they're the trail), unlike the fixed-identity bone below.
+  // The picket fence, on every exposed face of every wall block — board.ts's
+  // `buildFence` rule over the diorama's own handful of tiles.
+  if (palette.fence === "picket") {
+    const isWall = (tx: number, tz: number): boolean =>
+      DIORAMA_WALL_TILES.some(([wx, wz]) => wx === tx && wz === tz);
+    const fenceGeo = fencePanelGeometry(1);
+    const fenceMat = toon({ color: palette.fenceColor, vertexColors: true });
+    const sides = [
+      { dx: 0, dz: 1, rot: 0 },
+      { dx: 0, dz: -1, rot: Math.PI },
+      { dx: 1, dz: 0, rot: Math.PI / 2 },
+      { dx: -1, dz: 0, rot: -Math.PI / 2 },
+    ] as const;
+    const out = DIORAMA_TILE / 2 + FENCE_PARAMS.proud;
+    for (const [tx, tz] of DIORAMA_WALL_TILES) {
+      const [x, z] = dioramaPos(tx, tz);
+      for (const s of sides) {
+        if (isWall(tx + s.dx, tz + s.dz)) continue;
+        const f = new THREE.Mesh(fenceGeo, fenceMat);
+        f.position.set(x + s.dx * out, 0, z + s.dz * out);
+        f.rotation.y = s.rot;
+        f.castShadow = true;
+        g.add(f);
+      }
+    }
+  }
+
+  // The tunnel arch and its portal, exactly as `buildTunnelArches` and
+  // `buildTunnelPortals` stand them at a WEST mouth: past the border's outer
+  // face by the outset, spanning the corridor, a gate's leaves opening OUT of
+  // the maze. A theme with no arch (Arcade Night) still teleports, so it gets
+  // the board's frameless portal.
+  const [tunX, tunZ] = dioramaPos(DIORAMA_TUNNEL_TILE[0], DIORAMA_TUNNEL_TILE[1]);
+  const archX = tunX - (DIORAMA_TILE / 2 + ARCH_PARAMS.outset);
+  const spanZ = Math.PI / 2 + ARCH_PARAMS.yaw;
+  const archDef = tunnelArchDefFor(theme);
+  if (archDef) {
+    const arch = makePropFromDef(archDef, TUNNEL_ARCH_INSTANCE_HASH);
+    arch.position.set(archX, ARCH_PARAMS.lift, tunZ);
+    arch.rotation.y = spanZ + (archIsDirected(archDef.params as PropParams) ? Math.PI : 0);
+    arch.scale.multiplyScalar(ARCH_PARAMS.scale);
+    arch.traverse((o) => {
+      o.castShadow = true;
+    });
+    g.add(arch);
+  }
+  g.userData.portal = buildPortalsAt(g, theme, [{ x: archX, z: tunZ, rotationY: spanZ, name: "dioramaPortal" }]);
+
+  // Biscuits — same emissive treatment as board.ts's matBiscuit, and the same
+  // INK role on a theme that draws its trail dark (MazeTheme.inkBiscuits), or
+  // the beach's and the park's brown trail snaps a rung lighter here than it
+  // renders in a run.
   const biscuitMat = toon({
     color: palette.biscuit,
-
     emissive: palette.biscuitEmissive,
     emissiveIntensity: palette.biscuitEmissiveIntensity,
   });
+  if (theme.inkBiscuits) biscuitMat.userData.madboxRole = "ink";
   const biscuitGeo = new THREE.SphereGeometry(0.13, 12, 12);
   DIORAMA_BISCUIT_TILES.forEach(([tx, tz]) => {
     const [x, z] = dioramaPos(tx, tz);
@@ -500,7 +550,6 @@ function makeThemeDiorama(theme: MazeTheme): THREE.Group {
   // board.ts's makeBone exactly (same shaft + four-knuckle shape/material).
   const boneMat = toon({
     color: 0xf6f1e6,
-
     emissive: 0x6a5730,
     emissiveIntensity: 0.4,
   });
@@ -521,21 +570,17 @@ function makeThemeDiorama(theme: MazeTheme): THREE.Group {
 
   // Hedge-top blooms/specks — same recipe as board.ts's buildHedgeDecor
   // materials (color==emissive for blooms, a dedicated speck color/emissive),
-  // just individual meshes rather than InstancedMesh (a handful of decor
-  // items on a 5-tile diorama doesn't need batching). bloomChance <= 0 or an
-  // empty bloomColors (classic) mean DIORAMA_BLOOM_SPOTS/SPECK_SPOTS are
-  // simply skipped below, so the diorama shows a clean, unplanted wall top —
-  // exactly matching the real board's contract for that theme.
+  // just individual meshes rather than InstancedMesh. bloomChance <= 0 or an
+  // empty bloomColors mean they are simply skipped, so the diorama shows a
+  // clean, unplanted wall top — exactly matching the real board's contract.
   if (palette.bloomChance > 0 && palette.bloomColors.length > 0) {
     const bloomGeo = new THREE.SphereGeometry(0.075, 6, 6);
-    const bloomMats = palette.bloomColors.map(
-      (color) =>
-        toon({
-          color,
-
-          emissive: color,
-          emissiveIntensity: palette.bloomEmissiveIntensity,
-        }),
+    const bloomMats = palette.bloomColors.map((color) =>
+      toon({
+        color,
+        emissive: color,
+        emissiveIntensity: palette.bloomEmissiveIntensity,
+      }),
     );
     DIORAMA_BLOOM_SPOTS.forEach(({ tile, jx, jz, colorIdx }) => {
       const [x, z] = dioramaPos(tile[0], tile[1]);
@@ -550,7 +595,6 @@ function makeThemeDiorama(theme: MazeTheme): THREE.Group {
       const speckGeo = new THREE.SphereGeometry(0.05, 6, 6);
       const speckMat = toon({
         color: palette.speckColor,
-
         emissive: palette.speckEmissive,
         emissiveIntensity: 0.2,
       });
@@ -564,31 +608,28 @@ function makeThemeDiorama(theme: MazeTheme): THREE.Group {
     }
   }
 
-  // v4.1 "Set Dressing": 0-2 signature LIBRARY props, per DIORAMA_SIGNATURE_
-  // IDS' exact per-theme-id list above — array index IS the slot index (see
-  // DIORAMA_SIGNATURE_SLOTS' doc comment for why). classic's empty list
-  // naturally plants nothing. makePropById never throws (getPropDef degrades
-  // a stale id to a neutral fallback def), so there's no "drifted out of
-  // sync" defensive skip needed here anymore (unlike the pre-v4.1
-  // findSignatureProp lookup it replaces) — every id is still kept in sync
-  // with PROP_LIBRARY by hand regardless, per DIORAMA_SIGNATURE_IDS' doc.
-  const signatureIds = DIORAMA_SIGNATURE_IDS[theme.id] ?? [];
-  signatureIds.forEach((propId, slotIdx) => {
-    if (slotIdx >= DIORAMA_SIGNATURE_SLOTS.length) return; // defensive: never more ids than slots
-
+  // The signatures. A surround builder needs the theme's surround material
+  // set, which is built only when one is asked for and is disposed with the
+  // rest of the hero's materials (disposeHero traverses every mesh).
+  const signatures = DIORAMA_SIGNATURES[theme.id] ?? [];
+  const needsMats = signatures.some((s) => "build" in s);
+  const mats = needsMats ? makeSurroundMaterials(palette) : null;
+  signatures.forEach((sig, slotIdx) => {
+    if (slotIdx >= DIORAMA_SIGNATURE_SLOTS.length) return; // never more entries than slots
     const slot = DIORAMA_SIGNATURE_SLOTS[slotIdx];
     const [x, z] = dioramaPos(slot.tile[0], slot.tile[1]);
-    const prop = makePropById(propId, slot.hashSeed);
+    const prop = "lib" in sig ? makePropById(sig.lib, slot.hashSeed) : sig.build(mats as SurroundMaterials);
     prop.position.set(x, 0, z);
     prop.rotation.y = slot.rotY;
-    prop.scale.setScalar(DIORAMA_SIGNATURE_SCALE);
     prop.traverse((o) => {
       o.castShadow = true;
     });
     g.add(prop);
   });
 
-  return g;
+  hero.userData.floorTexture = g.userData.floorTexture;
+  hero.userData.portal = g.userData.portal;
+  return hero;
 }
 
 // Camera framing: ONE rig tuned to flatter both hero shapes — the beagle
@@ -749,7 +790,19 @@ export function createShopScene(): ShopScene {
   // as named background/hemisphere so showTheme can subtly tint them toward
   // a staged theme and showBeagle/showEnemy can restore them exactly.
   scene.background = new THREE.Color(COLORS.bg);
-  scene.add(makeBackdrop());
+  const backdrop = makeBackdrop();
+  scene.add(backdrop);
+  /** The dome follows the EQUIPPED theme, as the menu's does. It used to stay
+   *  the garden's daytime blue whatever was equipped, so a Night City or
+   *  Arcade Night player browsed coats on a dark ground under a noon sky. */
+  function applyDome(theme: MazeTheme): void {
+    const u = (backdrop.material as THREE.ShaderMaterial).uniforms;
+    // Fresh colours rather than writing through: the defaults are module-level
+    // constants the uniforms were built from.
+    u.topColor.value = new THREE.Color(theme.palette.backdropTop);
+    u.bottomColor.value = new THREE.Color(theme.palette.bg);
+  }
+  applyDome(getEquippedMazeTheme());
 
   const camera = new THREE.PerspectiveCamera(CAM_FOV, 1, 0.1, 200);
   camera.position.copy(CAM_POS);
@@ -855,6 +908,9 @@ export function createShopScene(): ShopScene {
     // deliberately left alone: it is wallTextureFor's shared, cached
     // instance — the same object the real board's walls hold.
     (obj.userData.floorTexture as THREE.Texture | undefined)?.dispose();
+    // The diorama's portal is Points + ShaderMaterials, which the mesh
+    // traversal below does not reach; it owns its own teardown.
+    (obj.userData.portal as TunnelPortals | undefined)?.dispose();
     obj.traverse((o) => {
       if (o instanceof THREE.Mesh) {
         o.geometry.dispose();
@@ -1011,6 +1067,9 @@ export function createShopScene(): ShopScene {
     // four of them and a fifth is one new hero kind away — the same reason
     // this function exists at all.
     surround.apply(getEquippedMazeTheme());
+    // Restyle AFTER that rebuild, never before it — every caller runs this
+    // after `setHero`, so its own pass has already happened.
+    if (MADBOX_STYLE_ON) applyMadboxStyle(scene, boardBounce(getEquippedMazeTheme().palette), madboxCaches);
   }
 
   return {
@@ -1018,6 +1077,8 @@ export function createShopScene(): ShopScene {
     camera,
     update(dt: number): void {
       animateIdle(dt);
+      surround.update(dt);
+      (hero.userData.portal as TunnelPortals | undefined)?.update(dt);
     },
     resize(aspect: number): void {
       lastAspect = aspect;
@@ -1085,6 +1146,16 @@ export function createShopScene(): ShopScene {
     showTheme(themeId: string): void {
       const theme = getMazeTheme(themeId); // never throws — degrades to the default theme on an unknown id
       const next = makeThemeDiorama(theme);
+      // The diorama is a BOARD, not a coat, so it is styled the way the board
+      // is: BAKED against the snapped palette with the theme's own bounce, and
+      // not at all for a night theme (`shouldStyleBoard`). `setHero`'s tint
+      // pass then finds it already styled and leaves it — without this the
+      // preview kept every authored colour unsnapped, i.e. showed a different
+      // board from the one a run draws.
+      if (MADBOX_STYLE_ON) {
+        if (shouldStyleBoard(theme.palette)) applyMadboxStyle(next, boardBounce(theme.palette), madboxCaches);
+        else next.userData.madboxSkip = true;
+      }
       setHero(next, "theme");
       tintAtmosphere(theme.palette.bg, theme.palette.hemiSky, theme.palette.hemiGround);
       // The BAND shows the theme being CONSIDERED, not the one equipped. This
@@ -1095,19 +1166,25 @@ export function createShopScene(): ShopScene {
       // here for a concrete reason: this rig's horizon is OFF the top of the
       // frame, so there is no sky-to-ground seam on screen to disagree at.
       surround.apply(theme);
+      // AND RESTYLE AFTER IT. `surround.apply` rebuilds the band and the stage
+      // AFTER `setHero` ran its pass, so without this the Themes tab showed
+      // its neighbourhood in toon while the diorama in front of it was matcap.
+      if (MADBOX_STYLE_ON) applyMadboxStyle(scene, boardBounce(getEquippedMazeTheme().palette), madboxCaches);
     },
     setMazeTheme(theme: MazeTheme): void {
       applyPatchTheme(patch, theme);
-      // AND HERE TOO. `applyPatchTheme` reaches `showcaseSurround.apply`,
-      // which REBUILDS the horizon band and the stage dressing from scratch —
-      // so a theme change hands the scene a fresh set of toon materials after
-      // every earlier pass has run. This is the third place the same ordering
-      // bug turned up (the beagle in buildLevel, the band in setHero), and the
-      // rule behind all three is one line: **restyle after anything that
-      // rebuilds scene content, not once at construction.** It is affordable
-      // because the swap is idempotent.
-      if (MADBOX_STYLE_ON) applyMadboxStyle(scene, boardBounce(getEquippedMazeTheme().palette), madboxCaches);
+      applyDome(theme);
       surround.apply(theme);
+      // AND HERE TOO. `surround.apply` REBUILDS the horizon band and the
+      // stage dressing from scratch, so a theme change hands the scene a fresh
+      // set of toon materials after every earlier pass has run. This is the
+      // fourth place the same ordering bug turned up (the beagle in
+      // buildLevel, the band in setHero, and this very line, which used to
+      // restyle BEFORE the rebuild it was meant to cover). The rule behind all
+      // of them is one line: **restyle after anything that rebuilds scene
+      // content, not once at construction.** Affordable because the swap is
+      // idempotent.
+      if (MADBOX_STYLE_ON) applyMadboxStyle(scene, boardBounce(getEquippedMazeTheme().palette), madboxCaches);
     },
     dispose(): void {
       disposeHero(hero);
