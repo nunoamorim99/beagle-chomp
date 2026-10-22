@@ -979,6 +979,211 @@ export function distantBed(
   return g;
 }
 
+/**
+ * A PICKET FENCE RUN — the garden's plot boundary (IDEA-083), built along its
+ * local +X, centred, standing on y = 0. Same frame as `distantHedgeRun`, so
+ * the same `atan2(-dz, dx)` aims it.
+ *
+ * Nuno: *"we can make some fences too and have like squares that have these
+ * components inside."* A hedge round every plot said OTHER PEOPLE'S GARDENS
+ * when each one held a house; with the houses gone it said nothing, and a
+ * timber fence is what still reads as somebody's plot. It is the maze's own
+ * fence family — `fenceColor`, darker rails behind the pickets — because
+ * IDEA-060 rule 2 holds at every distance: a gap only reads as a gap if
+ * something darker steps across it, and brown-on-brown is a skirting board.
+ *
+ * Boxes, not fence.ts's domed pickets: that panel is 152 triangles a tile,
+ * tuned for 25px a face, and a plot perimeter is ~26 tiles. A dome on a
+ * 3px-wide picket is nothing. Pitch 0.3 against a 0.12 picket keeps both the
+ * picket and the gap at or above rule 2's floor.
+ */
+export function distantPicketFence(
+  m: SurroundMaterials,
+  o: { length: number; height?: number; seed?: number; rail?: boolean },
+): THREE.Group {
+  const g = new THREE.Group();
+  const r = seeded(o.seed ?? 21);
+  const h = o.height ?? 0.4;
+  // `rail` is the far plots' POST-AND-RAIL fence: posts and two rails, no
+  // pickets. It is a garden fence in its own right rather than a degraded
+  // picket one, and it is what lets the far band stay fenced — a picket run
+  // is ~280 triangles every seven units, and past `detailReach` a picket is a
+  // pixel and its gap is nothing.
+  const pitch = o.rail ? 2.2 : 0.33;
+  const n = Math.max(1, Math.round(o.length / pitch));
+  for (let i = 0; i <= n; i++) {
+    // Posts at both ends and every fifth picket: a little taller and thicker,
+    // which is what turns a comb into a fence built in bays.
+    const post = o.rail || i === 0 || i === n || i % 5 === 0;
+    const w = post ? 0.13 : 0.11;
+    const hh = h * (post ? 1.12 : 1 + (r() - 0.5) * 0.04);
+    part(g, new THREE.BoxGeometry(w, hh, post ? 0.09 : 0.05), m.trunk, "picket" + i, [
+      (i / n - 0.5) * o.length,
+      hh / 2,
+      0,
+    ]);
+  }
+  // Two rails. Behind the pickets on a picket fence, so they show only
+  // through the gaps; through the posts' centre on a post-and-rail, where
+  // they ARE the fence and take the timber colour.
+  for (const [k, f] of [0.32, 0.74].entries()) {
+    part(
+      g,
+      new THREE.BoxGeometry(o.length, o.rail ? 0.07 : 0.06, 0.04),
+      o.rail ? m.trunk : m.soil,
+      "rail" + k,
+      [0, h * f, o.rail ? 0 : -0.045],
+    );
+  }
+  return g;
+}
+
+/**
+ * A FLOWERING SHRUB — a shrub clump wearing its blooms (IDEA-083).
+ *
+ * One hue per shrub, as a real flowering shrub is: a mix of colours on one
+ * bush reads as confetti. The blooms sit on the UPPER half of each blob,
+ * pushed past the lobed surface's mean so they are not swallowed by it — the
+ * lobe field reaches about 1.25x the nominal radius, so some still sink into
+ * a lobe, which reads as flowers among leaves rather than as a defect.
+ */
+export function distantFloweringShrub(
+  m: SurroundMaterials,
+  o: { radius?: number; seed?: number } = {},
+): THREE.Group {
+  const g = distantShrubClump(m, o);
+  const r = seeded((o.seed ?? 5) + 7919);
+  const hue = [m.bloomA, m.bloomB, m.bloomC][Math.floor(r() * 3) % 3];
+  const blobs = g.children.slice();
+  let k = 0;
+  for (const blob of blobs) {
+    const geo = (blob as THREE.Mesh).geometry;
+    geo.computeBoundingSphere();
+    const rr = geo.boundingSphere!.radius / 1.25;
+    const count = 3 + Math.floor(r() * 2);
+    for (let i = 0; i < count; i++) {
+      const az = r() * Math.PI * 2;
+      const el = 0.35 + r() * 0.9; // radians above the equator
+      const d = rr * 1.02;
+      const b = part(
+        g,
+        // An octahedron: eight triangles, and at a few pixels a bloom's
+        // outline is not something anyone can count the sides of.
+        new THREE.OctahedronGeometry(rr * 0.4, 0),
+        hue,
+        "bloom" + k++,
+        [
+          blob.position.x + Math.cos(az) * Math.cos(el) * d,
+          blob.position.y + Math.sin(el) * d,
+          blob.position.z + Math.sin(az) * Math.cos(el) * d,
+        ],
+      );
+      b.scale.y = 0.7;
+    }
+  }
+  return g;
+}
+
+/** The five flowers the Props tab authors, in the order a patch rolls them. */
+export const PATCH_FLOWER_IDS = [
+  "flower-daisy",
+  "flower-tulip",
+  "flower-rose",
+  "flower-sunflower",
+  "flower-blossom",
+] as const;
+
+/** A recognisable flower: the hero prop's SHAPE, built by the caller. */
+export type FlowerMaker = (id: string, hash: number, petal: number, centre: number) => THREE.Group;
+
+const PETAL_SENTINEL = 0x010203;
+const CENTRE_SENTINEL = 0x040506;
+const SEED_BROWN = 0x4a2c17;
+
+/**
+ * A FLOWER PATCH: a bed of one of the Props tab's five real flowers (IDEA-083,
+ * Nuno: *"we can make some groups of flowers using the ones we have on the
+ * props"*).
+ *
+ * THE ONE PLACE THIS FILE USES A LIBRARY SHAPE, AND RULE 1 STILL HOLDS. The
+ * flowers come from `makeGardenFlower` — the same daisy, tulip, rose,
+ * sunflower and blossom the apron plants — but every material they build is
+ * swapped onto the shared set and the originals disposed, so the patch costs
+ * no draw call of its own. To know which material is which without reaching
+ * into the factory, the petal and centre are built in two SENTINEL colours and
+ * identified by those; everything else is foliage, bar the sunflower's seed
+ * disc. The flower itself is passed in (`make`) so this module never imports
+ * the prop library and its own call graph stays the band's.
+ *
+ * Colour comes from the theme's `bloomColors`, not the flower's authored
+ * petals, for the same reason: an authored petal is a sixth material.
+ *
+ * A leafy cushion under it, because a flower standing alone on lawn at this
+ * size reads as litter (IDEA-071 rule 6) and a clump of them reads as planted.
+ */
+export function distantFlowerPatch(
+  m: SurroundMaterials,
+  make: FlowerMaker,
+  o: { radius?: number; count?: number; seed?: number; flowerScale?: number } = {},
+): THREE.Group {
+  const g = new THREE.Group();
+  const r = seeded(o.seed ?? 31);
+  const rad = o.radius ?? 0.5 + r() * 0.2;
+  const n = o.count ?? 5 + Math.floor(r() * 3);
+  const fs = o.flowerScale ?? 2.6;
+  const id = PATCH_FLOWER_IDS[Math.floor(r() * PATCH_FLOWER_IDS.length) % PATCH_FLOWER_IDS.length];
+
+  // Petal hue by flower, so the shape and the colour agree with what the
+  // Props tab shows: a daisy is cream, a sunflower gold, the rest red.
+  const petal =
+    id === "flower-daisy" ? m.bloomA : id === "flower-sunflower" ? m.bloomC : m.bloomB;
+  const centre = petal === m.bloomC ? m.soil : id === "flower-daisy" ? m.bloomC : m.bloomA;
+
+  // A LOW CUSHION OF LEAVES, not a soil disc. The disc was the first build
+  // and under the matcap a flat face aimed at the sky returns the matcap's
+  // brightest texel whatever colour it is given, so dark mulch rendered
+  // CREAM and every patch read as a plate of fruit. A flattened lobed mound
+  // has normals turning away from the camera all round it, and reads as the
+  // foliage the flowers grow out of.
+  const bed = part(
+    g,
+    lobedFoliageGeometry(1, { detail: 0, lobes: 5, sharpness: 5, amplitude: 0.22, seed: 3 }),
+    m.hedgeDark,
+    "bed",
+    [0, 0, 0],
+  );
+  bed.scale.set(rad * 1.1, 0.11, rad * (0.85 + r() * 0.25));
+
+  const pS = new THREE.Color(PETAL_SENTINEL);
+  const cS = new THREE.Color(CENTRE_SENTINEL);
+  const seedC = new THREE.Color(SEED_BROWN);
+  const spent = new Set<THREE.Material>();
+  for (let i = 0; i < n; i++) {
+    const ang = i * 2.3999632 + r() * 0.3;
+    const d = Math.sqrt((i + 0.5) / n) * rad * 0.82;
+    const f = make(id, Math.floor(r() * 1e6), PETAL_SENTINEL, CENTRE_SENTINEL);
+    f.traverse((node) => {
+      const mesh = node as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      const src = mesh.material as THREE.MeshToonMaterial;
+      spent.add(src);
+      mesh.material = src.color.equals(pS)
+        ? petal
+        : src.color.equals(cS)
+          ? centre
+          : src.color.equals(seedC)
+            ? m.soil
+            : m.hedgeDark;
+    });
+    f.position.set(Math.cos(ang) * d, 0, Math.sin(ang) * d);
+    f.scale.multiplyScalar(fs * (0.88 + r() * 0.24));
+    f.name = "flower" + i;
+    g.add(f);
+  }
+  for (const mat of spent) mat.dispose();
+  return g;
+}
+
 /** A city block: a slab with a window grid. The one recipe whose regularity is
  *  correct rather than a smell. */
 export function distantTower(

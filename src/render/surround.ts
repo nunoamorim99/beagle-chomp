@@ -84,34 +84,27 @@ export interface SurroundParams {
    *  dial. Turn it to 0 and the surround is ground only. */
   density: number;
   /**
-   * THE ARCHETYPE MIX — what the neighbourhood is MADE OF, and the dial Nuno
-   * actually asked for ("a balance between the houses and greenhouses and the
-   * gardens").
+   * THE GARDEN MIX (IDEA-083) — what a fenced plot holds. Two cumulative bands
+   * over one hash roll: a FLOWER GARDEN (patches of the Props tab's flowers
+   * among flowering shrubs), then an ORCHARD (trees, a shrub or two, a patch),
+   * and whatever is left is a MEADOW (one tree, a border, a patch).
    *
-   * Every plot used to run one recipe: house + trees + shrubs + beds, every
-   * time. That reads as a housing estate built in one afternoon. A real
-   * neighbourhood is a MIX — some plots are a house and its garden, some are
-   * an allotment with a greenhouse and no house at all, some are an orchard,
-   * and some are just lawn, which is what gives the eye somewhere to rest.
-   *
-   * These are cumulative bands over a single hash roll, so they are three
-   * independent numbers rather than a distribution that has to sum to one:
-   * house, then allotment, then orchard, and whatever is left over is lawn.
-   * Turn `houseChance` to 0 and the neighbourhood becomes allotments.
-   *
-   * Ignored on the SOUTH band, which is portrait-only, unfogged and right
-   * under the HUD — that band takes low archetypes whatever the mix says.
+   * There are no buildings at all. Nuno: *"this maze has too much noise
+   * around it and I don't feel this is a garden. Let's remove all the houses
+   * and treehouses — just the environment, some trees and shrubs with
+   * flowers."* IDEA-066 to 071's houses, sheds and greenhouses read as a
+   * suburb, and a suburb is noise around a garden rather than more garden.
    */
-  houseChance: number;
-  allotmentChance: number;
+  flowerGardenChance: number;
   orchardChance: number;
-  /** The SOUTH band's own share of allotments — see the shipped value's
-   *  note for why that band is a special case and why an allotment is the
-   *  one building it can take. */
-  southAllotmentChance: number;
-  /** The share of SOUTH FRINGE cells carrying a small building. See the
-   *  shipped value's note — this is the dial that actually fills that band. */
-  southFringeBuildings: number;
+  /** Tiles out past the keep-clear box within which a plot plants REAL flower
+   *  patches and a PICKET fence. Beyond it a patch becomes a kerbed bed and
+   *  the fence becomes post-and-rail: a 7px flower is no longer a flower and
+   *  a picket is a pixel, and both cost triangles on every plot out there. */
+  detailReach: number;
+  /** The share of FRINGE cells carrying a flower patch — the nearest,
+   *  least-fogged band, where the flowers read best. */
+  fringeFlowers: number;
   /** The share of SOUTH FRINGE cells carrying a short tree. */
   southFringeTrees: number;
   /** Tiles of clearance kept around the board, measured out from the floor
@@ -239,50 +232,10 @@ export const SURROUND_PARAMS: SurroundParams = {
   plotD: 6,
   lane: 1,
   density: 0.85,
-  houseChance: 0.42,
-  allotmentChance: 0.2,
-  orchardChance: 0.2,
-  /**
-   * IDEA-070: the SOUTH band's own share of ALLOTMENTS — a greenhouse, a
-   * shed and beds, never a house.
-   *
-   * The south band took orchards and lawns and nothing else, on the reasoning
-   * IDEA-066 rule 6 records: it is portrait-only, at ZERO fog, at the largest
-   * on-screen size anything in the surround ever has, and directly under the
-   * HUD and the D-pad. Only ONE plot row is ever visible there, so whatever
-   * stands in it is the biggest thing in the picture.
-   *
-   * Nuno, looking at it: *"on the bottom of the maze, on the zone we have the
-   * buttons and the joystick, we should balance the world — there are no
-   * houses or greenhouses there, we should have something there."* He is
-   * right that a fifth of a portrait frame reading as lawn and trees while
-   * the other three sides are a neighbourhood is not a balance, it is a gap.
-   *
-   * The ALLOTMENT is the archetype that answers it without giving the rule
-   * away: a greenhouse measures 2.08 wide-over-tall against a house's 1.40
-   * (`.img2threejs/garden-greenhouse/measurements.json`), so it is the one
-   * building in the set that is LOW AND LONG — it fills ground without
-   * standing up into the frame. A full house stays out; that is still the
-   * nearest, largest, least-forgiving band on the board.
-   */
-  southAllotmentChance: 0.45,
-  /**
-   * The share of SOUTH FRINGE cells that carry a small building rather than
-   * planting — and this, not the archetype mix, is what actually fills that
-   * band.
-   *
-   * Measured on a phone: the visible south window is z 14.5..22.4 and the
-   * plot lattice lands at 22.5..24.1, so exactly ONE plot falls inside it.
-   * The south looked empty because almost nothing was ever BUILT there, not
-   * because of what the plots rolled. The fringe is the layer that owns
-   * that annulus (IDEA-066 rule 7 added it for exactly this gap), so it is
-   * where a south building has to come from.
-   *
-   * Greenhouses and sheds only — the two buildings low enough for the
-   * nearest, unfogged, largest-on-screen band. Turn it to 0 and the south
-   * goes back to the planting it had.
-   */
-  southFringeBuildings: 0.34,
+  flowerGardenChance: 0.45,
+  orchardChance: 0.3,
+  detailReach: 8,
+  fringeFlowers: 0.24,
   /**
    * The share of SOUTH FRINGE cells carrying a TREE rather than low
    * planting — Nuno: *"to fill that gap add some trees on that part of the

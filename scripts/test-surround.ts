@@ -33,6 +33,8 @@ import {
   distantClippedHedge,
   distantConifer,
   distantDune,
+  distantFloweringShrub,
+  distantPicketFence,
   distantHedgeRun,
   distantHouse,
   distantRockOutcrop,
@@ -212,6 +214,8 @@ section("Every builder is addressable and stands on the ground");
     ["tower", distantTower(mats, { seed: 9 }), 0.02],
     ["dune", distantDune(mats, { seed: 10 }), 0.7],
     ["rockOutcrop", distantRockOutcrop(mats, { seed: 11 }), 0.15],
+    ["picketFence", distantPicketFence(mats, { length: 6, seed: 12 }), 0.02],
+    ["floweringShrub", distantFloweringShrub(mats, { seed: 13 }), 0.15],
   ];
 
   const known = new Set<THREE.Material>(Object.values(mats));
@@ -572,75 +576,43 @@ section("IDEA-069: the band is culled to what the camera can see");
 }
 
 // ---------------------------------------------------------------------------
-section("No building stands inside another one");
+section("The garden is planted, not built (IDEA-083)");
 
-// NUNO'S REPORT, and it had no test because it could not have one: the merge
-// welds the whole band into one mesh per material, so by the time anything can
-// look at the finished group every object's identity is gone. The recipe is
-// now split at `buildSurroundContent` for exactly this.
-//
-// Measured from VERTICES, never `Box3.setFromObject` -- it builds each mesh's
-// box in LOCAL space and transforms the eight corners, so a rotated child
-// over-reports by up to 56% (CLAUDE.md's standing note), and EVERY building
-// here is placed with a rotation.
+// Nuno: *"this maze has too much noise around it and I don't feel this is a
+// garden — remove all the houses and treehouses, just trees and shrubs with
+// flowers, groups of the props' flowers, and fences making squares."* The
+// merge welds the band into one mesh per material, so every question about
+// WHAT was placed has to be asked of `buildSurroundContent`, before it.
 {
   const mats = makeSurroundMaterials(GARDEN.palette);
   const host = buildSurroundContent("plots", mats);
+  const count = (pred: (c: THREE.Object3D) => boolean): number => host.children.filter(pred).length;
+  const buildings = count((c) => c.name.startsWith("building-"));
+  ok("the garden's surround builds no house, shed or greenhouse", buildings === 0, `${buildings} buildings`);
+  // A fence is a group of pickets; a hedge run is a group of `hedge*` blobs.
+  const isFence = (c: THREE.Object3D): boolean => c.children.some((k) => k.name.startsWith("picket"));
+  const fences = count(isFence);
+  ok("the plots are fenced", fences > 40, `${fences} fence runs`);
+  const patches = count((c) => c.children.some((k) => k.name.startsWith("flower") && k.children.length > 0));
+  ok("the Props tab's flowers are planted in patches", patches > 10, `${patches} patches`);
+  const shrubs = count((c) => c.children.some((k) => k.name.startsWith("bloom")) && c.children.some((k) => k.name.startsWith("blob")));
+  ok("there are flowering shrubs", shrubs > 10, `${shrubs} shrubs`);
 
-  type Foot = { name: string; x0: number; x1: number; z0: number; z1: number };
-  const feet: Foot[] = [];
-  for (const child of host.children) {
-    if (!child.name.startsWith("building-")) continue;
-    child.updateWorldMatrix(true, true);
-    let x0 = Infinity;
-    let x1 = -Infinity;
-    let z0 = Infinity;
-    let z1 = -Infinity;
-    const v = new THREE.Vector3();
-    child.traverse((o) => {
-      const mesh = o as THREE.Mesh;
-      if (!mesh.isMesh) return;
-      const pos = mesh.geometry.getAttribute("position") as THREE.BufferAttribute;
-      for (let i = 0; i < pos.count; i++) {
-        v.fromBufferAttribute(pos, i).applyMatrix4(mesh.matrixWorld);
-        if (v.x < x0) x0 = v.x;
-        if (v.x > x1) x1 = v.x;
-        if (v.z < z0) z0 = v.z;
-        if (v.z > z1) z1 = v.z;
-      }
-    });
-    feet.push({ name: child.name, x0, x1, z0, z1 });
-  }
-
-  ok("the probe found buildings at all", feet.length > 10, `${feet.length} buildings`);
-
-  // Footprints may not INTERSECT. A shared wall would be a terrace and this is
-  // a lattice of detached plots, so any overlap at all is the defect.
-  let worst = 0;
-  let worstPair = "";
-  for (let i = 0; i < feet.length; i++) {
-    for (let j = i + 1; j < feet.length; j++) {
-      const a = feet[i];
-      const b = feet[j];
-      const ox = Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0);
-      const oz = Math.min(a.z1, b.z1) - Math.max(a.z0, b.z0);
-      if (ox <= 0 || oz <= 0) continue;
-      const area = ox * oz;
-      if (area > worst) {
-        worst = area;
-        worstPair = `${a.name} / ${b.name}`;
-      }
-    }
-  }
-  ok(
-    "no two building footprints overlap anywhere in the band",
-    worst === 0,
-    `worst ${worst.toFixed(3)} sq units at ${worstPair}`,
-  );
+  // Every flower in every patch landed on the SHARED set — the patch builds
+  // the library's flower, which makes its own materials, and swaps them.
+  // Miss one and the draw-call check below fails as a bare number.
+  const known = new Set<THREE.Material>(Object.values(mats));
+  let foreign = 0;
+  host.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    if (mesh.isMesh && !known.has(mesh.material as THREE.Material)) foreign++;
+  });
+  ok("every mesh in the band uses the shared material set", foreign === 0, `${foreign} foreign`);
   host.traverse((o) => {
     const mesh = o as THREE.Mesh;
     if (mesh.isMesh) mesh.geometry.dispose();
   });
+  disposeSurroundMaterials(mats);
 }
 
 // ---------------------------------------------------------------------------

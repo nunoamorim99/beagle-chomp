@@ -48,16 +48,18 @@ import {
   type SurroundPaletteInput,
   disposeSurroundMaterials,
   makeSurroundMaterials,
-  distantBed,
   distantBroadleaf,
   distantBeachSpot,
   distantConifer,
-  distantFlowerBorder,
-  distantHedgeRun,
-  distantHouse,
+  distantFloweringShrub,
+  distantFlowerPatch,
+  distantPicketFence,
   distantRockOutcrop,
   distantShrubClump,
+  type FlowerMaker,
 } from "./surroundProps";
+import { makeGardenFlower } from "./gardenProps";
+import { getPropDef } from "../game/props";
 import { mergeBySignature } from "./propMerge";
 import { SEASIDE_PARAMS, type Seaside, buildSeaside, disposeSeaside, inSea } from "./seaside";
 import { buildCityStreets } from "./cityLayout";
@@ -318,51 +320,6 @@ export function planFringe(): Array<{ x: number; z: number; band: Band; scale: n
   return out;
 }
 
-/**
- * A placed object's world-space XZ footprint, measured FROM VERTICES.
- *
- * Never `Box3.setFromObject`: it builds each mesh's box in LOCAL space and
- * transforms the eight corners, so a rotated child over-reports by up to 56%
- * (CLAUDE.md's standing note) -- and every building in this band is placed
- * with a rotation, which is precisely the case that breaks it.
- */
-const FOOT_V = new THREE.Vector3();
-function footprint(o: THREE.Object3D): { x0: number; x1: number; z0: number; z1: number } {
-  o.updateWorldMatrix(true, true);
-  let x0 = Infinity;
-  let x1 = -Infinity;
-  let z0 = Infinity;
-  let z1 = -Infinity;
-  o.traverse((n) => {
-    const mesh = n as THREE.Mesh;
-    if (!mesh.isMesh) return;
-    const pos = mesh.geometry.getAttribute("position") as THREE.BufferAttribute;
-    for (let i = 0; i < pos.count; i++) {
-      FOOT_V.fromBufferAttribute(pos, i).applyMatrix4(mesh.matrixWorld);
-      if (FOOT_V.x < x0) x0 = FOOT_V.x;
-      if (FOOT_V.x > x1) x1 = FOOT_V.x;
-      if (FOOT_V.z < z0) z0 = FOOT_V.z;
-      if (FOOT_V.z > z1) z1 = FOOT_V.z;
-    }
-  });
-  return { x0, x1, z0, z1 };
-}
-
-function footprintsClear(
-  a: { x0: number; x1: number; z0: number; z1: number },
-  b: { x0: number; x1: number; z0: number; z1: number },
-  gap: number,
-): boolean {
-  // A NEGATIVE overlap is a gap. Written as `< gap` this reads perfectly well
-  // and PERMITS an overlap of up to `gap` instead of requiring one -- which is
-  // how the first version left five pairs clipping by exactly 0.12, 0.07 and
-  // 0.03, i.e. by precisely the tolerance it thought it was enforcing.
-  return (
-    Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0) < -gap ||
-    Math.min(a.z1, b.z1) - Math.max(a.z0, b.z0) < -gap
-  );
-}
-
 /** Place a child at a fraction of the plot (rule 3), then add it. */
 /** Bilinear point inside a plot's quadrilateral, u and v in [-1, 1]. */
 function pointIn(plot: Plot, u: number, v: number): [number, number] {
@@ -395,324 +352,176 @@ function placeIn(
   host.add(child);
 }
 
-/** A hedged boundary around a plot, with ONE side left open as a gate. */
-function hedgePerimeter(
-  host: THREE.Group,
-  plot: Plot,
-  m: SurroundMaterials,
-  height: number,
-): void {
-  const gate = Math.floor(hash(plot.px, plot.pz, 3) * 4);
-  for (let i = 0; i < 4; i++) {
-    if (i === gate) continue;
-    const a = plot.corners[i];
-    const b = plot.corners[(i + 1) % 4];
-    const dx = b[0] - a[0];
-    const dz = b[1] - a[1];
-    const len = Math.hypot(dx, dz);
-    const run = distantHedgeRun(m, {
-      length: len,
-      height,
-      seed: 41 + i + plot.px * 7 + plot.pz * 13,
-    });
-    run.position.set((a[0] + b[0]) / 2, 0, (a[1] + b[1]) / 2);
-    // A hedge run is built along its local +X. Rotating by t about Y sends +X
-    // to (cos t, 0, -sin t), so aiming it down the edge needs atan2(-dz, dx) —
-    // NOT atan2(dz, dx), which mirrors every run and leaves the boundary
-    // crossing its own corners.
-    run.rotation.y = Math.atan2(-dz, dx);
-    host.add(run);
-  }
-}
+/** What a garden plot IS. See SURROUND_PARAMS' garden mix. */
+type Archetype = "flowers" | "orchard" | "meadow";
 
-/**
- * A flowering border, laid just INSIDE one of the plot's own hedges.
- *
- * It is placed against an edge rather than scattered, and that is the whole
- * difference between a border and litter. Scattered into the middle of a lawn,
- * a saturated mass reads as a dropped object -- a red crisp packet -- because
- * nothing in the picture explains why it is there. Run along a hedge it reads
- * as planting, for the same reason `hedgePerimeter` exists at the scale above:
- * the boundaries are what turn a scatter of objects into somebody's garden.
- *
- * Inset toward the plot centre so it stands IN FRONT of the hedge instead of
- * inside it, which would bury it (this project's most-repeated defect).
- */
-function flowerBorder(host: THREE.Group, plot: Plot, m: SurroundMaterials, salt: number): void {
-  // NOT EVERY PLOT. Three of the four archetypes call this, so without a gate
-  // almost every garden in the band gets a saturated band in it and the
-  // neighbourhood becomes a paint chart. Roughly three in five is the dose
-  // that reads as "some of these people garden".
-  if (hash(plot.px, plot.pz, salt + 2) > 0.6) return;
-  const side = Math.floor(hash(plot.px, plot.pz, salt) * 4) % 4;
-  const a = plot.corners[side];
-  const b = plot.corners[(side + 1) % 4];
-  const dx = b[0] - a[0];
-  const dz = b[1] - a[1];
-  const len = Math.hypot(dx, dz);
-  const mx = (a[0] + b[0]) / 2;
-  const mz = (a[1] + b[1]) / 2;
-  const cx = (plot.corners[0][0] + plot.corners[1][0] + plot.corners[2][0] + plot.corners[3][0]) / 4;
-  const cz = (plot.corners[0][1] + plot.corners[1][1] + plot.corners[2][1] + plot.corners[3][1]) / 4;
-  const tx = cx - mx;
-  const tz = cz - mz;
-  const tl = Math.hypot(tx, tz) || 1;
-  const inset = 0.34;
-  const run = distantFlowerBorder(m, {
-    // Most of the edge, never all of it: a border running corner to corner
-    // reads as a second hedge in front of the first.
-    length: len * (0.42 + hash(plot.px, plot.pz, salt + 1) * 0.2),
-    seed: 201 + salt + plot.px * 5 + plot.pz * 11,
-  });
-  run.position.set(mx + (tx / tl) * inset, 0, mz + (tz / tl) * inset);
-  // Same aiming rule as hedgePerimeter, and the same sign trap: a run is built
-  // along its local +X, so it needs atan2(-dz, dx).
-  run.rotation.y = Math.atan2(-dz, dx);
-  run.scale.multiplyScalar(plot.scale);
-  host.add(run);
-}
-
-/** What a plot IS. See SURROUND_PARAMS' archetype mix for why there is more
- *  than one. */
-type Archetype = "house" | "allotment" | "orchard" | "lawn";
-
-/**
- * Pick a plot's archetype from one hash roll against the cumulative bands.
- *
- * THE SOUTH BAND NEVER GETS A BUILDING, whatever the mix says. Desktop's frame
- * ends at z = +11.9 and portrait's at +22.4, so south is portrait-only, at ZERO
- * fog, at the largest on-screen size anything in the surround ever has, and
- * directly under the HUD and the D-pad. Only ONE plot row is ever visible down
- * there, so it carries orchards and lawns and nothing that stands up.
- */
 function archetypeFor(plot: Plot): Archetype {
   const P = SURROUND_PARAMS;
   const roll = hash(plot.px, plot.pz, 4);
-  // THE SOUTH BAND STILL NEVER GETS A HOUSE, and it now gets ALLOTMENTS —
-  // see SURROUND_PARAMS.southAllotmentChance for both halves of why. A
-  // greenhouse is the one building in the set that is low and long rather
-  // than tall, which is what lets this band have buildings at all.
-  if (plot.band === "south") {
-    if (roll < P.southAllotmentChance) return "allotment";
-    return roll < P.southAllotmentChance + (1 - P.southAllotmentChance) * 0.55
-      ? "orchard"
-      : "lawn";
-  }
-  if (roll < P.houseChance) return "house";
-  if (roll < P.houseChance + P.allotmentChance) return "allotment";
-  if (roll < P.houseChance + P.allotmentChance + P.orchardChance) return "orchard";
-  return "lawn";
+  if (roll < P.flowerGardenChance) return "flowers";
+  if (roll < P.flowerGardenChance + P.orchardChance) return "orchard";
+  return "meadow";
 }
 
-/** Scatter n of something inside a plot, at plot fractions. */
-function scatter(
-  host: THREE.Group,
-  plot: Plot,
-  n: number,
-  salt: number,
-  make: (i: number) => THREE.Object3D,
-  spread = 1.5,
-): void {
-  for (let i = 0; i < n; i++) {
-    placeIn(
-      host,
-      plot,
-      make(i),
-      hash(plot.px, plot.pz, salt + i) * spread - spread / 2,
-      hash(plot.px, plot.pz, salt + 40 + i) * spread - spread / 2,
-      plot.scale,
-      hash(plot.px, plot.pz, salt + 80 + i) * Math.PI * 2,
-    );
+/**
+ * The flower a patch plants: the Props tab's own def, so a retuned daisy in
+ * the library is the daisy out here too. Its petal and centre colours are
+ * overridden with the sentinels `distantFlowerPatch` identifies them by — the
+ * patch swaps every material onto the shared set, so the authored colours
+ * would never be drawn anyway.
+ */
+const makeFlower: FlowerMaker = (id, h, petal, centre) =>
+  makeGardenFlower(
+    { ...(getPropDef(id)?.params ?? {}), petalColor: petal, centerColor: centre },
+    h,
+    true,
+    "distant",
+  );
+
+/**
+ * A fenced boundary around a plot, with a GATE — a gap in the middle of one
+ * side rather than a whole side missing. A missing side read fine on a hedge
+ * (a hedge is a garden's back wall); on a fence it reads as unfinished.
+ */
+function fencePerimeter(host: THREE.Group, plot: Plot, m: SurroundMaterials): void {
+  const gate = Math.floor(hash(plot.px, plot.pz, 3) * 4) % 4;
+  const h = plot.band === "south" ? 0.34 : 0.4;
+  const run = (x0: number, z0: number, x1: number, z1: number, salt: number): void => {
+    const dx = x1 - x0;
+    const dz = z1 - z0;
+    const len = Math.hypot(dx, dz);
+    if (len < 0.3) return;
+    const f = distantPicketFence(m, {
+      length: len,
+      height: h,
+      seed: salt + plot.px * 7 + plot.pz * 13,
+      rail: plot.out > SURROUND_PARAMS.detailReach,
+    });
+    f.position.set((x0 + x1) / 2, 0, (z0 + z1) / 2);
+    // Built along local +X: same aiming rule, and the same sign trap, as
+    // every run in this file — atan2(-dz, dx), never atan2(dz, dx).
+    f.rotation.y = Math.atan2(-dz, dx);
+    host.add(f);
+  };
+  for (let i = 0; i < 4; i++) {
+    const a = plot.corners[i];
+    const b = plot.corners[(i + 1) % 4];
+    if (i !== gate) {
+      run(a[0], a[1], b[0], b[1], 41 + i);
+      continue;
+    }
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const k = (len - 1.3) / 2 / len; // a 1.3-unit gateway, centred
+    run(a[0], a[1], a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, 45);
+    run(b[0] + (a[0] - b[0]) * k, b[1] + (a[1] - b[1]) * k, b[0], b[1], 46);
   }
 }
 
 /**
- * The garden's neighbourhood.
+ * The plot's planting SLOTS: a 3x3 grid in plot fractions, shuffled per plot.
+ * Items take slots rather than free positions so a tree, a shrub and a
+ * flower bed can never land on each other — the lesson of the
+ * greenhouse-inside-the-house defect, solved by construction this time.
+ */
+function slotsFor(plot: Plot): Array<[number, number]> {
+  const s: Array<[number, number, number]> = [];
+  for (const v of [-0.5, 0, 0.5]) {
+    for (const u of [-0.56, 0, 0.56]) {
+      s.push([
+        u + (hash(plot.px * 3 + s.length, plot.pz, 35) - 0.5) * 0.12,
+        v + (hash(plot.px, plot.pz * 3 + s.length, 36) - 0.5) * 0.12,
+        hash(plot.px + s.length, plot.pz, 37),
+      ]);
+    }
+  }
+  return s.sort((a, b) => a[2] - b[2]).map(([u, v]) => [u, v]);
+}
+
+/** Corner slots first — a tree belongs at the edge of a plot, not its middle. */
+function cornersFirst(slots: Array<[number, number]>): Array<[number, number]> {
+  const corner = (s: [number, number]): boolean => Math.abs(s[0]) > 0.3 && Math.abs(s[1]) > 0.3;
+  return [...slots.filter(corner), ...slots.filter((s) => !corner(s))];
+}
+
+/**
+ * A flower patch near the board; a flowering shrub past `detailReach`.
  *
- * THE BOUNDARIES ARE THE IDEA — a scatter of objects on grass reads as a
- * scatter of objects on grass; the same objects inside hedged plots read as
- * OTHER GARDENS. Every archetype below therefore gets its hedge first and its
- * contents second, and the contents are placed in PLOT FRACTIONS so nothing
- * can escape the hedge whatever shape the quadrilateral takes.
+ * NOT a kerbed bed and NOT a flowering border, which is what the far band used
+ * first. Rendered, the bed's pale kerb read as a FRUIT BOWL and the border's
+ * stacked blocks as a row of candy bars — two more kinds of object in a band
+ * whose whole brief is less noise. A flowering shrub is already out there, so
+ * the far plots say "flowers" with a shape the near ones also use.
+ */
+function patch(plot: Plot, m: SurroundMaterials, i: number): THREE.Object3D {
+  const seed = 701 + i + plot.px * 31 + plot.pz * 17;
+  return plot.out <= SURROUND_PARAMS.detailReach
+    ? distantFlowerPatch(m, makeFlower, { seed, radius: 0.48 + hash(plot.px, plot.pz, 70 + i) * 0.14 })
+    : distantFloweringShrub(m, { seed });
+}
+
+/**
+ * The garden's surround: FENCED PLOTS OF PLANTING, and nothing built.
  *
- * A house stands against the plot edge FURTHEST from the board and faces the
- * lane: a house seen facing away, over its own garden, is the whole "you are
- * inside a neighbourhood" read, and a row of front doors staring at the player
- * is not.
+ * Nuno (IDEA-083): *"remove all the houses and treehouses. Just the
+ * environment — some trees and shrubs with flowers. We can make groups of
+ * flowers using the ones we have on the props, and fences, with squares that
+ * have these components inside."* So the lattice stays (rule 5: the
+ * boundaries are what turn a scatter into somebody's garden) and every plot
+ * is a fenced square of trees, flowering shrubs and flower patches.
  */
 function plotsContent(host: THREE.Group, plot: Plot, m: SurroundMaterials): void {
   const south = plot.band === "south";
   const kind = archetypeFor(plot);
   const seed = plot.px * 31 + plot.pz * 17;
+  const far = plot.out > SURROUND_PARAMS.detailReach;
+  fencePerimeter(host, plot, m);
 
-  // A lawn plot keeps its boundary and almost nothing else. It is not a gap:
-  // it is what stops the neighbourhood reading as wall-to-wall stuff, and the
-  // hedges alone still carry the lattice.
-  hedgePerimeter(host, plot, m, south ? 0.34 : 0.5);
+  const slots = slotsFor(plot);
+  const put = (o: THREE.Object3D, s: [number, number], salt: number): void =>
+    placeIn(host, plot, o, s[0], s[1], plot.scale, hash(plot.px, plot.pz, salt) * Math.PI * 2);
+  // South trees stay short, as everywhere in this band (IDEA-066 rule 6).
+  const tree = (i: number): THREE.Object3D =>
+    distantBroadleaf(m, {
+      height: south ? 1.1 + hash(plot.px, plot.pz, 60 + i) * 0.3 : undefined,
+      seed: 141 + i + seed,
+    });
+  const shrub = (i: number): THREE.Object3D =>
+    hash(plot.px, plot.pz, 90 + i) < 0.75
+      ? distantFloweringShrub(m, { seed: 151 + i + seed })
+      : distantShrubClump(m, { seed: 151 + i + seed });
 
-  if (kind === "house") {
-    const away = plot.band === "north" ? -1 : plot.band === "east" ? 1 : -1;
-    const northSouth = plot.band === "north" || plot.band === "south";
-    const u = northSouth ? 0 : away * 0.45;
-    const v = northSouth ? away * 0.45 : 0;
-    const house = distantHouse(m, { kind: "house", seed: 51 + seed });
-    placeIn(host, plot, house, u, v, plot.scale, hash(plot.px, plot.pz, 5) * 0.5 - 0.25);
-    // A shed or a greenhouse DOWN THE FAR END OF THE GARDEN -- and until now it
-    // was frequently standing INSIDE the house, which is what Nuno reported.
-    //
-    // THE CAUSE IS NOT A SPACING NUMBER, AND THAT IS WHY NUDGING ONE NEVER
-    // FIXED IT. Measured: a house runs up to 4.7 x 3.7 world units at the top
-    // of `plot.scale`, an outbuilding 2.3 x 2.7, and a plot is 7 x 6 tiles.
-    // 3.7 + 2.7 = 6.4 does not fit in 6 and 4.7 + 2.3 = 7.0 does not fit in 7
-    // with any jitter at all, so on those plots there is NO pair of positions
-    // that works and every choice of fractions is just choosing where to clip.
-    // (The old code also used the wrong axis -- it always offset in u and
-    // barely in v, which is right for an east/west plot and wrong for a north
-    // or south one, so the two buildings were 1.78 units apart needing 1.9.)
-    //
-    // So it is SOLVED rather than tuned: four candidate corners are tried in
-    // turn against the house's real measured footprint, and if none of them
-    // clears, the plot simply has no outbuilding. A missing shed is invisible;
-    // a shed inside a house is the first thing anyone sees. Measured, that
-    // costs about one house plot in ten its outbuilding.
-    if (hash(plot.px, plot.pz, 6) < 0.45) {
-      const houseFoot = footprint(house);
-      const far = -away * 0.45;
-      const corners: Array<[number, number]> = northSouth
-        ? [
-            [0.55, far],
-            [-0.55, far],
-            [0.62, -far * 0.25],
-            [-0.62, -far * 0.25],
-          ]
-        : [
-            [far, 0.55],
-            [far, -0.55],
-            [-far * 0.25, 0.62],
-            [-far * 0.25, -0.62],
-          ];
-      const first = Math.floor(hash(plot.px, plot.pz, 28) * 4) % 4;
-      for (let i = 0; i < corners.length; i++) {
-        const [ou, ov] = corners[(first + i) % corners.length];
-        const out = distantHouse(m, {
-          kind: hash(plot.px, plot.pz, 7) < 0.5 ? "shed" : "greenhouse",
-          seed: 61 + plot.px * 13,
-        });
-        placeIn(host, plot, out, ou, ov, plot.scale * 0.85, 1.2);
-        // A real GAP, not merely non-intersection: two buildings whose walls
-        // touch read as one L-shaped building, which is a different mistake
-        // rather than a fixed one.
-        if (footprintsClear(houseFoot, footprint(out), 0.12)) break;
-        host.remove(out);
-        out.traverse((n) => {
-          const mesh = n as THREE.Mesh;
-          if (mesh.isMesh) mesh.geometry.dispose();
-        });
-      }
-    }
-    scatter(host, plot, 1 + Math.floor(hash(plot.px, plot.pz, 8) * 2), 9, (i) =>
-      distantBroadleaf(m, { seed: 71 + i + seed }),
-    );
-    scatter(host, plot, 2 + Math.floor(hash(plot.px, plot.pz, 15) * 3), 16, (i) =>
-      distantShrubClump(m, { seed: 81 + i + plot.px * 3 }),
-    );
-    scatter(host, plot, 1, 27, (i) => distantBed(m, { seed: 91 + i + plot.pz * 7 }), 1.3);
-    // A BORDER OF FLOWERING SHRUBS. IDEA-071's new colour: where a bed builds
-    // its colour out of six small blooms inside a kerb, these ARE the colour,
-    // at twice the size. One or two drifts per garden is the dose -- the
-    // neighbourhood has to stay green with colour IN it, not become a paint
-    // chart, and `bloomColors` is loud on purpose.
-    flowerBorder(host, plot, m, 31);
-    return;
-  }
-
-  if (kind === "allotment") {
-    // No house at all — a greenhouse and beds. This is the archetype that
-    // makes the neighbourhood read as WORKED rather than as a development,
-    // and since IDEA-070 it is the only building the SOUTH band can have.
-    //
-    // South buildings are held to three quarters of their eaves width, which
-    // is the same lever every other south branch in this file already pulls
-    // (the orchard's trees, the lawn's beds). The band is unfogged, nearest
-    // the camera and the largest anything in the surround ever draws, so a
-    // building at full size there does not read as further away — it reads as
-    // bigger than the maze.
-    const ew = south ? 1.55 : undefined;
-    const glass = distantHouse(m, { kind: "greenhouse", eavesWidth: ew, seed: 101 + seed });
-    placeIn(
-      host,
-      plot,
-      glass,
-      hash(plot.px, plot.pz, 9) * 0.8 - 0.4,
-      south ? -0.2 : -0.35,
-      plot.scale,
-      hash(plot.px, plot.pz, 10) * 0.4 - 0.2,
-    );
-    // Same solve as the house plot's outbuilding, and for the same reason: an
-    // allotment's greenhouse is placed on a jittered fraction, so a shed at a
-    // FIXED (0.42, 0.42) sometimes lands on top of it.
-    if (hash(plot.px, plot.pz, 11) < (south ? 0.55 : 0.4)) {
-      const glassFoot = footprint(glass);
-      const spots: Array<[number, number]> = [
-        [0.55, 0.55],
-        [-0.55, 0.55],
-        [0.55, -0.6],
-        [-0.55, -0.6],
-      ];
-      const first = Math.floor(hash(plot.px, plot.pz, 29) * 4) % 4;
-      for (let i = 0; i < spots.length; i++) {
-        const [su, sv] = spots[(first + i) % spots.length];
-        const shed = distantHouse(m, {
-          kind: "shed",
-          eavesWidth: south ? 1.15 : undefined,
-          seed: 111 + seed,
-        });
-        placeIn(host, plot, shed, su, sv, plot.scale * 0.8, 0.9);
-        if (footprintsClear(glassFoot, footprint(shed), 0.12)) break;
-        host.remove(shed);
-        shed.traverse((n) => {
-          const mesh = n as THREE.Mesh;
-          if (mesh.isMesh) mesh.geometry.dispose();
-        });
-      }
-    }
-    scatter(host, plot, 3 + Math.floor(hash(plot.px, plot.pz, 12) * 3), 13, (i) =>
-      distantBed(m, { width: 1.5, depth: 0.55, seed: 121 + i + seed }),
-      1.4,
-    );
-    scatter(host, plot, 1 + Math.floor(hash(plot.px, plot.pz, 24) * 2), 25, (i) =>
-      distantShrubClump(m, { seed: 131 + i + plot.pz }),
-    );
-    flowerBorder(host, plot, m, 33);
+  if (kind === "flowers") {
+    // Past `detailReach` a patch is a flowering shrub (see `patch`), and one
+    // is plenty beside the plot's own shrubs.
+    const nPatch = far ? 1 : 2 + Math.floor(hash(plot.px, plot.pz, 12) * 2);
+    const nShrub = 2 + Math.floor(hash(plot.px, plot.pz, 13) * 2);
+    const hasTree = hash(plot.px, plot.pz, 14) < 0.5;
+    const order = hasTree ? cornersFirst(slots) : slots;
+    let k = 0;
+    if (hasTree) put(tree(0), order[k++], 20);
+    for (let i = 0; i < nPatch; i++) put(patch(plot, m, i), order[k++], 21 + i);
+    for (let i = 0; i < nShrub; i++) put(shrub(i), order[k++], 26 + i);
     return;
   }
 
   if (kind === "orchard") {
-    scatter(host, plot, (south ? 2 : 3) + Math.floor(hash(plot.px, plot.pz, 14) * 3), 30, (i) =>
-      distantBroadleaf(m, {
-        height: south ? 1.0 + hash(plot.px, plot.pz, 60 + i) * 0.3 : undefined,
-        seed: 141 + i + seed,
-      }),
-    );
-    scatter(host, plot, 1 + Math.floor(hash(plot.px, plot.pz, 18) * 2), 19, (i) =>
-      distantShrubClump(m, { seed: 151 + i + plot.px }),
-    );
+    const order = cornersFirst(slots);
+    const nTree = (south ? 2 : 3) + Math.floor(hash(plot.px, plot.pz, 15) * 2);
+    let k = 0;
+    for (let i = 0; i < nTree; i++) put(tree(i), order[k++], 30 + i);
+    // The orchard's and the meadow's single patch is planted near the board
+    // only: out past `detailReach` the plot's shrubs already carry the colour.
+    if (!far) put(patch(plot, m, 0), order[k++], 35);
+    put(shrub(0), order[k++], 36);
+    if (hash(plot.px, plot.pz, 16) < 0.5) put(shrub(1), order[k++], 37);
     return;
   }
 
-  // lawn
-  scatter(host, plot, 1 + Math.floor(hash(plot.px, plot.pz, 21) * 2), 22, (i) =>
-    distantBed(m, { seed: 161 + i + seed }),
-    1.2,
-  );
-  if (!south && hash(plot.px, plot.pz, 23) < 0.5) {
-    scatter(host, plot, 1, 26, (i) => distantShrubClump(m, { seed: 171 + i + plot.pz }));
-  }
-  // A lawn plot is deliberately the empty one -- it is what stops the band
-  // reading as wall-to-wall stuff -- but a lawn with ONE bed on it and nothing
-  // else was reading as a gap rather than as a choice. A single drift is
-  // enough to say somebody keeps it, and it is the cheapest object in the set.
-  flowerBorder(host, plot, m, 34);
+  // meadow: mostly lawn, which is what gives the eye somewhere to rest.
+  const order = cornersFirst(slots);
+  put(tree(0), order[0], 40);
+  if (!far) put(patch(plot, m, 0), order[4], 41);
+  put(shrub(0), order[5], 42);
 }
 
 /** The forest: conifers thickening with distance, no boundaries at all — a
@@ -855,6 +664,14 @@ function parklandContent(host: THREE.Group, plot: Plot, m: SurroundMaterials): v
 }
 
 /**
+ * Where the park's south-fringe trees start on the roll. 0.34 is where the
+ * garden's south fringe BUILDINGS used to end (IDEA-070) — the two themes
+ * shared one window, and the park keeps its exact placement now that the
+ * garden has its own arm and no buildings.
+ */
+const PARK_SOUTH_TREE_FROM = 0.34;
+
+/**
  * What stands in the fringe. LOW, always — it is the nearest thing to the
  * board on the south side, where the frame ends at z = +22 and fog is at
  * zero, and the solved occlusion limit is not the constraint (3.85 units at
@@ -897,77 +714,52 @@ function fringeContent(
         : roll < 0.8
           ? distantShrubClump(m, { seed })
           : distantRockOutcrop(m, { seed });
+  } else if (kind === "plots") {
+    // IDEA-083: THE GARDEN'S FRINGE IS PLANTING, NOTHING BUILT. This annulus
+    // carried IDEA-070's south greenhouses and sheds; it now carries the
+    // flowers, because it is the nearest, least-fogged ring and the one place
+    // a flower is big enough on screen to read as the Props tab's daisy or
+    // tulip rather than as a coloured speck. No fence out here: the fringe is
+    // the maze's own verge, not somebody's plot.
+    const P = SURROUND_PARAMS;
+    if (roll < P.fringeFlowers) {
+      child = distantFlowerPatch(m, makeFlower, {
+        seed,
+        radius: 0.42 + hash(Math.round(f.x), Math.round(f.z), 57) * 0.14,
+        count: 4 + Math.floor(hash(Math.round(f.x), Math.round(f.z), 58) * 2),
+      });
+    } else if (f.band === "south" && roll < P.fringeFlowers + P.southFringeTrees) {
+      // Short trees in the south, for IDEA-070's reason — see southFringeTrees.
+      child = distantBroadleaf(m, {
+        height: 1.7 + hash(Math.round(f.x), Math.round(f.z), 56) * 0.6,
+        seed,
+      });
+    } else if (roll < 0.86) {
+      child =
+        roll < 0.66 ? distantFloweringShrub(m, { seed }) : distantShrubClump(m, { seed });
+    } else {
+      child = distantBroadleaf(m, { height: 1.15, seed });
+    }
   } else if (
     f.band === "south" &&
-    roll >= SURROUND_PARAMS.southFringeBuildings &&
-    roll < SURROUND_PARAMS.southFringeBuildings + SURROUND_PARAMS.southFringeTrees
+    roll >= PARK_SOUTH_TREE_FROM &&
+    roll < PARK_SOUTH_TREE_FROM + SURROUND_PARAMS.southFringeTrees
   ) {
-    // IDEA-070: trees in the south, and SHORT ones. Everything in this band
-    // is held down for the same reason — it is unfogged, nearest the camera
-    // and the largest anything in the surround ever draws, so a tree at the
-    // north band's size reads as standing on the maze rather than behind it.
-    // 1.7..2.3, not the 1.15 the first tuning used. The solved occlusion
-    // limit for this band is 3.85 units, so the constraint here is CROWDING
-    // rather than sightline — and under that limit a tree short enough to be
-    // "safe" is just a shrub. At 1.15 they read as more of the bushes already
-    // scattered there, which is the opposite of filling a gap.
+    // The park's south trees (IDEA-070), short for the band's reason. They
+    // were 1.15 units on the first tuning and read as more of the bushes;
+    // 1.7..2.3 is still well under the solved 3.85 occlusion limit.
     child = distantBroadleaf(m, {
       height: 1.7 + hash(Math.round(f.x), Math.round(f.z), 56) * 0.6,
       seed,
     });
-  } else if (
-    kind !== "parkland" &&
-    f.band === "south" &&
-    roll < SURROUND_PARAMS.southFringeBuildings
-  ) {
-    // NOT IN THE PARK (IDEA-081): a public park has no sheds or greenhouses,
-    // and its south is the avenue's continuation. Those cells fall through to
-    // the planting below instead.
-    // IDEA-070: THE SOUTH FRINGE IS WHERE A SOUTH BUILDING HAS TO GO, and
-    // finding that out is most of what this change was.
-    //
-    // Nuno: *"on the bottom of the maze, on the zone we have the buttons and
-    // the joystick, we should balance the world — there are no houses or
-    // greenhouses there."* The obvious fix was to let the south PLOTS take
-    // allotments, and that is done — but measured, it barely shows, because
-    // of where the lattice lands: on a phone the visible south window is
-    // z 14.5..22.4 and the plot row sits at 22.5..24.1, i.e. AT or PAST the
-    // frame edge, with exactly ONE plot inside it. The band looked empty
-    // because almost nothing was ever built there, not because of the mix.
-    //
-    // The FRINGE is the mechanism that owns that annulus — IDEA-066 rule 7
-    // added it for precisely this gap, "a plot row straddling the keep-clear
-    // boundary is dropped whole, which on the south side left the nearest
-    // five units bare". It carried only LOW content; now the south share of
-    // it can also carry a greenhouse or a shed, which are the two buildings
-    // low enough for the nearest, unfogged, largest-on-screen band.
-    // MOSTLY GREENHOUSES, and that is a VALUE decision rather than a taste
-    // one. The first tuning split them evenly with sheds and the render said
-    // no: a shed is a small RED roof, the flower beds out here are small dark
-    // RED rectangles, and at this size on dark lawn the two are the same mark.
-    // A greenhouse is PALE — that is its whole identity rank 1, a pale box on
-    // a dark plinth — so it is the one building in the set that separates from
-    // everything already standing in this band.
-    child =
-      roll < SURROUND_PARAMS.southFringeBuildings * 0.78
-        ? distantHouse(m, { kind: "greenhouse", eavesWidth: 1.75, seed })
-        : distantHouse(m, { kind: "shed", eavesWidth: 1.2, seed });
   } else {
-    // NO FLOWERING BORDER OUT HERE, deliberately. The fringe is the annulus
-    // between the keep-clear box and the first plot row, so it has no hedge
-    // for a border to stand against -- and a saturated mass alone on lawn is
-    // the exact thing that made the first build read as litter, at the one
-    // distance where everything is biggest and least fogged.
-    //
-    // And no flower BED out here in the park either (IDEA-081) — see
-    // `parklandContent`. That share of cells goes to shrubs instead.
-    const bedShare = kind === "parkland" ? 0 : 0.23;
+    // No flowering border and no flower bed in the park's fringe (IDEA-081):
+    // a saturated mass alone on lawn reads as litter, and a public park's
+    // nearest ring is the avenue's continuation.
     child =
-      roll < 0.78 - bedShare
+      roll < 0.78
         ? distantShrubClump(m, { seed })
-        : roll < 0.78
-          ? distantBed(m, { seed })
-          : distantBroadleaf(m, { height: 1.15, seed });
+        : distantBroadleaf(m, { height: 1.15, seed });
   }
   child.position.set(f.x, 0, f.z);
   const spin = hash(Math.round(f.x), Math.round(f.z), 55);
@@ -1018,9 +810,11 @@ function cacheKey(kind: SurroundKind, pal: SurroundPaletteInput): string {
     P.plotD,
     P.lane,
     P.density,
-    P.houseChance,
-    P.allotmentChance,
+    P.flowerGardenChance,
     P.orchardChance,
+    P.detailReach,
+    P.fringeFlowers,
+    P.southFringeTrees,
     P.keepClear,
     P.nearScale,
     P.farScale,

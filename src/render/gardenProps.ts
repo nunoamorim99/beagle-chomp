@@ -689,7 +689,13 @@ export function makeTreehouse(params: PropParams, h: number): THREE.Group {
 
 /** A flat petal: a rounded blade lying in XZ, pointing +X from the origin, so
  *  a caller places it by rotating about Y and tilting about Z. */
-function petalGeometry(len: number, wide: number, thick: number, pointy: boolean): THREE.BufferGeometry {
+function petalGeometry(
+  len: number,
+  wide: number,
+  thick: number,
+  pointy: boolean,
+  curveSegments = 3,
+): THREE.BufferGeometry {
   const s = new THREE.Shape();
   const w = wide / 2;
   s.moveTo(0, 0);
@@ -708,7 +714,7 @@ function petalGeometry(len: number, wide: number, thick: number, pointy: boolean
   }
   // bevelEnabled false, always: the bevel grows OUTWARD and would make every
   // petal wider and longer than the number asked for (IDEA-057 rule 4).
-  const geo = new THREE.ExtrudeGeometry(s, { depth: thick, bevelEnabled: false, curveSegments: 3 });
+  const geo = new THREE.ExtrudeGeometry(s, { depth: thick, bevelEnabled: false, curveSegments });
   geo.rotateX(-Math.PI / 2);
   return geo;
 }
@@ -783,7 +789,24 @@ export function makeGardenFlowerHead(params: PropParams, h: number): THREE.Group
   return g;
 }
 
-export function makeGardenFlower(params: PropParams, h: number, stemmed = true): THREE.Group {
+/**
+ * `resolution: "distant"` is the SAME flower at a lower segment count, for the
+ * garden's surround (IDEA-083) — IDEA-065 v4's rule for the conifer: what the
+ * band shares with the hero is the shape, and what differs is resolution.
+ * Petal COUNTS and every proportion are untouched, because those are what
+ * separate the five kinds; only curve and radial segments drop, which is
+ * detail nobody can see at 15-40 px a tile and roughly two thirds of the
+ * triangles. The default is "hero", so the apron's flowers are unchanged.
+ */
+export function makeGardenFlower(
+  params: PropParams,
+  h: number,
+  stemmed = true,
+  resolution: "hero" | "distant" = "hero",
+): THREE.Group {
+  const lo = resolution === "distant";
+  const cs = lo ? 1 : 3;
+  const seg = (hero: number, distant: number): number => (lo ? distant : hero);
   const g = new THREE.Group();
   const kind = (params.flowerKind ?? "daisy") as GardenFlowerKind;
   const width = params.width ?? 1;
@@ -802,7 +825,7 @@ export function makeGardenFlower(params: PropParams, h: number, stemmed = true):
   const stemH = stemmed ? (kind === "sunflower" ? 0.3 : kind === "rose" ? 0.21 : 0.24) * height : 0;
   if (stemmed) {
     const stem = part(
-      new THREE.CylinderGeometry(0.011 * width, 0.015 * width, stemH, 5),
+      new THREE.CylinderGeometry(0.011 * width, 0.015 * width, stemH, seg(5, 4)),
       stemMat,
       "stem",
       g,
@@ -825,7 +848,7 @@ export function makeGardenFlower(params: PropParams, h: number, stemmed = true):
     g.rotation.y = r() * Math.PI * 2;
   } else if (kind === "tulip") {
     for (const side of [-1, 1]) {
-      const leaf = part(petalGeometry(0.17 * height, 0.05 * width, 0.008, true), leafMat, side < 0 ? "leafL" : "leafR", g);
+      const leaf = part(petalGeometry(0.17 * height, 0.05 * width, 0.008, true, cs), leafMat, side < 0 ? "leafL" : "leafR", g);
       leaf.position.set(side * 0.015 * width, 0.02, 0);
       // The SIDE comes from rotation.y and the LIFT from rotation.z, and the
       // lift is positive on both. Signing the lift by side instead was the
@@ -837,7 +860,7 @@ export function makeGardenFlower(params: PropParams, h: number, stemmed = true):
     }
   } else {
     for (const side of [-1, 1]) {
-      const leaf = part(petalGeometry(0.075 * width, 0.045 * width, 0.007, false), leafMat, side < 0 ? "leafL" : "leafR", g);
+      const leaf = part(petalGeometry(0.075 * width, 0.045 * width, 0.007, false, cs), leafMat, side < 0 ? "leafL" : "leafR", g);
       leaf.position.set(0, stemH * (side < 0 ? 0.42 : 0.6), 0);
       leaf.rotation.y = side < 0 ? Math.PI * 0.85 : -0.1;
       leaf.rotation.z = 0.5;
@@ -861,7 +884,7 @@ export function makeGardenFlower(params: PropParams, h: number, stemmed = true):
     for (let i = 0; i < rays; i++) {
       const a = (i / rays) * Math.PI * 2;
       const p = part(
-        petalGeometry(headR - eyeR * 0.4, headR * (sun ? 0.42 : 0.5), 0.014, sun),
+        petalGeometry(headR - eyeR * 0.4, headR * (sun ? 0.42 : 0.5), 0.014, sun, cs),
         petalMat,
         `ray${i}`,
         head,
@@ -876,14 +899,14 @@ export function makeGardenFlower(params: PropParams, h: number, stemmed = true):
       // that stops being true.
       p.rotation.z = 0.22;
     }
-    const disc = part(new THREE.CylinderGeometry(eyeR, eyeR * 0.92, 0.03 * width, 12), centreMat, "eye", head);
+    const disc = part(new THREE.CylinderGeometry(eyeR, eyeR * 0.92, 0.03 * width, seg(12, 6)), centreMat, "eye", head);
     disc.position.y = 0.012 * width;
     if (sun) {
       // The reference's disc has a distinctly darker inner button, at 0.23 of
       // the head against the disc's 0.43. It is the sunflower's own two-tone
       // and it survives the shrink because it is a value step, not a detail.
       const inner = part(
-        new THREE.CylinderGeometry(eyeR * 0.54, eyeR * 0.54, 0.034 * width, 10),
+        new THREE.CylinderGeometry(eyeR * 0.54, eyeR * 0.54, 0.034 * width, seg(10, 5)),
         toon({ color: 0x4a2c17 }),
         "eyeInner",
         head,
@@ -903,7 +926,7 @@ export function makeGardenFlower(params: PropParams, h: number, stemmed = true):
     // neighbouring petals OVERLAP rather than abut, and the outer ring is the
     // only one that leans out.
     const R = 0.082 * width;
-    const core = part(new THREE.SphereGeometry(R * 0.62, 9, 7), centreMat, "core", head);
+    const core = part(new THREE.SphereGeometry(R * 0.62, seg(9, 6), seg(7, 4)), centreMat, "core", head);
     core.position.y = R * 0.72;
     const RINGS: Array<[number, number, number, number]> = [
       // count, radius scale, height, lean (positive = out)
@@ -919,7 +942,7 @@ export function makeGardenFlower(params: PropParams, h: number, stemmed = true):
           // radiusTop > radiusBottom, so the petal is WIDER at its lip — a
           // rose petal opens outward, and a shell that tapers the other way
           // reads as a bud scale.
-          new THREE.CylinderGeometry(R * rs * 0.86, R * rs * 0.6, R * 0.92, 7, 1, true, -Math.PI * 0.62, Math.PI * 1.24),
+          new THREE.CylinderGeometry(R * rs * 0.86, R * rs * 0.6, R * 0.92, seg(7, 4), 1, true, -Math.PI * 0.62, Math.PI * 1.24),
           ring === 2 ? centreMat : petalMat,
           `whorl${ring}_${i}`,
           pivot,
@@ -932,7 +955,7 @@ export function makeGardenFlower(params: PropParams, h: number, stemmed = true):
     // lifts pokes through the petals it is meant to cradle.
     for (let i = 0; i < 4; i++) {
       const a = (i / 4) * Math.PI * 2 + 0.4;
-      const sep = part(petalGeometry(R * 0.8, R * 0.4, 0.006, true), stemMat, `sepal${i}`, head);
+      const sep = part(petalGeometry(R * 0.8, R * 0.4, 0.006, true, cs), stemMat, `sepal${i}`, head);
       sep.position.set(Math.cos(a) * R * 0.3, R * 0.18, Math.sin(a) * R * 0.3);
       sep.rotation.y = -a;
       sep.rotation.z = -0.7;
@@ -950,7 +973,7 @@ export function makeGardenFlower(params: PropParams, h: number, stemmed = true):
     // player sees is whether it is shut.
     const R = 0.062 * width;
     const cupH = 0.155 * height;
-    const throat = part(new THREE.SphereGeometry(R * 0.66, 9, 7), centreMat, "throat", head);
+    const throat = part(new THREE.SphereGeometry(R * 0.66, seg(9, 6), seg(7, 4)), centreMat, "throat", head);
     throat.position.y = cupH * 0.78;
     throat.scale.y = 1.2;
     for (let i = 0; i < 3; i++) {
@@ -959,7 +982,7 @@ export function makeGardenFlower(params: PropParams, h: number, stemmed = true):
       // A wide arc, so the three petals OVERLAP into a closed wall instead of
       // leaving three slots down the sides.
       const p = part(
-        new THREE.CylinderGeometry(R * 0.5, R * 0.94, cupH, 10, 1, true, -Math.PI * 0.72, Math.PI * 1.44),
+        new THREE.CylinderGeometry(R * 0.5, R * 0.94, cupH, seg(10, 5), 1, true, -Math.PI * 0.72, Math.PI * 1.44),
         petalMat,
         `cup${i}`,
         pivot,
@@ -971,13 +994,13 @@ export function makeGardenFlower(params: PropParams, h: number, stemmed = true):
       p.rotation.x = -0.1;
     }
     // The rounded base the petals sit in, and the tips closing over the top.
-    const base = part(new THREE.SphereGeometry(R * 0.92, 10, 8), petalMat, "cupBase", head);
+    const base = part(new THREE.SphereGeometry(R * 0.92, seg(10, 6), seg(8, 4)), petalMat, "cupBase", head);
     base.position.y = cupH * 0.2;
     base.scale.y = 0.8;
     for (let i = 0; i < 3; i++) {
       const a = (i / 3) * Math.PI * 2 + Math.PI / 3;
       const pivot = shellPivot(head, a, `tipPivot${i}`);
-      const tip = part(petalGeometry(R * 0.86, R * 0.8, 0.01, true), petalMat, `tip${i}`, pivot);
+      const tip = part(petalGeometry(R * 0.86, R * 0.8, 0.01, true, cs), petalMat, `tip${i}`, pivot);
       tip.position.set(0, cupH * 0.86, R * 0.18);
       // Nearly vertical, curling over the throat: this is the pinch at the
       // top of a tulip and it is what stops the cup reading as a tube.
@@ -993,7 +1016,7 @@ export function makeGardenFlower(params: PropParams, h: number, stemmed = true):
       for (let i = 0; i < 5; i++) {
         const a = (i / 5) * Math.PI * 2 + ring * (Math.PI / 5);
         const p = part(
-          petalGeometry(R * (ring === 0 ? 1 : 0.82), R * 0.86, 0.015, false),
+          petalGeometry(R * (ring === 0 ? 1 : 0.82), R * 0.86, 0.015, false, cs),
           petalMat,
           `petal${ring}_${i}`,
           head,
@@ -1006,7 +1029,7 @@ export function makeGardenFlower(params: PropParams, h: number, stemmed = true):
         p.rotation.z = ring === 0 ? -0.1 : 0.45;
       }
     }
-    const eye = part(new THREE.SphereGeometry(R * 0.24, 8, 6), centreMat, "eye", head);
+    const eye = part(new THREE.SphereGeometry(R * 0.24, seg(8, 5), seg(6, 3)), centreMat, "eye", head);
     eye.position.y = R * 0.3;
     eye.scale.y = 0.7;
   }

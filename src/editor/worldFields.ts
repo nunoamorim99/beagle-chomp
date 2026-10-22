@@ -129,43 +129,44 @@ export const WORLD_GROUPS: readonly WorldGroup[] = [
       },
       {
         file: SURROUND,
-        path: ["SURROUND_PARAMS", "houseChance"],
-        label: "house chance",
+        path: ["SURROUND_PARAMS", "flowerGardenChance"],
+        label: "flower gardens",
         min: 0,
         max: 1,
         step: 0.05,
         hint:
-          "Ignored on the SOUTH band, which is portrait-only, unfogged and sits right under the HUD.",
+          "Garden only. A fenced plot of flower patches (the Props tab's own daisy, tulip, rose, sunflower and blossom) among flowering shrubs. Nothing in the garden's surround is built -- no houses, sheds or greenhouses (IDEA-083).",
       },
       {
         file: SURROUND,
-        path: ["SURROUND_PARAMS", "allotmentChance"],
-        label: "allotment chance",
+        path: ["SURROUND_PARAMS", "orchardChance"],
+        label: "orchards",
         min: 0,
         max: 1,
         step: 0.05,
         hint:
-          "Cumulative AFTER houseChance: a plot with a greenhouse and beds and no house at all. This is the archetype that makes the neighbourhood read as worked rather than as a development.",
+          "Cumulative after flower gardens: trees in the corners, a patch and a shrub. Whatever is left over is a MEADOW -- one tree, a border, a patch. Keep some: it is what gives the eye somewhere to rest.",
       },
       {
         file: SURROUND,
-        path: ["SURROUND_PARAMS", "southAllotmentChance"],
-        label: "south: allotments",
+        path: ["SURROUND_PARAMS", "detailReach"],
+        label: "near detail reach (tiles)",
+        min: 0,
+        max: 30,
+        step: 1,
+        integer: true,
+        hint:
+          "Plots further out than this plant a kerbed BED instead of real flowers, and a post-and-rail fence instead of pickets. Past here a flower and a picket are a few pixels -- they no longer read, they only cost triangles.",
+      },
+      {
+        file: SURROUND,
+        path: ["SURROUND_PARAMS", "fringeFlowers"],
+        label: "fringe: flower patches",
         min: 0,
         max: 1,
         step: 0.01,
         hint:
-          "The SOUTH band is portrait-only, unfogged, nearest the camera and right under the HUD and the D-pad -- only ONE plot row is ever visible there, so whatever stands in it is the biggest thing in the picture. It takes ALLOTMENTS and never houses: a greenhouse is 2.08 wide-over-tall against a house's 1.40, so it fills ground without standing up into the frame. Whatever is left over splits between orchards and lawn.",
-      },
-      {
-        file: SURROUND,
-        path: ["SURROUND_PARAMS", "southFringeBuildings"],
-        label: "south: fringe buildings",
-        min: 0,
-        max: 1,
-        step: 0.01,
-        hint:
-          "THIS is the dial that fills the south band, not the archetype mix. Measured on a phone the visible south window is z 14.5..22.4 while the plot lattice lands at 22.5..24.1 -- exactly ONE plot falls inside it, so the band looked empty because nothing was ever BUILT there. The fringe owns that annulus. Greenhouses and sheds only: the two buildings low enough for the nearest, unfogged band.",
+          "Garden only. The share of the nearest ring's cells planted with a flower patch -- the least-fogged band, where the flowers read best.",
       },
       {
         file: SURROUND,
@@ -176,16 +177,6 @@ export const WORLD_GROUPS: readonly WorldGroup[] = [
         step: 0.01,
         hint:
           "Short trees in the nearest band. Everything down here is held down for the same reason: unfogged, nearest the camera, and the largest anything in the surround ever draws -- a tree at the north band's size reads as standing ON the maze rather than behind it.",
-      },
-      {
-        file: SURROUND,
-        path: ["SURROUND_PARAMS", "orchardChance"],
-        label: "orchard chance",
-        min: 0,
-        max: 1,
-        step: 0.05,
-        hint:
-          "Cumulative after the two above. Trees and lawn, no building. Whatever is left over after all three is a LAWN plot -- keep some, it is what stops the surround reading as wall-to-wall stuff.",
       },
       {
         file: SURROUND,
