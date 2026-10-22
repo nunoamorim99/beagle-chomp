@@ -76,6 +76,7 @@ import {
 } from "./archway";
 import { collapseByMaterial, mergeBySignature } from "./propMerge";
 import { buildTunnelPortals, type TunnelPortals } from "./tunnelPortal";
+import { buildNeonEdges, type NeonEdges } from "./neonEdges";
 
 export const WALL_H = 1;
 
@@ -204,6 +205,10 @@ export interface Board {
    *  every theme gets a portal, in its own colour (tunnelPortal.ts). Owns its
    *  geometry and materials, so teardown is its own `dispose()`. */
   tunnelPortals: TunnelPortals | null;
+  /** IDEA-084: Arcade Night's neon outline along every exposed wall edge, or
+   *  `null` for a theme whose walls are not "flat" (neonEdges.ts). Grid-derived
+   *  and owns its geometry and materials, so teardown is its own `dispose()`. */
+  neonEdges: NeonEdges | null;
 }
 
 // IDEA-026: wall/floor/biscuit materials are shared, module-level, and
@@ -2081,6 +2086,7 @@ export function buildBoard(scene: THREE.Object3D, grid: Grid): Board {
   const verge = buildVerge(scene, theme);
   const tunnelArches = buildTunnelArches(scene, grid, theme);
   const tunnelPortals = buildTunnelPortals(scene, grid, theme);
+  const neonEdges = buildNeonEdges(scene, grid, theme.palette.wallTexture, WALL_H);
 
   return {
     pelletMeshes,
@@ -2100,6 +2106,7 @@ export function buildBoard(scene: THREE.Object3D, grid: Grid): Board {
     verge,
     tunnelArches,
     tunnelPortals,
+    neonEdges,
   };
 }
 
@@ -3804,6 +3811,9 @@ export function applyBoardTheme(board: Board, scene: THREE.Object3D, grid: Grid,
   // IDEA-083: the portal's colour is the theme's, so a re-theme rebuilds it.
   board.tunnelPortals?.dispose();
   board.tunnelPortals = buildTunnelPortals(scene, grid, theme);
+  // IDEA-084: whether there is an outline at all is the theme's wall KIND.
+  board.neonEdges?.dispose();
+  board.neonEdges = buildNeonEdges(scene, grid, theme.palette.wallTexture, WALL_H);
 }
 
 /**

@@ -48,6 +48,7 @@ import { PROP_SHAPE_FIELDS, getPropDef, type PropParams } from "../src/game/prop
 import {
   ARCH_DEFAULTS,
   ARCH_PARAMS,
+  archAperture,
   archIsDirected,
   archTransformFor,
   archYawFor,
@@ -1042,6 +1043,59 @@ section("Night City's arch is a neon gateway");
   {
     const m = /archKind:\s*\[([^\]]*)\]/.exec(inspectorSrc);
     ok("the Props tab offers the neon kind", !!m && m[1].includes('"neon"'), m ? m[1] : "");
+  }
+}
+
+// ---------------------------------------------------------------------------
+section("Arcade Night's arch is a warp gate");
+
+// IDEA-084. Nuno: the maze's own neon outline lifting off the floor to frame
+// the portal — pillars cut from the wall block, a glowing arc, a biscuit trail.
+{
+  const arcade = MAZE_THEMES.find((t) => t.id === "classic");
+  ok("Arcade Night names a tunnel arch", typeof arcade?.tunnelArch === "string");
+  const def = getPropDef(arcade?.tunnelArch ?? "");
+  ok("…and it is a real prop of the archway shape", def.shape === "archway");
+  const wp = def.params as PropParams;
+  ok("…and it is the WARP kind, not the city's gateway", wp.archKind === "warp");
+  ok("…symmetric, so both mouths keep the shared turn", !archIsDirected(wp));
+
+  const arch = makeArchway(wp, 0.37);
+  for (const n of ["pillars", "pillarL", "pillarR", "edgesL", "edgesR", "arc", "tubeCore", "tubeHalo", "pellets", "crownPellet"]) {
+    ok(`it has its ${n}`, !!arch.getObjectByName(n));
+  }
+  ok("it opts out of the style, like every unlit light here", arch.userData.madboxSkip === true);
+
+  const ap = archAperture(wp);
+  ok("the pillars are the maze wall's height (springs at WALL_H)", Math.abs(ap.springY - 1) < 0.03, ap.springY.toFixed(3));
+  {
+    arch.updateMatrixWorld(true);
+    let inCorridor = 0;
+    const v = new THREE.Vector3();
+    arch.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh) return;
+      const a = m.geometry.getAttribute("position");
+      for (let i = 0; i < a.count; i++) {
+        v.fromBufferAttribute(a, i).applyMatrix4(m.matrixWorld);
+        if (Math.abs(v.x) < 0.5 * TILE && v.y < ap.springY - 0.05) inCorridor++;
+      }
+    });
+    ok("nothing stands in the corridor below the arc", inCorridor === 0, `${inCorridor} vertices`);
+  }
+  {
+    const pellet = arch.getObjectByName("pellet0") as THREE.Mesh | undefined;
+    const halo = arch.getObjectByName("tubeHalo") as THREE.Mesh | undefined;
+    const pr = (pellet?.geometry as THREE.SphereGeometry | undefined)?.parameters.radius ?? 0;
+    const hr = (halo?.geometry as THREE.TubeGeometry | undefined)?.parameters.radius ?? 1;
+    // A biscuit inside the additive halo washes to pale pink (v1's render).
+    ok("the biscuits are bigger than the halo they sit in", pr > hr, `${pr} vs ${hr}`);
+    const pm = pellet?.material as THREE.MeshToonMaterial | undefined;
+    ok("…and are the biscuit colour", pm?.color.getHex() === (wp.blossomColor ?? 0));
+  }
+  {
+    const m = /archKind:\s*\[([^\]]*)\]/.exec(inspectorSrc);
+    ok("the Props tab offers the warp kind", !!m && m[1].includes('"warp"'), m ? m[1] : "");
   }
 }
 

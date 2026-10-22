@@ -196,7 +196,7 @@ export interface PropParams {
    *  `makeNeonArch` lists its reinterpreted dials (`archPier` the post,
    *  `archCrown` the gap between the tubes, `archBlossoms` the bulbs,
    *  `archCrest` the sign's size). */
-  archKind?: "hedge" | "trees" | "rocks" | "gate" | "neon";
+  archKind?: "hedge" | "trees" | "rocks" | "gate" | "neon" | "warp";
   /** archway only: the opening's width as a fraction of the portal's height
    *  (default 0.5, which is 1.03 world units — ONE MAZE TILE, so the arch
    *  frames the tunnel corridor exactly). The reference measures 0.338; the
@@ -1173,6 +1173,35 @@ export const PROP_LIBRARY: readonly PropDef[] = [
       archCrown: 0.05,
       archCrest: 1,
       archBlossoms: 12,
+      archThreshold: false,
+      archFence: false,
+    },
+  },
+  {
+    // IDEA-084: Arcade Night's tunnel mouth. Two pillars cut from the maze's
+    // own wall block, outlined in the maze's neon, a glowing arc between them
+    // and a biscuit trail over the top — the outline lifting off the floor to
+    // frame the portal. Low (WALL_H pillars, tube above) for archway.ts rule
+    // 6; see `makeWarpArch`. Height 0.7 x 2.4 = 1.68; opening 0.655 puts the
+    // pillars' inner faces at +-0.55, just outside the one-tile corridor; rise
+    // 1.24 of that half-width springs the arc from exactly WALL_H.
+    id: "warp-gate",
+    name: "Warp Gate",
+    shape: "archway",
+    params: {
+      height: 0.7,
+      width: 1,
+      archKind: "warp",
+      foliageColors: [0x2f62ff, 0xa8c8ff],
+      blossomColor: 0xe3b778,
+      trunkColor: 0x2b2b6b,
+      archOpening: 0.655,
+      archRise: 1.24,
+      archCurve: 2,
+      archPier: 0.2,
+      archDepth: 0.2,
+      archCrest: 1,
+      archBlossoms: 7,
       archThreshold: false,
       archFence: false,
     },

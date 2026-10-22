@@ -1195,6 +1195,8 @@ export class Game {
     }
     // IDEA-083: the portals own their shader materials and geometry.
     level.board.tunnelPortals?.dispose();
+    // IDEA-084: the neon outline owns its merged geometry and materials.
+    level.board.neonEdges?.dispose();
     // IDEA-060: the fence owns its geometry AND its material (fence.ts), so it
     // needs a real disposal, not the bare scene.remove the walls above get.
     if (level.board.fence) {

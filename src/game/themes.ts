@@ -408,6 +408,7 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
     secret: true,
     price: 0,
     ambience: "none",
+    tunnelArch: "warp-gate",
     palette: {
       bg: 0x0b0b16,
       backdropTop: 0x232348,

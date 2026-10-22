@@ -79,8 +79,8 @@ const ENUM_FIELDS: Partial<Record<keyof PropParams, readonly string[]>> = {
   // IDEA-067 v3. WHICH plant the tunnel arch is made of -- a hedge portal or
   // two trees with a branch from each. Same trap a third time.
   // IDEA-080 added the beach's sea arch.
-  // IDEA-083 added Night City's neon gateway.
-  archKind: ["hedge", "trees", "rocks", "gate", "neon"],
+  // IDEA-083 added Night City's neon gateway, IDEA-084 Arcade Night's warp gate.
+  archKind: ["hedge", "trees", "rocks", "gate", "neon", "warp"],
 };
 
 /** Slider range/step per numeric field, per the task brief's exact numbers.

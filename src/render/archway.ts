@@ -84,6 +84,7 @@ import { FENCE_H, fencePanelGeometry } from "./fence";
 import { hexOf, lit, mix, rgbOf } from "./paint";
 import { makeGardenFlowerHead } from "./gardenProps";
 import { wallTextureFor } from "./wallTexture";
+import { NEON_EDGE_PARAMS } from "./neonEdges";
 
 /** Deterministic per-instance variation from the placement hash — the same
  *  generator gardenProps.ts and forestProps.ts use, so an arch looks the same
@@ -293,6 +294,7 @@ export function makeArchway(p: PropParams, instanceHash: number): THREE.Group {
   if (p.archKind === "gate") return makeGateArch(p, instanceHash);
   if (p.archKind === "rocks") return makeRockArch(p, instanceHash);
   if (p.archKind === "neon") return makeNeonArch(p, instanceHash);
+  if (p.archKind === "warp") return makeWarpArch(p, instanceHash);
   const r = rand(instanceHash);
   const g = new THREE.Group();
 
@@ -1010,6 +1012,159 @@ function makeNeonArch(p: PropParams, instanceHash: number): THREE.Group {
     }
     // A hair of tilt per instance, so it reads as hung rather than machined.
     sign.rotation.z = (r() - 0.5) * 0.06;
+  }
+  return g;
+}
+
+/** The warp gate's defaults: the maze's own wall indigo for the pillars and
+ *  Arcade Night's biscuit for the pellet trail. The tube colours come from
+ *  neonEdges.ts so the gate and the maze outline are the same light. */
+const WARP_PILLAR = 0x2b2b6b;
+const WARP_PELLET = 0xe3b778;
+
+/**
+ * THE WARP GATE — Arcade Night's tunnel mouth (IDEA-084).
+ *
+ * Nuno, choosing it from five: *"ok lets go with the 1"* — the maze's own neon
+ * outline lifting off the floor to frame the portal. Two pillars cut from the
+ * wall block (the same indigo, the same height, outlined in the same pale
+ * tube the maze edges carry), a glowing blue arc springing from pillar top to
+ * pillar top, and a trail of biscuits strung along the arc with a big one at
+ * the crown — the tribute board's own pellets, running over the gate.
+ *
+ * IT IS NOT THE NIGHT CITY GATEWAY RECOLOURED. That one is a SIGN — steel
+ * posts, two hues, marquee bulbs, a bone. This one is the MAZE: the pillars
+ * are wall blocks, so where the gate stands at the board's edge it reads as
+ * the outline stepping up out of the wall line, one light with the strips.
+ *
+ * RULE 6 HOLDS BY BEING LOW. The pillars are WALL_H tall, exactly the hedge
+ * line, and everything above them is tube — no lid anywhere, so from the
+ * 59-degree camera the arc is a bright stroke across the tunnel mouth and the
+ * corridor stays in view under it.
+ *
+ * THE LIGHT IS UNLIT. The tube core and the pillar edges are MeshBasic in the
+ * maze outline's pale core colour, and the arc carries an additive halo tube
+ * — this project has no bloom pass, and the outline (neonEdges.ts) makes its
+ * glow the same way. Arcade Night is a night board, so the style never
+ * reaches it; `madboxSkip` keeps that true in a showcase that restyles all.
+ *
+ * DIALS: `archPier` is the pillar's width, `archDepth` its depth,
+ * `archBlossoms` the number of biscuits on the arc, `archCrest` the size of
+ * the crown biscuit (0 = none). `foliageColors[0]` is the glow, `[1]` the
+ * tube core, `blossomColor` the biscuits, `trunkColor` the pillars.
+ * `archCrown`, `archRibbon`, `archFence` and `archThreshold` do nothing here.
+ */
+function makeWarpArch(p: PropParams, instanceHash: number): THREE.Group {
+  const g = new THREE.Group();
+  g.userData.madboxSkip = true;
+  const r = rand(instanceHash);
+  const H = ARCH_DEFAULTS.baseHeight * (p.height ?? 1);
+  const wide = p.width ?? 1;
+  const hw = (H * (p.archOpening ?? ARCH_DEFAULTS.opening) * wide) / 2;
+  const rise = hw * (p.archRise ?? ARCH_DEFAULTS.rise);
+  const curve = Math.max(1.05, p.archCurve ?? ARCH_DEFAULTS.curve);
+  const springY = H - rise;
+  const pw = H * (p.archPier ?? 0.2);
+  const pd = H * (p.archDepth ?? 0.2);
+
+  const glowHex = p.foliageColors?.[0] ?? NEON_EDGE_PARAMS.glow;
+  const coreHex = p.foliageColors?.[1] ?? NEON_EDGE_PARAMS.core;
+  const pillarHex = p.trunkColor ?? WARP_PILLAR;
+  // The maze wall's own emissive lift (themes.ts: 0x14143a at 0.72), so a
+  // pillar and the wall block beside it are the same value in the dark.
+  const pillarMat = toon({ color: pillarHex, emissive: pillarHex, emissiveIntensity: 0.33 });
+  const coreMat = new THREE.MeshBasicMaterial({ color: coreHex });
+  const haloMat = new THREE.MeshBasicMaterial({
+    color: glowHex,
+    transparent: true,
+    opacity: 0.45,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+  const pelletHex = p.blossomColor ?? WARP_PELLET;
+  const pelletMat = toon({ color: pelletHex, emissive: pelletHex, emissiveIntensity: 0.45 });
+
+  // --- 1: the pillars, outlined like the maze --------------------------------
+  // Outside the opening (inner faces at +-hw), so the corridor is untouched.
+  const pillars = new THREE.Group();
+  pillars.name = "pillars";
+  g.add(pillars);
+  const px = hw + pw / 2;
+  const e = 0.035; // edge tube thickness — the outline's width at this size
+  for (const s of [-1, 1] as const) {
+    const side = s < 0 ? "L" : "R";
+    const pillar = part(new THREE.BoxGeometry(pw, springY, pd), pillarMat, `pillar${side}`, pillars);
+    pillar.position.set(s * px, springY / 2, 0);
+    // Four vertical corner edges and the four top edges, each a thin box
+    // standing a hair proud so it caps the corner rather than z-fighting it.
+    const edges = new THREE.Group();
+    edges.name = `edges${side}`;
+    edges.position.copy(pillar.position);
+    pillars.add(edges);
+    const hx = pw / 2;
+    const hz = pd / 2;
+    for (const cx of [-1, 1]) {
+      for (const cz of [-1, 1]) {
+        const v = part(new THREE.BoxGeometry(e, springY, e), coreMat, "edgeV", edges);
+        v.position.set(cx * (hx - e / 2 + 0.004), 0, cz * (hz - e / 2 + 0.004));
+        v.castShadow = false;
+      }
+    }
+    const top = springY / 2 - e / 2 + 0.004;
+    for (const cz of [-1, 1]) {
+      const t = part(new THREE.BoxGeometry(pw + 0.008, e, e), coreMat, "edgeTopX", edges);
+      t.position.set(0, top, cz * (hz - e / 2 + 0.004));
+      t.castShadow = false;
+    }
+    for (const cx of [-1, 1]) {
+      const t = part(new THREE.BoxGeometry(e, e, pd + 0.008), coreMat, "edgeTopZ", edges);
+      t.position.set(cx * (hx - e / 2 + 0.004), top, 0);
+      t.castShadow = false;
+    }
+  }
+
+  // --- 2: the arc ------------------------------------------------------------
+  // On the pillars' centreline, sunk a little into each top so it grows out of
+  // the block rather than resting on it.
+  const arc = new THREE.Group();
+  arc.name = "arc";
+  g.add(arc);
+  const arcPts = archCurvePoints(px, rise, curve, springY - 0.04, 36);
+  const core = part(neonTube(arcPts, 0, 0.045), coreMat, "tubeCore", arc);
+  core.castShadow = false;
+  const halo = part(neonTube(arcPts, 0, 0.09), haloMat, "tubeHalo", arc);
+  halo.castShadow = false;
+  halo.renderOrder = 1;
+
+  // --- 3: the biscuit trail --------------------------------------------------
+  // Spaced by ARC LENGTH (the gateway's marquee lesson) and kept off the very
+  // ends, where they would sit on the pillar tops. The crown is left to the
+  // big one.
+  const pellets = new THREE.Group();
+  pellets.name = "pellets";
+  g.add(pellets);
+  const arcCurve = new THREE.CatmullRomCurve3(arcPts.map(([x, y]) => new THREE.Vector3(x, y, 0)));
+  const n = Math.max(0, Math.round(p.archBlossoms ?? 6));
+  const crest = Math.max(0, p.archCrest ?? 1);
+  // LARGER than the halo tube (0.09): a biscuit inside the additive halo is
+  // washed to pale pink and stops reading as a biscuit (v1's render).
+  const pelletGeo = new THREE.SphereGeometry(0.1, 12, 9);
+  // Evenly through (0.12 .. 0.88), skipping the slot nearest the crown when
+  // the big biscuit is there, so the two never overlap.
+  let k = 0;
+  for (let i = 0; i < n; i++) {
+    const t = 0.12 + (0.76 * (i + 0.5)) / n;
+    if (crest > 0.01 && Math.abs(t - 0.5) < 0.08) continue;
+    const v = arcCurve.getPointAt(t);
+    const b = part(pelletGeo, pelletMat, `pellet${k++}`, pellets);
+    b.position.copy(v);
+  }
+  if (crest > 0.01) {
+    const big = part(new THREE.SphereGeometry(0.16 * crest, 14, 10), pelletMat, "crownPellet", pellets);
+    big.position.copy(arcCurve.getPointAt(0.5));
+    big.position.y += 0.03;
+    // A hair of turn per instance, so the two mouths are not stamped.
+    big.rotation.y = r() * Math.PI;
   }
   return g;
 }
@@ -1921,7 +2076,7 @@ export const ARCH_INSTANCE_HASH_SEED = 701;
  *
  * Pure, and derived from the SAME dials each builder reads, so a retuned
  * `archOpening` / `archRise` / `archCurve` reshapes the tunnel portal with it.
- * The neon gateway springs at `H - rise` (it has no band); every other kind
+ * The neon gateway and the warp gate spring at `H - rise` (no band); every other kind
  * carries its band above the head and springs `bandT` lower. The figure is the
  * NOMINAL outline — a hedge band's blobs and a gate's posts bulge inside it,
  * which is fine for the portal: it is depth-tested, so whatever of it runs
@@ -1939,7 +2094,7 @@ export function archAperture(p: PropParams): {
   const rise = hw * (p.archRise ?? ARCH_DEFAULTS.rise);
   const curve = Math.max(1.05, p.archCurve ?? ARCH_DEFAULTS.curve);
   const springY =
-    p.archKind === "neon"
+    p.archKind === "neon" || p.archKind === "warp"
       ? H - rise
       : Math.max(0.35, H - rise - H * (p.archCrown ?? ARCH_DEFAULTS.crown));
   return { hw, springY, rise, curve };
