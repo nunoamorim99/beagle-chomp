@@ -149,10 +149,6 @@ See [`server/README.md`](server/README.md) for the API on its own.
 | Page | What it is |
 |---|---|
 | `/editor/` | The mesh, theme, prop and balance workbench (`npm run editor`). |
-| `/preview/` | The real beagle with orbit controls, preset cameras and part isolation. |
-| `/preview-board/?theme=garden&view=game` | Any world at any camera, including a clay render (`&flat=1`). |
-| `/preview-journey/` | The island map, with `?style=classic` as the A/B. |
-| `/preview-rework/?model=crab` | Any enemy skin, with `?state=frightened`, `?fov=`, `?bg=none`. |
 
 None of them are build inputs, so none of them ship.
 

@@ -51,3 +51,12 @@ vapid_*.txt
 .claude/
 CLAUDE.md
 STACK.md
+
+# Dev-only review pages (/preview*/) and the v1 prototype — local tools, never
+# part of the build.
+preview/
+preview-board/
+preview-journey/
+preview-rework/
+preview-showcase/
+prototype/
