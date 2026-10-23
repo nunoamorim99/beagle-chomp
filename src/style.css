@@ -1593,38 +1593,27 @@ button.recovery-copy{padding:9px var(--bc-s3);font-size:14px;flex:0 0 auto}
 /* --- boot / offline --- */
 .boot-sheet{text-align:center}
 
-/* §09 BONE LOADER — a bone fills left to right while the API is reached.
-   No spinner, and nothing borrowed from the arcade original. Built from CSS
-   masks: four circles (the knuckles) plus a bar (the shaft) compose the bone
-   silhouette, and the same mask is applied twice — once to the dark socket,
-   once to the cream fill that animates its width. */
-.bone-loader{position:relative;width:88px;height:44px;margin:0 auto var(--bc-s4)}
-.bone-loader__well,.bone-loader__fill{position:absolute;inset:0;
-  -webkit-mask-image:
-    radial-gradient(circle 13px at 13px 13px,#000 98%,transparent 100%),
-    radial-gradient(circle 13px at 13px 31px,#000 98%,transparent 100%),
-    radial-gradient(circle 13px at 75px 13px,#000 98%,transparent 100%),
-    radial-gradient(circle 13px at 75px 31px,#000 98%,transparent 100%),
-    linear-gradient(#000,#000);
-  -webkit-mask-size:100% 100%,100% 100%,100% 100%,100% 100%,62px 22px;
-  -webkit-mask-position:0 0,0 0,0 0,0 0,13px 11px;
-  -webkit-mask-repeat:no-repeat;
-  mask-image:
-    radial-gradient(circle 13px at 13px 13px,#000 98%,transparent 100%),
-    radial-gradient(circle 13px at 13px 31px,#000 98%,transparent 100%),
-    radial-gradient(circle 13px at 75px 13px,#000 98%,transparent 100%),
-    radial-gradient(circle 13px at 75px 31px,#000 98%,transparent 100%),
-    linear-gradient(#000,#000);
-  mask-size:100% 100%,100% 100%,100% 100%,100% 100%,62px 22px;
-  mask-position:0 0,0 0,0 0,0 0,13px 11px;
-  mask-repeat:no-repeat}
-.bone-loader__well{background:var(--bc-ink)}
-.bone-loader__fill>i{display:block;height:100%;background:#F0EFEC;
-  animation:bc-fill 1.6s ease-in-out infinite}
-/* Reduced motion still needs to say "working" — hold the bone half-filled
-   rather than animating it. */
+/* §09 WORDMARK LOADER — the brand wordmark fills left to right while the API
+   is reached. No spinner, and nothing borrowed from the arcade original.
+   The socket is the wordmark's own SILHOUETTE (the SVG used as a mask, painted
+   ink), so the unfilled part still reads as the logo; the full-colour wordmark
+   sits on top and a clip-path sweeps it in. clip-path rather than a width
+   animation, because shrinking the image's box would rescale the logo instead
+   of revealing it. Box ratio is the SVG's own 603:360. */
+.wordmark-loader{position:relative;width:min(220px,62vw);aspect-ratio:603/360;
+  margin:0 auto var(--bc-s4)}
+.wordmark-loader__well,.wordmark-loader__fill{position:absolute;inset:0;
+  width:100%;height:100%;display:block}
+.wordmark-loader__well{background:var(--bc-ink);
+  -webkit-mask:url("/brand/beagle-chomp-wordmark.svg") center/contain no-repeat;
+  mask:url("/brand/beagle-chomp-wordmark.svg") center/contain no-repeat}
+.wordmark-loader__fill{animation:bc-reveal 1.6s ease-in-out infinite}
+/* Same timing shape as bc-fill (boot.ts's MIN_LOADING_MS is matched to it). */
+@keyframes bc-reveal{0%{clip-path:inset(0 100% 0 0)}70%,100%{clip-path:inset(0 0 0 0)}}
+/* Reduced motion still needs to say "working" — hold it half-filled rather
+   than animating it. */
 @media (prefers-reduced-motion:reduce){
-  .bone-loader__fill>i{animation:none;width:55%}
+  .wordmark-loader__fill{animation:none;clip-path:inset(0 45% 0 0)}
 }
 
 .boot-hint{font-size:14px;color:var(--bc-text-mute);line-height:1.5;margin:0 0 20px}

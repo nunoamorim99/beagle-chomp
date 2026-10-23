@@ -17,7 +17,7 @@ export interface BootScreenHandle {
   /** Unrecoverable (e.g. VITE_API_URL missing) — no retry offered. */
   showFatal: (detail: string) => void;
   /** Resolves once the screen is actually gone. It holds out the rest of one
-   *  bone-fill cycle when the load finished faster than the animation, so the
+   *  wordmark-fill cycle when the load finished faster than the animation, so the
    *  loader is seen rather than flickered. */
   hide: () => Promise<void>;
 }
@@ -32,7 +32,7 @@ function require<T extends HTMLElement>(id: string): T {
  * How long the loading screen stays up at minimum.
  *
  * Against a local API `restoreSession()` answers in well under 200ms, so the
- * bone loader appeared, started filling, and vanished part-way through — which
+ * loader appeared, started filling, and vanished part-way through — which
  * reads as a flicker rather than as loading. Holding for one full fill makes
  * the screen say what it is there to say. Matched to the `bc-fill` cycle in
  * style.css: change one and change the other.
@@ -53,15 +53,18 @@ export function attachBootScreen(): BootScreenHandle {
   return {
     showLoading(message = "Loading…"): void {
       loadingSince = Date.now();
-      // Design system §09: a BONE fills left to right while the API is
-      // reached — "no spinner, and nothing borrowed from the arcade
-      // original". The shape is composed from CSS masks in style.css
-      // (.bone-loader); this only supplies the two layers it needs, the dark
-      // socket and the cream fill whose width animates.
+      // Design system §09's fill-left-to-right loader, now drawn with the
+      // brand WORDMARK instead of a bone — "no spinner, and nothing borrowed
+      // from the arcade original" still holds. Two layers (style.css
+      // .wordmark-loader): the wordmark's silhouette as a dark socket, and the
+      // real full-colour wordmark revealed over it by an animated clip. It is
+      // the same SVG the menu heading uses and index.html preloads, so it is
+      // usually in cache before this screen goes up.
       show(`
-        <div class="bone-loader" role="progressbar" aria-label="${message}">
-          <div class="bone-loader__well"></div>
-          <div class="bone-loader__fill"><i></i></div>
+        <div class="wordmark-loader" role="progressbar" aria-label="${message}">
+          <div class="wordmark-loader__well"></div>
+          <img class="wordmark-loader__fill" src="./brand/beagle-chomp-wordmark.svg"
+               alt="" width="603" height="360" />
         </div>
         <p class="boot-message">${message}</p>
       `);
