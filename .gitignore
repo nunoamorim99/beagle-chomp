@@ -46,7 +46,8 @@ server/.env.*
 vapid*.json
 vapid_*.txt
 
-# Claude Code working files (agents, project notes, local settings) — kept on
+# Private working notes (Claude Code agents and notes, infra plan) — kept on
 # disk for local use, never published.
 .claude/
 CLAUDE.md
+STACK.md
