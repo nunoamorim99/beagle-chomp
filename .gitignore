@@ -45,3 +45,8 @@ server/.env.*
 # never in the repo. Generated with: npx web-push generate-vapid-keys
 vapid*.json
 vapid_*.txt
+
+# Claude Code working files (agents, project notes, local settings) — kept on
+# disk for local use, never published.
+.claude/
+CLAUDE.md

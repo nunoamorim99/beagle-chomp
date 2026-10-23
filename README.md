@@ -195,17 +195,10 @@ docs/          architecture, game design, the brand kit and the README media
 - [`docs/GAME_DESIGN.md`](docs/GAME_DESIGN.md): entities, scoring, AI, progression, the economy
 - [`docs/brand/BRAND_GUIDELINES.md`](docs/brand/BRAND_GUIDELINES.md): the logo, its lockups, colours and how (not) to use them
 - [`server/README.md`](server/README.md): the API, its migrations, its observability
-- [`CLAUDE.md`](CLAUDE.md): the engineering notebook. Long, and the most honest file here:
-  it records what each decision cost, which instruments lied, and which bugs shipped.
 
 ## Built with Claude Code
 
 This whole game was built in collaboration with [Claude Code](https://claude.com/claude-code).
-`.claude/agents/` holds six project agents (architect, gameplay, render, PWA, QA, level
-design) alongside fourteen three.js specialists, and `CLAUDE.md` is the shared memory they
-work from. If you are curious what an AI-assisted codebase looks like many releases in,
-that file is the answer, including the parts where the measuring instrument turned out to
-be wrong before the code was.
 
 ## License
 
