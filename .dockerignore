@@ -18,7 +18,6 @@ public
 editor
 prototype
 docs
-Idea-Ledger
 *.md
 
 # Secrets must never enter an image layer.

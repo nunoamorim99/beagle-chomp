@@ -3132,7 +3132,7 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v9.
   **A finding bigger than this feature, captured and NOT acted on**: Arcade Night
   ships zero props and still costs **198 draw calls**, of which **176 are
   individual biscuit meshes**. Instancing the pellets would save more than the
-  entire surround is budgeted to spend. It is in the ledger Inbox.
+  entire surround is budgeted to spend. Not yet acted on.
   Instruments: `_scratch-surround-{coverage,sightline,seam,sheet}.ts`, and
   `_scratch-mesh-census.ts` now reports `renderer.info.render.calls` plus the
   before-table. **Budgets are DELTAS over that table**, because the garden already
@@ -4964,11 +4964,6 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v9.
   vite.config.ts note + docs/ARCHITECTURE.md).
 - `prototype/beagle-chomp.html` — a fully working single-file version. Now a **historical
   reference artifact** (render/loop/HUD are shipped), not a to-build spec.
-
-## What is next
-No stubs remain. Current and future work is tracked in the **Idea-Ledger**
-(`Idea-Ledger/Backlog.md` + `VersionControl.md`) — the source of truth for what we build
-and ship next.
 
 ## Architecture (see docs/ARCHITECTURE.md for detail)
 - **Coordinate system:** grid tile `(tx,ty)` → world `((tx-OX)*TILE, y, (ty-OZ)*TILE)`.

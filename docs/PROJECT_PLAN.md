@@ -2,8 +2,7 @@
 
 > **Historical.** This is the v1.0 build plan, kept for provenance. Every milestone in
 > it shipped, and so did all three of its stated non-goals (accounts, a leaderboard
-> backend, and sound). For what the game is now see the [README](../README.md); for what
-> is next see [`Idea-Ledger/`](../Idea-Ledger/).
+> backend, and sound). For what the game is now see the [README](../README.md).
 
 
 ## Vision

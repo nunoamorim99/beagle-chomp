@@ -185,7 +185,6 @@ server/        the API: Hono + Postgres + argon2id, own Dockerfile and migration
 admin/         the metrics portal (its own build, its own Pages project)
 scripts/       the test suites plus ~100 measuring instruments and review sheets
 docs/          architecture, game design, the brand kit and the README media
-Idea-Ledger/   what is built, what shipped, and what is next
 ```
 
 </details>
@@ -196,7 +195,6 @@ Idea-Ledger/   what is built, what shipped, and what is next
 - [`docs/GAME_DESIGN.md`](docs/GAME_DESIGN.md): entities, scoring, AI, progression, the economy
 - [`docs/brand/BRAND_GUIDELINES.md`](docs/brand/BRAND_GUIDELINES.md): the logo, its lockups, colours and how (not) to use them
 - [`server/README.md`](server/README.md): the API, its migrations, its observability
-- [`Idea-Ledger/`](Idea-Ledger/): every feature's history, and the full release log
 - [`CLAUDE.md`](CLAUDE.md): the engineering notebook. Long, and the most honest file here:
   it records what each decision cost, which instruments lied, and which bugs shipped.
 
