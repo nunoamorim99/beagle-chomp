@@ -140,6 +140,16 @@ for (const t of MAZE_THEMES) {
       `…and the showcase builds its sea instead`,
       /palette\.surround === "dunes"[\s\S]{0,80}buildSeaside\(/.test(readFileSync("src/render/showcaseSurround.ts", "utf8")),
     );
+  } else if (t.palette.surround === "island") {
+    // Pirate Island (IDEA-085) is the beach's layout turned pirate: north of
+    // the board is SEA, so every showcase camera looks out over water — and
+    // what stands on it is the WRECK, which is the island's landmark. Sparse
+    // by design; the palms and the treasure are south and to the sides.
+    ok(`"${t.id}" builds its wreck into the band`, meshes.length > 0 && meshes.length <= 18, `${meshes.length} meshes`);
+    ok(
+      `…and the showcase builds its sea`,
+      /palette\.surround === "island"\)[\s\S]{0,80}buildSeaside\(/.test(readFileSync("src/render/showcaseSurround.ts", "utf8")),
+    );
   } else {
     ok(`"${t.id}" builds a band at all`, meshes.length > 0, `${meshes.length} meshes`);
     // One mesh per distinct material — defect #5, and the ceiling is the

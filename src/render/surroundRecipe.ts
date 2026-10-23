@@ -63,6 +63,24 @@ import { getPropDef } from "../game/props";
 import { mergeBySignature } from "./propMerge";
 import { SEASIDE_PARAMS, type Seaside, buildSeaside, disposeSeaside, inSea } from "./seaside";
 import { buildCityStreets } from "./cityLayout";
+import {
+  distantAnchor,
+  distantBarrel,
+  distantCannon,
+  distantCoinPile,
+  distantCrate,
+  distantJungleBush,
+  distantPalm,
+  distantPirateFlag,
+  distantPistols,
+  distantRopeCoil,
+  distantShipWheel,
+  distantShipwreck,
+  distantSkullPost,
+  distantSunkenMast,
+  distantSwordInSand,
+  distantTreasureChest,
+} from "./islandProps";
 import { boxInParkZone, buildLake, buildParkAvenue, buildPlayground, inParkZone } from "./parkLayout";
 
 const SURROUND_HASH_SEED = 600;
@@ -637,6 +655,238 @@ function dunesContent(host: THREE.Group, plot: Plot, m: SurroundMaterials): void
   // pitches is what a beach is; the colour lives on the people's things.
 }
 
+// ---------------------------------------------------------------------------
+// PIRATE ISLAND (IDEA-085)
+
+/**
+ * The island's SET PIECES: hand-composed groups at fixed spots, because the
+ * brief names WHERE things are — the wreck on the water to the north-west, the
+ * treasure to the south, ship's gear on each side close to the maze. A scatter
+ * cannot promise any of that; a scatter is what fills between them.
+ *
+ * Positions are world units. Every one is OUTSIDE the keep-clear box (x 13.5,
+ * z 14.5) or out in the sea, and `test-surround.ts` holds them to it.
+ */
+interface SetPiece {
+  name: string;
+  x: number;
+  z: number;
+  /** Clearance the fringe and the plots keep round it, world units. */
+  clear: number;
+  build: (m: SurroundMaterials) => THREE.Object3D;
+}
+
+/** A group of parts placed relative to a set piece's own origin. */
+function cluster(
+  name: string,
+  items: Array<[THREE.Object3D, number, number, number, number?]>,
+): THREE.Group {
+  const g = new THREE.Group();
+  g.name = name;
+  for (const [o, x, z, yaw, scale] of items) {
+    o.position.set(x, 0, z);
+    o.rotation.y = yaw;
+    if (scale !== undefined) o.scale.multiplyScalar(scale);
+    g.add(o);
+  }
+  return g;
+}
+
+/** Yaw that turns a builder's local +Z to point along world (dx, dz). */
+const aim = (dx: number, dz: number): number => Math.atan2(dx, dz);
+
+export const ISLAND_SET_PIECES: readonly SetPiece[] = [
+  {
+    // NORTH-WEST, ON THE WATER (Nuno: "a shipwreck on the north left side...
+    // the ship should be on the water"). Bow out to sea, listing toward the
+    // board so the camera sees its deck, sunk to a third of the hull.
+    name: "wreck",
+    x: -9,
+    z: -20.6,
+    clear: 0,
+    build: (m) => {
+      const w = distantShipwreck(m, { seed: 5 });
+      w.rotation.y = Math.PI / 2 + 0.35;
+      // A landmark: big enough to read as a GALLEON at the top of a phone,
+      // where the camera is furthest away.
+      w.scale.setScalar(1.3);
+      w.position.y = -0.65;
+      const g = new THREE.Group();
+      g.name = "wreck-site";
+      g.add(w);
+      return g;
+    },
+  },
+  {
+    // A second, sunken wreck to the north-east, so the north is not one object.
+    name: "sunkenMast",
+    x: 10.5,
+    z: -22.5,
+    clear: 0,
+    build: (m) => distantSunkenMast(m, { seed: 7 }),
+  },
+  {
+    // SOUTH: the treasure. Low on purpose — this band is unfogged, nearest the
+    // camera and under the HUD (IDEA-066 rule 6); the flag is the only thing
+    // with height and it stands at the back.
+    name: "hoard",
+    x: 0,
+    z: 17,
+    clear: 4,
+    build: (m) => {
+      const hoard = cluster("hoard", [
+        [distantTreasureChest(m, { seed: 3 }), 0, 0, 0, 1.25],
+        [distantCoinPile(m, { seed: 1 }), -1.1, 0.35, 0],
+        [distantCoinPile(m, { seed: 2, size: 0.8 }), 1.15, 0.5, 0],
+        [distantSwordInSand(m, { seed: 4 }), -0.75, -0.75, 0, 1.3],
+        [distantSwordInSand(m, { seed: 9 }), 0.85, -0.7, 0, 1.3],
+        [distantPistols(m, { seed: 2 }), -1.6, 1.1, 0.4, 1.2],
+        [distantSkullPost(m, { seed: 5 }), 1.9, 0.6, -0.3, 1.2],
+        [distantPirateFlag(m, { seed: 8, height: 1.5 }), -1.9, -1.2, 0.5],
+      ]);
+      // The centrepiece of the band a phone shows under the maze: at 1x the
+      // chest was a dozen pixels, a gold dot rather than a treasure.
+      hoard.scale.setScalar(1.4);
+      return hoard;
+    },
+  },
+  {
+    // THE SIDES, close to the maze: a shore battery each side — guns run out
+    // toward open water, a flag, the powder and shot beside them.
+    name: "batteryWest",
+    x: -15.2,
+    z: -2,
+    clear: 2.6,
+    build: (m) =>
+      cluster("battery-west", [
+        [distantCannon(m, { seed: 1 }), 0, -1.1, aim(-0.6, -1), 1.35],
+        [distantCannon(m, { seed: 2 }), 0.2, 0.6, aim(-1, -0.3), 1.35],
+        [distantPirateFlag(m, { seed: 3 }), 1.0, -0.2, 0.6],
+        [distantBarrel(m, { seed: 4, tipped: false }), 1.2, 1.4, 0, 1.2],
+        [distantCrate(m), 0.9, 2.0, 0.4, 1.2],
+      ]),
+  },
+  {
+    name: "helmWest",
+    x: -14.6,
+    z: 7,
+    clear: 1.6,
+    build: (m) =>
+      cluster("helm-west", [
+        [distantShipWheel(m, { seed: 3 }), 0, 0, 0.5, 1.4],
+        [distantRopeCoil(m), 0.9, 0.6, 0, 1.2],
+      ]),
+  },
+  {
+    name: "batteryEast",
+    x: 15.2,
+    z: 2,
+    clear: 2.6,
+    build: (m) =>
+      cluster("battery-east", [
+        [distantCannon(m, { seed: 5 }), 0, -0.9, aim(1, -0.4), 1.35],
+        [distantCannon(m, { seed: 6 }), -0.2, 0.9, aim(1, 0.2), 1.35],
+        [distantPirateFlag(m, { seed: 9 }), -1.0, -0.1, -0.4],
+        [distantBarrel(m, { seed: 7, tipped: true }), -1.0, 1.7, 0.8, 1.2],
+      ]),
+  },
+  {
+    name: "anchorEast",
+    x: 14.4,
+    z: -8,
+    clear: 1.6,
+    build: (m) =>
+      cluster("anchor-east", [
+        [distantAnchor(m, { seed: 2 }), 0, 0, 0, 1.5],
+        [distantShipWheel(m, { seed: 8 }), 1.2, 0.8, -0.6, 1.25],
+      ]),
+  },
+];
+
+/** Inside a set piece's clearance? */
+function nearSetPiece(x: number, z: number, margin = 0): boolean {
+  return ISLAND_SET_PIECES.some((p) => p.clear > 0 && Math.hypot(x - p.x, z - p.z) < p.clear + margin);
+}
+
+/** The island's interior: palm groves and jungle on open sand. NO BOUNDARIES,
+ *  for the beach's reason: nobody fences a desert island. */
+function islandContent(host: THREE.Group, plot: Plot, m: SurroundMaterials): void {
+  if (inSea(plot.cx, plot.cz)) return;
+  if (nearSetPiece(plot.cx, plot.cz, plot.w / 2)) return;
+  const south = plot.band === "south";
+  const seed = plot.px * 31 + plot.pz * 17;
+  // Palms in GROVES — two to four leaning together reads as a grove; one per
+  // plot evenly spread reads as a planted avenue.
+  const nPalm = south
+    ? 1 + (hash(plot.px, plot.pz, 4) < 0.5 ? 1 : 0)
+    : 2 + Math.floor(hash(plot.px, plot.pz, 4) * 3);
+  const gu = (hash(plot.px, plot.pz, 5) - 0.5) * 0.8;
+  const gv = (hash(plot.px, plot.pz, 6) - 0.5) * 0.8;
+  for (let i = 0; i < nPalm; i++) {
+    const palm = distantPalm(m, {
+      height: south ? 1.7 + hash(plot.px, plot.pz, 40 + i) * 0.4 : undefined,
+      seed: 161 + i + seed,
+    });
+    const u = gu + (hash(plot.px, plot.pz, 7 + i) - 0.5) * 0.7;
+    const v = gv + (hash(plot.px, plot.pz, 12 + i) - 0.5) * 0.7;
+    placeOnBeach(host, plot, palm, u, v, hash(plot.px, plot.pz, 17 + i) * Math.PI * 2);
+  }
+  const nBush = 1 + Math.floor(hash(plot.px, plot.pz, 22) * 3);
+  for (let i = 0; i < nBush; i++) {
+    placeOnBeach(
+      host,
+      plot,
+      distantJungleBush(m, { seed: 171 + i + seed }),
+      (hash(plot.px, plot.pz, 23 + i) - 0.5) * 1.6,
+      (hash(plot.px, plot.pz, 27 + i) - 0.5) * 1.6,
+      hash(plot.px, plot.pz, 31 + i) * Math.PI * 2,
+    );
+  }
+  // Now and then something washed up among the trees.
+  if (!south && hash(plot.px, plot.pz, 34) < 0.25) {
+    const d = hash(plot.px, plot.pz, 35);
+    const debris = d < 0.4 ? distantBarrel(m, { seed }) : d < 0.75 ? distantCrate(m) : distantAnchor(m, { seed });
+    placeOnBeach(host, plot, debris, (hash(plot.px, plot.pz, 36) - 0.5) * 1.4, (hash(plot.px, plot.pz, 37) - 0.5) * 1.4, d * 6);
+  }
+}
+
+/** The share of fringe cells the island fills at all — see `islandFringe`. */
+const ISLAND_FRINGE_SHARE = 0.5;
+
+/**
+ * The island's fringe — the ring nearest the board. THE SIDES carry ship's
+ * gear between their set pieces; THE SOUTH carries arms and symbols round the
+ * hoard; THE NORTH is surf and stays empty. Sparser than any other theme's
+ * fringe: a few objects with sand between them reads as a beach, a ring of
+ * them reads as a junk yard.
+ */
+function islandFringe(
+  f: { x: number; z: number; band: Band; scale: number },
+  roll: number,
+  m: SurroundMaterials,
+  seed: number,
+): THREE.Object3D | null {
+  if (inSea(f.x, f.z, BEACH_KEEP_DRY)) return null;
+  if (nearSetPiece(f.x, f.z, 0.6)) return null;
+  if (roll > ISLAND_FRINGE_SHARE) return null;
+  const t = roll / ISLAND_FRINGE_SHARE;
+  if (f.band === "south") {
+    if (t < 0.22) return distantSwordInSand(m, { seed });
+    if (t < 0.32) return distantSkullPost(m, { seed });
+    if (t < 0.42) return distantPistols(m, { seed });
+    if (t < 0.5) return distantCoinPile(m, { seed, size: 0.7 });
+    if (t < 0.6) return distantBarrel(m, { seed });
+    if (t < 0.78) return distantPalm(m, { height: 1.7 + (t - 0.6) * 2, seed });
+    return distantJungleBush(m, { seed });
+  }
+  if (t < 0.12) return distantBarrel(m, { seed });
+  if (t < 0.2) return distantCrate(m);
+  if (t < 0.26) return distantRopeCoil(m);
+  if (t < 0.32) return distantCannon(m, { seed });
+  if (t < 0.6) return distantPalm(m, { height: 1.9 + (t - 0.32) * 2, seed });
+  return distantJungleBush(m, { seed });
+}
+
 /** The park: loose groves of trees on open lawn. */
 function parklandContent(host: THREE.Group, plot: Plot, m: SurroundMaterials): void {
   const south = plot.band === "south";
@@ -686,7 +936,11 @@ function fringeContent(
   const seed = Math.round(f.x * 13 + f.z * 7);
   const roll = hash(Math.round(f.x), Math.round(f.z), 54);
   let child: THREE.Object3D;
-  if (kind === "dunes") {
+  if (kind === "island") {
+    const c = islandFringe(f, roll, m, seed);
+    if (!c) return;
+    child = c;
+  } else if (kind === "dunes") {
     // IDEA-080. The fringe is the annulus nearest the board, so the beach's
     // north fringe is where the surf is: nothing in the water, and nothing on
     // the wet sand either.
@@ -778,6 +1032,7 @@ const CONTENT: Record<
   woodland: woodlandContent,
   dunes: dunesContent,
   parkland: parklandContent,
+  island: islandContent,
 };
 
 // ---------------------------------------------------------------------------
@@ -803,6 +1058,8 @@ function cacheKey(kind: SurroundKind, pal: SurroundPaletteInput): string {
     pal.fenceColor,
     pal.groundDetailColor,
     pal.bloomColors.join(","),
+    // Day or night decides whether the windows are lamps or glass.
+    pal.bg,
     P.halfWidth,
     P.zFar,
     P.zNear,
@@ -918,7 +1175,7 @@ export function ensureSurround(
   // view: it is two meshes whatever its size, and IDEA-069's rule is that
   // only props are culled, never ground.
   const sea =
-    kind === "dunes"
+    kind === "dunes" || kind === "island"
       ? buildSeaside(SURROUND_PARAMS.halfWidth, SURROUND_PARAMS.zFar)
       : null;
   if (sea) host.add(sea.group);
@@ -968,6 +1225,14 @@ export function buildSurroundContent(
   for (const f of planFringe()) {
     if (park && inParkZone(f.x, f.z, 0.8)) continue;
     fringeContent(host, f, kind, mats);
+  }
+  if (kind === "island") {
+    for (const p of ISLAND_SET_PIECES) {
+      const o = p.build(mats);
+      o.position.x += p.x;
+      o.position.z += p.z;
+      host.add(o);
+    }
   }
   if (park) {
     buildParkAvenue(host, mats);

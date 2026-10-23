@@ -55,7 +55,15 @@
  * of birds under it would break the one place in this game that is meant to
  * be an empty void.
  */
-export type AmbienceKind = "birds" | "surf" | "forest" | "city" | "park" | "none";
+export type AmbienceKind =
+  | "birds"
+  | "surf"
+  | "forest"
+  | "city"
+  | "park"
+  | "street"
+  | "island"
+  | "none";
 
 export const AMBIENCE_KINDS: readonly AmbienceKind[] = [
   "birds",
@@ -63,6 +71,8 @@ export const AMBIENCE_KINDS: readonly AmbienceKind[] = [
   "forest",
   "city",
   "park",
+  "street",
+  "island",
   "none",
 ];
 
@@ -312,15 +322,49 @@ export function createAmbience(ctx: AudioContext, destination: AudioNode): Ambie
    *  rumble with a brighter WASH that swells over it. Both halves are needed
    *  — rumble alone is a lorry idling, wash alone is a hiss. */
   function buildSurf(rig: Rig): void {
-    const deep = layer(rig, { type: "lowpass", freq: 150, q: 0.6, level: 0.085, rate: 0.7 });
-    modulate(rig, deep.gain.gain, 0.041, 0.03);
+    waves(rig, {
+      deepLevel: 0.085,
+      deepDepth: 0.03,
+      deepHz: 0.041,
+      washFreq: 900,
+      washQ: 0.5,
+      washLevel: 0.05,
+      washDepth: 0.042,
+      washSwing: 430,
+      washFreqHz: 0.047,
+      washGainHz: 0.033,
+    });
+  }
 
-    const wash = layer(rig, { type: "bandpass", freq: 900, q: 0.5, level: 0.05 });
-    // The wave itself: the cutoff opens as it breaks and closes as it draws
-    // back, and the gain follows on a slightly different clock so the two
-    // never quite line up twice.
-    modulate(rig, wash.filter.frequency, 0.047, 430);
-    modulate(rig, wash.gain.gain, 0.033, 0.042);
+  /** The two-layer wave both coastal beds are made of: a sub-200 Hz rumble
+   *  and a brighter band-passed WASH. The wave itself is the wash's cutoff
+   *  opening as it breaks and closing as it draws back, with the gain
+   *  following on a slightly different clock so the two never quite line up
+   *  twice. Shared rather than copied so a fix to the construction reaches
+   *  both coasts -- but every number is a parameter, because the beach and
+   *  the island are two DIFFERENT seas, and "no two themes share a bed" is
+   *  about what you hear, not about which function draws it. */
+  function waves(
+    rig: Rig,
+    o: {
+      deepLevel: number;
+      deepDepth: number;
+      deepHz: number;
+      washFreq: number;
+      washQ: number;
+      washLevel: number;
+      washDepth: number;
+      washSwing: number;
+      washFreqHz: number;
+      washGainHz: number;
+    },
+  ): void {
+    const deep = layer(rig, { type: "lowpass", freq: 150, q: 0.6, level: o.deepLevel, rate: 0.7 });
+    modulate(rig, deep.gain.gain, o.deepHz, o.deepDepth);
+
+    const wash = layer(rig, { type: "bandpass", freq: o.washFreq, q: o.washQ, level: o.washLevel });
+    modulate(rig, wash.filter.frequency, o.washFreqHz, o.washSwing);
+    modulate(rig, wash.gain.gain, o.washGainHz, o.washDepth);
   }
 
   /** GARDEN. The bed Nuno already had under the menu, now a place you can
@@ -422,6 +466,165 @@ export function createAmbience(ctx: AudioContext, destination: AudioNode): Ambie
     modulate(rig, open.gain.gain, 0.043, 0.02);
   }
 
+  /** DAY CITY. Night City's road by daylight, and the difference is BUSYNESS
+   *  rather than a new sound: the same sub-320 Hz traffic bed a little fuller,
+   *  cars passing about twice as often, sparrows instead of silence, and now
+   *  and then a bicycle bell. The two daytime events both sit high (2.4-4 kHz)
+   *  so the extra life costs the chomp's 340-520 Hz corridor nothing; the
+   *  passing car is the same one deliberate sweep through it the night bed
+   *  already makes. No horn — that is the night's one word for "city", and a
+   *  sixth theme that shares its signature with the fifth is the one thing
+   *  "no two themes share a bed" exists to stop. */
+  function buildStreet(rig: Rig): void {
+    const road = layer(rig, { type: "lowpass", freq: 320, q: 0.5, level: 0.1, rate: 0.85 });
+    modulate(rig, road.filter.frequency, 0.034, 80);
+    modulate(rig, road.gain.gain, 0.047, 0.03);
+
+    const rumble = layer(rig, { type: "lowpass", freq: 160, q: 0.7, level: 0.05, rate: 0.6 });
+    modulate(rig, rumble.gain.gain, 0.027, 0.018);
+
+    // Open air between the buildings: quiet, and well above the chomp.
+    const air = layer(rig, { type: "bandpass", freq: 2600, q: 0.9, level: 0.016 });
+    modulate(rig, air.gain.gain, 0.053, 0.01);
+
+    every(rig, 2800, 7500, () => {
+      gust(rig, { freq: 230, endFreq: 600, dur: 2.8, peak: 0.036, q: 0.8 });
+    });
+
+    // Sparrows: short, high and in quick bursts, unlike the garden's songbirds.
+    every(rig, 4500, 12000, () => {
+      const base = 3200 + Math.random() * 700;
+      const notes = 3 + Math.floor(Math.random() * 3);
+      for (let i = 0; i < notes; i++) {
+        const f = base * (1 + (Math.random() - 0.5) * 0.08);
+        whistle(rig, f, f * 0.9, 0.035, 0.03, i * 0.11);
+      }
+    });
+
+    // A bicycle bell a street away: two quick strikes of a bright tone.
+    every(rig, 30000, 70000, () => {
+      for (let i = 0; i < 2; i++) {
+        whistle(rig, 2450, 2420, 0.4, 0.018, i * 0.14);
+        whistle(rig, 3680, 3640, 0.3, 0.008, i * 0.14);
+      }
+    });
+  }
+
+  /** PIRATE ISLAND. A sheltered cove with a ship riding at anchor in it. The
+   *  separator from the beach is that it is CALMER and INHABITED: the same
+   *  wave construction with a smaller, brighter wash (a lagoon lapping, not
+   *  breakers -- lifted to 1.8 kHz / Q 1.0 so that, unlike the beach's
+   *  900 Hz wash, its skirt stays out of the chomp's 340-520 Hz), gulls
+   *  instead of songbirds, and the ship itself. Nuno asked for pirate sounds
+   *  "but relaxing ones", so the ship is only ever HEARD AT REST: the hull
+   *  creaking on the swell, a line drawing tight, wind in the rigging and,
+   *  very rarely, the watch bell. No shanty and no melody (IDEA-073 rule 1:
+   *  a tune loops and grates; a texture never does).
+   *
+   *  Bands, against rule 1 of this file:
+   *   - swell rumble:    lowpass 150 Hz                  (under 320)
+   *   - lagoon wash:     bandpass 1.8 kHz +-350, Q 1.0   (over 1.2k)
+   *   - rigging whistle: bandpass 2.4 kHz +-160, Q 6     (over 1.2k; narrow = tonal)
+   *   - hull creak:      60-125 Hz saw, 2 x lowpass 240  (under 320)
+   *   - rope squeak:     1.5-2.1 kHz sine glide          (over 1.2k)
+   *   - gull:            2.3-2.8 kHz falling to x0.62    (over 1.2k)
+   *   - ship's bell:     partials 1.45-7.9 kHz           (over 1.2k -- a small
+   *     brass bell is high anyway, and a big low one would sit on the chomp)
+   *  Modulators 0.027-0.053 Hz (19-37 s a cycle), no two on a simple ratio. */
+  function buildIsland(rig: Rig): void {
+    waves(rig, {
+      deepLevel: 0.07,
+      deepDepth: 0.024,
+      deepHz: 0.039,
+      washFreq: 1800,
+      washQ: 1.0,
+      washLevel: 0.03,
+      washDepth: 0.024,
+      washSwing: 350,
+      washFreqHz: 0.044,
+      washGainHz: 0.031,
+    });
+
+    // Wind through the rigging: a NARROW band of noise is a whistle rather
+    // than a hiss, and wandering its centre slowly is a breeze rising and
+    // falling across the lines. Very quiet -- felt more than heard.
+    const rigging = layer(rig, { type: "bandpass", freq: 2400, q: 6, level: 0.018 });
+    modulate(rig, rigging.filter.frequency, 0.027, 160);
+    modulate(rig, rigging.gain.gain, 0.053, 0.012);
+
+    // The hull creaking on the swell, once or twice, then quiet for a while.
+    every(rig, 6000, 15000, () => {
+      const creaks = 1 + Math.floor(Math.random() * 2);
+      for (let i = 0; i < creaks; i++) creak(rig, i * (0.9 + Math.random() * 0.6));
+    });
+
+    // A line drawing tight against a cleat: one high, slow, very quiet glide.
+    every(rig, 14000, 34000, () => {
+      const f = 1500 + Math.random() * 300;
+      whistle(rig, f, f * (1.15 + Math.random() * 0.15), 0.7, 0.007, 0);
+    });
+
+    // Gulls: a falling "kee-ow", two to four calls, then nothing for a while.
+    every(rig, 7000, 19000, () => {
+      const calls = 2 + Math.floor(Math.random() * 3);
+      const base = 2300 + Math.random() * 500;
+      for (let i = 0; i < calls; i++) {
+        const f = base * (1 + (Math.random() - 0.5) * 0.06);
+        whistle(rig, f, f * 0.62, 0.32, 0.026, i * (0.42 + Math.random() * 0.12));
+      }
+    });
+
+    // The watch bell, far off and rare: two strikes of an inharmonic stack
+    // with a long ring. A bell's partials are NOT integer multiples -- that is
+    // what makes it a bell and not an organ note -- so these are small-bell
+    // ratios, every one of them above 1.2 kHz.
+    every(rig, 45000, 100000, () => {
+      const f0 = 1450 + Math.random() * 80;
+      for (let i = 0; i < 2; i++) {
+        const d = i * 0.55;
+        whistle(rig, f0, f0 * 0.998, 2.6, 0.012, d);
+        whistle(rig, f0 * 2.0, f0 * 1.996, 1.8, 0.006, d);
+        whistle(rig, f0 * 2.76, f0 * 2.754, 1.3, 0.004, d);
+        whistle(rig, f0 * 5.4, f0 * 5.39, 0.6, 0.002, d);
+      }
+    });
+  }
+
+  /** One hull creak. A creak is stick-slip friction -- a train of pulses at a
+   *  wandering rate -- and a sawtooth at 60-125 Hz with its pitch drifting is
+   *  exactly that. Its harmonics would climb straight into the chomp's band,
+   *  so it goes through TWO lowpasses at 240 Hz (24 dB/oct) and what is left
+   *  is the wooden groan without the bite. Slow attack and release: a timber
+   *  flexing, not a door slamming. */
+  function creak(rig: Rig, delay: number): void {
+    const t0 = ctx.currentTime + delay;
+    const dur = 0.7 + Math.random() * 0.8;
+    const f = 60 + Math.random() * 40;
+    const osc = ctx.createOscillator();
+    osc.type = "sawtooth";
+    osc.frequency.setValueAtTime(f, t0);
+    // Up or down at random: a timber loading, or a timber easing off.
+    osc.frequency.linearRampToValueAtTime(f * (Math.random() < 0.5 ? 1.25 : 0.8), t0 + dur);
+    const lp1 = ctx.createBiquadFilter();
+    lp1.type = "lowpass";
+    lp1.frequency.value = 240;
+    lp1.Q.value = 0.7;
+    const lp2 = ctx.createBiquadFilter();
+    lp2.type = "lowpass";
+    lp2.frequency.value = 240;
+    lp2.Q.value = 0.7;
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(0.0001, t0);
+    env.gain.linearRampToValueAtTime(0.03, t0 + dur * 0.4);
+    env.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    osc.connect(lp1);
+    lp1.connect(lp2);
+    lp2.connect(env);
+    env.connect(rig.gain);
+    osc.start(t0);
+    osc.stop(t0 + dur + 0.05);
+  }
+
   function build(kind: AmbienceKind): Rig | null {
     if (kind === "none") return null;
     const rig = newRig();
@@ -440,6 +643,12 @@ export function createAmbience(ctx: AudioContext, destination: AudioNode): Ambie
         break;
       case "park":
         buildPark(rig);
+        break;
+      case "street":
+        buildStreet(rig);
+        break;
+      case "island":
+        buildIsland(rig);
         break;
     }
     rig.gain.gain.linearRampToValueAtTime(1, ctx.currentTime + FADE_IN);

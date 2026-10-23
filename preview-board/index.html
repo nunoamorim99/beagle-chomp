@@ -90,6 +90,10 @@
       const rig = createScene(canvas);
       rig.applySceneTheme(getEquippedMazeTheme());
 
+      // ?arch=<prop id> swaps the equipped theme's tunnel arch in memory only,
+      // so a new arch can be reviewed before any theme names it.
+      if (q.get("arch")) getEquippedMazeTheme().tunnelArch = q.get("arch");
+
       const mazeIdx = Number(q.get("maze") ?? 0) % MAZES.length;
       const grid = new Grid(MAZES[mazeIdx]);
       const board = buildBoard(rig.scene, grid);

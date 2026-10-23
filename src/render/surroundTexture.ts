@@ -35,7 +35,7 @@ import { type RGB, css, lit, mix, rgbOf, rng } from "./paint";
 
 /** Which ground the surround wears. Mirrors FloorTextureKind's shape; "flat"
  *  means no map at all, which is what Arcade Night's clean void wants. */
-export type SurroundTextureKind = "flat" | "lawn" | "earth" | "sand";
+export type SurroundTextureKind = "flat" | "lawn" | "earth" | "sand" | "islandSand";
 
 const TILES = 8;
 const S = 32; // px per tile — BOARD_S, so the board floor and this match scale
@@ -164,6 +164,40 @@ function paintSand(g: CanvasRenderingContext2D, base: RGB): void {
   }
 }
 
+/**
+ * Pirate Island (IDEA-085): the beach's ripples with sparse drifts of grass —
+ * the island's interior, where the board's own floor only greens at the foot
+ * of its hedges. A couple of patches per period is "a little bit of green";
+ * more and the island reads as a lawn with sand on it.
+ */
+function paintIslandSand(g: CanvasRenderingContext2D, base: RGB): void {
+  paintSand(g, base);
+  const r = rng(0x1517);
+  // SMALL, FEW and FRESH. Five dark patches a period came back as green polka
+  // dots (an 8-tile repeat at 15-40px a tile is wallpaper the moment a mark
+  // is loud), and two big pale drifts as muddy olive pools — a green mixed
+  // halfway into tan is olive. Three small tufted clumps of a real green, the
+  // size of the board apron's own, read as grass sprouting through sand.
+  const grass = mix(base, [0.36, 0.6, 0.28], 0.72);
+  const tones = [css(grass), css(lit(grass, 0.86))];
+  for (let i = 0; i < 3; i++) {
+    const x = r() * SIZE;
+    const y = r() * SIZE;
+    const rx = S * (0.4 + r() * 0.35);
+    const ry = rx * (0.55 + r() * 0.3);
+    const rot = r() * Math.PI;
+    const tone = tones[i % 2];
+    const tufts = Array.from({ length: 4 }, () => [(r() - 0.5) * rx * 1.6, (r() - 0.5) * ry * 1.6, S * (0.2 + r() * 0.15)]);
+    wrapped((dx, dy) => {
+      g.fillStyle = tone;
+      g.beginPath();
+      g.ellipse(x + dx, y + dy, rx, ry, rot, 0, Math.PI * 2);
+      g.fill();
+      for (const [ox, oy, h] of tufts) tuft(g, x + dx + ox, y + dy + oy, h, tones[1]);
+    });
+  }
+}
+
 /** kind|baseHex -> texture. Never disposed: a handful of small entries shared
  *  by every board, exactly like wallTextureFor's cache. */
 const cache = new Map<string, THREE.Texture>();
@@ -188,6 +222,7 @@ export function surroundTextureFor(
   const base = rgbOf(baseHex);
   if (kind === "lawn") paintLawn(g, base);
   else if (kind === "earth") paintEarth(g, base);
+  else if (kind === "islandSand") paintIslandSand(g, base);
   else paintSand(g, base);
 
   const tex = new THREE.CanvasTexture(canvas);

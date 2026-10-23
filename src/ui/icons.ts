@@ -126,6 +126,10 @@ export const ICON = {
   themeBeach: "beach_access",
   themePark: "park",
   themeCity: "location_city",
+  /** Pirate Island (IDEA-085). The ANCHOR the slow-the-pack power-up already
+   *  wears, so it costs no font re-cut; `sailing` is the alternative and would
+   *  need one (recipe in tokens.css). */
+  themeIsland: "anchor",
 
   // ---- input ----
   swipe: "swipe",

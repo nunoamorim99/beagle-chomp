@@ -72,6 +72,7 @@ import {
   makeSurroundMaterials,
 } from "./surroundProps";
 import { buildSurroundContent } from "./surroundRecipe";
+import { distantCannon, distantPalm, distantPirateFlag, distantTreasureChest } from "./islandProps";
 import { buildSeaside, disposeSeaside, type Seaside } from "./seaside";
 import { getPropDef } from "../game/props";
 import { ROWS } from "../game/grid";
@@ -485,7 +486,18 @@ function disposeGeometryOnly(o: THREE.Object3D): void {
  *     either; the old umbrella/palm/oak/tower picks were advertising props
  *     those boards stopped planting.
  */
-const SHOWCASE_LANDMARKS: Readonly<Record<string, readonly string[]>> = {
+/**
+ * A landmark is a LIBRARY prop by id, or — for a theme whose place is built by
+ * the surround recipe rather than placed from the library — one of that
+ * recipe's own builders, at a size for this stage. Pirate Island (IDEA-085) is
+ * the first: its props are still to be authored, and a menu advertising it
+ * with nothing behind the arch would be selling sand.
+ */
+type Landmark =
+  | string
+  | { build: (m: SurroundMaterials) => THREE.Object3D; scale: number; front?: boolean };
+
+const SHOWCASE_LANDMARKS: Readonly<Record<string, readonly Landmark[]>> = {
   // The treehouse first because Nuno named it, and because it is the garden's
   // only singular prop — IDEA-060 built it for one apron corner and this is
   // the second place in the game it can stand at full size.
@@ -494,6 +506,19 @@ const SHOWCASE_LANDMARKS: Readonly<Record<string, readonly string[]>> = {
   beach: [],
   park: [],
   city: [],
+  daycity: [],
+  // The treasure first: it is what the island is KNOWN by, and the near-axis
+  // slot puts it right behind the dog. Then palms and the guns either side.
+  island: [
+    // Sized against the TREEHOUSE the garden plants here (~2.6 units tall at
+    // its library scale): the first pass at 2.4x put a chest a fifth of a
+    // phone screen wide beside the title, and palms off the top of the frame.
+    { build: (m) => distantTreasureChest(m, { seed: 3 }), scale: 1.4, front: true },
+    { build: (m) => distantPalm(m, { height: 2.4, seed: 9 }), scale: 1.05 },
+    { build: (m) => distantCannon(m, { seed: 2 }), scale: 1.5, front: true },
+    { build: (m) => distantPalm(m, { height: 2.7, seed: 14 }), scale: 1.05 },
+    { build: (m) => distantPirateFlag(m, { seed: 6 }), scale: 1.3 },
+  ],
   classic: [],
 };
 
@@ -648,6 +673,10 @@ function buildStageDressing(
   // landmark is placed deliberately close to it, and the rest fan outward for
   // the desktop framing, which is four times wider.
   const ids = SHOWCASE_LANDMARKS[theme.id] ?? [];
+  // Builder landmarks draw from a surround material set of their OWN: the
+  // dressing disposes every material its meshes hold when it is cleared, so a
+  // set shared with the band would be freed out from under it.
+  const builtMats = ids.some((l) => typeof l !== "string") ? makeSurroundMaterials(palette) : null;
   for (let i = 0; i < ids.length; i++) {
     const side = i % 2 === 0 ? -1 : 1;
     // Landmark 0 is the one the theme is KNOWN by (the garden's treehouse) and
@@ -659,11 +688,18 @@ function buildStageDressing(
     // Held inside the keep-clear box — the neighbourhood starts at its edge —
     // so a landmark never stands in somebody's plot.
     const rad = Math.min(BAND_INNER - 1.5, 7.5 + hash(i * 9, seed + 1) * 5.5);
-    const prop = makePropFromDef(getPropDef(ids[i]), hash(i * 13, seed + 2));
+    const lm = ids[i];
+    let prop: THREE.Object3D;
+    if (typeof lm === "string") {
+      prop = makePropFromDef(getPropDef(lm), hash(i * 13, seed + 2));
+    } else {
+      prop = lm.build(builtMats!);
+      prop.scale.multiplyScalar(lm.scale);
+    }
     const px = Math.sin(off) * rad;
     const pz = -Math.cos(off) * rad;
     prop.position.set(px, 0, pz);
-    if (SHOWCASE_FRONTED.has(ids[i])) {
+    if (typeof lm === "string" ? SHOWCASE_FRONTED.has(lm) : lm.front === true) {
       // Aimed at the CAMERA, not simply at +Z: a landmark 1.9 units off the
       // centre line and 8 back is about 10 degrees round from the view axis,
       // and squaring it to the world instead of to the viewer shows a sliver
@@ -683,6 +719,16 @@ function buildStageDressing(
       o.receiveShadow = false;
     });
     g.add(prop);
+  }
+  if (builtMats) {
+    // Whatever the builders did not use is held by no mesh, so the dressing's
+    // own teardown would never reach it.
+    const used = new Set<THREE.Material>();
+    g.traverse((o) => {
+      const mat = (o as THREE.Mesh).material;
+      if (mat) (Array.isArray(mat) ? mat : [mat]).forEach((x) => used.add(x));
+    });
+    for (const mat of Object.values(builtMats)) if (!used.has(mat)) mat.dispose();
   }
   return g;
 }
@@ -820,7 +866,7 @@ export function createShowcaseSurround(
     root.add(band);
     // The sea is ground, not props: built whole and never culled, exactly as
     // `ensureSurround` does — two meshes whatever its size.
-    if (palette.surround === "dunes" && stage.bandScale > 0) {
+    if ((palette.surround === "dunes" || palette.surround === "island") && stage.bandScale > 0) {
       sea = buildSeaside(SURROUND_PARAMS.halfWidth, SURROUND_PARAMS.zFar);
       root.add(sea.group);
     }

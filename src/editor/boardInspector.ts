@@ -502,7 +502,7 @@ export function createBoardInspector(
     // through onDecorChange, which re-runs applyBoardTheme with the live grid.
     folder
       .add({ floorTexture: p.floorTexture }, "floorTexture",
-        ["flat", "lawn", "earth", "sand", "parkGrass", "road"])
+        ["flat", "lawn", "earth", "sand", "islandSand", "parkGrass", "road"])
       .name("ground")
       .onChange((v: FloorTextureKind) => {
         p.floorTexture = v;
@@ -539,6 +539,7 @@ export function createBoardInspector(
         "dunes",
         "parkland",
         "cityblocks",
+        "island",
       ])
       .name("surround")
       .onChange((v: SurroundKind) => {

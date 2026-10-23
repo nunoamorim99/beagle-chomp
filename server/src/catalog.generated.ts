@@ -40,6 +40,8 @@ export const MAZE_THEMES: readonly CatalogItem[] = [
   { id: "beach", price: 50 },
   { id: "park", price: 50 },
   { id: "city", price: 50 },
+  { id: "daycity", price: 50 },
+  { id: "island", price: 50 },
 ];
 
 export const DEFAULT_BEAGLE_SKIN_ID = "bagel";

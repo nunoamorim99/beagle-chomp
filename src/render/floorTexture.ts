@@ -116,7 +116,7 @@ function corridorPaving(paving: number): number {
 }
 
 /** Which surface a theme's floor wears. */
-export type FloorTextureKind = "flat" | "lawn" | "earth" | "sand" | "parkGrass" | "road";
+export type FloorTextureKind = "flat" | "lawn" | "earth" | "sand" | "islandSand" | "parkGrass" | "road";
 
 /**
  * Pixels per maze tile, on the board.
@@ -504,6 +504,55 @@ function drawSandFloor(ctx: CanvasRenderingContext2D, sh: Sheet, base: RGB): voi
   });
 }
 
+/**
+ * Pirate Island (IDEA-085): the beach's sand, with JUNGLE GRASS SPILLING OUT
+ * FROM UNDER THE HEDGES.
+ *
+ * Nuno: *"the ground should be sand but we can have a little bit of green
+ * too."* The green is placed by the GRID, and only along the foot of the walls
+ * — never mid-corridor, where the biscuits are (the garden's stepping-stone
+ * lesson: anything down the middle of a one-tile corridor competes with the
+ * trail the player is reading). A green blob is centred ON the wall edge, so
+ * half of it is under the hedge and the half that shows reads as growth
+ * creeping out of it — which is what tropical undergrowth does at the edge of
+ * a clearing. The apron ring gets the most, because it is the island's own
+ * verge.
+ */
+function drawIslandSand(ctx: CanvasRenderingContext2D, sh: Sheet, base: RGB): void {
+  drawSandFloor(ctx, sh, base);
+  const grass = mix(base, [0.36, 0.58, 0.26], 0.7);
+  const grassDark = lit(grass, 0.88);
+  const tuftTone = lit(grass, 0.68);
+  const r = rng(0x15a4d);
+  const wall = (x: number, y: number): boolean => !sh.walk(x, y);
+  for (let ty = -1; ty <= sh.rows; ty++) {
+    for (let tx = -1; tx <= sh.cols; tx++) {
+      const apron = tx < 0 || ty < 0 || tx >= sh.cols || ty >= sh.rows;
+      if (apron) {
+        // The verge: generous drifts, the island's grass meeting its beach.
+        if (r() > 0.3) continue;
+        ctx.fillStyle = css(r() < 0.6 ? grass : grassDark);
+        blob(ctx, sh.cx(tx) + (r() - 0.5) * sh.S * 0.6, sh.cy(ty) + (r() - 0.5) * sh.S * 0.6, sh.S * (0.35 + r() * 0.3), r);
+        continue;
+      }
+      if (!sh.walk(tx, ty)) continue;
+      // Each wall this corridor tile touches may push some grass into it.
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+        if (!wall(tx + dx, ty + dy) || r() > 0.3) continue;
+        const along = (r() - 0.5) * sh.S * 0.6;
+        const x = sh.cx(tx) + dx * sh.S * 0.5 + (dy !== 0 ? along : 0);
+        const y = sh.cy(ty) + dy * sh.S * 0.5 + (dx !== 0 ? along : 0);
+        ctx.fillStyle = css(r() < 0.65 ? grass : grassDark);
+        // Radius under half a tile, so it reaches at most a third of the way
+        // to the corridor's centre line and never under a biscuit.
+        blob(ctx, x, y, sh.S * (0.2 + r() * 0.1), r);
+        ctx.fillStyle = css(tuftTone);
+        tuft(ctx, x - dx * sh.S * 0.12, y - dy * sh.S * 0.12 + sh.S * 0.06, sh.S * 0.18, r);
+      }
+    }
+  }
+}
+
 /** City park: real grass everywhere, a gravel path only where the dog walks. */
 function drawParkGrass(ctx: CanvasRenderingContext2D, sh: Sheet, base: RGB, acc: FloorAccents): void {
   // The lawn is GREEN, not a shade of the palette's tan. This is the whole
@@ -645,6 +694,7 @@ function render(
   if (kind === "lawn") drawLawn(ctx, sh, base);
   else if (kind === "earth") drawEarth(ctx, sh, base);
   else if (kind === "sand") drawSandFloor(ctx, sh, base);
+  else if (kind === "islandSand") drawIslandSand(ctx, sh, base);
   else if (kind === "parkGrass") drawParkGrass(ctx, sh, base, acc);
   else drawRoad(ctx, sh, base);
 

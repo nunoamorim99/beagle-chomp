@@ -114,6 +114,30 @@ for (const kind of kinds) {
   );
 }
 
+// The same rule from the other side: a kind that is DECLARED but has no case
+// is a bed a theme can name today and be silent with -- even before any theme
+// names it, which is exactly when a new bed ("island") lands.
+for (const kind of AMBIENCE_KINDS) {
+  if (kind === "none") continue;
+  ok(
+    `declared kind "${kind}" has a build case`,
+    new RegExp(`case "${kind}":`).test(ambienceSrc),
+    "a kind in AMBIENCE_KINDS with no case in build() is silence wearing a name",
+  );
+}
+
+// Pirate Island's bed is its own, not the beach's surf under another name.
+// Only checked once the theme exists, so this file is right on both sides of
+// the themes.ts change landing.
+const island = MAZE_THEMES.find((t) => t.id === "island");
+if (island) {
+  ok("island theme uses the island bed", island.ambience === "island", `got ${island.ambience}`);
+}
+ok(
+  "the island bed is built by its own function, not aliased to surf",
+  /case "island":\s*buildIsland\(rig\)/.test(ambienceSrc),
+);
+
 // ---------------------------------------------------------------------------
 section("The bed follows what the board WEARS");
 

@@ -4518,6 +4518,18 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v9.
   `?style=classic` as the A/B and `?style=one` styling a single island so the
   before and after sit in one frame.
 
+- **PIRATE ISLAND IS THE EIGHTH THEME** (IDEA-085, `id: "island"`). Surround kind `island`
+  reuses the beach's `buildSeaside` coast; its builders are `src/render/islandProps.ts` and its
+  layout is `ISLAND_SET_PIECES` + `islandContent`/`islandFringe` in `surroundRecipe.ts` (the brief
+  names WHERE things go, so the wreck, hoard and side batteries are fixed set pieces and the
+  scatter fills between). Floor `islandSand` paints grass only at wall bases, never mid-corridor;
+  `isSandFloor()` in `madboxStyle.ts` is how the style and the Journey deck treat it as sand. Six
+  pirate roles joined `SurroundMaterials` on four different palette rungs (hull/iron are INK) —
+  `test-surround.ts` asserts the rungs stay distinct. Arch `ship-arch` (`archKind: "ship"`),
+  ambience `island`. **Adding a theme touches**: `themes.ts`, `test-cosmetics.ts` (count + id
+  order + `CYCLED`), `server` `npm run sync`, `PORTAL_COLORS`, `SHOWCASE_LANDMARKS`, and for a new
+  surround kind the board inspector dropdown, `test-surround.ts`'s kind list and
+  `test-showcase-surround.ts`'s per-kind branch.
 - **Input / UI / PWA**: `src/input/{touch,keyboard,dpad,stick}.ts`, `src/ui/{hud,sound,ambience,install}.ts`,
   `public/icons/*` (192, 512, 512-maskable).
 - **THERE ARE THREE TOUCH SCHEMES** (IDEA-049): swipe (default), the D-pad, and the

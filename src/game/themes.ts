@@ -689,6 +689,118 @@ export const MAZE_THEMES: readonly MazeTheme[] = [
     verge: [],
     wallDecor: [],
   },
+  {
+    id: "daycity",
+    name: "Day City",
+    blurb: "Sunlit brick and busy crossings · midday",
+    // Night City by daylight: the same brick walls, road floor, street
+    // layout and neon gateway, under a clear sky and a white noon sun. With
+    // a light sky it is NOT a night theme (madboxStyle's isNightTheme), so it
+    // takes the shipped high-key style the way Night City deliberately does
+    // not, and the surround's windows read as glass rather than lamps.
+    // The brick goes warm red-brown: a lighter grey would put grey walls on a
+    // grey road under grey pavements, and nothing in daylight glows to
+    // separate them the way Night City's windows do.
+    price: 50,
+    ambience: "street",
+    tunnelArch: "neon-gateway",
+    palette: {
+      bg: 0xa4cdea,
+      backdropTop: 0xdcedf9,
+      fogNear: 32,
+      fogFar: 80,
+      wall: 0xa8705a,
+      wallTexture: "brick",
+      wallEmissive: 0x3a2418,
+      wallEmissiveIntensity: 0.15,
+      fence: "none",
+      fenceColor: 0xa9743f,
+      groundDetail: "none",
+      groundDetailColor: 0x9c9a90,
+      surround: "cityblocks",
+      surroundGround: 0x4a4a52,
+      floor: 0x4a4a52,
+      floorTexture: "road",
+      floorEmissive: 0x1c1c20,
+      floorEmissiveIntensity: 0.25,
+      biscuit: 0xf4d060,
+      biscuitEmissive: 0x6a4a10,
+      biscuitEmissiveIntensity: 0.4,
+      hemiSky: 0xe0eeff,
+      hemiGround: 0x5a5550,
+      hemiIntensity: 0.68,
+      sunColor: 0xfff4e0,
+      sunIntensity: 1.15,
+      rimColor: 0xb8d4f0,
+      rimIntensity: 0.35,
+      // Taxi yellow, bus blue, awning red — the street's paint by day, where
+      // Night City's three are its neon.
+      bloomColors: [0xf4c430, 0x4aa8d8, 0xe0503c],
+      bloomEmissiveIntensity: 0.25,
+      bloomChance: 0,
+      speckColor: 0x9a9aa8,
+      speckEmissive: 0x2a2a30,
+      speckChance: 0,
+    },
+    placements: [],
+    verge: [],
+    wallDecor: [],
+  },
+  {
+    id: "island",
+    name: "Pirate Island",
+    blurb: "Palms, a wreck offshore · buried treasure",
+    // IDEA-085. Sand underfoot with jungle grass creeping out from under
+    // tropical hedges, the sea and a wreck to the north, treasure to the south
+    // and ship's gear on the sides. Brown biscuits for the beach's reason (a
+    // cream one vanishes on lifted sand), and the walls a deeper, bluer green
+    // than any hedge theme, so the island reads as jungle, not as a garden.
+    price: 50,
+    ambience: "island",
+    tunnelArch: "ship-arch",
+    inkBiscuits: true,
+    palette: {
+      bg: 0x9ad6f0,
+      backdropTop: 0xd6f1fb,
+      fogNear: 38,
+      fogFar: 104,
+      wall: 0x2a8048,
+      wallTexture: "hedge",
+      wallEmissive: 0x0a2a16,
+      wallEmissiveIntensity: 0.2,
+      fence: "none",
+      fenceColor: 0x9a6a3c,
+      groundDetail: "none",
+      groundDetailColor: 0x9c9a90,
+      surround: "island",
+      surroundGround: 0xa08a5c,
+      floor: 0xa08a5c,
+      floorTexture: "islandSand",
+      floorEmissive: 0x3a2e14,
+      floorEmissiveIntensity: 0.25,
+      biscuit: 0x8a5428,
+      biscuitEmissive: 0x2a1608,
+      biscuitEmissiveIntensity: 0.3,
+      hemiSky: 0xe6f6ff,
+      hemiGround: 0x8a7448,
+      hemiIntensity: 0.7,
+      sunColor: 0xfff6e2,
+      sunIntensity: 1.2,
+      rimColor: 0xa8e4e8,
+      rimIntensity: 0.35,
+      // Frangipani cream, hibiscus red, sunshine yellow — the island's flowers,
+      // and the gems in the treasure chest.
+      bloomColors: [0xf6efe2, 0xf2c23a, 0xe0483c],
+      bloomEmissiveIntensity: 0.25,
+      bloomChance: 0,
+      speckColor: 0x6aa850,
+      speckEmissive: 0x1a3010,
+      speckChance: 0,
+    },
+    placements: [],
+    verge: [],
+    wallDecor: [],
+  },
 ] as const;
 
 export const DEFAULT_MAZE_THEME_ID = "garden";

@@ -872,6 +872,82 @@ section("The beach arch is a sea arch, with corals, algae and crabs");
 }
 
 // ---------------------------------------------------------------------------
+section("The ship arch is wrecked ship timber, with the corridor kept clear");
+
+// Pirate Island. Nuno: "The arch of the maze can be like wood parts of the ship."
+{
+  const def = getPropDef("ship-arch");
+  ok("the ship arch is a library archway", def.shape === "archway");
+  const sp = def.params as PropParams;
+  ok("…of the SHIP kind", sp.archKind === "ship");
+  ok("no picket fence and no sill", sp.archFence === false && sp.archThreshold === false);
+  ok("the Props tab offers the ship kind", /archKind:\s*\[[^\]]*"ship"/.test(inspectorSrc));
+
+  const ship = makeArchway(sp, 0.37);
+  const sb = vertexBounds(ship);
+  const H = ARCH_DEFAULTS.baseHeight * (sp.height ?? 1);
+  const openW = H * (sp.archOpening ?? ARCH_DEFAULTS.opening) * (sp.width ?? 1);
+  const rise = (openW / 2) * (sp.archRise ?? ARCH_DEFAULTS.rise);
+  const bandT = H * (sp.archCrown ?? ARCH_DEFAULTS.crown);
+  const springH = H - rise - bandT;
+  ok(
+    "the posts spring low enough that the corridor shows between them (rule 6)",
+    springH / Math.tan((59 * Math.PI) / 180) < 0.86 * openW,
+    `hides ${(springH * 0.6).toFixed(2)} of ${(0.86 * openW).toFixed(2)}`,
+  );
+  ok("…and high enough that the beagle walks under them", springH > 1.0, `${springH.toFixed(2)}`);
+  ok("archAperture agrees with the builder's springing", Math.abs(archAperture(sp).springY - springH) < 1e-6);
+
+  {
+    let intruders = 0;
+    const v = new THREE.Vector3();
+    ship.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh) return;
+      m.updateWorldMatrix(true, false);
+      const a = m.geometry.getAttribute("position");
+      for (let i = 0; i < a.count; i++) {
+        v.fromBufferAttribute(a, i).applyMatrix4(m.matrixWorld);
+        if (v.y < springH * 0.9 && Math.abs(v.x) < openW / 2 - 0.02) intruders++;
+      }
+    });
+    ok("nothing stands in the opening below the springing", intruders === 0, `${intruders} vertices in the doorway`);
+  }
+
+  ok("it stands ON the ground", sb.lo.y > -0.005, `lo.y = ${sb.lo.y.toFixed(4)}`);
+  ok("its span straddles the corridor", sb.hi.x - sb.lo.x > 1.5 && sb.hi.x - sb.lo.x < 3.3 * TILE, `${(sb.hi.x - sb.lo.x).toFixed(3)}`);
+  ok("it is shallower than a tile and a half", sb.hi.z - sb.lo.z < 1.5, `${(sb.hi.z - sb.lo.z).toFixed(3)}`);
+  ok("and cheap", sb.tris < 6000, `${sb.tris} tris`);
+  for (const n of ["posts", "ribs", "deck", "caps", "rope", "iron", "props", "flag", "threshold"]) {
+    ok(`the ${n} group exists`, !!ship.getObjectByName(n));
+  }
+  ok("the order of the groups is stable", ship.children.map((c) => c.name).join() === "posts,ribs,deck,caps,rope,iron,props,flag,threshold");
+
+  // Five roles, five palette entries; the dark parts declare the ink role.
+  const entryOf = new Map<string, string>();
+  const pick = (role: string, name: string): void => {
+    const m = ship.getObjectByName(name) as THREE.Mesh | undefined;
+    if (m) entryOf.set(role, snapToPalette((m.material as THREE.MeshToonMaterial).color.getHex()).id);
+  };
+  pick("hull", "ribFront0");
+  pick("plank", "postLFront");
+  pick("cap", "capCrown");
+  pick("rope", "lashL0");
+  pick("lamp", "lampGlass");
+  ok("all five wood/rope/lamp roles are present", entryOf.size === 5, [...entryOf.keys()].join(" "));
+  const ids = [...entryOf.values()];
+  ok(
+    "…and no two of them share a palette entry",
+    new Set(ids).size === ids.length,
+    [...entryOf.entries()].map(([k, v]) => `${k}=${v}`).join(" "),
+  );
+  for (const n of ["strapL", "pennant", "hoop0", "lampCap"]) {
+    const m = ship.getObjectByName(n) as THREE.Mesh | undefined;
+    ok(`${n} declares the ink role`, (m?.material as THREE.Material | undefined)?.userData.madboxRole === "ink");
+  }
+}
+
+// ---------------------------------------------------------------------------
 section("The park arch is an open gate under a flowering shrub arch");
 
 // IDEA-081. Nuno: *"for this board I was thinking to put like a gate and above

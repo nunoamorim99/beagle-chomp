@@ -24,7 +24,25 @@ import {
   planPlots,
   planFringe,
   buildSurroundContent,
+  ISLAND_SET_PIECES,
 } from "../src/render/surroundRecipe";
+import {
+  distantAnchor,
+  distantBarrel,
+  distantCannon,
+  distantCoinPile,
+  distantCrate,
+  distantJungleBush,
+  distantPalm,
+  distantPirateFlag,
+  distantPistols,
+  distantRopeCoil,
+  distantShipWheel,
+  distantShipwreck,
+  distantSkullPost,
+  distantSwordInSand,
+  distantTreasureChest,
+} from "../src/render/islandProps";
 import {
   makeSurroundMaterials,
   disposeSurroundMaterials,
@@ -344,7 +362,7 @@ section("The whole surround collapses to a handful of draw calls");
 section("Every theme names a real surround, and the ground always exists");
 
 {
-  const kinds = ["none", "plots", "woodland", "dunes", "parkland", "cityblocks"];
+  const kinds = ["none", "plots", "woodland", "dunes", "parkland", "cityblocks", "island"];
   for (const t of MAZE_THEMES) {
     ok(`${t.id}: surround "${t.palette.surround}" is a real kind`, kinds.includes(t.palette.surround));
     // The no-sky-gap guarantee is unconditional, so there is no "none" for the
@@ -1180,6 +1198,131 @@ section("IDEA-082: Night City is streets, cars, trees and fewer, finished buildi
     const litMat = (b0?.getObjectByName("shopfront") as THREE.Mesh | undefined)?.material;
     ok("…and lit windows", !!b0 && b0.children.some((c) => c.name.includes("win") && (c as THREE.Mesh).material === litMat));
   }
+}
+
+// ---------------------------------------------------------------------------
+section("Pirate Island: palms, ship's gear, treasure, and a wreck on the water (IDEA-085)");
+
+{
+  const ISLAND = MAZE_THEMES.find((t) => t.id === "island")!;
+  ok("the island theme grows the island kind", ISLAND?.palette.surround === "island");
+  restoreParams();
+  const mats = makeSurroundMaterials(ISLAND.palette);
+  const known = new Set<THREE.Material>(Object.values(mats));
+
+  /** World-space vertex scan: lowest y, triangle count, named/foreign meshes. */
+  const scan = (g: THREE.Object3D) => {
+    g.updateMatrixWorld(true);
+    let meshes = 0, named = 0, foreign = 0, tris = 0, lowest = Infinity;
+    const v = new THREE.Vector3();
+    g.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      meshes++;
+      if (mesh.name) named++;
+      if (!known.has(mesh.material as THREE.Material)) foreign++;
+      const pos = mesh.geometry.attributes.position;
+      tris += (mesh.geometry.index ? mesh.geometry.index.count : pos.count) / 3;
+      for (let i = 0; i < pos.count; i++) {
+        v.fromBufferAttribute(pos, i).applyMatrix4(mesh.matrixWorld);
+        if (v.y < lowest) lowest = v.y;
+      }
+    });
+    return { meshes, named, foreign, tris, lowest };
+  };
+
+  // Same contract as every distant builder above: on the ground (a little
+  // sunk is fine for a thing lying IN sand; floating never is), named, the
+  // shared set only, and the surround's 600-triangle budget.
+  const subjects: Array<[string, THREE.Group, number]> = [
+    ["palm", distantPalm(mats, { seed: 1 }), 0.02],
+    ["jungleBush", distantJungleBush(mats, { seed: 2 }), 0.15],
+    ["cannon", distantCannon(mats, { seed: 3 }), 0.02],
+    ["pirateFlag", distantPirateFlag(mats, { seed: 4 }), 0.02],
+    ["shipWheel", distantShipWheel(mats, { seed: 5 }), 0.15],
+    ["barrel", distantBarrel(mats, { seed: 6, tipped: false }), 0.02],
+    ["barrelTipped", distantBarrel(mats, { seed: 6, tipped: true }), 0.02],
+    ["crate", distantCrate(mats), 0.02],
+    ["anchor", distantAnchor(mats, { seed: 7 }), 0.12],
+    ["ropeCoil", distantRopeCoil(mats), 0.02],
+    ["sword", distantSwordInSand(mats, { seed: 8 }), 0.15],
+    ["pistols", distantPistols(mats, { seed: 9 }), 0.02],
+    ["skullPost", distantSkullPost(mats, { seed: 10 }), 0.02],
+    ["coinPile", distantCoinPile(mats, { seed: 11 }), 0.1],
+    ["treasureChest", distantTreasureChest(mats, { seed: 12 }), 0.02],
+  ];
+  for (const [name, g, sink] of subjects) {
+    const s = scan(g);
+    ok(`${name}: every mesh is named`, s.named === s.meshes, `${s.named}/${s.meshes}`);
+    ok(`${name}: does not sink past its allowance`, s.lowest > -sink, "lowest y = " + s.lowest.toFixed(3));
+    ok(`${name}: touches the ground rather than floating`, s.lowest < 0.05, "lowest y = " + s.lowest.toFixed(3));
+    ok(`${name}: uses only the shared material set`, s.foreign === 0, `${s.foreign} foreign`);
+    ok(`${name}: within its triangle budget`, s.tris <= 600, Math.round(s.tris) + " tris");
+  }
+
+  // The wreck is a LANDMARK built once, so it gets its own ceiling — and it
+  // must stand IN the water: every part of it north of the swash.
+  const wreck = ISLAND_SET_PIECES.find((p) => p.name === "wreck")!;
+  const ws = scan(distantShipwreck(mats, { seed: 5 }));
+  ok("shipwreck: every mesh is named", ws.named === ws.meshes, `${ws.named}/${ws.meshes}`);
+  ok("shipwreck: uses only the shared material set", ws.foreign === 0);
+  ok("shipwreck: within its landmark budget", ws.tris <= 3000, Math.round(ws.tris) + " tris");
+  {
+    const site = wreck.build(mats);
+    site.position.x += wreck.x;
+    site.position.z += wreck.z;
+    site.updateMatrixWorld(true);
+    const hull = site.getObjectByName("hull") as THREE.Mesh;
+    const pos = hull.geometry.attributes.position;
+    const v = new THREE.Vector3();
+    let dry = 0;
+    for (let i = 0; i < pos.count; i++) {
+      v.fromBufferAttribute(pos, i).applyMatrix4(hull.matrixWorld);
+      if (!inSea(v.x, v.z, -SEASIDE_PARAMS.swashReach)) dry++;
+    }
+    ok("the wreck's hull lies wholly in the sea (Nuno: 'the ship should be on the water')", dry === 0, `${dry} hull vertices on the beach`);
+    ok("…and on the NORTH-WEST, as asked", wreck.x < -3 && wreck.z < -16);
+  }
+
+  // Every DRY set piece stands outside the keep-clear box, so no procedural
+  // gear can land on the verge or the apron Nuno will be placing props on.
+  const clearX = (COLS + 2) / 2 + SURROUND_PARAMS.keepClear;
+  const clearZ = (ROWS + 2) / 2 + SURROUND_PARAMS.keepClear;
+  for (const p of ISLAND_SET_PIECES) {
+    const outside = Math.abs(p.x) >= clearX || Math.abs(p.z) >= clearZ;
+    ok(`set piece "${p.name}" stands outside the keep-clear box or at sea`, outside || inSea(p.x, p.z));
+  }
+  const hoard = ISLAND_SET_PIECES.find((p) => p.name === "hoard")!;
+  ok("the treasure is SOUTH of the board", hoard.z > clearZ);
+  ok(
+    "there is ship's gear on BOTH sides",
+    ISLAND_SET_PIECES.some((p) => p.x <= -clearX) && ISLAND_SET_PIECES.some((p) => p.x >= clearX),
+  );
+
+  // The tarred hull and the iron are MARKINGS: without the declared role the
+  // shipped style lifts them to `slate`, a blue-grey (IDEA-065 rule 10).
+  ok("the hull is declared ink", mats.hull.userData.madboxRole === "ink");
+  ok("the iron is declared ink", mats.iron.userData.madboxRole === "ink");
+  // And the three light woods/cloths are three different rungs.
+  const entry = (mat: THREE.MeshToonMaterial) => snapToPalette(mat.color.getHex()).id;
+  const rungs = [entry(mats.plank), entry(mats.palmBark), entry(mats.canvas), entry(mats.gold)];
+  ok("plank, palm bark, sailcloth and gold land on four palette entries", new Set(rungs).size === 4, rungs.join(" / "));
+
+  // The whole island in the real recipe: the sea is built with it, and nothing
+  // dry stands in the surf.
+  const host = buildSurroundContent("island", mats);
+  let wet = 0;
+  host.updateMatrixWorld(true);
+  for (const c of host.children) {
+    if (c.name === "wreck-site" || c.name === "sunken-mast") continue;
+    if (inSea(c.position.x, c.position.z, SEASIDE_PARAMS.swashReach)) wet++;
+  }
+  ok("nothing on the beach stands in the surf", wet === 0, `${wet} in the water`);
+  disposeSurroundMaterials(mats);
+  const scene = new THREE.Group();
+  const built = ensureSurround(scene, "island", ISLAND.palette)!;
+  ok("the island builds its sea", !!built.getObjectByName("sea") && !!built.getObjectByName("shore"));
+  disposeSurround();
 }
 
 restoreParams();

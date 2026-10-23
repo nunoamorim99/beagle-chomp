@@ -43,6 +43,7 @@ import { pineWhorlStack } from "./forestProps";
 import { mergeGrouped, splitByGroup } from "./propMerge";
 import { hexOf, lit, mix, rgbOf } from "./paint";
 import { pavingColorFor } from "./floorTexture";
+import { isNightTheme } from "./madboxStyle";
 
 
 /**
@@ -85,6 +86,16 @@ export interface SurroundMaterials {
   windowLit: THREE.MeshToonMaterial;
   streetLeaf: THREE.MeshToonMaterial;
   streetLeafDark: THREE.MeshToonMaterial;
+  /** Pirate Island (IDEA-085). A wreck's tarred hull and iron, the ship's
+   *  deck planking, sailcloth, gold, and a palm's pale ringed bark. Every
+   *  theme builds them; only the island draws them, and a material nothing
+   *  draws costs no draw call after the merge. */
+  hull: THREE.MeshToonMaterial;
+  iron: THREE.MeshToonMaterial;
+  plank: THREE.MeshToonMaterial;
+  canvas: THREE.MeshToonMaterial;
+  gold: THREE.MeshToonMaterial;
+  palmBark: THREE.MeshToonMaterial;
 }
 
 /** Everything the set needs off a theme. Kept structural so `src/game` never
@@ -95,6 +106,9 @@ export interface SurroundPaletteInput {
   fenceColor: number;
   bloomColors: readonly number[];
   groundDetailColor: number;
+  /** The sky. Optional so a hand-built palette still works; without it the
+   *  set assumes NIGHT, which is what the city windows were built for. */
+  bg?: number;
 }
 
 /**
@@ -113,6 +127,7 @@ export function makeSurroundMaterials(p: SurroundPaletteInput): SurroundMaterial
   const ground = rgbOf(p.surroundGround);
   const timber = rgbOf(p.fenceColor);
   const blooms = p.bloomColors.length ? p.bloomColors : [0xf4efe6, 0xd8483f];
+  const daylight = p.bg !== undefined && !isNightTheme(p);
   // A hair toward the ground so distant greenery sits in its field rather than
   // standing out as a second, louder green.
   const leaf = mix(wall, ground, 0.18);
@@ -179,14 +194,46 @@ export function makeSurroundMaterials(p: SurroundPaletteInput): SurroundMaterial
     // A lit window is the one thing in a night city that must GLOW, so it is
     // the only material in the set with a real emissive. Warm sodium, the same
     // family as the biscuits and the streetlights.
-    windowLit: toon({ color: 0xffd98a, emissive: 0xffb84a, emissiveIntensity: 0.65 }),
+    //
+    // BY DAY the same slot is glass catching the sky (Day City): a pale blue
+    // with no emissive, so the "lit" windows become the bright panes and the
+    // dark `glass` ones stay the openings. A warm glow at noon reads as a
+    // building on fire rather than as people at home.
+    windowLit: daylight
+      ? toon({ color: 0xc4def0 })
+      : toon({ color: 0xffd98a, emissive: 0xffb84a, emissiveIntensity: 0.65 }),
     // FIXED greens, only tinted by the ground — the foliage pair is derived
     // from `palette.wall`, which on the city is grey BRICK, so a street tree
     // built from it is a grey-purple lump. A tree has to read as a tree on
     // any street, the water's reasoning.
     streetLeaf: toon({ color: hexOf(mix([0.33, 0.58, 0.32], ground, 0.12)) }),
     streetLeafDark: toon({ color: hexOf(mix([0.2, 0.4, 0.24], ground, 0.12)) }),
+    // FIXED, for the water's reason: a ship has to read as a ship on any sand.
+    // The four wood/metal roles sit on four different rungs of the shipped
+    // style's warm ladder — tarred hull and iron are INK (declared below),
+    // deck planks `wood`, palm bark `sand` — because two parts of one object
+    // on one palette entry are one matcap and cannot be told apart
+    // (IDEA-065 rule 9). Sailcloth is authored near-GREY so it can reach the
+    // `cream` neutral at all: a warm pale tan only ever lands on `sand`.
+    hull: inkMat(0x4a2e1c),
+    iron: inkMat(0x2c2a2a),
+    plank: toon({ color: 0xa8743e }),
+    canvas: toon({ color: 0xf0efea }),
+    gold: toon({ color: 0xf2c23a, emissive: 0x6a4a10, emissiveIntensity: 0.25 }),
+    palmBark: toon({ color: 0xcfb07a }),
   };
+}
+
+/**
+ * A material that must stay DARK under the shipped style. Without the declared
+ * role the snap matches a near-black against the neutrals and lifts it to
+ * `slate`, a blue-grey — the fox's blue boots (IDEA-065 rule 10), and here a
+ * blue cannon on a blue-grey wreck.
+ */
+function inkMat(hex: number): THREE.MeshToonMaterial {
+  const mat = toon({ color: hex });
+  mat.userData.madboxRole = "ink";
+  return mat;
 }
 
 export function disposeSurroundMaterials(m: SurroundMaterials): void {
@@ -251,8 +298,9 @@ function gableGeometry(w: number, h: number, d: number): THREE.BufferGeometry {
   return g;
 }
 
-/** Add a named mesh to a group, at a position, and return it. */
-function part(
+/** Add a named mesh to a group, at a position, and return it. Exported for
+ *  islandProps.ts, which builds in the same idiom. */
+export function part(
   g: THREE.Group,
   geo: THREE.BufferGeometry,
   mat: THREE.Material,
@@ -267,7 +315,7 @@ function part(
 }
 
 /** Deterministic 0..1 from an integer seed — one more call, one more value. */
-function seeded(seed: number): () => number {
+export function seeded(seed: number): () => number {
   let a = seed >>> 0;
   return () => {
     a = (a + 0x9e3779b9) >>> 0;

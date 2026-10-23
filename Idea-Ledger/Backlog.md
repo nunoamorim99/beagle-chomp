@@ -28,7 +28,7 @@ Living backlog of ideas. Two purposes:
   header now carries the before-table.
 
 ## Backlog (open ideas)
-> New registered ideas go here. Next free ID: IDEA-081
+> New registered ideas go here. Next free ID: IDEA-086
 > (054 went to the crab and 055 to the mosquito — built in parallel by two sessions, which is
 > why the ids were split up front rather than both taking the next free one. 056 and 057 are the
 > sushi pair, registered together because neither is buildable without the other as its
@@ -45,6 +45,53 @@ Living backlog of ideas. Two purposes:
 > passed. 077 and 078 are registered together and in that order for the same reason 056/057
 > were: the rename is what frees the WORD the second one needs, so 078 is unbuildable without
 > it.)
+
+### IDEA-085 — Pirate Island: a new theme — sand island, wreck offshore, treasure to the south 🔨
+- **Priority:** 🟡
+- **Area:** render
+- **Registered:** 2026-10-22
+- **Description:** Nuno: *"build a new theme... Pirate Island. For now I just want to build the maze
+  and the environment around the maze, then I will dedicate more time on the props... the ground
+  should be sand but we can have a little bit of green too. The trees should be like palm beach.
+  On the north side a shipwreck on the north left side... the ship should be on the water. On the
+  south side a treasure chest and some decoration like swords and guns, pirate symbols. On the
+  sides, closer to the maze, parts of the ship, cannon, flags, wheel. The arch can be like wood
+  parts of the ship. The sounds: beach and birds, and some pirate sound, but relaxing."*
+- **Versions:**
+  - **v1** (2026-10-22, built, not yet committed) — theme `island` (50 coins, appended after Day
+    City so the Journey's six-theme cycle is untouched). Floor `islandSand`: the beach's sand with
+    jungle grass spilling from the hedge bases, placed by the grid and never mid-corridor; the
+    surround tiles the same sand with a few tufted grass clumps. Tropical `hedge` walls. Surround
+    kind `island` reuses the beach's `buildSeaside` coast; `src/render/islandProps.ts` adds palms,
+    jungle bushes, cannon, pirate flag, ship's wheel, barrel, crate, anchor, rope, swords in sand,
+    crossed pistols, skull post, coin piles, an open treasure chest, a listing shipwreck and a
+    sunken mast. Fixed SET PIECES (`ISLAND_SET_PIECES`): the wreck NW on the water, a sunken mast
+    NE, the treasure hoard south, a cannon battery + flag each side, a helm west, an anchor east;
+    plots grow palm groves, the side fringe ship's gear, the south fringe arms and skulls. Six
+    new shared surround roles (hull + iron INK, plank `wood`, palm bark `sand`, sailcloth
+    `cream`, gold) — sailcloth first snapped onto `sand` with the bark and the new guard caught it.
+    Tunnel arch `ship-arch` (`archKind: "ship"`): lashed plank posts, curved hull ribs, iron
+    straps, lantern, barrel, Jolly Roger. Ambience `island`: lagoon wash, rigging wind, hull
+    creaks under 320 Hz, rope squeaks, gulls, a rare distant ship's bell — no melody; the lowest
+    chomp-band share of any bed (~7%). Server catalog synced. Renders in
+    `.img2threejs/pirate-island/renders/`; `npm run test` green.
+  - **v2** (2026-10-23) — Nuno: *"lets add this theme to the shop and to the journey too. Don't
+    forget the preview of the theme on the shop and main menu."* SHOP: the card wears an ANCHOR
+    (`ICON.themeIsland`, already in the font subset, so no re-cut; `sailing` would need one), and
+    the theme diorama stages a palm and the treasure chest beside the ship arch. MENU:
+    `SHOWCASE_LANDMARKS` can now take surround BUILDERS as well as library ids (with their own
+    material set, so the dressing's teardown cannot free the band's), and the island stands a
+    chest, palms, a cannon and a flag behind the arch, with the wreck on the horizon. JOURNEY:
+    `THEME_CYCLE` is eight themes — forty levels divide by eight, so every theme is shown exactly
+    FIVE times (the island on levels 8, 16, 24, 32 and 40); the tour shows each three or four
+    times. All forty `themeId`s re-derived; `ISLAND_DRESSING.island` dresses its stones. Built
+    alongside a concurrent session that put Day City into the same rotation (coordinated by
+    message; it handed the files over). Instruments: `scripts/_scratch-island-showcase.ts`
+    (local stack only, cleans up its account) and `_scratch-island-journey.ts`.
+- **Notes:** apron `placements`/`verge`/`wallDecor` are EMPTY on purpose — Nuno places props
+  himself next. On a 16:9 desktop only the wreck's stern is in frame (the frame ends at z -21.2
+  and the hull must stay wholly in the sea); a phone shows all of it. Syncing the catalog also
+  added **Day City**, which had never been synced — the server would have refused buying it.
 
 ### IDEA-080 — Sunny Beach: a sea to the north, a beach around the board, a sea arch 🔨
 - **Priority:** 🟡

@@ -191,12 +191,19 @@ export interface PropParams {
    *  names its three reinterpreted dials: `archCrest` sizes the cap stones,
    *  `archBlossoms` is coral clusters per foot, `foliageColors` the algae.
    *
+   *  "ship" is the Pirate Island's: wrecked ship timber — two plank posts
+   *  with a broken centre mast, a pair of curved hull ribs between them,
+   *  rope lashings, iron straps, a barrel, a lantern and a Jolly Roger on the
+   *  crown. `makeShipArch` lists its reinterpreted dials (`stoneColor` the hull
+   *  wood, `fenceColor` the planking, `blossomColor` the rope, `archBlossoms`
+   *  the lashings per post, `archCrest` the bleached caps).
+   *
    *  "neon" is IDEA-083, Night City's: two slim steel posts, a pink-and-cyan
    *  neon outline, marquee bulbs and a glowing bone sign on the crown.
    *  `makeNeonArch` lists its reinterpreted dials (`archPier` the post,
    *  `archCrown` the gap between the tubes, `archBlossoms` the bulbs,
    *  `archCrest` the sign's size). */
-  archKind?: "hedge" | "trees" | "rocks" | "gate" | "neon" | "warp";
+  archKind?: "hedge" | "trees" | "rocks" | "gate" | "neon" | "warp" | "ship";
   /** archway only: the opening's width as a fraction of the portal's height
    *  (default 0.5, which is 1.03 world units — ONE MAZE TILE, so the arch
    *  frames the tunnel corridor exactly). The reference measures 0.338; the
@@ -1114,6 +1121,32 @@ export const PROP_LIBRARY: readonly PropDef[] = [
       archRibbon: 0.7,
       archCrest: 0.6,
       archBlossoms: 3,
+      archThreshold: false,
+      archFence: false,
+    },
+  },
+  {
+    // Pirate Island's tunnel mouth: wood parts of a wrecked ship. The sea
+    // arch's low-pier construction (rule 6), in timber.
+    id: "ship-arch",
+    name: "Ship Timbers",
+    shape: "archway",
+    params: {
+      height: 1,
+      width: 1,
+      archKind: "ship",
+      stoneColor: 0x6b4426,
+      fenceColor: 0xb07a3e,
+      blossomColor: 0xf1f0ec,
+      archOpening: 0.458,
+      archRise: 1.29,
+      archCurve: 1.9,
+      archPier: 0.12,
+      archDepth: 0.33,
+      archCrown: 0.13,
+      archRibbon: 0.7,
+      archCrest: 0.6,
+      archBlossoms: 2,
       archThreshold: false,
       archFence: false,
     },

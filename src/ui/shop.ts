@@ -183,6 +183,10 @@ const THEME_ICONS: Record<string, string> = {
   beach: ICON.themeBeach,
   park: ICON.themePark,
   city: ICON.themeCity,
+  // The same glyph on purpose: it is the same city, and the card's own
+  // wall and floor colours already say which one.
+  daycity: ICON.themeCity,
+  island: ICON.themeIsland,
 };
 
 function enemyIcon(id: string): string {

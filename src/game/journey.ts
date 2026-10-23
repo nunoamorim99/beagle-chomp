@@ -24,9 +24,14 @@
 // is dressed by its own themeId regardless of what the player has bought or
 // equipped in the shop (game.ts's startJourneyLevel applies it, and restores
 // the equipped theme when a classic run starts). That is the second half of the
-// tour's job: the shop sells six maze themes and a player who owns one has never
-// seen the other five. Across the thirty tour levels each theme appears exactly
-// five times, because the cycle is THEME_CYCLE[idx % 6] and 30 divides by 6.
+// tour's job: the shop sells eight maze themes and a player who owns one has
+// never seen the other seven. The cycle is THEME_CYCLE[idx % 8]. Thirty does
+// not divide by eight, so across the TOUR each theme appears three or four
+// times (the first six in the rotation get the extra lap's head) — but forty
+// does, so across the WHOLE LADDER every theme is shown exactly five times.
+// Day City and Pirate Island both joined after the tour was laid out; a clean
+// rotation is a better cost than a hand-typed exception the test could not
+// hold the table to.
 //
 // NO POWER-UPS, IN EITHER CHAPTER. game.ts's maybeSpawnPowerup refuses to spawn
 // them outside classic, and plausibility.ts rejects any challenge run that
@@ -129,12 +134,23 @@ export interface JourneyLevel {
 /** How many levels the GRAND TOUR chapter has — one per playable maze. */
 export const TOUR_LEVEL_COUNT = 30;
 
-/** The theme rotation the tour walks, in MAZE_THEMES order. Six themes over
- *  thirty levels is exactly five full laps, so every theme is shown the same
- *  number of times — see the module comment. Exported so the test can assert
+/** The theme rotation the ladder walks, in MAZE_THEMES order. Eight themes
+ *  over forty levels is five full laps, so every theme is shown exactly five
+ *  times (three or four of them on the tour) — see the module comment. Night City and Day City sit side by
+ *  side, so the same streets come up after dark and then at noon. Exported so
+ *  the test can assert
  *  the cycle actually holds in the literal table below rather than trusting it
  *  was typed correctly thirty times. */
-export const THEME_CYCLE: readonly string[] = ["garden", "classic", "forest", "beach", "park", "city"];
+export const THEME_CYCLE: readonly string[] = [
+  "garden",
+  "classic",
+  "forest",
+  "beach",
+  "park",
+  "city",
+  "daycity",
+  "island",
+];
 
 /**
  * The 40 challenge levels.
@@ -209,7 +225,7 @@ export const JOURNEY_LEVELS: readonly JourneyLevel[] = [
     name: "The Hedge Spiral",
     mazeIdx: 6,
     modifiers: { speedMult: 1, ghostSpeedMult: 1, ghostCount: 3, frightSeconds: TIMING.frightSeconds },
-    themeId: "garden",
+    themeId: "daycity",
     kind: "tour",
     blurb: "Rings inside rings. Every lap looks like the last one until you notice you're further in.",
   },
@@ -217,7 +233,7 @@ export const JOURNEY_LEVELS: readonly JourneyLevel[] = [
     name: "The Kennel Rows",
     mazeIdx: 7,
     modifiers: { speedMult: 1, ghostSpeedMult: 1, ghostCount: 3, frightSeconds: TIMING.frightSeconds },
-    themeId: "classic",
+    themeId: "island",
     kind: "tour",
     blurb: "Paired blocks with gaps between them, like a row of kennels with the doors left open.",
   },
@@ -225,7 +241,7 @@ export const JOURNEY_LEVELS: readonly JourneyLevel[] = [
     name: "The Trellis",
     mazeIdx: 8,
     modifiers: { speedMult: 1, ghostSpeedMult: 1, ghostCount: 3, frightSeconds: TIMING.frightSeconds },
-    themeId: "forest",
+    themeId: "garden",
     kind: "tour",
     blurb: "Tall vertical ladders top to bottom. The ghosts love a straight line; so should you.",
   },
@@ -233,7 +249,7 @@ export const JOURNEY_LEVELS: readonly JourneyLevel[] = [
     name: "The Flowerbeds",
     mazeIdx: 9,
     modifiers: { speedMult: 1, ghostSpeedMult: 1, ghostCount: 3, frightSeconds: TIMING.frightSeconds },
-    themeId: "beach",
+    themeId: "classic",
     kind: "tour",
     blurb: "Neat rectangular beds with paths raked between them. Tidy, and full of dead reckoning.",
   },
@@ -241,7 +257,7 @@ export const JOURNEY_LEVELS: readonly JourneyLevel[] = [
     name: "The Long Hedges",
     mazeIdx: 10,
     modifiers: { speedMult: 1, ghostSpeedMult: 1, ghostCount: 3, frightSeconds: TIMING.frightSeconds },
-    themeId: "park",
+    themeId: "forest",
     kind: "tour",
     blurb: "Two long spines down the middle and very few ways across them. Commit to a side.",
   },
@@ -249,7 +265,7 @@ export const JOURNEY_LEVELS: readonly JourneyLevel[] = [
     name: "The Allotment",
     mazeIdx: 11,
     modifiers: { speedMult: 1, ghostSpeedMult: 1, ghostCount: 3, frightSeconds: TIMING.frightSeconds },
-    themeId: "city",
+    themeId: "beach",
     kind: "tour",
     blurb: "Small fenced plots, each with its own way in and its own way out. Usually.",
   },
@@ -257,7 +273,7 @@ export const JOURNEY_LEVELS: readonly JourneyLevel[] = [
     name: "The Orchard Rows",
     mazeIdx: 12,
     modifiers: { speedMult: 1, ghostSpeedMult: 1, ghostCount: 3, frightSeconds: TIMING.frightSeconds },
-    themeId: "garden",
+    themeId: "park",
     kind: "tour",
     blurb: "Planted in rows with wide avenues between. You can see a long way — so can they.",
   },
@@ -265,7 +281,7 @@ export const JOURNEY_LEVELS: readonly JourneyLevel[] = [
     name: "The Butterfly",
     mazeIdx: 13,
     modifiers: { speedMult: 1, ghostSpeedMult: 1, ghostCount: 3, frightSeconds: TIMING.frightSeconds },
-    themeId: "classic",
+    themeId: "city",
     kind: "tour",
     blurb: "Two matching wings around a narrow body. Whatever works on the left works on the right.",
   },
@@ -273,7 +289,7 @@ export const JOURNEY_LEVELS: readonly JourneyLevel[] = [
     name: "The Greenhouse",
     mazeIdx: 14,
     modifiers: { speedMult: 1, ghostSpeedMult: 1, ghostCount: 3, frightSeconds: TIMING.frightSeconds },
-    themeId: "forest",
+    themeId: "daycity",
     kind: "tour",
     blurb: "A pane-by-pane grid of small square rooms. Every junction offers four choices and none of them are obvious.",
   },
@@ -281,7 +297,7 @@ export const JOURNEY_LEVELS: readonly JourneyLevel[] = [
     name: "The Terraces",
     mazeIdx: 15,
     modifiers: { speedMult: 1, ghostSpeedMult: 1, ghostCount: 3, frightSeconds: TIMING.frightSeconds },
-    themeId: "beach",
+    themeId: "island",
     kind: "tour",
     blurb: "Wide horizontal bands stacked up the board, with a handful of ladders between them.",
   },
@@ -289,7 +305,7 @@ export const JOURNEY_LEVELS: readonly JourneyLevel[] = [
     name: "The Picket Lines",
     mazeIdx: 16,
     modifiers: { speedMult: 1, ghostSpeedMult: 1, ghostCount: 3, frightSeconds: TIMING.frightSeconds },
-    themeId: "park",
+    themeId: "garden",
     kind: "tour",
     blurb: "Short uprights in rank and file. Simple to read, easy to get pinned against.",
   },
@@ -297,7 +313,7 @@ export const JOURNEY_LEVELS: readonly JourneyLevel[] = [
     name: "The Knot Garden",
     mazeIdx: 17,
     modifiers: { speedMult: 1, ghostSpeedMult: 1, ghostCount: 3, frightSeconds: TIMING.frightSeconds },
-    themeId: "city",
+    themeId: "classic",
     kind: "tour",
     blurb: "Concentric rings knotted through each other. The centre is the prize and the trap.",
   },
@@ -305,7 +321,7 @@ export const JOURNEY_LEVELS: readonly JourneyLevel[] = [
     name: "The Gravel Paths",
     mazeIdx: 18,
     modifiers: { speedMult: 1, ghostSpeedMult: 1, ghostCount: 3, frightSeconds: TIMING.frightSeconds },
-    themeId: "garden",
+    themeId: "forest",
     kind: "tour",
     blurb: "Loose, forking walks with no long runs anywhere. Nothing here rewards a sprint.",
   },
@@ -313,7 +329,7 @@ export const JOURNEY_LEVELS: readonly JourneyLevel[] = [
     name: "The Rose Beds",
     mazeIdx: 19,
     modifiers: { speedMult: 1, ghostSpeedMult: 1, ghostCount: 3, frightSeconds: TIMING.frightSeconds },
-    themeId: "classic",
+    themeId: "beach",
     kind: "tour",
     blurb: "Round beds with a ring path each. Beautiful from above, awkward at ground level.",
   },
@@ -321,7 +337,7 @@ export const JOURNEY_LEVELS: readonly JourneyLevel[] = [
     name: "The Cloisters",
     mazeIdx: 20,
     modifiers: { speedMult: 1, ghostSpeedMult: 1, ghostCount: 3, frightSeconds: TIMING.frightSeconds },
-    themeId: "forest",
+    themeId: "park",
     kind: "tour",
     blurb: "Repeating arched cells around an open middle. Every cell looks the same from inside it.",
   },
@@ -329,7 +345,7 @@ export const JOURNEY_LEVELS: readonly JourneyLevel[] = [
     name: "The Comb",
     mazeIdx: 21,
     modifiers: { speedMult: 1, ghostSpeedMult: 1, ghostCount: 3, frightSeconds: TIMING.frightSeconds },
-    themeId: "beach",
+    themeId: "city",
     kind: "tour",
     blurb: "Vertical teeth with one long spine. Get caught between teeth and there is exactly one way out.",
   },
@@ -337,7 +353,7 @@ export const JOURNEY_LEVELS: readonly JourneyLevel[] = [
     name: "The Fountain Court",
     mazeIdx: 22,
     modifiers: { speedMult: 1, ghostSpeedMult: 1, ghostCount: 3, frightSeconds: TIMING.frightSeconds },
-    themeId: "park",
+    themeId: "daycity",
     kind: "tour",
     blurb: "A raised centrepiece with walks radiating from it, and the ghost pen right underneath.",
   },
@@ -345,7 +361,7 @@ export const JOURNEY_LEVELS: readonly JourneyLevel[] = [
     name: "The Pergola",
     mazeIdx: 23,
     modifiers: { speedMult: 1, ghostSpeedMult: 1, ghostCount: 3, frightSeconds: TIMING.frightSeconds },
-    themeId: "city",
+    themeId: "island",
     kind: "tour",
     blurb: "Covered walks crossing at right angles. Shade everywhere, cover nowhere.",
   },
@@ -410,10 +426,11 @@ export const JOURNEY_LEVELS: readonly JourneyLevel[] = [
   // JourneyModifiers' own doc comment) so a faster level is uniformly faster
   // for both sides, not a relative buff or nerf to either.
   //
-  // Their themeId continues the SAME rotation the tour walks — idx 30 is a
-  // multiple of 6, so the twists open on the garden again and run
-  // garden/classic/forest/beach/park/city/garden/... through to idx 39. No
-  // special case; THEME_CYCLE[idx % 6] holds for all forty.
+  // Their themeId continues the SAME rotation the tour walks — idx 30 is
+  // 6 mod 8, so the twists open on Day City and run
+  // daycity/island/garden/classic/... through to idx 39, which closes the
+  // ladder on Pirate Island. No special case; THEME_CYCLE[idx % 8] holds for
+  // all forty.
   {
     // L31: baseline warm-up — literally CLASSIC_MODIFIERS. It opened the
     // original ladder and it opens the twist chapter: after thirty tour levels
@@ -422,7 +439,7 @@ export const JOURNEY_LEVELS: readonly JourneyLevel[] = [
     name: "Warm-Up Walkies",
     mazeIdx: 0,
     modifiers: { speedMult: 1, ghostSpeedMult: 1, ghostCount: 3, frightSeconds: TIMING.frightSeconds },
-    themeId: "garden",
+    themeId: "daycity",
     kind: "twist",
     blurb: "Just a classic lap around the garden — get your paws warmed up.",
   },
@@ -431,7 +448,7 @@ export const JOURNEY_LEVELS: readonly JourneyLevel[] = [
     name: "Squirrel Sprint",
     mazeIdx: 1,
     modifiers: { speedMult: 1.3, ghostSpeedMult: 1.3, ghostCount: 3, frightSeconds: TIMING.frightSeconds },
-    themeId: "classic",
+    themeId: "island",
     kind: "twist",
     blurb: "Everything's faster! A squirrel darted through and revved the whole yard up.",
   },
@@ -441,7 +458,7 @@ export const JOURNEY_LEVELS: readonly JourneyLevel[] = [
     name: "Pack Mentality",
     mazeIdx: 2,
     modifiers: { speedMult: 1, ghostSpeedMult: 1, ghostCount: 4, frightSeconds: TIMING.frightSeconds },
-    themeId: "forest",
+    themeId: "garden",
     kind: "twist",
     blurb: "A fourth ghost joins the chase — the pack just got bigger.",
   },
@@ -450,7 +467,7 @@ export const JOURNEY_LEVELS: readonly JourneyLevel[] = [
     name: "Short Fuse",
     mazeIdx: 3,
     modifiers: { speedMult: 1.5, ghostSpeedMult: 1.5, ghostCount: 3, frightSeconds: 3 },
-    themeId: "beach",
+    themeId: "classic",
     kind: "twist",
     blurb: "Bones don't last long here — chomp fast, the fright fuse is short.",
   },
@@ -459,7 +476,7 @@ export const JOURNEY_LEVELS: readonly JourneyLevel[] = [
     name: "Four on the Floor",
     mazeIdx: 4,
     modifiers: { speedMult: 1.4, ghostSpeedMult: 1.4, ghostCount: 4, frightSeconds: TIMING.frightSeconds },
-    themeId: "park",
+    themeId: "forest",
     kind: "twist",
     blurb: "Four ghosts, no brakes — the whole pack is running hot.",
   },
@@ -469,7 +486,7 @@ export const JOURNEY_LEVELS: readonly JourneyLevel[] = [
     name: "Full House",
     mazeIdx: 2,
     modifiers: { speedMult: 1, ghostSpeedMult: 1, ghostCount: 5, frightSeconds: 3 },
-    themeId: "city",
+    themeId: "beach",
     kind: "twist",
     blurb: "All five ghosts are home tonight — and the fright window's tight.",
   },
@@ -479,7 +496,7 @@ export const JOURNEY_LEVELS: readonly JourneyLevel[] = [
     name: "Hound Dash",
     mazeIdx: 3,
     modifiers: { speedMult: 1.8, ghostSpeedMult: 1.8, ghostCount: 4, frightSeconds: TIMING.frightSeconds },
-    themeId: "garden",
+    themeId: "park",
     kind: "twist",
     blurb: "Full sprint, four ghosts on your tail — this is a proper hound dash.",
   },
@@ -490,7 +507,7 @@ export const JOURNEY_LEVELS: readonly JourneyLevel[] = [
     name: "Top Dog",
     mazeIdx: 4,
     modifiers: { speedMult: 2.0, ghostSpeedMult: 2.0, ghostCount: 5, frightSeconds: 3 },
-    themeId: "classic",
+    themeId: "city",
     kind: "twist",
     blurb: "Double speed, all five ghosts, a fright window that barely blinks. Prove you're top dog.",
   },
@@ -513,7 +530,7 @@ export const JOURNEY_LEVELS: readonly JourneyLevel[] = [
     name: "Dream Walk",
     mazeIdx: 13,
     modifiers: { speedMult: 0.7, ghostSpeedMult: 0.7, ghostCount: 5, frightSeconds: 12 },
-    themeId: "forest",
+    themeId: "daycity",
     kind: "twist",
     blurb: "Everything slows to a dream. Five ghosts drift after you, and one bone frightens them for an age.",
   },
@@ -526,7 +543,7 @@ export const JOURNEY_LEVELS: readonly JourneyLevel[] = [
     name: "Last Dog Standing",
     mazeIdx: 29,
     modifiers: { speedMult: 2.2, ghostSpeedMult: 2.2, ghostCount: 5, frightSeconds: 1.5 },
-    themeId: "beach",
+    themeId: "island",
     kind: "twist",
     blurb: "The last board, at a pace nothing else in the game runs. Five ghosts, and a fright that lasts a blink.",
   },

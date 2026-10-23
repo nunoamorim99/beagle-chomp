@@ -223,6 +223,14 @@ const NEUTRAL_IDS = new Set(["white", "stone", "slate", "cream"]);
  */
 export const NEUTRAL_MAX_S = 0.18;
 
+/** Is this floor kind SAND? The lift gives sand its own lighter target and the
+ *  Journey deck paints it pale; both are questions about the material, not the
+ *  painter, so Pirate Island's green-edged `islandSand` (IDEA-085) answers yes
+ *  as well as the beach's plain `sand`. */
+export function isSandFloor(kind: string | undefined): boolean {
+  return kind === "sand" || kind === "islandSand";
+}
+
 /**
  * Roles that name their own palette entry, which is the reference's
  * mesh-name-driven assignment surfacing where we happen to have a name.
@@ -859,7 +867,9 @@ export function shouldStyleBoard(palette: object): boolean {
   return !isNightTheme(palette);
 }
 
-function isNightTheme(palette: object): boolean {
+/** Exported so the surround can light its windows by the same rule that
+ *  exempts a night board from the style — one definition of "night". */
+export function isNightTheme(palette: object): boolean {
   const bg = (palette as { bg?: number }).bg;
   return typeof bg === "number" && hexToHsl(bg).l < NIGHT_SKY_MAX_L;
 }
@@ -930,7 +940,7 @@ export function liftPaletteForMadbox(
   // So the target is chosen by WHAT THE SURFACE IS, using the texture kind the
   // palette already declares. Nothing new to keep in step: a theme that
   // changes its `floorTexture` changes its target by saying so.
-  const sandFloor = (palette as { floorTexture?: string }).floorTexture === "sand";
+  const sandFloor = isSandFloor((palette as { floorTexture?: string }).floorTexture);
   const sandWall = (palette as { wallTexture?: string }).wallTexture === "sand";
   const plan: Array<[string, number]> = [
     ["floor", sandFloor ? SURFACE_LIFT.sandFloorL : SURFACE_LIFT.floorL],

@@ -293,6 +293,7 @@ export function makeArchway(p: PropParams, instanceHash: number): THREE.Group {
   if ((p.archKind ?? "hedge") === "trees") return makeTreeArch(p, instanceHash);
   if (p.archKind === "gate") return makeGateArch(p, instanceHash);
   if (p.archKind === "rocks") return makeRockArch(p, instanceHash);
+  if (p.archKind === "ship") return makeShipArch(p, instanceHash);
   if (p.archKind === "neon") return makeNeonArch(p, instanceHash);
   if (p.archKind === "warp") return makeWarpArch(p, instanceHash);
   const r = rand(instanceHash);
@@ -2013,6 +2014,204 @@ function makeRockArch(p: PropParams, instanceHash: number): THREE.Group {
   g.add(sillHost);
   if (p.archThreshold === true) {
     const sill = part(new THREE.BoxGeometry(openW * 0.98, 0.06, depth * 0.9), capMat, "sill", sillHost);
+    sill.position.y = 0.03;
+    sill.castShadow = false;
+  }
+
+  return g;
+}
+
+const SHIP_HULL = 0x6b4426;
+const SHIP_PLANK = 0xb07a3e;
+const SHIP_ROPE = 0xf1f0ec;
+const SHIP_INK = 0x2b2724;
+const SHIP_LAMP = 0xf8d048;
+
+/**
+ * THE SHIP ARCH — the Pirate Island's tunnel mouth.
+ *
+ * Nuno: *"The arch of the maze can be like wood parts of the ship."* Two low
+ * plank posts (the outer planks carry the ribs, the centre one is a BROKEN
+ * MAST stump), a pair of curved HULL RIBS springing between them with deck
+ * planks laid across the crown, rope lashings and iron straps, and a pirate
+ * pennant on top.
+ *
+ * It keeps the sea arch's mass rule (IDEA-067 rule 6): the posts spring at
+ * `H - rise - bandT`, the same three numbers, so `archAperture` needs no
+ * special case. Everything below the springing sits OUTBOARD of the opening.
+ *
+ * Value ladder: hull (dark), plank (mid), bleached caps (hue-shifted lighter),
+ * rope (near-white, under the neutral threshold so it stays pale), iron (ink).
+ * Dials reinterpreted: `stoneColor` hull, `fenceColor` plank, `blossomColor`
+ * rope, `archBlossoms` lashings per post, `archCrest` the bleached caps.
+ */
+function makeShipArch(p: PropParams, instanceHash: number): THREE.Group {
+  const r = rand(instanceHash);
+  const g = new THREE.Group();
+
+  const H = ARCH_DEFAULTS.baseHeight * (p.height ?? 1);
+  const wide = p.width ?? 1;
+  const openW = H * (p.archOpening ?? ARCH_DEFAULTS.opening) * wide;
+  const depth = H * (p.archDepth ?? ARCH_DEFAULTS.depth) * wide;
+  const bandT = H * (p.archCrown ?? ARCH_DEFAULTS.crown);
+  const curve = Math.max(1.05, p.archCurve ?? ARCH_DEFAULTS.curve);
+  const hw = openW / 2;
+  const rise = hw * (p.archRise ?? ARCH_DEFAULTS.rise);
+  const pierH = Math.max(0.35, H - rise - bandT);
+
+  const postW = bandT * 1.15;
+  const postCX = hw + 0.01 + postW / 2;
+  const ribD = depth * 0.22;
+  const ribZ = depth / 2 - ribD / 2;
+
+  const hullMat = toon({ color: p.stoneColor ?? SHIP_HULL, emissive: 0x2a1a0c, emissiveIntensity: 0.1 });
+  const plankMat = toon({ color: p.fenceColor ?? SHIP_PLANK, emissive: 0x2a1a0c, emissiveIntensity: 0.12 });
+  const capMat = toon({ color: hexOf(mix(rgbOf(p.fenceColor ?? SHIP_PLANK), rgbOf(0xf0d8a8), 0.7)), emissive: 0x2a1e0c, emissiveIntensity: 0.12 });
+  const ropeMat = toon({ color: p.blossomColor ?? SHIP_ROPE, emissive: 0x2a2a24, emissiveIntensity: 0.1 });
+  const inkMat = toon({ color: SHIP_INK });
+  inkMat.userData.madboxRole = "ink";
+  const lampMat = toon({ color: SHIP_LAMP, emissive: 0xf8d048, emissiveIntensity: 0.55 });
+
+  const box = (w: number, h: number, d: number): THREE.BoxGeometry => new THREE.BoxGeometry(w, h, d);
+  const lowH = pierH * 0.78;
+
+  // --- 0: the posts ----------------------------------------------------------
+  const posts = new THREE.Group();
+  posts.name = "posts";
+  g.add(posts);
+  for (const s of [-1, 1] as const) {
+    const n = s < 0 ? "L" : "R";
+    for (const [k, z, h] of [
+      ["Front", ribZ, pierH],
+      ["Mast", 0, lowH],
+      ["Back", -ribZ, pierH],
+    ] as const) {
+      const pl = part(box(postW, h, ribD * 0.98), k === "Mast" ? hullMat : plankMat, `post${n}${k}`, posts);
+      pl.position.set(s * postCX, h / 2, z);
+    }
+  }
+
+  // --- 1: the hull ribs ------------------------------------------------------
+  const ribs = new THREE.Group();
+  ribs.name = "ribs";
+  g.add(ribs);
+  const pts = archCurvePoints(postCX, rise, curve, pierH, 18);
+  const t = Math.min(postW, bandT) * 0.95;
+  for (const [fz, zn] of [[1, "Front"], [-1, "Back"]] as const) {
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pts[i];
+      const b = pts[i + 1];
+      const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      const m = part(box(len * 1.18, t, ribD), hullMat, `rib${zn}${i}`, ribs);
+      m.position.set((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, fz * ribZ);
+      m.rotation.z = Math.atan2(b[1] - a[1], b[0] - a[0]);
+    }
+  }
+  // Deck planks laid ACROSS the crown, between the ribs — what the play camera
+  // looks straight down on.
+  const deck = new THREE.Group();
+  deck.name = "deck";
+  g.add(deck);
+  for (let i = 1; i < pts.length - 1; i += 2) {
+    const a = pts[i - 1];
+    const b = pts[i + 1];
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]) / 2;
+    const m = part(box(len * 0.9, t * 0.8, depth - 2 * ribD + 0.02), plankMat, `deck${i}`, deck);
+    m.position.set(pts[i][0], pts[i][1] + t * 0.08, 0);
+    m.rotation.z = Math.atan2(b[1] - a[1], b[0] - a[0]);
+  }
+
+  // --- 2: the weathered caps -------------------------------------------------
+  const caps = new THREE.Group();
+  caps.name = "caps";
+  g.add(caps);
+  const crest = p.archCrest ?? ARCH_DEFAULTS.crest;
+  const mid = Math.floor(pts.length / 2);
+  if (crest > 0.01) {
+    for (const s of [-1, 1] as const) {
+      const c = part(box(postW * 1.1, 0.07 + 0.05 * crest, ribD * 1.15), capMat, s < 0 ? "capL" : "capR", caps);
+      c.position.set(s * postCX, lowH + 0.05, 0);
+      c.rotation.y = (r() - 0.5) * 0.15;
+    }
+    const top = part(box(postW * 1.6, 0.06 + 0.05 * crest, depth * 0.95), capMat, "capCrown", caps);
+    top.position.set(pts[mid][0], pts[mid][1] + t / 2 + 0.05, 0);
+  }
+
+  // --- 3: rope lashings ------------------------------------------------------
+  const rope = new THREE.Group();
+  rope.name = "rope";
+  g.add(rope);
+  const lashes = Math.max(0, Math.round(p.archBlossoms ?? 2));
+  for (const s of [-1, 1] as const) {
+    for (let k = 0; k < lashes; k++) {
+      const y = lowH * (0.3 + (0.5 * k) / Math.max(1, lashes - 1));
+      const b = part(box(postW + 0.04, 0.075, depth * 0.9), ropeMat, `lash${s < 0 ? "L" : "R"}${k}`, rope);
+      b.position.set(s * postCX, y, 0);
+    }
+  }
+  const coil = part(new THREE.TorusGeometry(0.12, 0.055, 6, 12), ropeMat, "coil", rope);
+  coil.rotation.x = Math.PI / 2;
+  coil.position.set(-(postCX + postW / 2 + 0.2), 0.056, depth * 0.18);
+
+  // --- 4: iron straps --------------------------------------------------------
+  const iron = new THREE.Group();
+  iron.name = "iron";
+  g.add(iron);
+  for (const s of [-1, 1] as const) {
+    const b = part(box(postW + 0.03, 0.06, depth * 0.96), inkMat, s < 0 ? "strapL" : "strapR", iron);
+    b.position.set(s * postCX, pierH * 0.12 + 0.03, 0);
+  }
+  for (const [fz, zn] of [[1, "Front"], [-1, "Back"]] as const) {
+    const b = part(box(t * 0.7, t * 1.15, ribD * 1.1), inkMat, `bracket${zn}`, iron);
+    b.position.set(pts[mid][0] + 0.18, pts[mid][1], fz * ribZ);
+  }
+
+  // --- 5: the barrel and the lantern ----------------------------------------
+  const props = new THREE.Group();
+  props.name = "props";
+  g.add(props);
+  const barrel = new THREE.Group();
+  barrel.name = "barrel";
+  props.add(barrel);
+  barrel.position.set(postCX + postW / 2 + 0.22, 0, -depth * 0.12);
+  part(new THREE.CylinderGeometry(0.13, 0.15, 0.3, 10), plankMat, "staves", barrel).position.y = 0.15;
+  for (const [i, y] of [0.07, 0.23].entries()) {
+    part(new THREE.CylinderGeometry(0.157, 0.157, 0.04, 10), inkMat, `hoop${i}`, barrel).position.y = y;
+  }
+  const lantern = new THREE.Group();
+  lantern.name = "lantern";
+  props.add(lantern);
+  lantern.position.set(-postCX, lowH + 0.1, 0);
+  part(box(0.17, 0.04, 0.17), inkMat, "lampBase", lantern).position.y = 0.02;
+  part(new THREE.CylinderGeometry(0.075, 0.075, 0.15, 8), lampMat, "lampGlass", lantern).position.y = 0.115;
+  part(new THREE.ConeGeometry(0.11, 0.09, 8), inkMat, "lampCap", lantern).position.y = 0.235;
+
+  // --- 6: the pennant --------------------------------------------------------
+  const flag = new THREE.Group();
+  flag.name = "flag";
+  g.add(flag);
+  flag.position.set(pts[mid][0], pts[mid][1] + t / 2 + 0.1, 0);
+  part(new THREE.CylinderGeometry(0.04, 0.05, 0.5, 6), hullMat, "pole", flag).position.y = 0.25;
+  const cloth = new THREE.Group();
+  cloth.name = "cloth";
+  flag.add(cloth);
+  cloth.position.set(0.22, 0.38, 0);
+  cloth.rotation.x = -0.6;
+  part(box(0.44, 0.3, 0.035), inkMat, "pennant", cloth);
+  const skull = part(new THREE.SphereGeometry(0.07, 8, 6), ropeMat, "skull", cloth);
+  skull.position.set(0, 0.02, 0.03);
+  for (const [i, a] of [0.6, -0.6].entries()) {
+    const bone = part(box(0.3, 0.035, 0.02), ropeMat, `bones${i}`, cloth);
+    bone.position.set(0, -0.06, 0.025);
+    bone.rotation.z = a;
+  }
+
+  // --- 7: the threshold ------------------------------------------------------
+  const sillHost = new THREE.Group();
+  sillHost.name = "threshold";
+  g.add(sillHost);
+  if (p.archThreshold === true) {
+    const sill = part(box(openW * 0.98, 0.06, depth * 0.9), plankMat, "sill", sillHost);
     sill.position.y = 0.03;
     sill.castShadow = false;
   }

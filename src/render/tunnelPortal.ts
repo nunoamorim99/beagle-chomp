@@ -92,6 +92,12 @@ export const PORTAL_COLORS: Record<string, PortalColors> = {
   beach: { core: 0xeafcff, rim: 0x22c4e8 },
   park: { core: 0xfff6d8, rim: 0xffb21f },
   city: { core: 0xffe8fa, rim: 0xff3fc8 },
+  // daycity: SKY BLUE — the gateway's cyan inner tube, deepened so it holds
+  // against warm brick and a pale noon street.
+  daycity: { core: 0xeaf6ff, rim: 0x2a8ff0 },
+  // island: LAGOON TURQUOISE — the water the wreck sits in, and it clears
+  // the jungle-green walls by hue where a gold would read as lantern light.
+  island: { core: 0xeafffb, rim: 0x1fd0c0 },
   classic: { core: 0xe8fbff, rim: 0x34d4ff },
 };
 

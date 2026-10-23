@@ -80,7 +80,7 @@ const ENUM_FIELDS: Partial<Record<keyof PropParams, readonly string[]>> = {
   // two trees with a branch from each. Same trap a third time.
   // IDEA-080 added the beach's sea arch.
   // IDEA-083 added Night City's neon gateway, IDEA-084 Arcade Night's warp gate.
-  archKind: ["hedge", "trees", "rocks", "gate", "neon", "warp"],
+  archKind: ["hedge", "trees", "rocks", "gate", "neon", "warp", "ship"],
 };
 
 /** Slider range/step per numeric field, per the task brief's exact numbers.

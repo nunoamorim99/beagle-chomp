@@ -68,6 +68,7 @@ import { wallTextureFor } from "./wallTexture";
 import { wallGeometry, wallShapeFor } from "./hedgeWall";
 import { FENCE_PARAMS, fencePanelGeometry } from "./fence";
 import { ARCH_PARAMS, archIsDirected } from "./archway";
+import { distantPalm, distantTreasureChest } from "./islandProps";
 import { buildPortalsAt, type TunnelPortals } from "./tunnelPortal";
 import type { PropParams } from "../game/props";
 import {
@@ -384,6 +385,19 @@ const DIORAMA_SIGNATURES: Readonly<Record<string, readonly Signature[]>> = {
     // takes the foliage pair derived from `palette.wall`, which on this theme
     // is grey BRICK — the tree came out with near-black leaves.
     { build: (m) => distantBroadleaf(m, { height: 1.7, seed: 77, street: true }) },
+  ],
+  // Pirate Island (IDEA-085): a palm behind the corner and the treasure beside
+  // the arch — the two things the island's board stands among. A stage-sized
+  // chest rather than the board's, which at diorama scale was a matchbox.
+  island: [
+    { build: (m) => distantPalm(m, { height: 1.9, seed: 9 }) },
+    {
+      build: (m) => {
+        const chest = distantTreasureChest(m, { seed: 3 });
+        chest.scale.setScalar(1.0);
+        return chest;
+      },
+    },
   ],
 };
 

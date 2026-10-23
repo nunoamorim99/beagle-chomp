@@ -52,7 +52,7 @@ import {
  * `bg` and the plane becomes invisible. That is one fewer special case than a
  * "none" kind, and it keeps the no-sky-gap guarantee unconditional.
  */
-export type SurroundKind = "none" | "plots" | "woodland" | "dunes" | "parkland" | "cityblocks";
+export type SurroundKind = "none" | "plots" | "woodland" | "dunes" | "parkland" | "cityblocks" | "island";
 
 /**
  * The surround's tunables, as a NAMED MUTABLE TABLE.
@@ -285,6 +285,7 @@ export function surroundTextureKindFor(floorTexture: string): SurroundTextureKin
   if (floorTexture === "lawn" || floorTexture === "parkGrass") return "lawn";
   if (floorTexture === "earth") return "earth";
   if (floorTexture === "sand") return "sand";
+  if (floorTexture === "islandSand") return "islandSand";
   return "flat";
 }
 

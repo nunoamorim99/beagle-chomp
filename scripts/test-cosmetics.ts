@@ -376,15 +376,15 @@ console.log("\n=== themes.ts (IDEA-064 the arcade board is a tribute unlock) ===
   check("the default theme is not secret", getMazeTheme(DEFAULT_MAZE_THEME_ID).secret !== true);
   check(
     "a fresh player is shown 5 themes, and not the arcade",
-    visibleIds(false, noneOwned) === "garden,forest,beach,park,city",
+    visibleIds(false, noneOwned) === "garden,forest,beach,park,city,daycity,island",
   );
   check(
     "owning the tribute coat reveals the arcade board",
-    visibleIds(true, noneOwned) === "garden,classic,forest,beach,park,city",
+    visibleIds(true, noneOwned) === "garden,classic,forest,beach,park,city,daycity,island",
   );
   check(
     "a legacy account that already bought it still sees it without the coat",
-    visibleIds(false, ownsArcade) === "garden,classic,forest,beach,park,city",
+    visibleIds(false, ownsArcade) === "garden,classic,forest,beach,park,city,daycity,island",
   );
   check(
     "revealing never reorders or drops the ordinary themes",
@@ -395,10 +395,10 @@ console.log("\n=== themes.ts (IDEA-064 the arcade board is a tribute unlock) ===
 
 console.log("\n=== themes.ts (IDEA-026 maze themes registry) ===");
 {
-  check("exactly 6 maze themes", MAZE_THEMES.length === 6);
+  check("exactly 8 maze themes", MAZE_THEMES.length === 8);
   check(
-    "theme ids are garden, classic, forest, beach, park, city in order",
-    MAZE_THEMES.map((t) => t.id).join(",") === "garden,classic,forest,beach,park,city",
+    "theme ids are garden, classic, forest, beach, park, city, daycity, island in order",
+    MAZE_THEMES.map((t) => t.id).join(",") === "garden,classic,forest,beach,park,city,daycity,island",
   );
   check(
     "theme ids are all unique",
@@ -419,6 +419,8 @@ console.log("\n=== themes.ts (IDEA-026 maze themes registry) ===");
   check("beach.price === 50", getMazeTheme("beach").price === 50);
   check("park.price === 50", getMazeTheme("park").price === 50);
   check("city.price === 50", getMazeTheme("city").price === 50);
+  check("daycity.price === 50", getMazeTheme("daycity").price === 50);
+  check("island.price === 50", getMazeTheme("island").price === 50);
   check("getMazeThemePrice('garden') === 0", getMazeThemePrice("garden") === 0);
   check("getMazeThemePrice('classic') === 0", getMazeThemePrice("classic") === 0);
   check("getMazeThemePrice('forest') === 50", getMazeThemePrice("forest") === 50);
@@ -1196,26 +1198,30 @@ console.log("\n=== journey.ts (IDEA-013 Challenge Mode · IDEA-063 the 40-level 
   });
 
   // THE FORCED THEME (IDEA-063). Every level names a real theme, and the tour
-  // walks the rotation evenly — six themes over thirty levels is five each, and
-  // an uneven spread would mean one of the six the shop sells is under-shown by
-  // exactly the screen built to show them off.
+  // walks the rotation as evenly as thirty levels allow. Day City and Pirate
+  // Island joined the cycle after the tour was laid out (Nuno's call); eight
+  // themes over thirty tour levels is three or four each, no theme may trail
+  // another by more than one — an uneven spread under-shows a theme the shop
+  // sells on exactly the screen built to show them off — and over all forty
+  // levels it is exactly five each.
+  const CYCLED = MAZE_THEMES;
   check(
-    "THEME_CYCLE is MAZE_THEMES' own id order",
-    THEME_CYCLE.join(",") === MAZE_THEMES.map((t) => t.id).join(","),
+    "THEME_CYCLE is MAZE_THEMES' own id order (every theme the shop sells)",
+    THEME_CYCLE.join(",") === CYCLED.map((t) => t.id).join(","),
   );
   check(
     "every level's themeId resolves against MAZE_THEMES",
     JOURNEY_LEVELS.every((l) => MAZE_THEMES.some((t) => t.id === l.themeId)),
   );
   check(
-    "every level follows THEME_CYCLE[idx % 6] — no hand-typed exception",
+    "every level follows THEME_CYCLE[idx % 8] — no hand-typed exception",
     JOURNEY_LEVELS.every((l, i) => l.themeId === THEME_CYCLE[i % THEME_CYCLE.length]),
   );
-  MAZE_THEMES.forEach((t) => {
-    check(
-      `the tour shows "${t.id}" exactly 5 times`,
-      tour.filter((l) => l.themeId === t.id).length === 5,
-    );
+  CYCLED.forEach((t) => {
+    const n = tour.filter((l) => l.themeId === t.id).length;
+    check(`the tour shows "${t.id}" 3 or 4 times (got ${n})`, n === 3 || n === 4);
+    const all = JOURNEY_LEVELS.filter((l) => l.themeId === t.id).length;
+    check(`the whole ladder shows "${t.id}" exactly 5 times (got ${all})`, all === 5);
   });
 
   // CLASSIC_MODIFIERS itself is the documented "no change" baseline, and its

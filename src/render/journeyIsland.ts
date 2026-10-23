@@ -17,7 +17,7 @@
 // carries everything an island needs:
 //
 //   * WHICH THEME. IDEA-063 rule 3 forces `themeId` on all forty levels
-//     (`THEME_CYCLE[idx % 6]`), because the tour's second job is showing a
+//     (`THEME_CYCLE[idx % 8]`), because the tour's second job is showing a
 //     player the five themes they have not bought. So an island's dressing is
 //     not a new authoring surface — it is the theme the level already plays in.
 //
@@ -47,6 +47,7 @@
 import * as THREE from "three";
 import { getPropDef } from "../game/props";
 import { makeSurroundMaterials, type SurroundMaterials } from "./surroundProps";
+import { distantCannon, distantPalm, distantSwordInSand, distantTreasureChest } from "./islandProps";
 import {
   distantBeachSpot,
   distantBench,
@@ -68,6 +69,7 @@ import { getMazeTheme, type MazeTheme } from "../game/themes";
 import { type JourneyLevel } from "../game/journey";
 import { collapseByMaterial, mergeBySignature } from "./propMerge";
 import { rgbOf, css, hexOf, mix } from "./paint";
+import { isSandFloor } from "./madboxStyle";
 import { toon } from "./toon";
 
 /**
@@ -140,6 +142,27 @@ export const ISLAND_DRESSING: Readonly<Record<string, readonly IslandItem[]>> = 
     { build: (m) => distantCar(m, { kind: "taxi", seed: 31 }), at: [0.45, 1.0], rotY: Math.PI / 2, scale: 0.55 },
     { build: (m) => distantCityBuilding(m, { height: 1.7, width: 0.95, depth: 0.85, seed: 21 }), at: [-1.15, 0.05], rotY: 0 },
     { build: (m) => distantBroadleaf(m, { height: 1.2, seed: 77, street: true }), at: [1.2, 0.1] },
+  ],
+  // Day City: the same street by daylight, and deliberately not a copy of the
+  // night island — a bus rather than a taxi and the building and tree on the
+  // other sides, so two neighbouring stones on the chain are told apart by
+  // more than their sky. Its windows are glass, not lamps: the surround
+  // material set reads the sky off the palette.
+  daycity: [
+    { build: (m) => distantRoad(m, { length: 3.0, width: 0.95, dashPitch: 0.7 }), at: [0, 1.05], rotY: Math.PI / 2 },
+    { build: (m) => distantCar(m, { kind: "bus", seed: 33 }), at: [-0.3, 1.0], rotY: -Math.PI / 2, scale: 0.45 },
+    { build: (m) => distantCityBuilding(m, { height: 1.8, width: 0.95, depth: 0.85, seed: 24 }), at: [1.15, 0.05], rotY: 0 },
+    { build: (m) => distantBroadleaf(m, { height: 1.25, seed: 79, street: true }), at: [-1.2, 0.1] },
+  ],
+  // Pirate Island (IDEA-085): the treasure out front where the camera looks,
+  // palms to the sides (tall things go to the SIDES so they never hide the
+  // gate), a cannon guarding the far flank and swords stuck in the sand.
+  island: [
+    { build: (m) => distantPalm(m, { height: 1.9, seed: 9 }), at: [-1.2, 0.15], scale: 0.85 },
+    { build: (m) => distantPalm(m, { height: 1.6, seed: 14 }), at: [1.25, 0.3], scale: 0.85 },
+    { build: (m) => distantTreasureChest(m, { seed: 3 }), at: [0.55, 1.1], rotY: -0.35, scale: 0.85 },
+    { build: (m) => distantCannon(m, { seed: 2 }), at: [-0.6, 1.15], rotY: 0.9, scale: 0.8 },
+    { build: (m) => distantSwordInSand(m, { seed: 4 }), at: [0.0, 1.45], scale: 0.9 },
   ],
   classic: [],
 };
@@ -281,7 +304,7 @@ const hsl = { h: 0, s: 0, l: 0 };
  * palette's `sand` entry (`scripts/_scratch-deck-snap.ts` checks it).
  */
 function deckColorFor(pal: MazeTheme["palette"]): number {
-  if (pal.floorTexture === "sand") return blendHex(pal.surroundGround, 0xf0dcb0, 0.6);
+  if (isSandFloor(pal.floorTexture)) return blendHex(pal.surroundGround, 0xf0dcb0, 0.6);
   return liftForMap(pal.surroundGround);
 }
 
