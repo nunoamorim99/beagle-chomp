@@ -56,14 +56,11 @@ interface Job {
   note: string;
 }
 
+// badge-96.png is NOT generated here any more: it is the brand kit's
+// beagle-face silhouette (docs/brand/BRAND_GUIDELINES.md, `badge-96-face.png`),
+// committed as-is. A badge job here would overwrite it with the old paw glyph
+// on the next `npm run make:icons`. `npm run test:badge` still guards its alpha.
 const JOBS: Job[] = [
-  {
-    file: "badge-96.png",
-    glyph: "pets",
-    size: 96,
-    mode: "silhouette",
-    note: "status bar — alpha only, so it MUST be transparent",
-  },
   {
     file: "notify-release.png",
     glyph: "campaign",

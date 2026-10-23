@@ -235,7 +235,7 @@ export default defineConfig({
     editorSaveFile(),
     VitePWA({
       registerType: "autoUpdate",
-      includeAssets: ["favicon-32.png", "favicon-180.png", "icons/*.png"],
+      includeAssets: ["favicon.svg", "favicon.ico", "favicon-32.png", "favicon-180.png", "icons/*.png", "brand/*.svg"],
       manifest: {
         name: "Beagle Chomp",
         short_name: "BeagleChomp",

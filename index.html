@@ -78,9 +78,19 @@
     <!-- Relative paths, matching vite's base: "./". Originally for the GitHub
          Pages subpath; since v5.0 the site is served from the root of
          beaglechomp.nunoamorim.dev, where relative paths work just as well. -->
+    <!-- Brand kit icons (docs/brand/). The SVG comes first so browsers that can
+         use it get a sharp tab icon; the PNGs and .ico are the fallbacks. -->
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png" />
+    <link rel="icon" href="./favicon.ico" sizes="any" />
     <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png" />
     <link rel="apple-touch-icon" href="./favicon-180.png" />
+    <!-- The two brand lockups are the first pixels anyone sees (the auth gate's
+         stacked title, then the menu wordmark). They are plain <img>s, so
+         without a preload the browser only starts fetching them once the module
+         graph has built the gate — and the brand block sits empty meanwhile. -->
+    <link rel="preload" as="image" href="./brand/beagle-chomp-title-stacked.svg" type="image/svg+xml" />
+    <link rel="preload" as="image" href="./brand/beagle-chomp-wordmark.svg" type="image/svg+xml" />
 
     <!-- Design system §02 Typography + §03 Icons: Baloo 2 (display),
          Quicksand (body), DM Mono (numeric) and Material Symbols Rounded.
@@ -93,6 +103,19 @@
          "arrow_back Menu"). Do not reintroduce a Google Fonts link. -->
 
     <title>Beagle Chomp</title>
+    <!-- Link previews (WhatsApp, Slack, X, Discord…). og:image must be an ABSOLUTE
+         URL, so it names the production host rather than following base: "./".
+         A JPEG on purpose: the PWA precaches every png in public/, and this
+         card is for crawlers, not for players' installs. -->
+    <meta name="description" content="Guide a beagle through the maze, eat every biscuit and chomp the bone to turn the tables. A free 3D maze chase you can install on your phone." />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Beagle Chomp" />
+    <meta property="og:description" content="A free 3D maze chase built entirely in code. Play in your browser or install it on your phone." />
+    <meta property="og:url" content="https://beaglechomp.nunoamorim.dev/" />
+    <meta property="og:image" content="https://beaglechomp.nunoamorim.dev/og-image.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
   </head>
   <body>
     <canvas id="scene"></canvas>
@@ -258,12 +281,14 @@
            Two lines, so the name can be set big enough to carry a 6px ink
            stroke and still leave the middle of the frame to the beagle. -->
       <div class="menu-top">
-        <!-- The space before the <br> is load-bearing, not a typo: a <br>
-             contributes NO whitespace to textContent, so "Beagle<br>Chomp" has
-             the accessible name "BeagleChomp" and is announced as one word.
-             The space fixes the name and collapses to nothing visually, since
-             it falls at the end of a line. -->
-        <h1>Beagle <br />Chomp</h1>
+        <!-- The brand WORDMARK (docs/brand/BRAND_GUIDELINES.md), not live
+             type: the bounce and the bitten-biscuit "o" are in the paths, and
+             the guide forbids rebuilding it from the font. Wordmark only — no
+             face — because the 3D beagle already stands under it, which is
+             exactly the guide's case for the wordmark lockup. The name lives in
+             the sr-only span, so the heading's text and accessible name stay
+             "Beagle Chomp"; the image is decorative to avoid announcing it twice. -->
+        <h1><span class="sr-only">Beagle Chomp</span><img class="menu-wordmark" src="./brand/beagle-chomp-wordmark.svg" alt="" width="603" height="360" /></h1>
       </div>
 
       <!-- The destination row REPLACES the swipe carousel (IDEA-036 v3).

@@ -4530,6 +4530,25 @@ The full game is built, shipped, and deployed (playable since v1.0; **now on v9.
   order + `CYCLED`), `server` `npm run sync`, `PORTAL_COLORS`, `SHOWCASE_LANDMARKS`, and for a new
   surround kind the board inspector dropdown, `test-surround.ts`'s kind list and
   `test-showcase-surround.ts`'s per-kind branch.
+- **THE BRAND IS A KIT, NOT LIVE TYPE** (`docs/brand/BRAND_GUIDELINES.md`). The logo is
+  outlined SVG paths — the bounce and the bitten-biscuit "o" live in the paths — so the
+  guide forbids rebuilding it from Baloo 2. The menu `<h1>` is the WORDMARK
+  (`public/brand/beagle-chomp-wordmark.svg`, no face, because the 3D beagle stands under
+  it); the auth gate is the STACKED TITLE (face + wordmark, the guide's splash lockup).
+  Both keep the name in an `.sr-only` span with a decorative `alt=""` img, so the heading's
+  text is still "Beagle Chomp" and `test-menu-ui`/`test-auth-ui` assert it unchanged.
+  Four things are load-bearing: the stacked lockup's minimum is **140px wide**, which is
+  also exactly what keeps the Login tab inside 390x844; in LANDSCAPE the wordmark moves
+  into the top bar's empty middle, because a stacked mark in the column lands on the
+  dog's head; both lockups are `<link rel="preload">`ed, since an `<img>` built by the
+  auth gate otherwise starts fetching only after the module graph has run and the brand
+  block sits empty; and **`badge-96.png` is the kit's face silhouette, no longer
+  generated** — `make-notification-icons.ts` dropped its badge job so a re-run cannot
+  overwrite it with the old paw. The link-preview card is `public/og-image.jpg` and is a
+  JPEG ON PURPOSE: workbox precaches every png in `public/`, and a 600 KB crawler image
+  has no business in every player's install. README media comes from
+  `scripts/_scratch-readme-media.ts` (`THEMES_ONLY=1 THEMES=a,b` re-shoots boards one per
+  process — the harness crashes reusing one page for several boards).
 - **Input / UI / PWA**: `src/input/{touch,keyboard,dpad,stick}.ts`, `src/ui/{hud,sound,ambience,install}.ts`,
   `public/icons/*` (192, 512, 512-maskable).
 - **THERE ARE THREE TOUCH SCHEMES** (IDEA-049): swipe (default), the D-pad, and the

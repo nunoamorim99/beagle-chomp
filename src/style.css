@@ -484,11 +484,10 @@ body.install-open .menu-top{margin-top:clamp(84px,15vh,132px)}
    type on this screen that has to hold against a bright sky with a dog in
    front of it, and a panel behind it would be a box in the middle of the one
    frame that should be all garden. */
-.menu-top h1{font-family:var(--bc-font-display);font-weight:800;
-  font-size:clamp(40px,13vw,56px);line-height:.98;letter-spacing:-.02em;
-  color:var(--bc-cream);
-  -webkit-text-stroke:6px var(--bc-outline);paint-order:stroke fill;
-  margin:2px 0}
+/* Now the brand wordmark SVG. It carries its own ink outline and shelf, so it
+   needs no stroke, box or shadow here. Never below the guide's 140px minimum. */
+.menu-top h1{margin:2px 0;line-height:0}
+.menu-wordmark{display:block;width:clamp(180px,52vw,240px);height:auto}
 /* The coin line is a real chip: a number the player is meant to read has to
    be on ink, not on sky (§08). Baloo rather than mono here — it is a headline
    figure on the menu, not a column of numbers. */
@@ -601,16 +600,23 @@ body.install-open .menu-top{margin-top:clamp(84px,15vh,132px)}
 /* SHORT VIEWPORTS (landscape phones). The menu column — bar, two-line title,
    Play block, tile row — needs about 413px of height, and a rotated phone has
    390. The tiles were running off the bottom edge, which the taller tiles made
-   worse but did not cause. Everything shrinks, and the title collapses to ONE
-   line: the <br> goes, and the space that sits before it (there for the
-   accessible name — see index.html) becomes the word break. */
+   worse but did not cause. Everything shrinks, and the wordmark drops to the
+   brand guide's 140px minimum (it is a stacked lockup, so it cannot go to one
+   line the way the old live-text title did). */
 @media (max-height:480px){
   #mainMenu{
     padding-top:calc(var(--bc-s3) + env(safe-area-inset-top));
     padding-bottom:calc(var(--bc-s3) + env(safe-area-inset-bottom));}
   .menu-top{margin-top:var(--bc-s2)}
-  .menu-top h1{font-size:clamp(28px,4.5vw,36px);-webkit-text-stroke-width:4px}
-  .menu-top h1 br{display:none}
+  /* A stacked wordmark is twice the height the old one-line title was, and in
+     the column it landed on the beagle's head. The top bar has a wide empty
+     middle between the wallet and the bell, so it goes up there instead. */
+  .menu-top{position:absolute;margin:0;left:50%;transform:translateX(-50%);
+    top:calc(var(--bc-s2) + env(safe-area-inset-top))}
+  /* The install banner owns the top edge while it is up, so the wordmark goes
+     back into the column below it (IDEA-006 v3's margin rule above). */
+  body.install-open .menu-top{position:static;transform:none}
+  .menu-wordmark{width:140px}
   .menu-bar .mute-btn,.menu-bar .bed-btn,.menu-bar .sound-btn,.menu-bar .chrome-btn{font-size:22px}
   .menu-bottom{gap:var(--bc-s2)}
   .menu-play{font-size:22px;padding:11px;border-bottom-width:8px}
@@ -1264,9 +1270,11 @@ body.leaderboard-open #mainMenu{display:none}
   padding:calc(var(--bc-s3) + env(safe-area-inset-top)) 0
     calc(var(--bc-s2) + env(safe-area-inset-bottom));
   animation:none}
-/* The brand is generous on a tall screen and tightens on a short one, so the
-   form board and the recovery row below it always make the frame. */
-.auth-card--gate .auth-logo{width:clamp(56px,16vw,68px);height:clamp(56px,16vw,68px)}
+/* The gate's lockup sits at the brand guide's 140px minimum for the stacked
+   title: it is the tallest thing above the form, and any bigger pushes the
+   recovery row off a 390x844 frame on the Login tab. Height follows the
+   aspect ratio — never set both, the lockup is not square. */
+.auth-card--gate .auth-logo{width:140px;height:auto}
 
 .auth-title,.recovery-sheet h1,.privacy-sheet h1,.boot-sheet h1{
   font-family:var(--bc-font-display);font-weight:700;
@@ -1283,16 +1291,12 @@ body.leaderboard-open #mainMenu{display:none}
 
 .auth-brand{display:flex;flex-direction:column;align-items:center;
   text-align:center;gap:6px}
-/* The real favicon, not a glyph plate: it is the game's own artwork and the
-   same image the installed PWA shows, so the gate opens on something the
-   player already recognises. Outlined and bottom-edged like every other
-   object in the system, so it belongs to the same world. */
-.auth-logo{width:76px;height:76px;border-radius:22px;
-  border:var(--bc-line) solid var(--bc-outline);border-bottom-width:8px}
-/* Stroked, like every other title that sits on the sky. */
-.auth-brand .auth-title{margin:0;justify-content:center;
-  font-size:clamp(28px,8.5vw,34px);line-height:1;color:var(--bc-cream);
-  -webkit-text-stroke:6px var(--bc-outline);paint-order:stroke fill}
+/* The brand's stacked title lockup. It carries its own ink outline and shelf,
+   so no border, plate or shadow: the guide forbids framing the face. 140px
+   is the guide's minimum width for this lockup, and it is also what keeps
+   the form above the fold on a 390x844 phone. */
+.auth-brand .auth-title{margin:0;line-height:0}
+.auth-logo{display:block;width:clamp(140px,38vw,170px);height:auto}
 /* DARK ink: this line is on the sky, not on a board, and cream on pale blue
    is the one combination §08 rules out. */
 .auth-brand .auth-sub{margin:0;max-width:30ch;color:var(--bc-ink);

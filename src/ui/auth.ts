@@ -181,9 +181,11 @@ export function attachAuthGate(callbacks: AuthGateCallbacks): AuthGateHandle {
    *  having. The line differs by tab: a new player is being asked for
    *  something, a returning one is being welcomed back.
    *
-   *  The mark is the real FAVICON (icons/icon-192.png), not the design's amber
-   *  `pets` plate — it is the game's own artwork and the same image the
-   *  installed PWA shows, so the gate opens on something the player recognises. */
+   *  The mark is the brand's STACKED TITLE (face over wordmark, see
+   *  docs/brand/BRAND_GUIDELINES.md) — the lockup the guide names for a splash
+   *  screen, and this is the first screen anyone sees. Nothing 3D stands here,
+   *  so unlike the menu the face belongs in it. The name is the sr-only span,
+   *  so the heading still reads "Beagle Chomp" and the image stays decorative. */
   function renderBrand(): string {
     const sub =
       tab === "login"
@@ -191,8 +193,7 @@ export function attachAuthGate(callbacks: AuthGateCallbacks): AuthGateHandle {
         : "Create an account to keep your coins, skins and high score — on any device.";
     return `
       <div class="auth-brand">
-        <img class="auth-logo" src="./icons/icon-192.png" alt="" width="88" height="88" />
-        <h1 class="auth-title">Beagle Chomp</h1>
+        <h1 class="auth-title"><span class="sr-only">Beagle Chomp</span><img class="auth-logo" src="./brand/beagle-chomp-title-stacked.svg" alt="" width="603" height="692" /></h1>
         <p class="auth-sub">${sub}</p>
       </div>
     `;

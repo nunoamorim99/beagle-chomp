@@ -100,14 +100,21 @@ async function checkInstallCopy(page: Page): Promise<void> {
   ok("the banner does NOT promise offline play", !/offline/i.test(text), text);
   ok("it names the app", /beagle chomp/i.test(text), text);
 
+  // Wait for the image to settle before judging it: read the instant the banner
+  // mounts, naturalWidth is 0 on a busy dev server even for a perfectly good
+  // icon. A broken one still fails — it settles with naturalWidth 0.
+  await page
+    .waitForFunction(() => document.querySelector<HTMLImageElement>(".install-hint__icon")?.complete === true,
+      undefined, { timeout: 15_000 })
+    .catch(() => {});
   const icon = await page.evaluate(() => {
     const img = document.querySelector<HTMLImageElement>(".install-hint__icon");
     if (!img) return null;
     const ib = img.getBoundingClientRect();
     const tb = document.querySelector(".install-hint__text")?.getBoundingClientRect();
-    return { loaded: img.naturalWidth > 0, leftOfText: tb ? ib.right <= tb.left + 1 : false };
+    return { loaded: img.naturalWidth > 0, src: img.currentSrc, complete: img.complete, leftOfText: tb ? ib.right <= tb.left + 1 : false };
   });
-  ok("the app icon is shown", icon?.loaded === true);
+  ok("the app icon is shown", icon?.loaded === true, JSON.stringify(icon));
   ok("…to the left of the message", icon?.leftOfText === true);
 }
 
