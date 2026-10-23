@@ -1,5 +1,4 @@
-# Local development stack (STACK.md §1: "Docker Compose — frontend + backend +
-# Postgres, with hot reload").
+# Local development stack: frontend + backend + Postgres, with hot reload.
 #
 #     docker compose up -d        # db + api + the frontend, all three
 #
@@ -58,7 +57,7 @@ services:
 
   api:
     build:
-      # Context is the repo ROOT (not server/) — matches the Dokploy config, and
+      # Context is the repo ROOT (not server/) — matches the production build, and
       # later increments COPY src/game/* for the shared game constants.
       context: .
       dockerfile: server/Dockerfile
@@ -81,7 +80,7 @@ services:
       # Host 3001 → container 3000. 3000 is taken on this machine by another
       # project (tln-backend), and picking a free host port is friendlier than
       # fighting over it. The container still listens on 3000 internally, so
-      # production/Dokploy is unaffected — only the host-side mapping differs.
+      # production is unaffected — only the host-side mapping differs.
       # The frontend's VITE_API_URL must therefore be http://localhost:3001.
       - "3001:3000"
     volumes:
@@ -91,7 +90,7 @@ services:
       - ./server/scripts:/app/scripts
       - ./server/migrations:/app/migrations
       - /app/node_modules
-    mem_limit: 384m   # STACK.md §3.2 — one service can't starve Postgres
+    mem_limit: 384m   # one service can't starve Postgres
 
   web:
     image: node:22-bookworm-slim

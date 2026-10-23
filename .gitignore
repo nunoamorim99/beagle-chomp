@@ -60,3 +60,16 @@ preview-journey/
 preview-rework/
 preview-showcase/
 prototype/
+
+# Local review tooling: measuring probes, review sheets and screenshot shooters
+# (they drive the /preview*/ pages above), plus the img2threejs pipeline's
+# generated factories, which the game never imports.
+scripts/_scratch-*
+scripts/shoot-*.ts
+server/scripts/_scratch-*
+src/render/rework/
+
+# Historical planning notes and the GitHub social card source.
+docs/PROJECT_PLAN.md
+docs/PROTOTYPE_NOTES.md
+docs/media/social-preview.jpg

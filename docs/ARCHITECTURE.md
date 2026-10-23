@@ -45,8 +45,7 @@ worker; no game module may import from `src/editor/*`.
 **Balance** (`src/game/config.ts`'s numbers) and **World** (`fence.ts` +
 `groundDetail.ts` — the IDEA-060 garden machinery no theme palette reaches).
 
-Three things about SAVING are load-bearing enough to state here; CLAUDE.md's
-editor section carries the full account:
+Three things about SAVING are load-bearing enough to state here:
 - **A save never reloads the page.** `vite.config.ts`'s `handleHotUpdate`
   suppresses HMR for the editor's own writes (matched on a content hash), so
   saving in one tab can no longer destroy unsaved work in another. A HAND edit
@@ -261,7 +260,7 @@ ready ──timer──▶ play ──all pellets eaten──▶ levelclear ─�
 ```
 Per frame: update(dt) → sync meshes to entities → renderer.render. Global scatter/chase
 timer drives non-frightened ghosts; a bone starts a fright window with escalating ghost
-scores. See prototype sections 7–11 for the concrete reference.
+scores.
 
 ## Render sync
 `src/render` owns meshes keyed to entities and pellet tiles. On eat, remove the pellet

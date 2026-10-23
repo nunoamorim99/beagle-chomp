@@ -115,7 +115,7 @@ never ships to players.
 **Frontend:** three.js r169 (WebGL) · TypeScript (strict) · Vite · vite-plugin-pwa
 **Backend:** Hono · Node 22 · Postgres (`pg`, no ORM) · argon2id · zod
 **Tests:** 50+ suites, pure logic ones that run in Node plus Playwright ones that drive the real app
-**Hosting:** Cloudflare Pages (frontend) · Docker on a VPS via Dokploy (API)
+**Hosting:** Cloudflare Pages (frontend) · Docker (API)
 
 No physics engine, no post-processing, no asset loader. Movement is tile-stepping on a
 grid; 1 world unit = 1 maze tile.
