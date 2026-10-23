@@ -110,10 +110,6 @@ real meshes: part tree, transform gizmo, multi-select, animation timeline, undo,
 import/export, and **it writes changes back into the source files** as three.js code. It
 never ships to players.
 
-**Two art directions, one source.** Everything is *authored* cel-shaded and restyled at
-runtime into a bright matcap look over a snapped palette ([`madboxStyle.ts`](src/render/madboxStyle.ts)).
-Players can switch between them in Account.
-
 ## Tech
 
 **Frontend:** three.js r169 (WebGL) · TypeScript (strict) · Vite · vite-plugin-pwa
