@@ -1084,10 +1084,12 @@ section("The park's floor is the park's ground: its lawn and its path");
   // VALUE is everything. Measured on the phone render: 3.1:1 with a sand walk
   // and a `bark` biscuit, 10.9:1 with a cream walk and an ink one.
   //
-  // The biscuit is a declared INK marking — the high-key palette's darkest
+  // The biscuit is a declared dark TRAIL — the high-key palette's darkest
   // warm rung is `bark` (#b07d52), and no authored colour can get below it.
-  ok("the park's biscuit trail is drawn from the ink set", PARK.inkBiscuits === true);
-  ok("…and lands on the WARM ink, a chocolate rather than a hole", snapToPalette(PARK.palette.biscuit, "ink").id === "inkWarm");
+  // It is drawn in the style's trail brown, not the ink set: as ink it read
+  // black (IDEA-087).
+  ok("the park's biscuit trail is declared dark", PARK.inkBiscuits === true);
+  ok("…and lands on the trail brown, a chocolate rather than a hole", snapToPalette(PARK.palette.biscuit, "trail").id === "cocoa");
   // Bounded in PAINT terms, before lighting, so this holds whatever the scene
   // does: the walk as painted against the biscuit's ink entry. WCAG's 4.5:1 is
   // the floor for body text, which is the right bar for a small mark the
@@ -1101,7 +1103,7 @@ section("The park's floor is the park's ground: its lawn and its path");
       return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2];
     };
     const walk = relL(acc.path);
-    const dot = relL(snapToPalette(PARK.palette.biscuit, "ink").hex);
+    const dot = relL(snapToPalette(PARK.palette.biscuit, "trail").hex);
     const ratio = (walk + 0.05) / (dot + 0.05);
     ok("the painted walk and the biscuit clear 4.5:1", ratio >= 4.5, `${ratio.toFixed(2)}:1`);
   }

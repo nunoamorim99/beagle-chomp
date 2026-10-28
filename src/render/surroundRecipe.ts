@@ -674,6 +674,9 @@ interface SetPiece {
   /** Clearance the fringe and the plots keep round it, world units. */
   clear: number;
   build: (m: SurroundMaterials) => THREE.Object3D;
+  /** Built for the menu and shop horizon only. On the BOARD something
+   *  animated stands in its place, which a showcase has no loop to drive. */
+  showcaseOnly?: boolean;
 }
 
 /** A group of parts placed relative to a set piece's own origin. */
@@ -704,6 +707,9 @@ export const ISLAND_SET_PIECES: readonly SetPiece[] = [
     x: -9,
     z: -20.6,
     clear: 0,
+    // IDEA-086: on the board this water belongs to the kraken taking a boat
+    // (kraken/islandKraken.ts); the wreck stays on the showcase horizon.
+    showcaseOnly: true,
     build: (m) => {
       const w = distantShipwreck(m, { seed: 5 });
       w.rotation.y = Math.PI / 2 + 0.35;
@@ -1151,7 +1157,7 @@ export function ensureSurround(
   disposeSurround();
 
   const mats = makeSurroundMaterials(pal);
-  const host = buildSurroundContent(kind, mats);
+  const host = buildSurroundContent(kind, mats, true);
 
   // ONE mesh per distinct material for the whole band, however much is in it.
   // castShadow stays off: the merged batch spans the full ground plane, which
@@ -1204,6 +1210,9 @@ function plotInPark(plot: Plot): boolean {
 export function buildSurroundContent(
   kind: Exclude<SurroundKind, "none">,
   mats: SurroundMaterials,
+  /** True from `ensureSurround`: leaves out the set pieces only a showcase
+   *  wears (the island's wreck, whose water the board's kraken uses). */
+  forBoard = false,
 ): THREE.Group {
   const host = new THREE.Group();
   host.name = "surround";
@@ -1228,6 +1237,7 @@ export function buildSurroundContent(
   }
   if (kind === "island") {
     for (const p of ISLAND_SET_PIECES) {
+      if (forBoard && p.showcaseOnly) continue;
       const o = p.build(mats);
       o.position.x += p.x;
       o.position.z += p.z;

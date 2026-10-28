@@ -15,6 +15,7 @@ import { getMazeTheme } from "../src/game/themes.js";
 import {
   MADBOX_PALETTE,
   MADBOX_INK,
+  MADBOX_TRAIL,
   MADBOX_BOUNCE,
   SURFACE_LIFT,
   liftPaletteForMadbox,
@@ -1011,26 +1012,51 @@ for (const kind of ["deer", "fox", "rabbit", "raccoon", "squirrel", "squirrelExp
 }
 
 // ---------------------------------------------------------------------------
-// THE BEACH'S BISCUIT IS INK (IDEA-080 v3). Measured on a phone render, the
-// `wood` biscuit and the lifted sand corridor were the SAME luminance (0.29 vs
-// 0.29) — only hue separated them, and a phone outdoors loses hue first. As
-// ink it renders at ~0.012 against 0.288, a 5.4:1 ratio. Every brown the
-// ordinary snap can reach lands on `wood` or `bark`, which is why this is a
-// declared role and not a darker hex.
+// THE LIGHT-FLOORED THEMES DRAW THEIR TRAIL IN THE TRAIL BROWN (IDEA-080 v3,
+// then IDEA-087). The ordinary snap sends every brown to `wood`/`bark`, the
+// SAME value as a lifted sand corridor (0.29 against 0.29), so the trail
+// vanished; v3 moved it to the ink set, and `inkWarm` under a matcap's shaded
+// side read BLACK (Nuno: "they look black, they should be brown"). The trail
+// role lands between the two, and both halves are pinned: it is a BROWN (warm,
+// saturated, not an ink), and it still clears 3:1 — WCAG's bar for a graphic —
+// against each theme's floor AS LIFTED, which is what is on screen.
 // ---------------------------------------------------------------------------
 {
-  const beach = MAZE_THEMES.find((t) => t.id === "beach")!;
-  const role = beach.inkBiscuits ? "ink" : undefined;
-  const entry = snapToPalette(beach.palette.biscuit, role);
+  const relL = (hex: number): number => {
+    const ch = [(hex >> 16) & 255, (hex >> 8) & 255, hex & 255].map((v) => {
+      const c = v / 255;
+      return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2];
+  };
+  const trailThemes = MAZE_THEMES.filter((t) => t.inkBiscuits);
   ok(
-    "beach: the biscuit is drawn from the ink set",
-    MADBOX_INK.some((e) => e.id === entry.id),
-    `snapped to ${entry.id}`,
+    "the beach, the park and the island draw a dark trail",
+    ["beach", "park", "island"].every((id) => trailThemes.some((t) => t.id === id)),
+    trailThemes.map((t) => t.id).join(", "),
   );
+  for (const t of trailThemes) {
+    const entry = snapToPalette(t.palette.biscuit, "trail");
+    ok(`${t.id}: the biscuit is the trail brown`, entry.id === MADBOX_TRAIL.id, `snapped to ${entry.id}`);
+    ok(`${t.id}: …which is not an ink`, !MADBOX_INK.some((e) => e.id === entry.id));
+    // The park's trail runs on its painted cream WALK, not on the grass its
+    // `floor` slot describes; test-surround.ts holds the walk to 4.5:1.
+    if (t.palette.floorTexture === "parkGrass") continue;
+    const lifted = { ...t.palette } as unknown as Record<string, unknown>;
+    liftPaletteForMadbox(t.id, lifted);
+    const floor = relL(lifted.floor as number);
+    const ratio = (floor + 0.05) / (relL(entry.hex) + 0.05);
+    ok(`${t.id}: the trail clears 3:1 against the lifted floor`, ratio >= 3, `${ratio.toFixed(2)}:1`);
+  }
+  // A BROWN: warm hue, real chroma, and lighter than every ink — the three
+  // things that separate a chocolate from a hole.
+  const hsl = { h: 0, s: 0, l: 0 };
+  new THREE.Color(MADBOX_TRAIL.hex).getHSL(hsl);
+  ok("the trail brown is warm", hsl.h > 0.03 && hsl.h < 0.12, `h ${hsl.h.toFixed(3)}`);
+  ok("…saturated enough to read as a colour", hsl.s > 0.5, `s ${hsl.s.toFixed(2)}`);
   ok(
-    "beach: the biscuit's ink is the WARM one (it is still brown)",
-    entry.id === "inkWarm",
-    `snapped to ${entry.id}`,
+    "…and lighter than every ink",
+    MADBOX_INK.every((e) => relL(e.hex) < relL(MADBOX_TRAIL.hex)),
   );
 }
 

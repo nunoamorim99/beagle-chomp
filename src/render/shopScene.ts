@@ -542,7 +542,7 @@ function makeThemeDiorama(theme: MazeTheme): THREE.Group {
   g.userData.portal = buildPortalsAt(g, theme, [{ x: archX, z: tunZ, rotationY: spanZ, name: "dioramaPortal" }]);
 
   // Biscuits — same emissive treatment as board.ts's matBiscuit, and the same
-  // INK role on a theme that draws its trail dark (MazeTheme.inkBiscuits), or
+  // TRAIL role on a theme that draws its trail dark (MazeTheme.inkBiscuits), or
   // the beach's and the park's brown trail snaps a rung lighter here than it
   // renders in a run.
   const biscuitMat = toon({
@@ -550,7 +550,7 @@ function makeThemeDiorama(theme: MazeTheme): THREE.Group {
     emissive: palette.biscuitEmissive,
     emissiveIntensity: palette.biscuitEmissiveIntensity,
   });
-  if (theme.inkBiscuits) biscuitMat.userData.madboxRole = "ink";
+  if (theme.inkBiscuits) biscuitMat.userData.madboxRole = "trail";
   const biscuitGeo = new THREE.SphereGeometry(0.13, 12, 12);
   DIORAMA_BISCUIT_TILES.forEach(([tx, tz]) => {
     const [x, z] = dioramaPos(tx, tz);

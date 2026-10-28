@@ -1197,6 +1197,8 @@ export class Game {
     level.board.tunnelPortals?.dispose();
     // IDEA-084: the neon outline owns its merged geometry and materials.
     level.board.neonEdges?.dispose();
+    // IDEA-086: the kraken owns its skeleton, geometry and materials.
+    level.board.kraken?.dispose();
     // IDEA-060: the fence owns its geometry AND its material (fence.ts), so it
     // needs a real disposal, not the bare scene.remove the walls above get.
     if (level.board.fence) {

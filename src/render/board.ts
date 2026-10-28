@@ -77,6 +77,8 @@ import {
 import { collapseByMaterial, mergeBySignature } from "./propMerge";
 import { buildTunnelPortals, type TunnelPortals } from "./tunnelPortal";
 import { buildNeonEdges, type NeonEdges } from "./neonEdges";
+import { buildIslandKraken } from "./kraken/islandKraken";
+import type { KrakenBoatEvent } from "./kraken/krakenBoatEvent";
 
 export const WALL_H = 1;
 
@@ -209,6 +211,11 @@ export interface Board {
    *  `null` for a theme whose walls are not "flat" (neonEdges.ts). Grid-derived
    *  and owns its geometry and materials, so teardown is its own `dispose()`. */
   neonEdges: NeonEdges | null;
+  /** IDEA-086: Pirate Island's kraken taking a boat on the north-west sea, or
+   *  `null` on every other theme (kraken/islandKraken.ts). Theme-derived, owns
+   *  its geometry and materials, advanced from `spinDecor` so it pauses with
+   *  the game; teardown is its own `dispose()`. */
+  kraken: KrakenBoatEvent | null;
 }
 
 // IDEA-026: wall/floor/biscuit materials are shared, module-level, and
@@ -2087,6 +2094,7 @@ export function buildBoard(scene: THREE.Object3D, grid: Grid): Board {
   const tunnelArches = buildTunnelArches(scene, grid, theme);
   const tunnelPortals = buildTunnelPortals(scene, grid, theme);
   const neonEdges = buildNeonEdges(scene, grid, theme.palette.wallTexture, WALL_H);
+  const kraken = buildIslandKraken(scene, theme);
 
   return {
     pelletMeshes,
@@ -2107,6 +2115,7 @@ export function buildBoard(scene: THREE.Object3D, grid: Grid): Board {
     tunnelArches,
     tunnelPortals,
     neonEdges,
+    kraken,
   };
 }
 
@@ -2251,9 +2260,10 @@ function syncBoardMaterials(palette: ThemePalette, grid: Grid, inkBiscuits = fal
 
   matBiscuit.color.set(palette.biscuit);
   // IDEA-081: a theme that declares its trail a DARK MARKING has it drawn from
-  // the style's ink set (MazeTheme.inkBiscuits). Cleared, not merely left
-  // unset, because matBiscuit is SHARED across themes and survives a re-theme.
-  if (inkBiscuits) matBiscuit.userData.madboxRole = "ink";
+  // the style's trail brown (MazeTheme.inkBiscuits, madboxStyle's
+  // MADBOX_TRAIL). Cleared, not merely left unset, because matBiscuit is
+  // SHARED across themes and survives a re-theme.
+  if (inkBiscuits) matBiscuit.userData.madboxRole = "trail";
   else delete matBiscuit.userData.madboxRole;
   matBiscuit.emissive.set(palette.biscuitEmissive);
   matBiscuit.emissiveIntensity = palette.biscuitEmissiveIntensity;
@@ -3814,6 +3824,9 @@ export function applyBoardTheme(board: Board, scene: THREE.Object3D, grid: Grid,
   // IDEA-084: whether there is an outline at all is the theme's wall KIND.
   board.neonEdges?.dispose();
   board.neonEdges = buildNeonEdges(scene, grid, theme.palette.wallTexture, WALL_H);
+  // IDEA-086: only the island has a kraken, so a re-theme decides whether there is one.
+  board.kraken?.dispose();
+  board.kraken = buildIslandKraken(scene, theme);
 }
 
 /**
@@ -3993,6 +4006,8 @@ export function spinDecor(board: Board, dt: number): void {
   if (board.life) board.life.rotation.y += dt * 3;
   // IDEA-083: the tunnel portals swirl here so they pause with the game.
   board.tunnelPortals?.update(dt);
+  // IDEA-086: and the kraken plays its act here for the same reason.
+  board.kraken?.update(dt);
 
   // IDEA-046: the power-up spins like the other bonus pickups, and the STAR
   // bone additionally cycles its emissive through the spectrum — the Mario-star

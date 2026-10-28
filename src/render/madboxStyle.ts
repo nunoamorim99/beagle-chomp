@@ -132,6 +132,22 @@ export const MADBOX_INK: readonly PaletteEntry[] = [
 ];
 
 /**
+ * THE BISCUIT TRAIL'S BROWN — reached only by the declared `"trail"` role
+ * (`MazeTheme.inkBiscuits`, set by the light-floored themes: beach, park,
+ * island).
+ *
+ * It sits BETWEEN the two places a brown could otherwise land. The ordinary
+ * snap sends every brown to `wood` or `bark`, the same value as a lifted sand
+ * corridor (IDEA-080 v3 measured 0.29 against 0.29) — the trail disappears.
+ * The ink set fixed that and overshot: `inkWarm` is L 0.04 and under a matcap's
+ * shaded side it reads BLACK (Nuno: "they look black, they should be brown").
+ * A saturated chocolate keeps the value low enough to clear 3:1 against the
+ * lifted sand — WCAG's bar for a graphic — while carrying enough chroma that
+ * it reads as a biscuit rather than as a hole.
+ */
+export const MADBOX_TRAIL: PaletteEntry = { id: "cocoa", hex: 0x6e3c1a };
+
+/**
  * The default bounce: a light sea-cyan.
  *
  * Right for the JOURNEY MAP, where every island genuinely is surrounded by
@@ -256,6 +272,7 @@ const ROLE_ENTRY: Record<string, string> = { "island-beach": "sand" };
  * paving stone comes out pink or blue.
  */
 export function snapToPalette(hex: number, role?: string): PaletteEntry {
+  if (role === "trail") return MADBOX_TRAIL;
   // The ink role short-circuits everything: a marking is matched only against
   // the ink set, by hue and lightness, so a warm saddle stays warm and a cool
   // one stays cool without either being lifted.
